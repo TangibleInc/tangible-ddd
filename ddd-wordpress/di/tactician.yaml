@@ -1,7 +1,12 @@
-# TangibleDDD Tactician Middleware Stack
+# TangibleDDD Tactician Configuration (fully wired)
 #
-# Consumer imports this and can add their own middleware.
-# Order matters: first in list wraps outermost.
+# This file provides a ready-to-use CommandBus and QueryBus, plus the
+# default naming-convention mapping used by Tangible plugins.
+#
+# Notes:
+# - Requires `league/tactician` (suggested dependency).
+# - Consumers can override services or wrap with additional middleware
+#   (locking, custom transactions, metrics, etc.).
 
 services:
   _defaults:
@@ -10,41 +15,67 @@ services:
     public: true
 
   # ============================================
-  # Framework Middleware (imported by consumer)
+  # Command Bus (write pipeline)
   # ============================================
-
-  # Correlation - initializes/propagates correlation context
-  TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
-
-  # Domain Events - publishes events after command completes
-  TangibleDDD\Application\Events\DomainEventsPublishMiddleware:
+  #
+  # Middleware order:
+  # 1. CommandAuditMiddleware - logs command, generates command_id
+  # 2. CorrelationMiddleware - initializes correlation context
+  # 3. TransactionMiddleware - starts database transaction (for ITransactionalCommand)
+  # 4. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
+  # 5. CommandHandlerMiddleware - executes the handler
+  #
+  League\Tactician\CommandBus:
+    public: true
     arguments:
-      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
-      - '@TangibleDDD\Application\Events\EventRouter'
+      - '@TangibleDDD\Application\Logging\CommandAuditMiddleware'
+      - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
+      - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
+      - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+      - '@tactician.middleware.command_handler'
 
   # ============================================
-  # Typical Middleware Stack Order:
+  # Query Bus (read-only pipeline)
   # ============================================
-  # 1. Locking - prevents concurrent command execution (consumer provides)
-  # 2. Transaction - wraps command in database transaction (consumer provides)
-  # 3. Correlation - initializes/propagates correlation context
-  # 4. Audit - logs command execution to audit table (consumer provides)
-  # 5. Domain Events - publishes events after command completes
-  # 6. Handler - dispatches to actual command handler
-  #
-  # Example consumer tactician.yaml:
-  #
-  # imports:
-  #   - { resource: '../vendor/tangible/ddd/ddd-wordpress/di/tactician.yaml' }
-  #
-  # services:
-  #   tactician.command_bus:
-  #     class: League\Tactician\CommandBus
-  #     arguments:
-  #       - - '@MyPlugin\Application\CQRS\LockingMiddleware'
-  #         - '@MyPlugin\Application\CQRS\TransactionMiddleware'
-  #         - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
-  #         - '@MyPlugin\Application\Logging\CommandAuditMiddleware'
-  #         - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
-  #         - '@League\Tactician\Handler\CommandHandlerMiddleware'
+  tactician.query_bus:
+    class: League\Tactician\CommandBus
+    public: true
+    arguments:
+      - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
+      - '@tactician.middleware.query_handler'
+
   # ============================================
+  # Handler Middleware
+  # ============================================
+  tactician.middleware.command_handler:
+    class: League\Tactician\Handler\CommandHandlerMiddleware
+    arguments:
+      - '@service_container'
+      - '@tactician.command_to_handler_mapping'
+
+  tactician.middleware.query_handler:
+    class: League\Tactician\Handler\CommandHandlerMiddleware
+    arguments:
+      - '@service_container'
+      - '@tactician.query_to_handler_mapping'
+
+  # ============================================
+  # Naming Convention Mapping
+  # ============================================
+  tactician.command_to_handler_mapping:
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MapByNamingConvention
+    arguments:
+      - '@tactician.class_name_inflector'
+      - '@tactician.method_name_inflector'
+
+  tactician.query_to_handler_mapping:
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MapByNamingConvention
+    arguments:
+      - '@tactician.class_name_inflector'
+      - '@tactician.method_name_inflector'
+
+  tactician.class_name_inflector:
+    class: TangibleDDD\WordPress\DI\HandlerClassNameInflector
+
+  tactician.method_name_inflector:
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MethodName\Handle

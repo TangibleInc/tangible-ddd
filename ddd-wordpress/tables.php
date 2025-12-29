@@ -13,6 +13,7 @@ function install_tables(IDDDConfig $config): void {
   install_outbox_tables($config);
   install_process_tables($config);
   install_command_audit_table($config);
+  install_behaviour_workflow_tables($config);
 }
 
 /**
@@ -147,6 +148,48 @@ function install_command_audit_table(IDDDConfig $config): void {
     KEY idx_status (status),
     KEY idx_blog_started (blog_id, started_at),
     KEY idx_source (source, source_id)
+  ) $charset";
+
+  $wpdb->query($sql);
+}
+
+/**
+ * Install behaviour workflows table.
+ *
+ * This is a lightweight orchestration/workflow state machine persisted in MySQL.
+ * It stores:
+ * - a ref (ref_id + ref_type) to whatever the workflow is "about"
+ * - a list of behaviour configs (JSON)
+ * - execution results/history (JSON)
+ * - progress cursor (current_idx + current_phase)
+ * - optional meta bag for app-specific context (JSON)
+ */
+function install_behaviour_workflow_tables(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $wpdb->prefix . $config->prefix() . '_behaviour_workflows';
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    ref_id BIGINT UNSIGNED NOT NULL,
+    ref_type VARCHAR(64) NOT NULL,
+    root_workflow_id BIGINT UNSIGNED NULL,
+    behaviour_configs JSON NOT NULL,
+    behaviour_results JSON NOT NULL,
+    current_idx INT UNSIGNED NOT NULL DEFAULT 0,
+    current_phase INT UNSIGNED NOT NULL DEFAULT 1,
+    is_complete TINYINT(1) NOT NULL DEFAULT 0,
+    is_failed TINYINT(1) NOT NULL DEFAULT 0,
+    meta JSON NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    KEY idx_ref (ref_type, ref_id),
+    KEY idx_root (root_workflow_id),
+    KEY idx_status (is_complete, is_failed),
+    KEY idx_blog_ref (blog_id, ref_type, ref_id),
+    KEY idx_blog_status (blog_id, is_complete, is_failed)
   ) $charset";
 
   $wpdb->query($sql);

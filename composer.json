@@ -27,11 +27,14 @@
       "TangibleDDD\\WordPress\\": "ddd-wordpress/"
     },
     "files": [
+      "ddd-src/Domain/Shared/assert.php",
       "ddd-wordpress/integration-events.php",
       "ddd-wordpress/tables.php",
       "ddd-wordpress/hooks.php",
       "ddd-wordpress/audit.php",
       "ddd-wordpress/locking.php",
+      "ddd-wordpress/db.php",
+      "ddd-wordpress/secret.php",
       "ddd-wordpress/cli/register.php"
     ]
   },

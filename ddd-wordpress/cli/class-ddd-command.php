@@ -150,9 +150,9 @@ class DDD_Command {
       'ddd-src/Domain/Shared/.gitkeep' => '',
       'ddd-src/Domain/Exceptions/.gitkeep' => '',
       'ddd-src/Domain/Repositories/.gitkeep' => '',
-      'ddd-src/Application/Commands/.gitkeep' => '',
+      'ddd-src/Application/Commands/Command.php' => $this->template_command( $prefix, $namespace ),
       'ddd-src/Application/CommandHandlers/.gitkeep' => '',
-      'ddd-src/Application/Queries/.gitkeep' => '',
+      'ddd-src/Application/Queries/Query.php' => $this->template_query( $prefix, $namespace ),
       'ddd-src/Application/QueryHandlers/.gitkeep' => '',
       'ddd-src/Application/EventHandlers/.gitkeep' => '',
       'ddd-src/Application/Services/.gitkeep' => '',
@@ -212,6 +212,82 @@ use TangibleDDD\\Domain\\Events\\IntegrationEvent as BaseIntegrationEvent;
 abstract class IntegrationEvent extends BaseIntegrationEvent {
   protected static function prefix(): string {
     return '{$prefix}';
+  }
+}
+
+PHP;
+  }
+
+  /**
+   * Template: Command base class (auto-dispatching).
+   */
+  private function template_command( string $prefix, string $namespace ): string {
+    $di_namespace = "{$namespace}\\WordPress\\DI";
+
+    return <<<PHP
+<?php
+
+namespace {$namespace}\\Application\\Commands;
+
+use TangibleDDD\\Application\\Commands\\ICommand;
+use TangibleDDD\\Application\\CQRS\\CommandBusAware;
+use Psr\\Container\\ContainerInterface;
+
+use function {$di_namespace}\\di;
+
+/**
+ * Base class for {$namespace} commands.
+ *
+ * Commands extending this class can dispatch themselves:
+ *
+ *     \$result = (new CreateLicense(...))->send();
+ *
+ * The command is routed to its handler via Tactician.
+ * Convention: CreateLicense -> CreateLicenseHandler
+ */
+abstract class Command implements ICommand {
+  use CommandBusAware;
+
+  protected static function container(): ContainerInterface {
+    return di();
+  }
+}
+
+PHP;
+  }
+
+  /**
+   * Template: Query base class (auto-dispatching).
+   */
+  private function template_query( string $prefix, string $namespace ): string {
+    $di_namespace = "{$namespace}\\WordPress\\DI";
+
+    return <<<PHP
+<?php
+
+namespace {$namespace}\\Application\\Queries;
+
+use TangibleDDD\\Application\\Queries\\IQuery;
+use TangibleDDD\\Application\\CQRS\\QueryBusAware;
+use Psr\\Container\\ContainerInterface;
+
+use function {$di_namespace}\\di;
+
+/**
+ * Base class for {$namespace} queries.
+ *
+ * Queries extending this class can dispatch themselves:
+ *
+ *     \$license = (new GetLicense(id: 42))->send();
+ *
+ * The query is routed to its handler via the QueryBus.
+ * Convention: GetLicense -> GetLicenseHandler
+ */
+abstract class Query implements IQuery {
+  use QueryBusAware;
+
+  protected static function container(): ContainerInterface {
+    return di();
   }
 }
 
@@ -387,7 +463,7 @@ services:
   TangibleDDD\\Application\\Outbox\\IOutboxPublisher:
     class: TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher
     arguments:
-      - '@TangibleDDD\\Infra\\IDDDConfig'
+      - '@TangibleDDD\\Application\\Outbox\\OutboxConfig'
 
   TangibleDDD\\Application\\Outbox\\OutboxProcessor:
     arguments:

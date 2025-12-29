@@ -87,6 +87,11 @@ services:
     arguments:
       - '@TangibleDDD\Infra\IDDDConfig'
 
+  TangibleDDD\Infra\Persistence\BehaviourWorkflowRepository:
+    arguments:
+      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
+      - '@TangibleDDD\Infra\IDDDConfig'
+
   # ============================================
   # Default Event Bus Implementation
   # ============================================
@@ -101,6 +106,13 @@ services:
     arguments:
       - '@TangibleDDD\Application\Outbox\OutboxConfig'
 
+  # Optional Outbox Publisher with routing support (ActionScheduler by default)
+  TangibleDDD\Infra\Services\RoutingOutboxPublisher:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+      - '@TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher'
+
   # ============================================
   # Interface Bindings (consumers can override)
   # ============================================
@@ -110,6 +122,9 @@ services:
   TangibleDDD\Infra\IProcessRepository:
     alias: TangibleDDD\Infra\Persistence\ProcessRepository
 
+  TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository:
+    alias: TangibleDDD\Infra\Persistence\BehaviourWorkflowRepository
+
   TangibleDDD\Application\Events\IIntegrationEventBus:
     alias: TangibleDDD\Infra\Services\OutboxIntegrationEventBus
 
@@ -118,6 +133,10 @@ services:
 
   TangibleDDD\Application\Outbox\IOutboxPublisher:
     alias: TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher
+
+  # To enable routing, consumers can override the alias to:
+  # TangibleDDD\Application\Outbox\IOutboxPublisher:
+  #   alias: TangibleDDD\Infra\Services\RoutingOutboxPublisher
 
   # ============================================
   # Note: Consumers MUST provide:
