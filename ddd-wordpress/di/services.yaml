@@ -1,0 +1,125 @@
+# TangibleDDD Framework Services
+#
+# Consumer imports this file and provides:
+# - TangibleDDD\Infra\IDDDConfig binding to their Config class
+# - Their own repository implementations (or use framework defaults)
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: true
+
+  # ============================================
+  # Event System
+  # ============================================
+  TangibleDDD\Application\Events\EventsUnitOfWork: ~
+
+  TangibleDDD\Infra\Services\WordPressEventDispatcher: ~
+
+  TangibleDDD\Application\Events\EventRouter:
+    arguments:
+      - '@TangibleDDD\Application\Events\IDomainEventDispatcher'
+      - '@TangibleDDD\Application\Events\IIntegrationEventBus'
+
+  TangibleDDD\Application\Events\DomainEventsPublishMiddleware:
+    arguments:
+      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
+      - '@TangibleDDD\Application\Events\EventRouter'
+
+  # ============================================
+  # Correlation
+  # ============================================
+  # CorrelationContext is static, no DI needed
+
+  TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
+
+  # ============================================
+  # Transaction
+  # ============================================
+  TangibleDDD\Application\Persistence\TransactionMiddleware: ~
+
+  # ============================================
+  # Command Audit
+  # ============================================
+  TangibleDDD\Application\Logging\Redactor: ~
+
+  TangibleDDD\Application\Logging\CommandAuditMiddleware:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
+      - '@TangibleDDD\Application\Logging\Redactor'
+
+  # ============================================
+  # Outbox
+  # ============================================
+  TangibleDDD\Application\Outbox\OutboxConfig:
+    factory: ['TangibleDDD\Application\Outbox\OutboxConfig', 'from_options']
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+
+  TangibleDDD\Application\Outbox\OutboxProcessor:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Infra\IOutboxRepository'
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+      - '@TangibleDDD\Application\Outbox\IOutboxPublisher'
+
+  # ============================================
+  # Long Processes
+  # ============================================
+  TangibleDDD\Application\Process\ProcessRunner:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Infra\IProcessRepository'
+
+  # ============================================
+  # Default Repository Implementations
+  # ============================================
+  # Consumers can override these with their own implementations
+
+  TangibleDDD\Infra\Persistence\OutboxRepository:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+
+  TangibleDDD\Infra\Persistence\ProcessRepository:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+
+  # ============================================
+  # Default Event Bus Implementation
+  # ============================================
+  TangibleDDD\Infra\Services\OutboxIntegrationEventBus:
+    arguments:
+      - '@TangibleDDD\Infra\IOutboxRepository'
+
+  # ============================================
+  # Default Outbox Publisher (ActionScheduler)
+  # ============================================
+  TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher:
+    arguments:
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+
+  # ============================================
+  # Interface Bindings (consumers can override)
+  # ============================================
+  TangibleDDD\Infra\IOutboxRepository:
+    alias: TangibleDDD\Infra\Persistence\OutboxRepository
+
+  TangibleDDD\Infra\IProcessRepository:
+    alias: TangibleDDD\Infra\Persistence\ProcessRepository
+
+  TangibleDDD\Application\Events\IIntegrationEventBus:
+    alias: TangibleDDD\Infra\Services\OutboxIntegrationEventBus
+
+  TangibleDDD\Application\Events\IDomainEventDispatcher:
+    alias: TangibleDDD\Infra\Services\WordPressEventDispatcher
+
+  TangibleDDD\Application\Outbox\IOutboxPublisher:
+    alias: TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher
+
+  # ============================================
+  # Note: Consumers MUST provide:
+  # - TangibleDDD\Infra\IDDDConfig (bind to their Config class)
+  # ============================================

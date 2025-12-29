@@ -1,0 +1,50 @@
+# TangibleDDD Tactician Middleware Stack
+#
+# Consumer imports this and can add their own middleware.
+# Order matters: first in list wraps outermost.
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: true
+
+  # ============================================
+  # Framework Middleware (imported by consumer)
+  # ============================================
+
+  # Correlation - initializes/propagates correlation context
+  TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
+
+  # Domain Events - publishes events after command completes
+  TangibleDDD\Application\Events\DomainEventsPublishMiddleware:
+    arguments:
+      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
+      - '@TangibleDDD\Application\Events\EventRouter'
+
+  # ============================================
+  # Typical Middleware Stack Order:
+  # ============================================
+  # 1. Locking - prevents concurrent command execution (consumer provides)
+  # 2. Transaction - wraps command in database transaction (consumer provides)
+  # 3. Correlation - initializes/propagates correlation context
+  # 4. Audit - logs command execution to audit table (consumer provides)
+  # 5. Domain Events - publishes events after command completes
+  # 6. Handler - dispatches to actual command handler
+  #
+  # Example consumer tactician.yaml:
+  #
+  # imports:
+  #   - { resource: '../vendor/tangible/ddd/ddd-wordpress/di/tactician.yaml' }
+  #
+  # services:
+  #   tactician.command_bus:
+  #     class: League\Tactician\CommandBus
+  #     arguments:
+  #       - - '@MyPlugin\Application\CQRS\LockingMiddleware'
+  #         - '@MyPlugin\Application\CQRS\TransactionMiddleware'
+  #         - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
+  #         - '@MyPlugin\Application\Logging\CommandAuditMiddleware'
+  #         - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+  #         - '@League\Tactician\Handler\CommandHandlerMiddleware'
+  # ============================================
