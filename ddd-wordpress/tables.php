@@ -14,6 +14,7 @@ function install_tables(IDDDConfig $config): void {
   install_process_tables($config);
   install_command_audit_table($config);
   install_behaviour_workflow_tables($config);
+  install_behaviour_workflow_item_tables($config);
 }
 
 /**
@@ -190,6 +191,40 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
     KEY idx_status (is_complete, is_failed),
     KEY idx_blog_ref (blog_id, ref_type, ref_id),
     KEY idx_blog_status (blog_id, is_complete, is_failed)
+  ) $charset";
+
+  $wpdb->query($sql);
+}
+
+/**
+ * Install behaviour workflow items table.
+ *
+ * This is a "work item ledger" used by behaviour workflow runners to track per-item progress
+ * for a given workflow step (behaviour_idx + phase).
+ */
+function install_behaviour_workflow_item_tables(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('behaviour_workflow_items');
+  $charset = $wpdb->get_charset_collate();
+
+  // Note: item_key is limited to 191 to stay safe with older utf8mb4 index limits.
+  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    workflow_id BIGINT UNSIGNED NOT NULL,
+    behaviour_idx INT UNSIGNED NOT NULL,
+    phase INT UNSIGNED NOT NULL DEFAULT 1,
+    item_key VARCHAR(191) NOT NULL,
+    status ENUM('pending','waiting','failed','done','skipped') NOT NULL DEFAULT 'pending',
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    payload JSON NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    UNIQUE KEY uniq_item (workflow_id, behaviour_idx, phase, item_key),
+    KEY idx_workflow_step_status (workflow_id, behaviour_idx, phase, status),
+    KEY idx_blog_workflow (blog_id, workflow_id)
   ) $charset";
 
   $wpdb->query($sql);

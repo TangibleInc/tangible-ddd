@@ -92,6 +92,10 @@ services:
       - '@TangibleDDD\Application\Events\EventsUnitOfWork'
       - '@TangibleDDD\Infra\IDDDConfig'
 
+  TangibleDDD\Infra\Persistence\WorkItemRepository:
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+
   # ============================================
   # Default Event Bus Implementation
   # ============================================
@@ -124,6 +128,9 @@ services:
 
   TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository:
     alias: TangibleDDD\Infra\Persistence\BehaviourWorkflowRepository
+
+  TangibleDDD\Domain\Repositories\IWorkItemRepository:
+    alias: TangibleDDD\Infra\Persistence\WorkItemRepository
 
   TangibleDDD\Application\Events\IIntegrationEventBus:
     alias: TangibleDDD\Infra\Services\OutboxIntegrationEventBus
