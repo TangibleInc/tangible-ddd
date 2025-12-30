@@ -109,11 +109,6 @@ abstract class WorkflowHandler implements ICommandHandler {
         break;
       }
 
-      // Forked means parent is done, child takes over failed items
-      if ($result->status === BehaviourExecutionStatus::forked) {
-        break;
-      }
-
       if (!$complete && $this->needs_rescheduling($result)) {
         $reschedule = true;
         break;
@@ -203,9 +198,9 @@ abstract class WorkflowHandler implements ICommandHandler {
     $this->chunk_success = [];
     $this->chunk_error = [];
 
-    // Early exit if blocked (no pending work)
+    // No pending work - skip to resolution
     if (!$items->has_pending()) {
-      return $this->resolve_blocked_state($workflow, $config, $items, $phase);
+      goto resolve;
     }
 
     // Process a chunk of pending items
@@ -220,14 +215,15 @@ abstract class WorkflowHandler implements ICommandHandler {
       return $this->result_for_stop_reason($stop_reason, $config, $phase);
     }
 
-    // Recompute state and decide final result
-    $fresh_items = $this->item_repo->get_for_step(
+    // Recompute state after processing
+    $items = $this->item_repo->get_for_step(
       $workflow->get_id(),
       $workflow->get_current_idx(),
       $phase
     );
 
-    return $this->resolve_step_completion($workflow, $config, $fresh_items, $phase);
+    resolve:
+      return $this->resolve_step_state($workflow, $config, $items, $phase);
   }
 
   /**
@@ -287,9 +283,11 @@ abstract class WorkflowHandler implements ICommandHandler {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Resolve state when no pending items exist (blocked or complete).
+   * Resolve final state based on work item statuses.
+   *
+   * Handles: pending (more work), waiting, failed (maybe fork), done/skipped (complete).
    */
-  protected function resolve_blocked_state(
+  protected function resolve_step_state(
     BehaviourWorkflow $workflow,
     BaseBehaviourConfig $config,
     WorkItemList $items,
@@ -297,36 +295,12 @@ abstract class WorkflowHandler implements ICommandHandler {
   ): BehaviourExecutionResult {
     $status = $items->aggregate_status();
 
-    // Check for forking opportunity on failure
+    // Forking opportunity on failure (before delegating to generic handler)
     if ($status === WorkItemStatus::failed) {
       return $this->maybe_fork_or_fail($workflow, $config, $items, $phase);
     }
 
-    return $this->result_for_item_status($status, $config, $phase);
-  }
-
-  /**
-   * Resolve final state after processing a chunk.
-   */
-  protected function resolve_step_completion(
-    BehaviourWorkflow $workflow,
-    BaseBehaviourConfig $config,
-    WorkItemList $items,
-    int $phase
-  ): BehaviourExecutionResult {
-    $status = $items->aggregate_status();
-
-    // Still have pending work
-    if ($status === WorkItemStatus::pending) {
-      return $this->build_result($config, $phase, true, 'Work items remaining', BehaviourExecutionStatus::batched);
-    }
-
-    // Check for forking opportunity on failure
-    if ($status === WorkItemStatus::failed) {
-      return $this->maybe_fork_or_fail($workflow, $config, $items, $phase);
-    }
-
-    return $this->result_for_item_status($status, $config, $phase);
+    return $this->result_from_item_status($status, $config, $phase);
   }
 
   /**
@@ -445,7 +419,7 @@ abstract class WorkflowHandler implements ICommandHandler {
       : 1;
   }
 
-  protected function result_for_item_status(
+  protected function result_from_item_status(
     WorkItemStatus $status,
     BaseBehaviourConfig $config,
     int $phase
