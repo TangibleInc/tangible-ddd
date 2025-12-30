@@ -178,7 +178,6 @@ abstract class WorkflowHandler implements ICommandHandler {
   // ─────────────────────────────────────────────────────────────────────────────
   // Core execution with ledger
   // ─────────────────────────────────────────────────────────────────────────────
-
   /** @var array<string> Audit: item keys that succeeded in current chunk */
   protected array $chunk_success = [];
 
@@ -212,15 +211,9 @@ abstract class WorkflowHandler implements ICommandHandler {
 
     // If processing was interrupted, return appropriate result
     if ($stop_reason !== null) {
-      return $this->result_for_stop_reason($stop_reason, $config, $phase);
+      // Currently the only supported stop reason is resource exhaustion.
+      return $this->build_result($config, $phase, true, 'Resource limits reached', BehaviourExecutionStatus::batched);
     }
-
-    // Recompute state after processing
-    $items = $this->item_repo->get_for_step(
-      $workflow->get_id(),
-      $workflow->get_current_idx(),
-      $phase
-    );
 
     resolve:
       return $this->resolve_step_state($workflow, $config, $items, $phase);
@@ -231,7 +224,11 @@ abstract class WorkflowHandler implements ICommandHandler {
    *
    * Tracks success/error item keys for audit trail (stored in result history).
    *
-   * @return string|null Stop reason ('waiting', 'failed', 'resources') or null if chunk completed
+   * We intentionally do NOT stop on per-item `waiting`/`failed`:
+   * - waiting/failed are per-item states; other items may still be processable in this run.
+   * - the final step status is resolved from the aggregate item set in `resolve_step_state()`.
+   *
+   * @return string|null Stop reason ('resources') or null if chunk completed
    */
   protected function process_chunk(
     WorkItemList $chunk,
@@ -246,8 +243,6 @@ abstract class WorkflowHandler implements ICommandHandler {
       // Track for audit trail
       $this->track_item_result($work_item);
 
-      if ($work_item->status === WorkItemStatus::waiting) return 'waiting';
-      if ($work_item->status === WorkItemStatus::failed) return 'failed';
       if ($this->resources_exceeded()) return 'resources';
     }
 
@@ -430,19 +425,6 @@ abstract class WorkflowHandler implements ICommandHandler {
       WorkItemStatus::failed  => $this->build_result($config, $phase, false, 'Work items failed', BehaviourExecutionStatus::failed),
       WorkItemStatus::done,
       WorkItemStatus::skipped => $this->build_result($config, $phase, true, 'Work items done', BehaviourExecutionStatus::completed),
-    };
-  }
-
-  protected function result_for_stop_reason(
-    string $reason,
-    BaseBehaviourConfig $config,
-    int $phase
-  ): BehaviourExecutionResult {
-    return match ($reason) {
-      'waiting'   => $this->build_result($config, $phase, true, 'Waiting on work item', BehaviourExecutionStatus::waiting),
-      'failed'    => $this->build_result($config, $phase, false, 'Work item failed', BehaviourExecutionStatus::failed),
-      'resources' => $this->build_result($config, $phase, true, 'Resource limits reached', BehaviourExecutionStatus::batched),
-      default     => $this->build_result($config, $phase, false, "Unknown stop reason: $reason", BehaviourExecutionStatus::failed),
     };
   }
 
