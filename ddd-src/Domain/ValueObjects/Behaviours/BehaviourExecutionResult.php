@@ -108,28 +108,16 @@ final class BehaviourExecutionResult extends DirectJsonLifecycleValue {
     return $this->status !== BehaviourExecutionStatus::failed ? $this->phase + 1 : $this->phase;
   }
 
-  public function get_all_success_batch(): array {
-    $batch_success = $this->batch_success;
-    foreach ($this->history as $result) {
-      $batch_success = [...$batch_success, ...$result->get_all_success_batch()];
-    }
-    return $batch_success;
-  }
-
-  public function get_all_error_batch(): array {
-    $batch_error = $this->batch_error;
-    foreach ($this->history as $result) {
-      $batch_error = [...$batch_error, ...$result->get_all_error_batch()];
-    }
-    return array_values(array_unique($batch_error));
-  }
-
-  public function get_unresolved_error_batch(array $new_batch_success = []): array {
-    return array_diff(
-      $this->get_all_error_batch(),
-      [...$this->get_all_success_batch(), ...$new_batch_success]
-    );
-  }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // NOTE: batch_success and batch_error are kept for AUDIT PURPOSES ONLY.
+  //
+  // With the work item ledger, operational logic should query items directly:
+  //   - items->done()   instead of get_all_success_batch()
+  //   - items->failed() instead of get_all_error_batch()
+  //
+  // The batch arrays in results provide a historical audit trail of what
+  // happened in each chunk execution, useful for debugging and support.
+  // ─────────────────────────────────────────────────────────────────────────────
 
   /**
    * Builder to produce execution results with consistent type + phase.

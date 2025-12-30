@@ -75,6 +75,11 @@ final class BehaviourWorkflow extends Aggregate {
    *
    * Returns whether the workflow is complete after advancing.
    *
+   * IMPORTANT semantic notes:
+   * - "waiting" means "pause here until an external signal"; the cursor does NOT advance.
+   * - "batched" means "partial progress"; the cursor does NOT advance.
+   * - For sagas (ISagaBehaviour), advancing means increasing current_phase; for non-sagas it means increasing current_idx.
+   *
    * @throws WorkflowException
    */
   public function maybe_advance(BehaviourExecutionResult &$result): bool {
@@ -93,6 +98,12 @@ final class BehaviourWorkflow extends Aggregate {
     if ($this->is_during_saga()) {
       if (BehaviourExecutionStatus::cancelled === $result->status) {
         $this->complete_saga();
+      } elseif (
+        BehaviourExecutionStatus::batched === $result->status
+        || BehaviourExecutionStatus::waiting === $result->status
+      ) {
+        // Saga phases do not advance while we are still batching or waiting.
+        return false;
       } else {
         $this->current_phase++;
         if ($this->current_phase > $this->get_current()->no_phases()) {
@@ -102,8 +113,11 @@ final class BehaviourWorkflow extends Aggregate {
         }
       }
     } else {
-      // If batched, we don't advance until the batch gives us the okay to go forward.
-      if (BehaviourExecutionStatus::batched !== $result->status) {
+      // Non-saga behaviours should not advance while batching or waiting for an external signal.
+      if (
+        BehaviourExecutionStatus::batched !== $result->status
+        && BehaviourExecutionStatus::waiting !== $result->status
+      ) {
         $this->current_idx++;
       }
     }
