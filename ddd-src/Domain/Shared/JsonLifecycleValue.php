@@ -142,4 +142,45 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
 
     return $mapped;
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Polymorphic serialization (preserves class name for reconstruction)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Serialize a JsonLifecycleValue with its class name for polymorphic reconstruction.
+   *
+   * Use this when you need to store a VO whose concrete type isn't known at compile time.
+   */
+  public static function serialize_polymorphic(self $value): array {
+    return [
+      '_class' => get_class($value),
+      '_data' => $value->to_json(false),
+    ];
+  }
+
+  /**
+   * Deserialize a JsonLifecycleValue from polymorphic format.
+   *
+   * @param array|null $data Array with '_class' and '_data' keys
+   * @return static|null The reconstructed VO, or null if invalid
+   */
+  public static function deserialize_polymorphic(?array $data): ?self {
+    if ($data === null) {
+      return null;
+    }
+
+    $class = $data['_class'] ?? null;
+    $json = $data['_data'] ?? null;
+
+    if ($class === null || $json === null) {
+      return null;
+    }
+
+    if (!is_subclass_of($class, self::class)) {
+      return null;
+    }
+
+    return $class::from_json($json);
+  }
 }

@@ -3,9 +3,11 @@
 namespace TangibleDDD\Application\Process;
 
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Shared\JsonLifecycleValue;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use Throwable;
@@ -68,6 +70,43 @@ final class ProcessRunner {
   }
 
   /**
+   * Build a map of forward step method name => compensation method name.
+   *
+   * Compensation methods are declared via #[Compensates('forward_step_name')].
+   *
+   * @return array<string, string>
+   * @throws ReflectionException
+   */
+  private function reflect_compensations(string $process_class): array {
+    $reflection = new ReflectionClass($process_class);
+    $map = [];
+
+    foreach ($reflection->getMethods(ReflectionMethod::IS_PROTECTED) as $method) {
+      if ($method->getDeclaringClass()->getName() === LongProcess::class) {
+        continue;
+      }
+
+      $attrs = $method->getAttributes(Compensates::class);
+      if (empty($attrs)) {
+        continue;
+      }
+
+      /** @var Compensates $attr */
+      $attr = $attrs[0]->newInstance();
+
+      // Ensure compensation method returns Result
+      $return_type = $method->getReturnType();
+      if ($return_type === null || $return_type->getName() !== Result::class) {
+        throw new \RuntimeException("Compensation method {$process_class}::{$method->getName()} must return Result");
+      }
+
+      $map[$attr->step] = $method->getName();
+    }
+
+    return $map;
+  }
+
+  /**
    * Get the integration event type from a method signature, if any.
    */
   private function get_event_type_from_method(ReflectionMethod $method): ?string {
@@ -115,12 +154,30 @@ final class ProcessRunner {
 
   /**
    * Start a new process.
+   *
+   * Creates the ProcessSteps schema via reflection and initializes the process.
    */
   public function start(LongProcess $process): void {
     $this->started_at = time();
-    $process->start(CorrelationContext::get());
+
+    // Create the step schema via reflection (frozen snapshot)
+    $steps = $this->create_process_steps($process);
+
+    // Initialize and persist
+    $process->start(CorrelationContext::get(), $steps);
     $this->repository->save($process);
+
     $this->execute($process);
+  }
+
+  /**
+   * Create ProcessSteps VO from reflection.
+   */
+  private function create_process_steps(LongProcess $process): ProcessSteps {
+    $step_methods = $this->reflect_steps($process);
+    $compensations = $this->reflect_compensations(get_class($process));
+
+    return ProcessSteps::from_reflection($step_methods, $compensations);
   }
 
   /**
@@ -141,12 +198,9 @@ final class ProcessRunner {
     CorrelationContext::init($process->correlation_id());
 
     $this->started_at = time();
-    $process->advance(
-      next_step: $process->current_step(),
-      status: 'running',
-      payload: $process->payload(),
-    );
+    $process->advance(status: 'running', payload: $process->payload());
     $this->repository->save($process);
+
     $this->execute($process);
   }
 
@@ -181,20 +235,30 @@ final class ProcessRunner {
    * Execute process steps until completion, suspension, or reschedule.
    */
   private function execute(LongProcess $process): void {
-    $steps = $this->reflect_steps($process);
-    $step_count = count($steps);
+    // If we're in compensation mode, do not run forward steps.
+    if ($process->is_compensating()) {
+      $this->execute_compensation($process);
+      return;
+    }
 
-    while ($process->current_step() < $step_count) {
-      $step = $steps[$process->current_step()];
+    $reflection = new ReflectionClass($process);
+
+    while (!$process->is_steps_complete()) {
+      $step_name = $process->current_step_name();
+      if ($step_name === null) {
+        break;
+      }
+
+      $method = $reflection->getMethod($step_name);
 
       // #[Async] attribute forces reschedule before execution
-      if ($this->has_async_attribute($step)) {
+      if ($this->has_async_attribute($method)) {
         $this->schedule_continuation($process);
         return;
       }
 
       try {
-        $result = $this->execute_step($process, $step);
+        $result = $this->execute_step($process, $method);
         $query_results = $this->dispatch_queries_and_commands($result);
 
         // Check for event-based suspension
@@ -203,26 +267,29 @@ final class ProcessRunner {
           return;
         }
 
-        $next_payload = !empty($query_results) ? $query_results : $result->payload;
+        // Record checkpoint for potential compensation
+        $process->record_checkpoint($result->checkpoint);
+
+        // Determine next payload
+        $next_payload = $this->resolve_next_payload($query_results, $result->payload);
 
         // Advance to next step
-        $process->advance(
-          next_step: $process->current_step() + 1,
-          status: 'running',
-          payload: $next_payload,
-        );
+        $process->advance_step();
+        $process->advance(status: 'running', payload: $next_payload);
         $this->repository->save($process);
 
         // Check resources after each step - reschedule if exhausted
-        if ($process->current_step() < $step_count && $this->resources_exceeded()) {
+        if (!$process->is_steps_complete() && $this->resources_exceeded()) {
           $this->schedule_continuation($process);
           return;
         }
 
       } catch (Throwable $e) {
-        $process->fail($e->getMessage());
+        // Enter compensation mode and run compensations in reverse order.
+        $process->begin_compensation($e->getMessage());
         $this->repository->save($process);
-        throw $e;
+        $this->execute_compensation($process);
+        return;
       }
     }
 
@@ -232,14 +299,105 @@ final class ProcessRunner {
   }
 
   /**
+   * Execute compensations in reverse order for completed steps.
+   *
+   * Uses the LongProcess delegation methods to hide ProcessSteps internals.
+   *
+   * @throws ReflectionException|Throwable
+   */
+  private function execute_compensation(LongProcess $process): void {
+    $this->started_at = time();
+
+    $reflection = new ReflectionClass($process);
+
+    $cause = new \RuntimeException(
+      $process->failure_message()
+        ? "Process failed at {$process->failed_step()}: {$process->failure_message()}"
+        : 'Process failed'
+    );
+
+    while (!$process->is_compensation_complete()) {
+      $step_name = $process->current_undo_step();
+
+      // Defensive: if no step at this index, skip
+      if ($step_name === null) {
+        $process->advance_compensation();
+        $this->repository->save($process);
+        continue;
+      }
+
+      $comp_method_name = $process->compensation_for($step_name);
+
+      // No compensation registered: just skip this step
+      if ($comp_method_name === null) {
+        $process->advance_compensation();
+        $this->repository->save($process);
+        continue;
+      }
+
+      $method = $reflection->getMethod($comp_method_name);
+
+      // Optional: allow #[Async] on compensation methods (defer to scheduler)
+      if ($this->has_async_attribute($method)) {
+        $this->schedule_continuation($process);
+        return;
+      }
+
+      try {
+        $checkpoint = $process->checkpoint_for($step_name);
+        $result = $method->invoke($process, $cause, $checkpoint);
+      } catch (Throwable $e) {
+        $process->fail('Compensation failed: ' . $e->getMessage());
+        $this->repository->save($process);
+        throw $e;
+      }
+
+      $query_results = $this->dispatch_queries_and_commands($result);
+
+      if ($result->should_suspend()) {
+        $this->suspend_for_event($process, $result);
+        return;
+      }
+
+      $next_payload = $this->resolve_next_payload($query_results, $result->payload);
+
+      // Persist state
+      $process->advance(status: 'running', payload: $next_payload);
+      $process->advance_compensation();
+      $this->repository->save($process);
+
+      if ($this->resources_exceeded()) {
+        $this->schedule_continuation($process);
+        return;
+      }
+    }
+
+    // All compensations done: fail the process (final state)
+    $process->finish_compensation();
+    $this->repository->save($process);
+  }
+
+  /**
+   * Resolve the next payload from query results or explicit payload.
+   */
+  private function resolve_next_payload(array $query_results, ?JsonLifecycleValue $payload): ?JsonLifecycleValue {
+    // Query results take precedence if present
+    if (!empty($query_results)) {
+      // If single result and it's a JsonLifecycleValue, use it
+      if (count($query_results) === 1 && $query_results[0] instanceof JsonLifecycleValue) {
+        return $query_results[0];
+      }
+      // Otherwise, payload must be provided by user as typed VO
+    }
+
+    return $payload;
+  }
+
+  /**
    * Schedule process continuation via ActionScheduler.
    */
   private function schedule_continuation(LongProcess $process): void {
-    $process->advance(
-      next_step: $process->current_step(),
-      status: 'scheduled',
-      payload: $process->payload(),
-    );
+    $process->advance(status: 'scheduled', payload: $process->payload());
     $this->repository->save($process);
 
     as_enqueue_async_action(
@@ -275,8 +433,8 @@ final class ProcessRunner {
    */
   private function suspend_for_event(LongProcess $process, Result $result): void {
     $await = $result->await;
+
     $process->advance(
-      next_step: $process->current_step(),
       status: 'suspended',
       payload: $result->payload,
       waiting_for: $await->event_class,
@@ -297,8 +455,6 @@ final class ProcessRunner {
    * Run from a specific event handler method.
    */
   private function run_from_handler(LongProcess $process, ReflectionMethod $handler, IIntegrationEvent $event): void {
-    $steps = $this->reflect_steps($process);
-
     try {
       // Execute the handler with the event
       $result = $handler->invoke($process, $event);
@@ -310,15 +466,22 @@ final class ProcessRunner {
         return;
       }
 
-      $next_payload = !empty($query_results) ? $query_results : $result->payload;
+      $next_payload = $this->resolve_next_payload($query_results, $result->payload);
+
+      if ($process->is_compensating()) {
+        // Resume compensation after event handler
+        $process->advance(status: 'running', payload: $next_payload);
+        $this->repository->save($process);
+        $this->execute_compensation($process);
+        return;
+      }
 
       // Find handler's position in steps and continue from next
-      $handler_index = $this->find_step_index($steps, $handler->getName());
-      $process->advance(
-        next_step: $handler_index + 1,
-        status: 'running',
-        payload: $next_payload,
-      );
+      $handler_index = $process->find_step_index($handler->getName());
+
+      // Advance step cursor to after the handler
+      $process->advance_step_to($handler_index + 1);
+      $process->advance(status: 'running', payload: $next_payload);
       $this->repository->save($process);
 
       // Continue with remaining steps
@@ -351,10 +514,13 @@ final class ProcessRunner {
    * Returns methods in source declaration order.
    *
    * @return ReflectionMethod[]
+   * @throws ReflectionException
    */
   private function reflect_steps(LongProcess $process): array {
     $reflection = new ReflectionClass($process);
     $methods = [];
+
+    $compensations = $this->reflect_compensations($reflection->getName());
 
     foreach ($reflection->getMethods(ReflectionMethod::IS_PROTECTED) as $method) {
       // Skip methods from base class
@@ -364,6 +530,11 @@ final class ProcessRunner {
 
       // Skip methods that receive integration events (they're handlers, not steps)
       if ($this->is_event_handler($method)) {
+        continue;
+      }
+
+      // Skip compensation methods (they're only executed during compensation mode)
+      if (in_array($method->getName(), $compensations, true)) {
         continue;
       }
 
@@ -425,18 +596,6 @@ final class ProcessRunner {
     }
 
     return null;
-  }
-
-  /**
-   * Find step index by method name.
-   */
-  private function find_step_index(array $steps, string $method_name): int {
-    foreach ($steps as $index => $step) {
-      if ($step->getName() === $method_name) {
-        return $index;
-      }
-    }
-    return 0;
   }
 
   /**
