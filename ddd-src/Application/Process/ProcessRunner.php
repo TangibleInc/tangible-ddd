@@ -16,7 +16,7 @@ use Throwable;
  * Responsibilities:
  * - Register event types for process resume
  * - Discover steps via reflection (methods in declaration order)
- * - Execute steps and dispatch returned commands/queries
+ * - Execute steps and dispatch returned commands
  * - Suspend on AwaitEvent and persist state
  * - Resume when matching integration event fires
  * - Reschedule via ActionScheduler when resources exhausted or #[Async] step
@@ -29,6 +29,9 @@ final class ProcessRunner {
 
   /** @var array<string, bool> Tracks which events have action hooks registered */
   private array $registered_events = [];
+
+  /** @var IIntegrationEvent|null Transient - event that triggered current resume */
+  private ?IIntegrationEvent $resume_event = null;
 
   public function __construct(
     private readonly IDDDConfig $config,
@@ -134,11 +137,14 @@ final class ProcessRunner {
 
       // The awaited event arrived - complete the waiting step and move forward
       $process->advance_step();
-      $process->set_resume_event($event);
+      $this->resume_event = $event; // Store for next step to receive
       $process->advance(status: 'running', payload: $process->payload());
       $this->repository->save($process);
 
       $this->run($process);
+
+      // Clear transient state
+      $this->resume_event = null;
 
       // Only resume first matching process per event
       // (if you need fan-out, remove this return)
@@ -204,7 +210,7 @@ final class ProcessRunner {
           );
         }
 
-        $this->dispatch_side_effects($result);
+        $this->dispatch_commands($result);
 
         // Check for event-based suspension
         if ($result->should_suspend()) {
@@ -218,7 +224,7 @@ final class ProcessRunner {
         // Advance to next step
         $process->advance_step();
         $process->advance(status: 'running', payload: $result->payload);
-        $process->clear_resume_event();
+        $this->resume_event = null; // Clear after first step post-resume
         $this->repository->save($process);
 
         // Check resources after each step
@@ -283,7 +289,7 @@ final class ProcessRunner {
         $checkpoint = $process->checkpoint_for($step_name);
         $result = $method->invoke($process, $cause, $checkpoint);
 
-        $this->dispatch_side_effects($result);
+        $this->dispatch_commands($result);
 
         if ($result->should_suspend()) {
           $this->suspend_for_event($process, $result);
@@ -318,25 +324,32 @@ final class ProcessRunner {
 
   /**
    * Execute a single step method.
+   *
+   * Supports three signatures:
+   * - step(): Result - no params
+   * - step($payload): Result - receives payload
+   * - step($payload, $event): Result - receives payload + event (post-await)
    */
   private function execute_step(LongProcess $process, ReflectionMethod $step): mixed {
     $params = $step->getParameters();
+    $param_count = count($params);
 
-    if (empty($params)) {
+    if ($param_count === 0) {
       return $step->invoke($process);
     }
 
-    return $step->invoke($process, $process->payload());
+    if ($param_count === 1) {
+      return $step->invoke($process, $process->payload());
+    }
+
+    // 2+ params: pass payload and event
+    return $step->invoke($process, $process->payload(), $this->resume_event);
   }
 
   /**
-   * Dispatch commands and queries from a Result.
+   * Dispatch commands from a Result (fire-and-forget side effects).
    */
-  private function dispatch_side_effects(Result $result): void {
-    foreach ($result->queries as $query) {
-      $query->send();
-    }
-
+  private function dispatch_commands(Result $result): void {
     foreach ($result->commands as $command) {
       $command->send();
     }

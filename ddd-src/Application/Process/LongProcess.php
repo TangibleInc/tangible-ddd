@@ -3,7 +3,6 @@
 namespace TangibleDDD\Application\Process;
 
 use DateTimeImmutable;
-use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\Aggregate;
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
 
@@ -13,9 +12,15 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * Processes are defined as a series of steps (methods) that execute in declaration order.
  * Each step returns a Result that tells the runner what to do next:
  * - payload: pass data to the next step (must be JsonLifecycleValue)
- * - queries: execute these queries, pass results to next step
- * - commands: execute these commands (they send() themselves)
+ * - commands: execute these commands (fire-and-forget side effects)
  * - await: suspend until an integration event fires
+ *
+ * ## Step Signatures
+ *
+ * Steps can have different signatures depending on what they need:
+ * - `protected function step_name(): Result` - no input needed
+ * - `protected function step_name(SomePayload $payload): Result` - receives payload
+ * - `protected function step_name(?SomePayload $payload, SomeEvent $event): Result` - post-await step
  *
  * ## DI Registration
  *
@@ -23,37 +28,38 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * If your process uses AwaitEvent, declare the awaited event classes:
  *
  * ```yaml
- * App\Process\GenerateLearningPath:
+ * App\Process\OrderFulfillmentProcess:
  *   tags:
  *     - name: 'ddd.long_process'
  *       awaits:
- *         - App\Events\UserApprovedPath
+ *         - App\Events\PaymentReceived
  * ```
  *
  * ## Example
  *
  * ```php
- * class GenerateLearningPath extends LongProcess {
+ * class OrderFulfillmentProcess extends LongProcess {
  *   public function __construct(
- *     private readonly int $user_id,
+ *     private readonly int $order_id,
  *   ) {
  *     parent::__construct(null);
  *   }
  *
- *   protected function fetch_history(): Result {
- *     return new Result(payload: new HistoryPayload($this->user_id));
+ *   protected function initialize(): Result {
+ *     return new Result(payload: new OrderPayload($this->order_id));
  *   }
  *
- *   protected function request_approval(HistoryPayload $payload): Result {
+ *   protected function request_payment(OrderPayload $payload): Result {
+ *     // Dispatch payment request...
  *     return new Result(
- *       await: new AwaitEvent(UserApprovedPath::class, ['user_id' => $this->user_id])
+ *       payload: $payload,
+ *       await: new AwaitEvent(PaymentReceived::class, ['order_id' => $this->order_id])
  *     );
  *   }
  *
- *   // Next step receives the event via $this->resume_event()
- *   protected function process_approval(): Result {
- *     $event = $this->resume_event(UserApprovedPath::class);
- *     // ... use event data
+ *   // Post-await step receives both payload and the event that woke it
+ *   protected function process_payment(?OrderPayload $payload, PaymentReceived $event): Result {
+ *     // Use $event->amount, $event->transaction_id, etc.
  *     return new Result();
  *   }
  * }
@@ -84,17 +90,6 @@ abstract class LongProcess extends Aggregate {
    * Computed once at process start, then frozen.
    */
   protected ?ProcessSteps $steps = null;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Transient state (NOT persisted - only valid during current execution)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Event that triggered resume from suspension.
-   * Available to the step immediately after an await.
-   * Cleared after the step executes.
-   */
-  private ?IIntegrationEvent $resume_event = null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Accessors (framework state)
@@ -130,50 +125,6 @@ abstract class LongProcess extends Aggregate {
 
   public function updated_at(): ?DateTimeImmutable {
     return $this->updated_at;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Transient state accessors
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Get the event that triggered resume from suspension.
-   * Only available to the step immediately after an await.
-   *
-   * @template T of IIntegrationEvent
-   * @param class-string<T>|null $expected_class Optional type check
-   * @return T|IIntegrationEvent|null
-   */
-  public function resume_event(?string $expected_class = null): ?IIntegrationEvent {
-    if ($this->resume_event === null) {
-      return null;
-    }
-
-    if ($expected_class !== null && !($this->resume_event instanceof $expected_class)) {
-      throw new \RuntimeException(sprintf(
-        'Expected resume event of type %s, got %s',
-        $expected_class,
-        get_class($this->resume_event)
-      ));
-    }
-
-    return $this->resume_event;
-  }
-
-  /**
-   * Set the resume event (called by ProcessRunner).
-   * @internal
-   */
-  public function set_resume_event(IIntegrationEvent $event): void {
-    $this->resume_event = $event;
-  }
-
-  /**
-   * Clear the resume event after step execution.
-   * @internal
-   */
-  public function clear_resume_event(): void {
-    $this->resume_event = null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
