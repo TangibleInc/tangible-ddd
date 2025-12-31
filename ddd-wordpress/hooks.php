@@ -97,6 +97,20 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
  *
  * Call this from 'tgbl_{prefix}_post_compile_di' hook.
  *
+ * Tag format in services.yaml:
+ * ```yaml
+ * App\Process\MyProcess:
+ *   tags:
+ *     - name: 'ddd.long_process'
+ *       awaits:
+ *         - App\Events\SomeEvent
+ *         - App\Events\AnotherEvent
+ * ```
+ *
+ * The 'awaits' parameter declares which integration events this process
+ * may suspend for. The framework will register action hooks for these
+ * events so suspended processes can resume when they fire.
+ *
  * @param IDDDConfig $config Plugin configuration
  * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
  * @param string $tag The DI tag for process classes
@@ -120,5 +134,13 @@ function register_processes_from_container(
 
   foreach ($tagged as $class => $tags) {
     $runner->register($class);
+
+    // Register awaited events from tag parameters
+    foreach ($tags as $tag_attrs) {
+      $awaits = $tag_attrs['awaits'] ?? [];
+      foreach ($awaits as $event_class) {
+        $runner->register_event($event_class);
+      }
+    }
   }
 }

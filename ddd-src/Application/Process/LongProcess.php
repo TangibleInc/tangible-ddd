@@ -3,6 +3,7 @@
 namespace TangibleDDD\Application\Process;
 
 use DateTimeImmutable;
+use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\Aggregate;
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
 
@@ -16,7 +17,21 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * - commands: execute these commands (they send() themselves)
  * - await: suspend until an integration event fires
  *
- * Example:
+ * ## DI Registration
+ *
+ * Register your process in services.yaml with the 'ddd.long_process' tag.
+ * If your process uses AwaitEvent, declare the awaited event classes:
+ *
+ * ```yaml
+ * App\Process\GenerateLearningPath:
+ *   tags:
+ *     - name: 'ddd.long_process'
+ *       awaits:
+ *         - App\Events\UserApprovedPath
+ * ```
+ *
+ * ## Example
+ *
  * ```php
  * class GenerateLearningPath extends LongProcess {
  *   public function __construct(
@@ -33,6 +48,13 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  *     return new Result(
  *       await: new AwaitEvent(UserApprovedPath::class, ['user_id' => $this->user_id])
  *     );
+ *   }
+ *
+ *   // Next step receives the event via $this->resume_event()
+ *   protected function process_approval(): Result {
+ *     $event = $this->resume_event(UserApprovedPath::class);
+ *     // ... use event data
+ *     return new Result();
  *   }
  * }
  * ```
@@ -62,6 +84,17 @@ abstract class LongProcess extends Aggregate {
    * Computed once at process start, then frozen.
    */
   protected ?ProcessSteps $steps = null;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Transient state (NOT persisted - only valid during current execution)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Event that triggered resume from suspension.
+   * Available to the step immediately after an await.
+   * Cleared after the step executes.
+   */
+  private ?IIntegrationEvent $resume_event = null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Accessors (framework state)
@@ -97,6 +130,50 @@ abstract class LongProcess extends Aggregate {
 
   public function updated_at(): ?DateTimeImmutable {
     return $this->updated_at;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Transient state accessors
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the event that triggered resume from suspension.
+   * Only available to the step immediately after an await.
+   *
+   * @template T of IIntegrationEvent
+   * @param class-string<T>|null $expected_class Optional type check
+   * @return T|IIntegrationEvent|null
+   */
+  public function resume_event(?string $expected_class = null): ?IIntegrationEvent {
+    if ($this->resume_event === null) {
+      return null;
+    }
+
+    if ($expected_class !== null && !($this->resume_event instanceof $expected_class)) {
+      throw new \RuntimeException(sprintf(
+        'Expected resume event of type %s, got %s',
+        $expected_class,
+        get_class($this->resume_event)
+      ));
+    }
+
+    return $this->resume_event;
+  }
+
+  /**
+   * Set the resume event (called by ProcessRunner).
+   * @internal
+   */
+  public function set_resume_event(IIntegrationEvent $event): void {
+    $this->resume_event = $event;
+  }
+
+  /**
+   * Clear the resume event after step execution.
+   * @internal
+   */
+  public function clear_resume_event(): void {
+    $this->resume_event = null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
