@@ -85,6 +85,12 @@ function install_outbox_tables(IDDDConfig $config): void {
 
 /**
  * Install long processes table.
+ *
+ * Columns:
+ * - business_data: JSON with child class constructor params
+ * - steps: JSON with ProcessSteps state
+ * - payload: JSON with polymorphic format {_class, _data}
+ * - step_index + step_name: denormalized for debugging/querying
  */
 function install_process_tables(IDDDConfig $config): void {
   global $wpdb;
@@ -95,12 +101,14 @@ function install_process_tables(IDDDConfig $config): void {
   $sql = "CREATE TABLE IF NOT EXISTS `$table` (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     process_class VARCHAR(255) NOT NULL,
-    process_data LONGTEXT NOT NULL,
-    current_step INT UNSIGNED NOT NULL DEFAULT 0,
+    business_data JSON NOT NULL,
+    steps JSON NULL,
+    step_index INT UNSIGNED NOT NULL DEFAULT 0,
+    step_name VARCHAR(128) NULL,
     status ENUM('pending', 'running', 'scheduled', 'suspended', 'completed', 'failed') NOT NULL DEFAULT 'pending',
     waiting_for VARCHAR(255) NULL,
     match_criteria JSON NULL,
-    payload LONGTEXT NULL,
+    payload JSON NULL,
     correlation_id CHAR(36) NOT NULL,
     last_error TEXT NULL,
     created_at DATETIME NOT NULL,

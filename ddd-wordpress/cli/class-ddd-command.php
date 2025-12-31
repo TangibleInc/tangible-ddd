@@ -147,7 +147,8 @@ class DDD_Command {
       'ddd-src/Domain/Events/DomainEvent.php' => $this->template_domain_event( $prefix, $namespace ),
       'ddd-src/Domain/Events/IntegrationEvent.php' => $this->template_integration_event( $prefix, $namespace ),
       'ddd-src/Domain/Services/.gitkeep' => '',
-      'ddd-src/Domain/Shared/.gitkeep' => '',
+      'ddd-src/Domain/Shared/JsonLifecycleValue.php' => $this->template_json_lifecycle_value( $prefix, $namespace ),
+      'ddd-src/Domain/Shared/DirectJsonLifecycleValue.php' => $this->template_direct_json_lifecycle_value( $prefix, $namespace ),
       'ddd-src/Domain/Exceptions/.gitkeep' => '',
       'ddd-src/Domain/Repositories/.gitkeep' => '',
       'ddd-src/Application/Commands/Command.php' => $this->template_command( $prefix, $namespace ),
@@ -212,6 +213,77 @@ use TangibleDDD\\Domain\\Events\\IntegrationEvent as BaseIntegrationEvent;
 abstract class IntegrationEvent extends BaseIntegrationEvent {
   protected static function prefix(): string {
     return '{$prefix}';
+  }
+}
+
+PHP;
+  }
+
+  /**
+   * Template: JsonLifecycleValue base class with local DI renderer.
+   */
+  private function template_json_lifecycle_value( string $prefix, string $namespace ): string {
+    $di_namespace = "{$namespace}\\WordPress\\DI";
+
+    return <<<PHP
+<?php
+
+namespace {$namespace}\\Domain\\Shared;
+
+use TangibleDDD\\Domain\\Shared\\JsonLifecycleValue as BaseJsonLifecycleValue;
+use TangibleDDD\\Domain\\Shared\\IValueRenderer;
+
+use function {$di_namespace}\\di;
+
+/**
+ * Base class for {$namespace} value objects with JSON lifecycle.
+ *
+ * All JSON-serializable VOs in this plugin should extend this class
+ * to automatically use the plugin's configured IValueRenderer.
+ */
+abstract class JsonLifecycleValue extends BaseJsonLifecycleValue {
+
+  protected static function get_renderer(): ?IValueRenderer {
+    \$container = di();
+    if (\$container->has(IValueRenderer::class)) {
+      return \$container->get(IValueRenderer::class);
+    }
+    return null;
+  }
+}
+
+PHP;
+  }
+
+  /**
+   * Template: DirectJsonLifecycleValue base class.
+   */
+  private function template_direct_json_lifecycle_value( string $prefix, string $namespace ): string {
+    $di_namespace = "{$namespace}\\WordPress\\DI";
+
+    return <<<PHP
+<?php
+
+namespace {$namespace}\\Domain\\Shared;
+
+use TangibleDDD\\Domain\\Shared\\DirectJsonLifecycleValue as BaseDirectJsonLifecycleValue;
+use TangibleDDD\\Domain\\Shared\\IValueRenderer;
+
+use function {$di_namespace}\\di;
+
+/**
+ * Base class for {$namespace} directly-serializable value objects.
+ *
+ * Use this when VOs need to be created programmatically (not just from JSON).
+ */
+abstract class DirectJsonLifecycleValue extends BaseDirectJsonLifecycleValue {
+
+  protected static function get_renderer(): ?IValueRenderer {
+    \$container = di();
+    if (\$container->has(IValueRenderer::class)) {
+      return \$container->get(IValueRenderer::class);
+    }
+    return null;
   }
 }
 

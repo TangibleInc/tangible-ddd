@@ -298,97 +298,31 @@ abstract class LongProcess extends Aggregate {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Hydrate framework state from persistence.
+   * Hydrate all framework state from persistence.
+   *
+   * Called by repository after creating instance via reflection.
    */
-  public function hydrate_state(
+  public function hydrate(
     int $id,
     string $status,
     string $correlation_id,
-    ?string $waiting_for,
-    ?array $match_criteria,
-    ?string $last_error,
-    ?DateTimeImmutable $created_at,
-    ?DateTimeImmutable $updated_at,
+    ?ProcessSteps $steps = null,
+    ?JsonLifecycleValue $payload = null,
+    ?string $waiting_for = null,
+    ?array $match_criteria = null,
+    ?string $last_error = null,
+    ?DateTimeImmutable $created_at = null,
+    ?DateTimeImmutable $updated_at = null,
   ): void {
     $this->id = $id;
     $this->status = $status;
     $this->correlation_id = $correlation_id;
+    $this->steps = $steps;
+    $this->payload = $payload;
     $this->waiting_for = $waiting_for;
     $this->match_criteria = $match_criteria;
     $this->last_error = $last_error;
     $this->created_at = $created_at;
     $this->updated_at = $updated_at;
-  }
-
-  /**
-   * Hydrate ProcessSteps from persistence.
-   */
-  public function hydrate_steps(ProcessSteps $steps): void {
-    $this->steps = $steps;
-  }
-
-  /**
-   * Hydrate payload from persistence.
-   */
-  public function hydrate_payload(?JsonLifecycleValue $payload): void {
-    $this->payload = $payload;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Serialization (for PHP native serialize/unserialize)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Serialize process state for suspension.
-   * Captures all readonly promoted constructor properties from child class.
-   */
-  public function __serialize(): array {
-    $data = [];
-    $reflection = new \ReflectionClass($this);
-    $constructor = $reflection->getConstructor();
-
-    if ($constructor !== null) {
-      foreach ($constructor->getParameters() as $param) {
-        if ($param->isPromoted()) {
-          $prop = $reflection->getProperty($param->getName());
-          $prop->setAccessible(true);
-          $data[$param->getName()] = $prop->getValue($this);
-        }
-      }
-    }
-
-    // Persist ProcessSteps VO
-    if ($this->steps !== null) {
-      $data['_steps'] = $this->steps->to_json(false);
-    }
-
-    // Persist typed payload with class name
-    if ($this->payload !== null) {
-      $data['_payload'] = JsonLifecycleValue::serialize_polymorphic($this->payload);
-    }
-
-    return $data;
-  }
-
-  /**
-   * Restore process state after resumption.
-   */
-  public function __unserialize(array $data): void {
-    // Restore ProcessSteps
-    if (isset($data['_steps'])) {
-      $this->steps = ProcessSteps::from_json($data['_steps']);
-      unset($data['_steps']);
-    }
-
-    // Restore typed payload
-    if (isset($data['_payload'])) {
-      $this->payload = JsonLifecycleValue::deserialize_polymorphic($data['_payload']);
-      unset($data['_payload']);
-    }
-
-    // Restore child class properties
-    foreach ($data as $key => $value) {
-      $this->$key = $value;
-    }
   }
 }

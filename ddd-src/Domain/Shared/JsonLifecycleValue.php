@@ -33,6 +33,16 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
   }
 
   /**
+   * Get the renderer for this value object.
+   *
+   * Override in plugin-specific subclasses to return renderer from local DI container.
+   * Uses late static binding so each plugin's VOs use their own renderer.
+   */
+  protected static function get_renderer(): ?IValueRenderer {
+    return self::$renderer;
+  }
+
+  /**
    * Create an instance from JSON data.
    */
   final public static function from_json(
@@ -44,7 +54,7 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
       $data = json_decode($data, false);
     }
 
-    $renderer = $renderer ?? self::$renderer;
+    $renderer = $renderer ?? static::get_renderer();
     if ($renderer !== null) {
       $data = $renderer->render_data($data);
     }

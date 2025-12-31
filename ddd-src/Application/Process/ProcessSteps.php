@@ -68,6 +68,17 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
     );
   }
 
+  /**
+   * Override to always serialize current state (not init_state).
+   *
+   * ProcessSteps is mutable (advance(), record_checkpoint(), etc.),
+   * so we must serialize current property values, not the original JSON.
+   */
+  public function to_json(bool $as_string = true): string|stdClass|array {
+    $std = $this->serialize_properties();
+    return $as_string ? json_encode($std) : $std;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Queries
   // ─────────────────────────────────────────────────────────────────────────

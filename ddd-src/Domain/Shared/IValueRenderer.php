@@ -15,8 +15,8 @@ interface IValueRenderer {
   /**
    * Render/transform the given data.
    *
-   * @param stdClass|array $data The raw data to render
+   * @param stdClass|array|null $data The raw data to render
    * @return stdClass|array The rendered data
    */
-  public function render_data(stdClass|array $data): stdClass|array;
+  public function render_data(stdClass|array|null $data): stdClass|array;
 }
