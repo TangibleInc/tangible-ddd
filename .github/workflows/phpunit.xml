@@ -1,0 +1,80 @@
+name: PHPUnit tests
+
+on:
+  push:
+    branches: [ trunk, main ]
+  pull_request:
+    branches: [ trunk, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - name: Checkout plugin
+      uses: actions/checkout@v3
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: mysqli
+        coverage: none
+
+    - name: Install plugin dependencies
+      run: composer install --prefer-dist --no-progress
+
+    - name: Create test configuration file
+      run: |
+        # Create a minimal ttt-config.php that will be overridden by test bootstrap
+        cat > ttt-config.php << 'EOF'
+        <?php
+        // Minimal config for CI - values are overridden by test bootstrap filters
+        return array(
+          'db/backend'  => 'mysqli',
+          'db/hostname' => 'localhost',
+          'db/username' => 'root',
+          'db/password' => 'root',
+          'db/database' => 'wordpress_test',
+          'db/socket'   => null,
+          'db/port'     => null,
+          'db/prefix'   => 'wptests_ttt_',
+          'hmac/secret' => 'test-secret',
+          'js/interval' => 1000,
+        );
+        EOF
+
+    - name: Set up WordPress test suite
+      run: |
+        # Clone WordPress develop
+        git clone --depth=1 --branch=trunk https://github.com/WordPress/wordpress-develop.git /tmp/wordpress-develop
+        cd /tmp/wordpress-develop
+
+        # Install WordPress test dependencies
+        composer install --no-dev
+
+        # Create wp-tests-config.php
+        cp wp-tests-config-sample.php wp-tests-config.php
+        sed -i "s/youremptytestdbnamehere/wordpress_test/" wp-tests-config.php
+        sed -i "s/yourusernamehere/root/" wp-tests-config.php
+        sed -i "s/yourpasswordhere/root/" wp-tests-config.php
+        sed -i "s|localhost|127.0.0.1:3306|" wp-tests-config.php
+
+    - name: Run test suite
+      env:
+        WP_TESTS_DIR: /tmp/wordpress-develop/tests/phpunit
+        WP_DB_NAME: wordpress_test
+        WP_DB_USER: root
+        WP_DB_PASSWORD: root
+        WP_DB_HOST: 127.0.0.1
+      run: vendor/bin/phpunit --verbose
