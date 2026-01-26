@@ -63,21 +63,21 @@
         },
         {
             "name": "makinacorpus/query-builder",
-            "version": "1.6.3",
+            "version": "1.7.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/makinacorpus/php-query-builder.git",
-                "reference": "eb5a2a024dcb8a15b902f4048e1f546c3a2e7924"
+                "reference": "997e768515305fc62d90a470e55d3864cd3984f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/makinacorpus/php-query-builder/zipball/eb5a2a024dcb8a15b902f4048e1f546c3a2e7924",
-                "reference": "eb5a2a024dcb8a15b902f4048e1f546c3a2e7924",
+                "url": "https://api.github.com/repos/makinacorpus/php-query-builder/zipball/997e768515305fc62d90a470e55d3864cd3984f1",
+                "reference": "997e768515305fc62d90a470e55d3864cd3984f1",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
-                "symfony/polyfill-php83": "^1.29"
+                "symfony/polyfill-php83": "^1.33"
             },
             "conflict": {
                 "doctrine/dbal": "<3.7"
@@ -87,8 +87,8 @@
                 "friendsofphp/php-cs-fixer": "^3.40",
                 "phpbench/phpbench": "^1.2",
                 "phpstan/phpstan": "^1.10",
-                "phpunit/phpunit": "^10.3",
-                "ramsey/uuid": ">=3.8",
+                "phpunit/phpunit": "^10.5.60",
+                "ramsey/uuid": ">=3.9.2",
                 "symfony/uid": ">=6.0"
             },
             "type": "library",
@@ -122,9 +122,9 @@
             ],
             "support": {
                 "issues": "https://github.com/makinacorpus/php-query-builder/issues",
-                "source": "https://github.com/makinacorpus/php-query-builder/tree/1.6.3"
+                "source": "https://github.com/makinacorpus/php-query-builder/tree/1.7.1"
             },
-            "time": "2024-11-27T16:12:49+00:00"
+            "time": "2026-01-23T08:46:37+00:00"
         },
         {
             "name": "psr/container",
@@ -181,16 +181,16 @@
         },
         {
             "name": "symfony/dependency-injection",
-            "version": "v7.4.3",
+            "version": "v7.4.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/dependency-injection.git",
-                "reference": "54122901b6d772e94f1e71a75e0533bc16563499"
+                "reference": "dbbaba1cc65ccfa29106e931f68b51cd2f4b32bb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/dependency-injection/zipball/54122901b6d772e94f1e71a75e0533bc16563499",
-                "reference": "54122901b6d772e94f1e71a75e0533bc16563499",
+                "url": "https://api.github.com/repos/symfony/dependency-injection/zipball/dbbaba1cc65ccfa29106e931f68b51cd2f4b32bb",
+                "reference": "dbbaba1cc65ccfa29106e931f68b51cd2f4b32bb",
                 "shasum": ""
             },
             "require": {
@@ -241,7 +241,7 @@
             "description": "Allows you to standardize and centralize the way objects are constructed in your application",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/dependency-injection/tree/v7.4.3"
+                "source": "https://github.com/symfony/dependency-injection/tree/v7.4.4"
             },
             "funding": [
                 {
@@ -261,7 +261,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2025-12-28T10:55:46+00:00"
+            "time": "2026-01-23T12:59:19+00:00"
         },
         {
             "name": "symfony/deprecation-contracts",
@@ -1196,16 +1196,16 @@
         },
         {
             "name": "phpunit/phpunit",
-            "version": "11.5.48",
+            "version": "11.5.49",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/phpunit.git",
-                "reference": "fe3665c15e37140f55aaf658c81a2eb9030b6d89"
+                "reference": "4f1750675ba411dd6c2d5fa8a3cca07f6742020e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/fe3665c15e37140f55aaf658c81a2eb9030b6d89",
-                "reference": "fe3665c15e37140f55aaf658c81a2eb9030b6d89",
+                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/4f1750675ba411dd6c2d5fa8a3cca07f6742020e",
+                "reference": "4f1750675ba411dd6c2d5fa8a3cca07f6742020e",
                 "shasum": ""
             },
             "require": {
@@ -1226,7 +1226,7 @@
                 "phpunit/php-timer": "^7.0.1",
                 "sebastian/cli-parser": "^3.0.2",
                 "sebastian/code-unit": "^3.0.3",
-                "sebastian/comparator": "^6.3.2",
+                "sebastian/comparator": "^6.3.3",
                 "sebastian/diff": "^6.0.2",
                 "sebastian/environment": "^7.2.1",
                 "sebastian/exporter": "^6.3.2",
@@ -1277,7 +1277,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/phpunit/issues",
                 "security": "https://github.com/sebastianbergmann/phpunit/security/policy",
-                "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.48"
+                "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.49"
             },
             "funding": [
                 {
@@ -1301,7 +1301,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-01-16T16:26:27+00:00"
+            "time": "2026-01-24T16:09:28+00:00"
         },
         {
             "name": "sebastian/cli-parser",
@@ -1475,16 +1475,16 @@
         },
         {
             "name": "sebastian/comparator",
-            "version": "6.3.2",
+            "version": "6.3.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/comparator.git",
-                "reference": "85c77556683e6eee4323e4c5468641ca0237e2e8"
+                "reference": "2c95e1e86cb8dd41beb8d502057d1081ccc8eca9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/comparator/zipball/85c77556683e6eee4323e4c5468641ca0237e2e8",
-                "reference": "85c77556683e6eee4323e4c5468641ca0237e2e8",
+                "url": "https://api.github.com/repos/sebastianbergmann/comparator/zipball/2c95e1e86cb8dd41beb8d502057d1081ccc8eca9",
+                "reference": "2c95e1e86cb8dd41beb8d502057d1081ccc8eca9",
                 "shasum": ""
             },
             "require": {
@@ -1543,7 +1543,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/comparator/issues",
                 "security": "https://github.com/sebastianbergmann/comparator/security/policy",
-                "source": "https://github.com/sebastianbergmann/comparator/tree/6.3.2"
+                "source": "https://github.com/sebastianbergmann/comparator/tree/6.3.3"
             },
             "funding": [
                 {
@@ -1563,7 +1563,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2025-08-10T08:07:46+00:00"
+            "time": "2026-01-24T09:26:40+00:00"
         },
         {
             "name": "sebastian/complexity",
