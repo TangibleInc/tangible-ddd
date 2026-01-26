@@ -4,29 +4,32 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "97f84883b3cc498db0154ab798f51a95",
+    "content-hash": "ada2895ea536c9b20716b2191514ad37",
     "packages": [
         {
             "name": "league/tactician",
-            "version": "v1.2.0",
+            "version": "2.0-rc1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/tactician.git",
-                "reference": "93b2eafa4321f84164f3d3f607a32a953f3fff0b"
+                "reference": "650b5debbd56675c6c704896465a012dc47a2d86"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/tactician/zipball/93b2eafa4321f84164f3d3f607a32a953f3fff0b",
-                "reference": "93b2eafa4321f84164f3d3f607a32a953f3fff0b",
+                "url": "https://api.github.com/repos/thephpleague/tactician/zipball/650b5debbd56675c6c704896465a012dc47a2d86",
+                "reference": "650b5debbd56675c6c704896465a012dc47a2d86",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "require-dev": {
-                "mockery/mockery": "^1.3",
-                "phpunit/phpunit": "^7.5.20 || ^9.3.8",
-                "squizlabs/php_codesniffer": "^3.5.8"
+                "league/container": "^3.3",
+                "phpstan/extension-installer": "^1.0",
+                "phpstan/phpstan": "^0.11.12",
+                "phpstan/phpstan-phpunit": "^0.11.2",
+                "phpunit/phpunit": "^8.2",
+                "squizlabs/php_codesniffer": "^3.4"
             },
             "type": "library",
             "extra": {
@@ -57,9 +60,9 @@
             ],
             "support": {
                 "issues": "https://github.com/thephpleague/tactician/issues",
-                "source": "https://github.com/thephpleague/tactician/tree/v1.2.0"
+                "source": "https://github.com/thephpleague/tactician/tree/master"
             },
-            "time": "2025-12-21T18:05:37+00:00"
+            "time": "2019-07-28T13:22:27+00:00"
         },
         {
             "name": "makinacorpus/query-builder",
@@ -2394,7 +2397,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "league/tactician": 5
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
