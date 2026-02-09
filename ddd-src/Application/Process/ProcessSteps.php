@@ -59,9 +59,9 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
   protected static function from_json_instance(stdClass|array $data, ...$params): static {
     $data = (array) $data;
     return new self(
-      steps: $data['steps'] ?? [],
-      compensations: $data['compensations'] ?? [],
-      checkpoints: $data['checkpoints'] ?? [],
+      steps: (array) ($data['steps'] ?? []),
+      compensations: (array) ($data['compensations'] ?? []),
+      checkpoints: (array) ($data['checkpoints'] ?? []),
       step_index: $data['step_index'] ?? 0,
       undo_index: $data['undo_index'] ?? -1,
       failure_msg: $data['failure_msg'] ?? null,
