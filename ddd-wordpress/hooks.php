@@ -15,8 +15,47 @@ use TangibleDDD\Infra\IDDDConfig;
  * @param callable $di_getter Function that returns the DI container
  */
 function register_hooks(IDDDConfig $config, callable $di_getter): void {
+  register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
   register_outbox_hooks($config, $di_getter);
+}
+
+/**
+ * Eagerly instantiate all event handler services so their constructors
+ * register WordPress action hooks (add_action).
+ *
+ * Without this, async handlers (AsyncWordPressActionHandler) never register
+ * their callbacks, because Symfony DI is lazy — services are only constructed
+ * when explicitly requested. Action Scheduler then fails with
+ * "no callbacks are registered" when processing queued async jobs.
+ *
+ * Works by convention: consumer services.yaml registers event handlers under
+ * a namespace ending in \Application\EventHandlers\. This function finds all
+ * service IDs matching that pattern and instantiates them.
+ *
+ * @param callable $di_getter Function that returns the DI container
+ */
+function register_event_handlers(callable $di_getter): void {
+  $container = $di_getter();
+
+  if (!method_exists($container, 'getServiceIds')) {
+    return;
+  }
+
+  foreach ($container->getServiceIds() as $id) {
+    if (!str_contains($id, '\\Application\\EventHandlers\\')) continue;
+    if (!class_exists($id)) continue;
+
+    try {
+      $container->get($id);
+    } catch (\Throwable $e) {
+      error_log(sprintf(
+        '[ddd-event-handlers] Failed to boot handler %s: %s',
+        $id,
+        $e->getMessage()
+      ));
+    }
+  }
 }
 
 /**
