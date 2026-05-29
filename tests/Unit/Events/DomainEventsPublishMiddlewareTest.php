@@ -66,6 +66,32 @@ class DomainEventsPublishMiddlewareTest extends TestCase {
     $this->assertSame('my_result', $result);
   }
 
+  public function test_drains_integration_events_recorded_during_dispatch(): void {
+    // Simulate a sync handler that records a further (integration) event while
+    // the first event is being published — the transitive event must also flush.
+    $first = new FakeDomainEvent(1);
+    $cascaded = new FakeIntegrationEvent(2);
+
+    $dispatcher = $this->createMock(IDomainEventDispatcher::class);
+    $dispatcher->method('dispatch')->willReturnCallback(function (IDomainEvent $e) use ($first, $cascaded) {
+      $this->routed[] = $e;
+      if ($e === $first) {
+        // A handler fires here and writes an aggregate emitting an integration event.
+        $this->uow->record($cascaded);
+      }
+    });
+    $bus = $this->createMock(IIntegrationEventBus::class);
+    $middleware = new DomainEventsPublishMiddleware($this->uow, new EventRouter($dispatcher, $bus));
+
+    $middleware->execute(new \stdClass(), function () use ($first) {
+      $this->uow->record($first);
+    });
+
+    $this->assertCount(2, $this->routed);
+    $this->assertSame($first, $this->routed[0]);
+    $this->assertSame($cascaded, $this->routed[1]);
+  }
+
   public function test_events_not_published_when_handler_throws(): void {
     $this->expectException(\RuntimeException::class);
 

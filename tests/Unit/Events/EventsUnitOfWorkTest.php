@@ -4,6 +4,7 @@ namespace TangibleDDD\Tests\Unit\Events;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
+use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Tests\Fakes\FakeDomainEvent;
 use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
 
@@ -95,5 +96,48 @@ class EventsUnitOfWorkTest extends TestCase {
 
     $drained = $this->uow->drain();
     $this->assertCount(3, $drained);
+  }
+
+  public function test_sealed_uow_rejects_domain_events(): void {
+    $this->uow->seal();
+
+    $this->expectException(DomainEventAfterSealException::class);
+    $this->uow->record(new FakeDomainEvent());
+  }
+
+  public function test_sealed_uow_accepts_integration_events(): void {
+    $this->uow->seal();
+
+    $event = new FakeIntegrationEvent(7);
+    $this->uow->record($event);
+
+    $drained = $this->uow->drain();
+    $this->assertCount(1, $drained);
+    $this->assertSame($event, $drained[0]);
+  }
+
+  public function test_unsealed_uow_accepts_domain_events(): void {
+    $event = new FakeDomainEvent();
+    $this->uow->record($event);
+
+    $this->assertCount(1, $this->uow->drain());
+  }
+
+  public function test_reset_unseals(): void {
+    $this->uow->seal();
+    $this->uow->reset();
+
+    // Should not throw — reset returns to the open phase.
+    $this->uow->record(new FakeDomainEvent());
+    $this->assertCount(1, $this->uow->drain());
+  }
+
+  public function test_collect_from_aggregate_emitting_domain_event_throws_when_sealed(): void {
+    $this->uow->seal();
+    $aggregate = new class(null) extends \TangibleDDD\Domain\Shared\Aggregate {};
+    $aggregate->event(new FakeDomainEvent());
+
+    $this->expectException(DomainEventAfterSealException::class);
+    $this->uow->collect_from($aggregate);
   }
 }
