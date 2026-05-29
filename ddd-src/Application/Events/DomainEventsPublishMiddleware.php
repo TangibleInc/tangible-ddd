@@ -15,10 +15,18 @@ final class DomainEventsPublishMiddleware implements Middleware {
     $this->events->reset();
 
     $result = $next($command);
+    $this->events->seal();
 
-    foreach ($this->events->drain() as $event) {
-      if ($event instanceof IDomainEvent) {
-        $this->router->publish($event);
+    // Drain repeatedly: publishing a domain event dispatches its synchronous
+    // handlers, which may write aggregates and thereby record further events.
+    // Those land in the queue mid-drain and must be flushed too. The seal
+    // guarantees only integration events can be recorded past this point, so
+    // the cascade terminates at the outbox.
+    while (!empty($events = $this->events->drain())) {
+      foreach ($events as $event) {
+        if ($event instanceof IDomainEvent) {
+          $this->router->publish($event);
+        }
       }
     }
 

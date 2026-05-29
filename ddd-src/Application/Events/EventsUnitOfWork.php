@@ -2,12 +2,19 @@
 
 namespace TangibleDDD\Application\Events;
 
+use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Domain\Events\IDomainEvent;
+use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\IRecordsDomainEvents;
 
 /**
  * Per-command event buffer. Repositories should collect domain events into this,
  * and a post-handler middleware should publish and then clear it.
+ *
+ * Lifecycle: the publishing middleware resets this before the command handler
+ * runs (open phase — anything may be recorded), then seals it once the handler
+ * returns (sealed phase — only integration events may be recorded, as those are
+ * the only events handlers are permitted to emit).
  */
 class EventsUnitOfWork {
 
@@ -17,12 +24,26 @@ class EventsUnitOfWork {
   /** @var IDomainEvent[] */
   private array $published = [];
 
+  private bool $sealed = false;
+
   public function reset(): void {
     $this->queued = [];
     $this->published = [];
+    $this->sealed = false;
+  }
+
+  /**
+   * Close the open phase. After this, only integration events may be recorded;
+   * a plain domain event recorded past the seal throws.
+   */
+  public function seal(): void {
+    $this->sealed = true;
   }
 
   public function record(IDomainEvent $event): void {
+    if ($this->sealed && !$event instanceof IIntegrationEvent) {
+      throw new DomainEventAfterSealException(get_class($event));
+    }
     $this->queued[] = $event;
   }
 
