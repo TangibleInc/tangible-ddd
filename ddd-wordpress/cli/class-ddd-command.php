@@ -593,11 +593,9 @@ services:
     arguments:
       - '@TangibleDDD\\Application\\Outbox\\OutboxConfig'
 
-  TangibleDDD\\Application\\Outbox\\OutboxProcessor:
-    arguments:
-      - '@TangibleDDD\\Infra\\IOutboxRepository'
-      - '@TangibleDDD\\Application\\Outbox\\IOutboxPublisher'
-      - '@TangibleDDD\\Application\\Outbox\\OutboxConfig'
+  # Resolved by the outbox processing cron (ddd hooks.php) every tick.
+  # Autowired (~) by type so it can't drift from the constructor arg order.
+  TangibleDDD\\Application\\Outbox\\OutboxProcessor: ~
 
   # Integration Event Bus
   TangibleDDD\\Application\\Events\\IIntegrationEventBus:
