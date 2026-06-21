@@ -131,17 +131,21 @@ class TangibleDDDVersionsTest extends TestCase
         $registry = \Tangible_DDD_Versions::instance();
         $calls = 0;
 
-        // Winner is 0.3.0; consumer registers with min_required=0.5.0.
+        // Winner is 0.3.0; a consumer declares it needs >= 0.5.0.
         $registry->register('0.3.0', '/path/winner', $this->makeCallback($calls));
-        $registry->register('0.2.0', '/path/consumer', $this->makeCallback($calls), '0.5.0');
+        $registry->require_version('some-consumer', '0.5.0');
 
         $registry->initialize_latest();
 
         self::assertSame('0.3.0', $registry->winner()['version'], 'Winner must still be 0.3.0');
 
         $unmet = $registry->unmet_minimums();
-        self::assertArrayHasKey('0.2.0', $unmet, '0.2.0 registration (min=0.5.0) must appear in unmet_minimums');
-        self::assertSame('0.5.0', $unmet['0.2.0']);
+        self::assertArrayHasKey('some-consumer', $unmet, 'consumer needing 0.5.0 with winner 0.3.0 must be unmet');
+        self::assertSame('0.5.0', $unmet['some-consumer']);
+
+        // A requirement must NEVER pollute the copy pool / winner selection.
+        self::assertArrayNotHasKey('some-consumer', $registry->all_registered());
+        self::assertSame('0.3.0', $registry->latest(), 'requirement must not affect latest()');
     }
 
     /**
@@ -153,11 +157,11 @@ class TangibleDDDVersionsTest extends TestCase
         $calls = 0;
 
         $registry->register('0.3.0', '/path/winner', $this->makeCallback($calls));
-        $registry->register('0.2.0', '/path/consumer', $this->makeCallback($calls), '0.2.0');
+        $registry->require_version('some-consumer', '0.2.0');
 
         $registry->initialize_latest();
 
-        self::assertEmpty($registry->unmet_minimums(), 'min_required=0.2.0 with winner 0.3.0 must NOT be unmet');
+        self::assertEmpty($registry->unmet_minimums(), 'min 0.2.0 with winner 0.3.0 must NOT be unmet');
     }
 
     // ── (d) single-copy — that copy wins and initializes ─────────────────────

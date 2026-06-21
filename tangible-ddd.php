@@ -56,10 +56,18 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
         private static ?self $instance = null;
 
         /**
-         * version => ['path' => string, 'callback' => callable, 'min_required' => string|null]
-         * @var array<string, array{path: string, callback: callable, min_required: string|null}>
+         * version => ['path' => string, 'callback' => callable]
+         * @var array<string, array{path: string, callback: callable}>
          */
         private array $registrations = [];
+
+        /**
+         * Consumer min-version requirements, kept SEPARATE from copy
+         * registrations so a consumer can never participate in winner selection.
+         * consumer-name => minimum required ddd version.
+         * @var array<string, string>
+         */
+        private array $requirements = [];
 
         /** True once initialize_latest() has executed the winner callback. */
         private bool $initialized = false;
@@ -87,18 +95,31 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
         public function register(
             string $version,
             string $path,
-            callable $initialize,
-            ?string $min_required = null
+            callable $initialize
         ): void {
             // Same version registered twice → ignore the duplicate.
             if (isset($this->registrations[$version])) {
                 return;
             }
             $this->registrations[$version] = [
-                'path'         => $path,
-                'callback'     => $initialize,
-                'min_required' => $min_required,
+                'path'     => $path,
+                'callback' => $initialize,
             ];
+        }
+
+        /**
+         * Declare that a CONSUMER plugin needs at least $min_required ddd.
+         *
+         * Recorded separately from copy registrations — a consumer is NOT a ddd
+         * copy and must never enter winner selection (latest()/all_registered()).
+         * Surfaced post-init via unmet_minimums() for health checks.
+         *
+         * @param string $consumer     Stable consumer identifier (e.g. plugin slug).
+         * @param string $min_required Minimum ddd version the consumer needs.
+         */
+        public function require_version(string $consumer, string $min_required): void
+        {
+            $this->requirements[$consumer] = $min_required;
         }
 
         /**
@@ -166,8 +187,9 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
         }
 
         /**
-         * Registrations whose min_required > winner version (unmet consumers).
-         * @return array<string, string>  version => min_required
+         * Consumers whose required minimum exceeds the winning version.
+         * Empty before initialize_latest() runs (no winner yet to judge against).
+         * @return array<string, string>  consumer => min_required
          */
         public function unmet_minimums(): array
         {
@@ -176,10 +198,9 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
                 return [];
             }
             $unmet = [];
-            foreach ($this->registrations as $v => $r) {
-                $min = $r['min_required'];
-                if ($min !== null && version_compare($min, $winner, '>')) {
-                    $unmet[$v] = $min;
+            foreach ($this->requirements as $consumer => $min) {
+                if (version_compare($min, $winner, '>')) {
+                    $unmet[$consumer] = $min;
                 }
             }
             return $unmet;
