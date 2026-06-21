@@ -87,9 +87,10 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
     return $workflows;
   }
 
-  public function save(BehaviourWorkflow $workflow): void {
-    parent::save($workflow);
-  }
+  // save() is inherited from PersistsAggregatesRepository::save(Aggregate).
+  // PHP does not allow narrowing the parameter type in a child class, so we
+  // omit the override and rely on the parent's runtime type-check via
+  // get_aggregate_class() / TypeMismatchException.
 
   protected function persist(Aggregate $aggregate): void {
     /** @var BehaviourWorkflow $aggregate */
