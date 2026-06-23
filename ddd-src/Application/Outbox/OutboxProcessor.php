@@ -67,6 +67,15 @@ final class OutboxProcessor {
           $this->outbox->move_to_dlq($entry->event_id);
           $dlq++;
           $this->log_event('dlq', $entry, $e->getMessage());
+
+          // Additive escalation seam: consumers (e.g. tangible-datastream) can
+          // react to a dead-lettered entry without coupling the framework to any
+          // domain. Fires the prefixed hook plus a generic fallback. $entry is an
+          // OutboxEntry exposing event_type + payload (destination identification).
+          if (function_exists('do_action')) {
+            do_action($this->config->hook('outbox_dlq'), $entry);
+            do_action('tangible_ddd_outbox_dlq', $entry, $this->config->prefix());
+          }
         } else {
           $this->outbox->mark_failed($entry->event_id, $e->getMessage());
           $failed++;
