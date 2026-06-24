@@ -111,12 +111,16 @@ final class ProcessRunner {
       return; // Already finished
     }
 
-    CorrelationContext::init($process->correlation_id());
+    // Scope the continuation to the process's correlation so it (and any
+    // commands it dispatches) stay in the original trace, AND so the context is
+    // cleared on exit — Action Scheduler reuses one worker for many callbacks,
+    // and a bare init() here would leak this correlation into the next one.
+    CorrelationContext::with($process->correlation_id(), function () use ($process) {
+      $process->advance(status: 'running', payload: $process->payload());
+      $this->repository->save($process);
 
-    $process->advance(status: 'running', payload: $process->payload());
-    $this->repository->save($process);
-
-    $this->run($process);
+      $this->run($process);
+    });
   }
 
   /**
@@ -133,18 +137,19 @@ final class ProcessRunner {
         continue;
       }
 
-      CorrelationContext::init($process->correlation_id());
+      // Scope the resume to the process's correlation (see continue_scheduled).
+      CorrelationContext::with($process->correlation_id(), function () use ($process, $event) {
+        // The awaited event arrived - complete the waiting step and move forward
+        $process->advance_step();
+        $this->resume_event = $event; // Store for next step to receive
+        $process->advance(status: 'running', payload: $process->payload());
+        $this->repository->save($process);
 
-      // The awaited event arrived - complete the waiting step and move forward
-      $process->advance_step();
-      $this->resume_event = $event; // Store for next step to receive
-      $process->advance(status: 'running', payload: $process->payload());
-      $this->repository->save($process);
+        $this->run($process);
 
-      $this->run($process);
-
-      // Clear transient state
-      $this->resume_event = null;
+        // Clear transient state
+        $this->resume_event = null;
+      });
 
       // Only resume first matching process per event
       // (if you need fan-out, remove this return)

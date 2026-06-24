@@ -140,4 +140,45 @@ class ProcessRunnerTest extends TestCase {
 
     $this->assertSame('my-correlation', $process->correlation_id());
   }
+
+  /**
+   * REGRESSION (known bug): ProcessRunner::continue_scheduled() / resume_on_event()
+   * call CorrelationContext::init($process->correlation_id()) but the file has NO
+   * reset. Action Scheduler reuses one PHP worker for many actions, so a resumed
+   * process leaves its correlation in static state — bleeding into whatever
+   * unrelated callback the worker runs next (false trace attribution).
+   *
+   * Expected after the scoped (CorrelationContext::with) fix: the process run
+   * clears its correlation on exit, so a fresh callback starts clean. Today this
+   * FAILS — peek() returns the leaked process correlation.
+   */
+  public function test_resumed_process_does_not_leak_correlation_to_next_callback(): void {
+    // Set up a process parked as 'scheduled' mid-execution, like an AS-deferred step.
+    $process = new FakeThreeStepProcess();
+    $steps = \TangibleDDD\Application\Process\ProcessSteps::from_reflection(
+      array_map(
+        fn($name) => new \ReflectionMethod($process, $name),
+        ['initialize', 'process_data', 'finalize']
+      ),
+      []
+    );
+    $process->start('leaky-proc-correlation', $steps);
+    $process->advance_step();
+    $process->advance(status: 'scheduled', payload: new FakePayload('initialized', 1));
+    $this->repo->save($process);
+
+    // Simulate a fresh AS worker callback: no correlation set going in.
+    CorrelationContext::reset();
+    $this->assertNull(CorrelationContext::peek(), 'precondition: worker starts clean');
+
+    // The worker runs the deferred process continuation.
+    $this->runner->continue_scheduled($process->get_id());
+
+    // BUG: continuation init'd 'leaky-proc-correlation' and never reset it, so it
+    // now leaks into the next unrelated callback this worker handles.
+    $this->assertNull(
+      CorrelationContext::peek(),
+      'process continuation must not leak correlation into the next AS callback'
+    );
+  }
 }

@@ -18,6 +18,24 @@ final class CorrelationContext {
   private static int $sequence = 0;
 
   /**
+   * Stack of active correlation scopes (most recent on top).
+   *
+   * Each frame is a correlation id. The stack gates teardown: the context is
+   * only fully cleared when the OUTERMOST scope exits (stack empties). This is
+   * what lets a boundary that wraps work — a LongProcess run, an integration
+   * callback — keep its correlation alive across the commands it dispatches,
+   * instead of the first command's exit wiping it.
+   *
+   * Today a frame is just an id (used for depth + parent-correlation restore).
+   * It is intentionally a stack, not a counter, so frames can later carry a
+   * span id + kind (command|process|workflow) for parent/causation edges
+   * without reworking this class.
+   *
+   * @var string[]
+   */
+  private static array $scope = [];
+
+  /**
    * Initialize the correlation context.
    *
    * @param string|null $correlation_id If provided, uses this ID (for resuming chains).
@@ -84,12 +102,67 @@ final class CorrelationContext {
   }
 
   /**
+   * Enter a correlation scope.
+   *
+   * If $correlation_id is given, that id becomes current (restore/resume — e.g.
+   * a LongProcess continuation or an integration callback). If omitted, the
+   * current id is inherited, or a fresh one generated when none exists (a new
+   * top-level command). Pushes a frame so a matching leave() can unwind.
+   */
+  public static function enter(?string $correlation_id = null): void {
+    $id = $correlation_id ?? self::$correlation_id ?? self::generate_id();
+    self::$scope[] = $id;
+    self::$correlation_id = $id;
+  }
+
+  /**
+   * Leave the current correlation scope.
+   *
+   * Pops one frame. If that was the outermost frame the whole context is reset;
+   * otherwise the parent scope's correlation id is restored. Command-local state
+   * (command_id) is cleared on every leave so it never bleeds between siblings.
+   */
+  public static function leave(): void {
+    array_pop(self::$scope);
+    self::$command_id = null;
+
+    if (self::$scope === []) {
+      self::reset();
+      return;
+    }
+
+    self::$correlation_id = self::$scope[array_key_last(self::$scope)];
+  }
+
+  /**
+   * Run $fn inside a correlation scope, guaranteeing the scope is left even on
+   * throw. The canonical way for a boundary (process runner, integration
+   * callback) to wrap the work it dispatches.
+   */
+  public static function with(string $correlation_id, callable $fn): mixed {
+    self::enter($correlation_id);
+    try {
+      return $fn();
+    } finally {
+      self::leave();
+    }
+  }
+
+  /**
+   * Current scope depth (0 = no active scope).
+   */
+  public static function depth(): int {
+    return count(self::$scope);
+  }
+
+  /**
    * Reset the context (should be called after command completes).
    */
   public static function reset(): void {
     self::$correlation_id = null;
     self::$command_id = null;
     self::$sequence = 0;
+    self::$scope = [];
   }
 
   /**
