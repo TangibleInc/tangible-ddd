@@ -66,8 +66,21 @@ function extract_correlation(array $params): array {
       CorrelationContext::set_sequence((int) $wrapped['__sequence']);
     }
 
+    // The triggering event is the causation of whatever command this handler
+    // dispatches (choreography). Stash it before stripping the transport keys —
+    // this is the __event_id that used to be discarded here.
+    if (isset($wrapped['__event_id'])) {
+      CorrelationContext::set_causation((string) $wrapped['__event_id'], 'integration_event');
+    }
+
     unset($wrapped['__correlation_id'], $wrapped['__sequence'], $wrapped['__event_id']);
-    return array_values($wrapped);
+
+    // Positional list payloads (the original contract — every existing consumer,
+    // e.g. all of tangible-cred) spread as positional args. Associative payloads
+    // pass through intact as a single arg, instead of being silently reindexed
+    // to positional by array_values(). Gated on array_is_list() so the list case
+    // is byte-for-byte unchanged — backwards compatible.
+    return array_is_list($wrapped) ? array_values($wrapped) : [$wrapped];
   }
 
   return $params;

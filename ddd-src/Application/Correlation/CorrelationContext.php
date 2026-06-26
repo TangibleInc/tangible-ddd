@@ -18,6 +18,22 @@ final class CorrelationContext {
   private static int $sequence = 0;
 
   /**
+   * Causation — the direct parent that caused the NEXT command to be dispatched.
+   *
+   * Distinct from correlation: correlation_id is the whole-trace id (the root);
+   * causation is the single parent edge (one hop up). By doctrine the parent is
+   * one of exactly two coordination modes:
+   *   - 'integration_event' (choreography) → causation_id = the event_id
+   *   - 'long_process'      (orchestration) → causation_id = the process_id
+   * Root commands (user/cli/system) have no causation — both stay null.
+   *
+   * Set by the causer (integration boundary / ProcessRunner) immediately before
+   * dispatch; consumed (cleared) once the command it precedes records it.
+   */
+  private static ?string $causation_id = null;
+  private static ?string $causation_type = null;
+
+  /**
    * Stack of active correlation scopes (most recent on top).
    *
    * Each frame is a correlation id. The stack gates teardown: the context is
@@ -78,6 +94,34 @@ final class CorrelationContext {
    */
   public static function command_id(): ?string {
     return self::$command_id;
+  }
+
+  /**
+   * Stamp the causation of the next command to be dispatched.
+   *
+   * @param string $causation_id   parent span id (event_id or process_id)
+   * @param string $causation_type 'integration_event' | 'long_process'
+   */
+  public static function set_causation(string $causation_id, string $causation_type): void {
+    self::$causation_id = $causation_id;
+    self::$causation_type = $causation_type;
+  }
+
+  public static function causation_id(): ?string {
+    return self::$causation_id;
+  }
+
+  public static function causation_type(): ?string {
+    return self::$causation_type;
+  }
+
+  /**
+   * Consume the causation. Called after one command records it so it never
+   * bleeds into a sibling or the worker's next command.
+   */
+  public static function clear_causation(): void {
+    self::$causation_id = null;
+    self::$causation_type = null;
   }
 
   /**
@@ -162,6 +206,8 @@ final class CorrelationContext {
     self::$correlation_id = null;
     self::$command_id = null;
     self::$sequence = 0;
+    self::$causation_id = null;
+    self::$causation_type = null;
     self::$scope = [];
   }
 
