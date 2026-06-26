@@ -82,7 +82,7 @@ final class FakeOutboxRepository implements IOutboxRepository {
     $this->failed[$event_id] = $error;
   }
 
-  public function move_to_dlq(string $event_id): void {
+  public function move_to_dlq(string $event_id, string $final_error = ''): void {
     $this->dlq[] = $event_id;
   }
 

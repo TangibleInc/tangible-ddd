@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Outbox;
 
+use TangibleDDD\Application\Infrastructure\OutboxAttemptFailed;
+use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IOutboxRepository;
 use Throwable;
@@ -64,22 +66,26 @@ final class OutboxProcessor {
         $new_attempts = $entry->attempts + 1;
 
         if ($new_attempts >= $entry->max_attempts) {
-          $this->outbox->move_to_dlq($entry->event_id);
+          // Pass the TRUE final error: the final attempt skips mark_failed, so
+          // the row's last_error is the prior attempt's. This is the exception
+          // that actually caused the dead-letter.
+          $this->outbox->move_to_dlq($entry->event_id, $e->getMessage());
           $dlq++;
           $this->log_event('dlq', $entry, $e->getMessage());
 
-          // Additive escalation seam: consumers (e.g. tangible-datastream) can
-          // react to a dead-lettered entry without coupling the framework to any
-          // domain. Fires the prefixed hook plus a generic fallback. $entry is an
-          // OutboxEntry exposing event_type + payload (destination identification).
-          if (function_exists('do_action')) {
-            do_action($this->config->hook('outbox_dlq'), $entry);
-            do_action('tangible_ddd_outbox_dlq', $entry, $this->config->prefix());
-          }
+          // Infrastructure event — terminal failure, out-of-band. Carries the
+          // dead event's correlation + event_id so a listener (e.g. escalation)
+          // rejoins the original trace. Fires {prefix}_outbox_dlq + the global
+          // tangible_ddd_outbox_dlq (see InfrastructureEvent::dispatch).
+          (new OutboxDeadLettered($entry, $e->getMessage()))->dispatch($this->config);
         } else {
           $this->outbox->mark_failed($entry->event_id, $e->getMessage());
           $failed++;
           $this->log_event('failed', $entry, $e->getMessage());
+
+          // Infrastructure event — transient retry-pressure signal (metrics),
+          // not an alert. Event stays queued for the next attempt.
+          (new OutboxAttemptFailed($entry, $new_attempts, $entry->max_attempts, $e->getMessage()))->dispatch($this->config);
         }
       }
     }

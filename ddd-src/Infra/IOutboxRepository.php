@@ -59,7 +59,7 @@ interface IOutboxRepository {
   /**
    * Move event to Dead Letter Queue after max attempts exceeded.
    */
-  public function move_to_dlq(string $event_id): void;
+  public function move_to_dlq(string $event_id, string $final_error = ''): void;
 
   /**
    * Release locks held by crashed/stuck workers.

@@ -181,11 +181,16 @@ class OutboxRepository implements IOutboxRepository {
     );
   }
 
-  public function move_to_dlq(string $event_id): void {
+  public function move_to_dlq(string $event_id, string $final_error = ''): void {
     global $wpdb;
 
     $entry = $this->find_by_event_id($event_id);
     if (!$entry) return;
+
+    // Prefer the real final error passed by the processor; fall back to the
+    // row's last_error only when none was supplied. The final attempt skips
+    // mark_failed, so last_error alone is the prior attempt's (stale).
+    $final_error = $final_error !== '' ? $final_error : (string) $entry->last_error;
 
     // Insert into DLQ
     $wpdb->insert(
@@ -200,7 +205,7 @@ class OutboxRepository implements IOutboxRepository {
         'payload' => wp_json_encode($entry->payload, JSON_UNESCAPED_SLASHES),
         'attempts' => $entry->attempts,
         'error_history' => wp_json_encode($entry->error_history),
-        'final_error' => $entry->last_error,
+        'final_error' => $final_error,
         'moved_at' => gmdate('Y-m-d H:i:s'),
         'blog_id' => $entry->blog_id,
       ]

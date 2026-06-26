@@ -5,6 +5,7 @@ namespace TangibleDDD\Application\Process;
 use ReflectionClass;
 use ReflectionMethod;
 use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
@@ -181,6 +182,7 @@ final class ProcessRunner {
       if ($process->status() !== 'failed') {
         $process->fail($e->getMessage());
         $this->repository->save($process);
+        (new ProcessFailed($process, $e->getMessage()))->dispatch($this->config);
       }
       throw $e;
     }
@@ -215,7 +217,7 @@ final class ProcessRunner {
           );
         }
 
-        $this->dispatch_commands($result);
+        $this->dispatch_commands($result, $process);
 
         // Check for event-based suspension
         if ($result->should_suspend()) {
@@ -294,7 +296,7 @@ final class ProcessRunner {
         $checkpoint = $process->checkpoint_for($step_name);
         $result = $method->invoke($process, $cause, $checkpoint);
 
-        $this->dispatch_commands($result);
+        $this->dispatch_commands($result, $process);
 
         if ($result->should_suspend()) {
           $this->suspend_for_event($process, $result);
@@ -314,6 +316,7 @@ final class ProcessRunner {
         // Compensation failed - mark as failed and re-throw
         $process->fail('Compensation failed: ' . $e->getMessage());
         $this->repository->save($process);
+        (new ProcessFailed($process, 'Compensation failed: ' . $e->getMessage()))->dispatch($this->config);
         throw $e;
       }
     }
@@ -354,9 +357,17 @@ final class ProcessRunner {
   /**
    * Dispatch commands from a Result (fire-and-forget side effects).
    */
-  private function dispatch_commands(Result $result): void {
+  private function dispatch_commands(Result $result, LongProcess $process): void {
     foreach ($result->commands as $command) {
-      $command->send();
+      // Orchestration: the saga step IS the causer of these commands (dispatched
+      // in-line, no event hop). Stamp the process as the causation; clear after
+      // each so it can't bleed to a non-process command on the same worker.
+      CorrelationContext::set_causation((string) $process->get_id(), 'long_process');
+      try {
+        $command->send();
+      } finally {
+        CorrelationContext::clear_causation();
+      }
     }
   }
 

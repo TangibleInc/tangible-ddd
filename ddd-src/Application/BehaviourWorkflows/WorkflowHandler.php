@@ -4,7 +4,10 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
 
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
 use TangibleDDD\Application\Commands\ICommand;
+use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Infrastructure\WorkflowFailed;
 use TangibleDDD\Application\Process\RescheduleAware;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
@@ -35,6 +38,10 @@ abstract class WorkflowHandler implements ICommandHandler {
   public function __construct(
     protected readonly IBehaviourWorkflowRepository $workflow_repo,
     protected readonly IWorkItemRepository $item_repo,
+    // Optional + distinctly named so it can't collide with a subclass's own
+    // $config property. Existing subclasses (parent::__construct(repo, item_repo))
+    // are unaffected; pass it to enable WorkflowFailed infrastructure events.
+    protected readonly ?IDDDConfig $infra_config = null,
   ) {}
 
   public function handle(ICommand $command): void {
@@ -116,6 +123,13 @@ abstract class WorkflowHandler implements ICommandHandler {
 
       if ($result->status === BehaviourExecutionStatus::failed) {
         $workflow->fail();
+        // Infrastructure event — observability signal. Correlation comes from
+        // the active context (the workflow runs inside its driving command); no
+        // causation (a workflow is a coordinator, not a causer). Opt-in: only
+        // when the consumer wired IDDDConfig into the handler.
+        if ($this->infra_config !== null) {
+          (new WorkflowFailed($workflow, CorrelationContext::peek()))->dispatch($this->infra_config);
+        }
         break;
       }
     }
