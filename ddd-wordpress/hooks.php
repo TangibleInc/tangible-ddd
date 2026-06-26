@@ -18,6 +18,7 @@ function register_hooks(IDDDConfig $config, callable $di_getter): void {
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
   register_outbox_hooks($config, $di_getter);
+  register_migration_hooks($config);
 }
 
 /**

@@ -10,6 +10,12 @@ use TangibleDDD\Infra\IDDDConfig;
  * Call this on plugin activation.
  */
 function install_tables(IDDDConfig $config): void {
+  // dbDelta creates fresh tables AND heals additive schema changes. Loaded here
+  // because install_tables may be invoked from activation / CLI / migration.
+  if (!function_exists('dbDelta')) {
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+  }
+
   install_outbox_tables($config);
   install_process_tables($config);
   install_command_audit_table($config);
@@ -27,8 +33,9 @@ function install_outbox_tables(IDDDConfig $config): void {
   $dlq_table = $wpdb->prefix . $config->prefix() . '_integration_dlq';
   $charset = $wpdb->get_charset_collate();
 
-  $outbox_sql = "CREATE TABLE IF NOT EXISTS `$outbox_table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $outbox_sql = "CREATE TABLE $outbox_table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     event_id CHAR(36) NOT NULL,
     event_type VARCHAR(255) NOT NULL,
     integration_action VARCHAR(255) NOT NULL,
@@ -61,8 +68,9 @@ function install_outbox_tables(IDDDConfig $config): void {
     KEY idx_blog_status (blog_id, status)
   ) $charset";
 
-  $dlq_sql = "CREATE TABLE IF NOT EXISTS `$dlq_table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $dlq_sql = "CREATE TABLE $dlq_table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     outbox_id BIGINT UNSIGNED NOT NULL,
     event_id CHAR(36) NOT NULL,
     event_type VARCHAR(255) NOT NULL,
@@ -79,8 +87,8 @@ function install_outbox_tables(IDDDConfig $config): void {
     KEY idx_correlation (correlation_id)
   ) $charset";
 
-  $wpdb->query($outbox_sql);
-  $wpdb->query($dlq_sql);
+  dbDelta($outbox_sql);
+  dbDelta($dlq_sql);
 }
 
 /**
@@ -98,8 +106,9 @@ function install_process_tables(IDDDConfig $config): void {
   $table = $wpdb->prefix . $config->prefix() . '_long_processes';
   $charset = $wpdb->get_charset_collate();
 
-  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     process_class VARCHAR(255) NOT NULL,
     business_data JSON NOT NULL,
     steps JSON NULL,
@@ -121,7 +130,7 @@ function install_process_tables(IDDDConfig $config): void {
     KEY idx_blog_status (blog_id, status)
   ) $charset";
 
-  $wpdb->query($sql);
+  dbDelta($sql);
 }
 
 /**
@@ -133,14 +142,17 @@ function install_command_audit_table(IDDDConfig $config): void {
   $table = $config->table('command_audit');
   $charset = $wpdb->get_charset_collate();
 
-  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     command_id CHAR(32) NOT NULL,
     correlation_id CHAR(36) NULL,
     command_name VARCHAR(255) NOT NULL,
     status VARCHAR(16) NOT NULL,
     source VARCHAR(16) NOT NULL,
     source_id VARCHAR(64) NOT NULL DEFAULT '',
+    causation_id VARCHAR(64) NULL,
+    causation_type VARCHAR(32) NULL,
     blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
     duration_ms INT UNSIGNED NOT NULL DEFAULT 0,
     peak_memory_bytes INT UNSIGNED NOT NULL DEFAULT 0,
@@ -156,10 +168,11 @@ function install_command_audit_table(IDDDConfig $config): void {
     KEY idx_command_name (command_name),
     KEY idx_status (status),
     KEY idx_blog_started (blog_id, started_at),
-    KEY idx_source (source, source_id)
+    KEY idx_source (source, source_id),
+    KEY idx_causation (causation_id)
   ) $charset";
 
-  $wpdb->query($sql);
+  dbDelta($sql);
 }
 
 /**
@@ -179,8 +192,9 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
   $table = $wpdb->prefix . $config->prefix() . '_behaviour_workflows';
   $charset = $wpdb->get_charset_collate();
 
-  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     ref_id BIGINT UNSIGNED NOT NULL,
     ref_type VARCHAR(64) NOT NULL,
     root_workflow_id BIGINT UNSIGNED NULL,
@@ -201,7 +215,7 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
     KEY idx_blog_status (blog_id, is_complete, is_failed)
   ) $charset";
 
-  $wpdb->query($sql);
+  dbDelta($sql);
 }
 
 /**
@@ -217,8 +231,9 @@ function install_behaviour_workflow_item_tables(IDDDConfig $config): void {
   $charset = $wpdb->get_charset_collate();
 
   // Note: item_key is limited to 191 to stay safe with older utf8mb4 index limits.
-  $sql = "CREATE TABLE IF NOT EXISTS `$table` (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
     workflow_id BIGINT UNSIGNED NOT NULL,
     behaviour_idx INT UNSIGNED NOT NULL,
     phase INT UNSIGNED NOT NULL DEFAULT 1,
@@ -235,7 +250,7 @@ function install_behaviour_workflow_item_tables(IDDDConfig $config): void {
     KEY idx_blog_workflow (blog_id, workflow_id)
   ) $charset";
 
-  $wpdb->query($sql);
+  dbDelta($sql);
 }
 
 /**

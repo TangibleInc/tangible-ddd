@@ -308,11 +308,13 @@ if (!function_exists('tangible_ddd_initialize_0_2_0_dev')) {
             'ddd-src/Domain/Shared/assert.php',
             'ddd-wordpress/db.php',
             'ddd-wordpress/tables.php',
+            'ddd-wordpress/migrations.php',
             'ddd-wordpress/hooks.php',
             'ddd-wordpress/audit.php',
             'ddd-wordpress/locking.php',
             'ddd-wordpress/secret.php',
             'ddd-wordpress/integration-events.php',
+            'ddd-wordpress/infrastructure-events.php',
         ];
 
         foreach ($procedural as $rel) {
