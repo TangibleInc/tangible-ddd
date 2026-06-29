@@ -326,6 +326,49 @@ if (!function_exists('tangible_ddd_initialize_0_2_0_dev')) {
     }
 }
 
+// ─── Self-consumer boot ───────────────────────────────────────────────────────
+// tangible-ddd hosts the DDD stack for its OWN operational commands
+// (replay / discard / retry / purge), self-auditing into wp_tangible_ddd_*.
+// Runs at plugins_loaded pri 20 (after the winner initialises at pri 1). Guarded,
+// once, and defensive: a failure here must never fatal the consumers' site.
+if (!function_exists('tangible_ddd_self_consume')) {
+
+    function tangible_ddd_self_consume(): void
+    {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+
+        if (!class_exists('Tangible_DDD_Versions', false)) {
+            return;
+        }
+        $winner = Tangible_DDD_Versions::instance()->winner();
+        if ($winner === null) {
+            return;
+        }
+
+        try {
+            require_once $winner['path'] . '/ddd-wordpress/self/index.php';
+
+            // Install/heal the framework's own six tables on admin_init
+            // (idempotent, version-gated via the per-prefix schema option).
+            if (function_exists('TangibleDDD\\WordPress\\register_migration_hooks')) {
+                \TangibleDDD\WordPress\register_migration_hooks(\TangibleDDD\Infra\Config::for_wordpress());
+            }
+        } catch (\Throwable $e) {
+            if (function_exists('error_log')) {
+                error_log('[tangible-ddd] self-consume boot failed: ' . $e->getMessage());
+            }
+        }
+    }
+
+    if (function_exists('add_action')) {
+        add_action('plugins_loaded', 'tangible_ddd_self_consume', 20, 0);
+    }
+}
+
 // ─── Immediate init for non-WP contexts (unit tests, CLI scripts) ─────────────
 // When add_action does not exist there is no hook system to fire registration +
 // initialization on.  The register call above already ran; now initialize so that

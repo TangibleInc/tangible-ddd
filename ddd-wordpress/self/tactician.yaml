@@ -1,0 +1,30 @@
+# TangibleDDD self-consumer Tactician config.
+# FQNs match the installed league/tactician layout (Handler\Mapping\...), mirroring
+# the working consumer config in tangible-datastream/includes/di/tactician.yaml.
+services:
+  League\Tactician\CommandBus:
+    public: true
+    arguments:
+      - '@TangibleDDD\Application\Logging\CommandAuditMiddleware'
+      - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
+      - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
+      - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+      - '@tactician.middleware.command_handler'
+
+  tactician.middleware.command_handler:
+    class: League\Tactician\Handler\CommandHandlerMiddleware
+    arguments:
+      - '@service_container'
+      - '@tactician.command_to_handler_mapping'
+
+  tactician.command_to_handler_mapping:
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention
+    arguments:
+      - '@tactician.class_name_inflector'
+      - '@tactician.method_name_inflector'
+
+  tactician.class_name_inflector:
+    class: TangibleDDD\WordPress\SelfConsumer\HandlerClassNameInflector
+
+  tactician.method_name_inflector:
+    class: League\Tactician\Handler\Mapping\MethodName\Handle

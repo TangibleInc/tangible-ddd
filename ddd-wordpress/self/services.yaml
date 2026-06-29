@@ -1,0 +1,27 @@
+# TangibleDDD self-consumer services.
+#
+# tangible-ddd consuming its OWN framework: imports the framework service
+# template, binds IDDDConfig to the self Config (prefix 'tangible_ddd'), and
+# auto-registers the framework-owned operational command handlers.
+imports:
+  - { resource: '../di/services.yaml' }
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: true
+
+  # Bind the framework's own config as the IDDDConfig (prefix 'tangible_ddd').
+  TangibleDDD\Infra\Config:
+    factory: ['TangibleDDD\Infra\Config', 'for_wordpress']
+
+  TangibleDDD\Infra\IDDDConfig:
+    alias: TangibleDDD\Infra\Config
+
+  # Auto-register operational command handlers (interfaces/abstracts are skipped).
+  TangibleDDD\Application\CommandHandlers\:
+    resource: '../../ddd-src/Application/CommandHandlers/'
+    exclude: '../../ddd-src/Application/CommandHandlers/ICommandHandler.php'
+    public: true
+    shared: false
