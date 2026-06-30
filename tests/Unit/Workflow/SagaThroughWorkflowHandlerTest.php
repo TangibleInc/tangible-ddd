@@ -467,68 +467,30 @@ class SagaThroughWorkflowHandlerTest extends TestCase
         $p2 = $this->item_repo->get_for_step($wf_id, 0, 2);
         $p3 = $this->item_repo->get_for_step($wf_id, 0, 3);
 
-        // Phase-1 item: execute_one returned cancelled → apply_result_to_item maps to skipped
+        // Phase-1 item: execute_one returned cancelled → now PRESERVED as WorkItemStatus::cancelled
+        // (framework fix: added WorkItemStatus::cancelled + the cancelled round-trip in
+        // status_from_result / aggregate_status / result_from_item_status).
         $this->assertSame(
-            WorkItemStatus::skipped,
+            WorkItemStatus::cancelled,
             $p1[0]->status,
-            '[A5] Phase-1 item: cancelled from execute_one → WorkItemStatus::skipped in ledger'
+            '[A5] Phase-1 item: cancelled from execute_one → WorkItemStatus::cancelled in ledger'
         );
 
-        // ── The pivotal question: were phases 2 and 3 executed? ───────────────
-        //
-        // CORRECT behaviour (if cancelled worked as a "strong skip" through the ledger):
-        //   $phases_executed === [1]  (phases 2+3 skipped; maybe_advance called complete_saga)
-        //
-        // ACTUAL behaviour (ledger washes cancelled → completed → phase just increments):
-        //   $phases_executed === [1, 2, 3]  (all phases ran; cancelled intent was lost)
-
-        $cancelled_skipped_phases_2_and_3 = !in_array(2, $phases_executed, true)
-                                         && !in_array(3, $phases_executed, true);
-
-        if ($cancelled_skipped_phases_2_and_3) {
-            // GREEN sub-path: cancelled propagated correctly through the ledger
-            $this->assertSame(
-                [1],
-                $phases_executed,
-                '[A5 GREEN] cancelled correctly skipped phases 2+3'
-            );
-            // Workflow should be complete (complete_saga was called)
-            $this->assertTrue(
-                $wf->is_complete(),
-                '[A5 GREEN] Workflow must be complete after saga cancelled'
-            );
-        } else {
-            // RED sub-path: cancelled was washed to completed by the ledger;
-            // phases 2+3 were executed even though phase 1 cancelled.
-            $this->assertSame(
-                [1, 2, 3],
-                $phases_executed,
-                '[A5 RED] FRAMEWORK GAP: cancelled from execute_one is lost; phases 2+3 executed'
-            );
-
-            // The workflow is still complete (phases advanced normally), but for the
-            // wrong reason: it ran all phases instead of skipping after cancel.
-            $this->assertTrue(
-                $wf->is_complete(),
-                '[A5 RED] Workflow completed (but ran all phases — cancelled was ignored)'
-            );
-
-            // Explicitly fail to mark this as RED — the framework gap is confirmed.
-            $this->fail(
-                '[A5] FRAMEWORK GAP CONFIRMED: execute_one returning cancelled is converted to ' .
-                'WorkItemStatus::skipped by apply_result_to_item(), then aggregate_status() resolves ' .
-                'to done, and result_from_item_status(done) returns BehaviourExecutionStatus::completed. ' .
-                'maybe_advance(completed) on a saga increments current_phase instead of calling ' .
-                'complete_saga(). Phases executed: [' . implode(', ', $phases_executed) . ']. ' .
-                'MINIMAL FIX: WorkflowHandler::resolve_step_state() (or result_from_item_status()) ' .
-                'must detect that ALL items are skipped via a "cancelled" result and return ' .
-                'BehaviourExecutionStatus::cancelled instead of completed. One approach: track the ' .
-                'highest-priority per-item execution status alongside the ledger status, or add a ' .
-                'WorkItemStatus::cancelled and map execute_one(cancelled) to it. Then aggregate_status() ' .
-                'can return cancelled, and result_from_item_status(cancelled) returns ' .
-                'BehaviourExecutionStatus::cancelled for correct saga abort semantics.'
-            );
-        }
+        // cancelled now ABORTS the saga: result_from_item_status(cancelled) →
+        // BehaviourExecutionStatus::cancelled → maybe_advance() calls complete_saga()
+        // instead of incrementing the phase. So only phase 1 ran; phases 2+3 are skipped.
+        $this->assertSame(
+            [1],
+            $phases_executed,
+            '[A5] cancelled aborts the saga — phases 2 and 3 are not executed'
+        );
+        $this->assertTrue(
+            $wf->is_complete(),
+            '[A5] Workflow is complete (saga aborted) after a cancelled phase'
+        );
+        // No work items were ever generated for the skipped phases.
+        $this->assertCount(0, $p2, '[A5] no phase-2 items generated after cancel');
+        $this->assertCount(0, $p3, '[A5] no phase-3 items generated after cancel');
     }
 
     // ══════════════════════════════════════════════════════════════════════════

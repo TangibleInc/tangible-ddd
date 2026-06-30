@@ -439,6 +439,7 @@ abstract class WorkflowHandler implements ICommandHandler {
       WorkItemStatus::failed  => $this->build_result($config, $phase, false, 'Work items failed', BehaviourExecutionStatus::failed),
       WorkItemStatus::done,
       WorkItemStatus::skipped => $this->build_result($config, $phase, true, 'Work items done', BehaviourExecutionStatus::completed),
+      WorkItemStatus::cancelled => $this->build_result($config, $phase, true, 'Work items cancelled', BehaviourExecutionStatus::cancelled),
     };
   }
 
@@ -447,8 +448,8 @@ abstract class WorkflowHandler implements ICommandHandler {
       BehaviourExecutionStatus::completed => WorkItemStatus::done,
       BehaviourExecutionStatus::waiting   => WorkItemStatus::waiting,
       BehaviourExecutionStatus::skipped,
-      BehaviourExecutionStatus::cancelled,
       BehaviourExecutionStatus::preempted => WorkItemStatus::skipped,
+      BehaviourExecutionStatus::cancelled => WorkItemStatus::cancelled,
       BehaviourExecutionStatus::failed    => WorkItemStatus::failed,
       default => $result->success ? WorkItemStatus::done : WorkItemStatus::failed,
     };
