@@ -121,6 +121,50 @@ abstraction appears **twice already** — which is the signal that the seam is r
 - **Consumer (tangible-cred):** the adapters (`EndpointRequest → ILedger`,
   `EndpointResponseInterpreter`) and the concrete selectors/actions (mail, cert, fork, void).
 
+## The per-format decoder edge (how a user discriminates over CSV/JSON/XML)
+
+The interpreter's first job — locate per-item records in an arbitrary body — uses a **format-native
+path language, contained to a single config field**, then normalizes to a uniform record stream:
+
+| format | locate/discriminate | PHP |
+|--------|--------------------|-----|
+| JSON   | **JMESPath** (one spec; preferred over JSONPath's dialect swamp) | `mtdowling/jmespath.php` |
+| XML    | **XPath** (canonical) | built-in `DOMXPath` |
+| CSV    | rows = records, columns = fields (no path lang) | built-in |
+
+Design move: a per-format **decoder** turns `RawOutcome → record[]` (record = map of dotted keys).
+The format-native path appears in exactly **one** field ("where is the record collection");
+everything downstream (correlate, classify) addresses the normalized record by dotted key. A
+**dry-run preview** against captured sample responses shows what the locator matched before save.
+Path authoring is the realistic no-code ceiling; the named-interpreter registry covers the rest.
+
+## Behaviour shape — `Behaviour<ItemType, Cardinality>`
+
+A behaviour carries **two type-level facts**, the second of which cred never encoded:
+
+1. **Ranges over** `T` — `Unit` (request-level) or an item type (`Earning`).
+2. **Cardinality accepted** — `None` | `One` | `Many`.
+
+| behaviour | shape | note |
+|-----------|-------|------|
+| Notification | `Behaviour<Earning, Many>` | per earning, any count |
+| ResetUserCourseProgress | `Behaviour<Earning, Many>` | per earning (being built) |
+| Retry | `Behaviour<Unit, —>` | resends the whole request |
+| Stop | `Behaviour<Unit, —>` | request-level |
+| UserTriggeredRetry | `Behaviour<Earning, One>` | **needs a singleton ledger** — primes *a* user to trigger; ambiguous for many |
+
+`UserTriggeredRetry<Earning, One>` is the unencoded constraint today → a latent footgun (nothing
+stops attaching it to a batching endpoint). PHP has no runtime generics, so encode as:
+- runtime: `item_type(): ?class-string` + `cardinality(): Cardinality`, or simpler `accepts(Ledger): bool`;
+  the runner validates a behaviour against its ledger **before** running (reject `One` on `count>1` at
+  attach-time, not at 2am).
+- static: PHPStan `@template T` on the interface + `@implements Behaviour<Earning>` on impls.
+- UX payoff: the endpoint-config UI **filters selectable behaviours by the endpoint's cardinality** —
+  a batching endpoint never shows `UserTriggeredRetry`.
+
+Retry is **dual**: today's `<Unit>` (resend all) vs a future per-failed-subset `<Earning, Many>` —
+same verb, two shapes — which is exactly why the type parameter must exist.
+
 ## YAGNI — disciplined extraction order
 
 A clean hexagon, but building all of it for a single consumer (one context, one outcome type, one
@@ -134,3 +178,14 @@ real multi-item action) is over-fitting. Recommended order:
    / `LedgerBehaviourRunner` when a *second non-endpoint context* actually arrives. Not before.
 
 Decouple where it pays (interpretation); avoid ceremony where it does not (yet).
+
+## Build decision (2026-06-30) — `ResetUserCourseProgressBehaviour`, concrete only
+
+To satisfy the plurality need *without* building the generic lego, cred gets a **second concrete
+multi-earning behaviour**: `ResetUserCourseProgressBehaviour`, a `Behaviour<Earning, Many>` (a
+`BatchableBehaviourConfig` like Notification). Per earning it dispatches a Command-backed,
+**idempotent** `ResetUserCourseProgressCommand(user_id, content_id)` (cross-context → LearnDash),
+audited so the trace shows cred→LearnDash causation. Wired (for the harness) so a `200` from the
+bogus board triggers it across **all** earnings in the request. **Code only, no selection UI now.**
+This is a concrete cell of the space — NOT the `LedgerBehaviourRunner`/`IOutcomeInterpreter`
+abstraction, which stays deferred per the extraction order above.
