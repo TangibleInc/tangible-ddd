@@ -7,6 +7,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Infrastructure\WorkflowFailed;
 use TangibleDDD\Application\Process\RescheduleAware;
+use TangibleDDD\Domain\Exceptions\InvariantException;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
@@ -109,7 +110,14 @@ abstract class WorkflowHandler implements ICommandHandler {
       $config = $workflow->get_current();
       $previous = $workflow->get_current_result();
 
-      $result = $this->execute_step($workflow, $config, $previous);
+      try {
+        $result = $this->execute_step($workflow, $config, $previous);
+      } catch (InvariantException $e) {
+        $workflow->fail();
+        $this->workflow_repo->save($workflow);
+        return;
+      }
+
       $complete = $workflow->maybe_advance($result);
 
       if ($result->status === BehaviourExecutionStatus::waiting) {
@@ -323,11 +331,16 @@ abstract class WorkflowHandler implements ICommandHandler {
   ): BehaviourExecutionResult {
     $failed_items = $items->failed();
 
-    // Can only fork if: config supports it, workflow isn't already forked, and we have failed items
+    // Fork only on PARTIAL failure: some items succeeded while others failed.
+    // When ALL items fail there is nothing gained by forking — fall through to
+    // the normal failed/reschedule path so the whole workflow retries together.
+    $has_non_failed = count($items) > count($failed_items);
+
     if (
       $config instanceof BatchableBehaviourConfig
       && !$workflow->is_forked()
       && !$failed_items->empty()
+      && $has_non_failed
     ) {
       $this->fork_workflow($workflow, $config, $failed_items);
       return $this->build_result($config, $phase, true, 'Forked failed items to child workflow', BehaviourExecutionStatus::forked);
