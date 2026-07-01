@@ -113,6 +113,11 @@ abstract class WorkflowHandler implements ICommandHandler {
       try {
         $result = $this->execute_step($workflow, $config, $previous);
       } catch (InvariantException $e) {
+        error_log(sprintf(
+          '[ddd-workflow] InvariantException in execute_one for workflow %d: %s',
+          $workflow->get_id(),
+          $e->getMessage()
+        ));
         $workflow->fail();
         $this->workflow_repo->save($workflow);
         return;
