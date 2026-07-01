@@ -238,7 +238,7 @@ function install_behaviour_workflow_item_tables(IDDDConfig $config): void {
     behaviour_idx INT UNSIGNED NOT NULL,
     phase INT UNSIGNED NOT NULL DEFAULT 1,
     item_key VARCHAR(191) NOT NULL,
-    status ENUM('pending','waiting','failed','done','skipped') NOT NULL DEFAULT 'pending',
+    status ENUM('pending','waiting','failed','done','skipped','cancelled') NOT NULL DEFAULT 'pending',
     attempts INT UNSIGNED NOT NULL DEFAULT 0,
     last_error TEXT NULL,
     payload JSON NULL,
