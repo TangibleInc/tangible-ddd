@@ -204,6 +204,7 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
     current_phase INT UNSIGNED NOT NULL DEFAULT 1,
     is_complete TINYINT(1) NOT NULL DEFAULT 0,
     is_failed TINYINT(1) NOT NULL DEFAULT 0,
+    correlation_id CHAR(36) NULL,
     meta JSON NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -211,6 +212,7 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
     KEY idx_ref (ref_type, ref_id),
     KEY idx_root (root_workflow_id),
     KEY idx_status (is_complete, is_failed),
+    KEY idx_correlation (correlation_id),
     KEY idx_blog_ref (blog_id, ref_type, ref_id),
     KEY idx_blog_status (blog_id, is_complete, is_failed)
   ) $charset";

@@ -31,8 +31,9 @@ use TangibleDDD\Infra\IDDDConfig;
  * Current framework schema version. Bump when the canonical schema changes.
  *  - 1: original 6 tables
  *  - 2: command_audit gains causation_id + causation_type (+ idx_causation)
+ *  - 3: behaviour_workflows gains correlation_id (+ idx_correlation)
  */
-const DDD_SCHEMA_VERSION = 2;
+const DDD_SCHEMA_VERSION = 3;
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -73,6 +74,14 @@ function ddd_explicit_migrations(): array {
       ddd_add_column_if_missing($table, 'causation_id', 'VARCHAR(64) NULL', 'source_id');
       ddd_add_column_if_missing($table, 'causation_type', 'VARCHAR(32) NULL', 'causation_id');
       ddd_add_index_if_missing($table, 'idx_causation', '`causation_id`');
+    },
+
+    // v3 — correlation_id on behaviour_workflows. Additive; dbDelta covers
+    // fresh installs; explicit entry guarantees the column for existing consumers.
+    3 => static function (IDDDConfig $config): void {
+      $table = $config->table('behaviour_workflows');
+      ddd_add_column_if_missing($table, 'correlation_id', 'CHAR(36) NULL', 'is_failed');
+      ddd_add_index_if_missing($table, 'idx_correlation', '`correlation_id`');
     },
   ];
 }
