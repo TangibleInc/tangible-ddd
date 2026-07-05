@@ -58,7 +58,7 @@ services:
     arguments:
       - '@TangibleDDD\Infra\IDDDConfig'
 
-  TangibleDDD\Application\Outbox\OutboxProcessor:
+  TangibleDDD\Infra\Services\OutboxProcessor:
     arguments:
       - '@TangibleDDD\Infra\IDDDConfig'
       - '@TangibleDDD\Infra\IOutboxRepository'

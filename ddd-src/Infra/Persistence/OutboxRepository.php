@@ -64,10 +64,24 @@ class OutboxRepository implements IOutboxRepository {
   public function fetch_pending(int $limit = 50, ?string $worker_id = null): array {
     global $wpdb;
 
+    // Relay pause: a wildcard hold pauses everything; otherwise exclude the
+    // held event types. Paused rows stay 'pending' and are simply not selected.
+    $paused = $this->active_pause_selectors();
+    if (in_array('*', $paused, true)) {
+      return [];
+    }
+
     $table = $this->table_name();
     $now = gmdate('Y-m-d H:i:s');
     $lock_until = gmdate('Y-m-d H:i:s', time() + 300); // 5 minute lock
     $worker_id = $worker_id ?? $this->get_worker_id();
+
+    $exclude_sql = '';
+    $exclude_params = [];
+    if (!empty($paused)) {
+      $exclude_sql = ' AND event_type NOT IN (' . implode(',', array_fill(0, count($paused), '%s')) . ')';
+      $exclude_params = $paused;
+    }
 
     // Fetch and lock pending entries in one query
     // Only fetch entries that are:
@@ -75,19 +89,18 @@ class OutboxRepository implements IOutboxRepository {
     // - scheduled_at has passed
     // - either no next_attempt_at or it has passed
     // - not currently locked (or lock expired)
+    // - not for a paused event type
     $sql = $wpdb->prepare(
       "SELECT * FROM `$table`
        WHERE status = 'pending'
          AND scheduled_at <= %s
          AND (next_attempt_at IS NULL OR next_attempt_at <= %s)
          AND (locked_until IS NULL OR locked_until <= %s)
+         $exclude_sql
        ORDER BY scheduled_at ASC
        LIMIT %d
        FOR UPDATE SKIP LOCKED",
-      $now,
-      $now,
-      $now,
-      $limit
+      array_merge([$now, $now, $now], $exclude_params, [$limit])
     );
 
     // Start transaction for fetch + lock
@@ -284,6 +297,61 @@ class OutboxRepository implements IOutboxRepository {
        WHERE status = 'completed' AND processed_at < %s",
       $cutoff
     ));
+  }
+
+  // ── Relay pause ─────────────────────────────────────────────────────────────
+  // Pauses are relay-lifecycle state, stored per-context (option scoped by
+  // IDDDConfig), keyed by holder. They never touch rows; fetch_pending just skips
+  // held event types. See tangible-ddd/docs/outbox-pause-design.md.
+
+  public function set_pause(string $holder, string $selector, int $until = -1): void {
+    $pauses = $this->read_pauses();
+    $pauses[$holder] = ['selector' => $selector, 'until' => $until];
+    update_option($this->pauses_option_key(), $pauses, false);
+  }
+
+  public function clear_pause(string $holder): void {
+    $pauses = $this->read_pauses();
+    if (!array_key_exists($holder, $pauses)) {
+      return;
+    }
+    unset($pauses[$holder]);
+    update_option($this->pauses_option_key(), $pauses, false);
+  }
+
+  public function is_paused(string $event_type): bool {
+    $active = $this->active_pause_selectors();
+    return in_array('*', $active, true) || in_array($event_type, $active, true);
+  }
+
+  private function pauses_option_key(): string {
+    return $this->config->option('outbox_pauses');
+  }
+
+  /** @return array<string, array{selector: string, until: int}> */
+  private function read_pauses(): array {
+    $val = get_option($this->pauses_option_key(), []);
+    return is_array($val) ? $val : [];
+  }
+
+  /**
+   * Selectors of currently-active (non-expired) holds. May include '*'.
+   * @return string[]
+   */
+  private function active_pause_selectors(): array {
+    $now = time();
+    $selectors = [];
+    foreach ($this->read_pauses() as $hold) {
+      $until = (int) ($hold['until'] ?? -1);
+      if ($until !== -1 && $until <= $now) {
+        continue; // expired
+      }
+      $selector = (string) ($hold['selector'] ?? '');
+      if ($selector !== '') {
+        $selectors[] = $selector;
+      }
+    }
+    return array_values(array_unique($selectors));
   }
 
   private function table_name(): string {

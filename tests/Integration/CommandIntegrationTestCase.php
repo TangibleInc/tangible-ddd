@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Tangible\Datastream\Domain\Rules\RuleRegistration;
+use Tangible\Datastream\Infra\Rules\RuleNodeRegistrar;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 
@@ -39,7 +39,7 @@ abstract class CommandIntegrationTestCase extends TestCase
         parent::setUp();
 
         // Register rule node types (required for SubscriptionRepository reconstitution).
-        RuleRegistration::register();
+        RuleNodeRegistrar::register();
 
         // Boot (or reuse) the compiled DI container.
         // bootstrap.php already loaded it once; subsequent calls reuse the singleton.

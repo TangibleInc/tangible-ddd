@@ -26,6 +26,9 @@ final class FakeOutboxRepository implements IOutboxRepository {
   /** @var int */
   public int $duplicates_cancelled = 0;
 
+  /** @var array<string, array{selector: string, until: int}> */
+  public array $pauses = [];
+
   private int $next_id = 1;
 
   public function write(IIntegrationEvent $event, string $correlation_id, ?string $command_id = null): string {
@@ -64,7 +67,14 @@ final class FakeOutboxRepository implements IOutboxRepository {
   }
 
   public function fetch_pending(int $limit = 50, ?string $worker_id = null): array {
-    return array_filter($this->entries, fn(OutboxEntry $e) => $e->status === 'pending');
+    $paused = $this->active_pause_selectors();
+    if (in_array('*', $paused, true)) {
+      return [];
+    }
+    return array_values(array_filter(
+      $this->entries,
+      fn(OutboxEntry $e) => $e->status === 'pending' && !in_array($e->event_type, $paused, true)
+    ));
   }
 
   public function find_by_event_id(string $event_id): ?OutboxEntry {
@@ -102,5 +112,35 @@ final class FakeOutboxRepository implements IOutboxRepository {
 
   public function purge_completed(int $older_than_days = 30): int {
     return 0;
+  }
+
+  public function set_pause(string $holder, string $selector, int $until = -1): void {
+    $this->pauses[$holder] = ['selector' => $selector, 'until' => $until];
+  }
+
+  public function clear_pause(string $holder): void {
+    unset($this->pauses[$holder]);
+  }
+
+  public function is_paused(string $event_type): bool {
+    $active = $this->active_pause_selectors();
+    return in_array('*', $active, true) || in_array($event_type, $active, true);
+  }
+
+  /** @return string[] */
+  private function active_pause_selectors(): array {
+    $now = time();
+    $selectors = [];
+    foreach ($this->pauses as $hold) {
+      $until = (int) ($hold['until'] ?? -1);
+      if ($until !== -1 && $until <= $now) {
+        continue;
+      }
+      $selector = (string) ($hold['selector'] ?? '');
+      if ($selector !== '') {
+        $selectors[] = $selector;
+      }
+    }
+    return array_values(array_unique($selectors));
   }
 }

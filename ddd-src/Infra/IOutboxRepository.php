@@ -31,12 +31,41 @@ interface IOutboxRepository {
    * Fetch pending events ready to process.
    *
    * Acquires a lock on returned entries to prevent concurrent processing.
+   * Honours pauses: an active hold on an event type excludes it; an active
+   * wildcard ('*') hold returns nothing. Paused rows are left untouched
+   * (still 'pending'); they drain once the hold is released.
    *
    * @param int $limit Maximum entries to fetch
    * @param string|null $worker_id Identifier for the worker acquiring lock
    * @return OutboxEntry[]
    */
   public function fetch_pending(int $limit = 50, ?string $worker_id = null): array;
+
+  /**
+   * Pause the relay for a selector. A pause is a relay-lifecycle state — it does
+   * NOT touch rows; while a hold is active, fetch_pending simply doesn't select
+   * matching rows, so they accumulate durably and drain when released.
+   *
+   * Holds are keyed by $holder so independent reasons (deploy, panic, migration)
+   * coexist and release independently. Idempotent per holder (re-setting replaces).
+   *
+   * @param string $holder   Reason key, e.g. 'delivery_panic', 'deploy'.
+   * @param string $selector Integration event type name, or '*' for all.
+   * @param int    $until     -1 = indefinite (held until cleared); a unix
+   *                          timestamp = auto-expire once passed.
+   */
+  public function set_pause(string $holder, string $selector, int $until = -1): void;
+
+  /**
+   * Release a hold by its holder key. No-op if the holder has no active hold.
+   */
+  public function clear_pause(string $holder): void;
+
+  /**
+   * Whether an event type is currently paused (active exact hold or wildcard).
+   * Expired holds are ignored.
+   */
+  public function is_paused(string $event_type): bool;
 
   /**
    * Find an entry by event_id.

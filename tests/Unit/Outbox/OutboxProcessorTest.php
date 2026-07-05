@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Outbox\IOutboxPublisher;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Outbox\OutboxEntry;
-use TangibleDDD\Application\Outbox\OutboxProcessor;
+use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Infra\IOutboxRepository;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 

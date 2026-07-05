@@ -36,6 +36,12 @@ ob_start();
 require_once ABSPATH . 'wp-load.php';
 ob_end_clean();
 
+// dbDelta() lives in wp-admin/includes/upgrade.php, which wp-load.php does not
+// pull in for non-admin contexts. The framework table installers (tables.php)
+// call dbDelta(), so load it explicitly or table creation fatals with
+// "Call to undefined function TangibleDDD\WordPress\dbDelta()".
+require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
 // ── Boot the datastream DI container (from .reference) ──────────────────────
 // This wires the command bus, middlewares, repositories, and all domain
 // infrastructure that the integration tests drive.
@@ -51,8 +57,11 @@ if (!is_dir($_datastream_ref)) {
 }
 
 // Register datastream rule node types before the DI container compiles.
+// (datastream classes aren't autoloaded until di/index.php below, so require the
+// two files explicitly; RuleNodeRegistrar reads the node map from RuleRegistration.)
 require_once $_datastream_ref . '/src/Domain/Rules/RuleRegistration.php';
-\Tangible\Datastream\Domain\Rules\RuleRegistration::register();
+require_once $_datastream_ref . '/src/Infra/Rules/RuleNodeRegistrar.php';
+\Tangible\Datastream\Infra\Rules\RuleNodeRegistrar::register();
 
 // Boot the DI container (defines \Tangible\Datastream\WordPress\DI\di()).
 require_once $_datastream_ref . '/includes/di/index.php';

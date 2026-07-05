@@ -1,9 +1,12 @@
 <?php
 
-namespace TangibleDDD\Application\Outbox;
+namespace TangibleDDD\Infra\Services;
 
 use TangibleDDD\Application\Infrastructure\OutboxAttemptFailed;
 use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
+use TangibleDDD\Application\Outbox\IOutboxPublisher;
+use TangibleDDD\Application\Outbox\OutboxConfig;
+use TangibleDDD\Application\Outbox\OutboxEntry;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IOutboxRepository;
 use Throwable;
@@ -11,9 +14,12 @@ use Throwable;
 /**
  * Processes the transactional outbox, publishing events to ActionScheduler.
  *
- * This processor is designed to be run periodically (via cron/ActionScheduler)
- * and handles:
- * - Fetching pending events
+ * This is a transactional-outbox RELAY — transport/persistence mechanics
+ * (fetch → publish → mark, locking, retry, DLQ), no domain content — so it lives
+ * in Infra\Services alongside the publishers and bus it drives (moved here from
+ * Application\Outbox, where it was mislabelled). Run periodically via
+ * cron/ActionScheduler; handles:
+ * - Fetching pending events (which honour relay pauses — see IOutboxRepository)
  * - Publishing to ActionScheduler
  * - Marking events as completed/failed
  * - Moving failed events to DLQ after max attempts
@@ -39,7 +45,8 @@ final class OutboxProcessor {
     // First, release any stale locks from crashed workers
     $this->outbox->release_stale_locks($this->outbox_config->lock_timeout_seconds);
 
-    // Fetch pending entries (acquires lock)
+    // Fetch pending entries (acquires lock). Paused event types are excluded by
+    // the repository itself, so this returns nothing (or fewer rows) while paused.
     $entries = $this->outbox->fetch_pending(
       $this->outbox_config->batch_size,
       $this->worker_id

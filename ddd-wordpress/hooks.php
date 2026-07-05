@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\WordPress;
 
-use TangibleDDD\Application\Outbox\OutboxProcessor;
+use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\IDDDConfig;
 

@@ -6,7 +6,7 @@ namespace TangibleDDD\Tests\Integration\Framework;
 
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Outbox\OutboxEntry;
-use TangibleDDD\Application\Outbox\OutboxProcessor;
+use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Outbox\IOutboxPublisher;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;

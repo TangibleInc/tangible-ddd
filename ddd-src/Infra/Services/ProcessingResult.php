@@ -1,6 +1,6 @@
 <?php
 
-namespace TangibleDDD\Application\Outbox;
+namespace TangibleDDD\Infra\Services;
 
 /**
  * Result of a batch processing run.
