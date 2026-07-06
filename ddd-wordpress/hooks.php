@@ -22,17 +22,19 @@ function register_hooks(IDDDConfig $config, callable $di_getter): void {
 }
 
 /**
- * Eagerly instantiate all event handler services so their constructors
- * register WordPress action hooks (add_action).
+ * Eagerly instantiate all event handler and integration listener services so
+ * their constructors register WordPress action hooks (add_action).
  *
- * Without this, async handlers (AsyncWordPressActionHandler) never register
- * their callbacks, because Symfony DI is lazy — services are only constructed
- * when explicitly requested. Action Scheduler then fails with
- * "no callbacks are registered" when processing queued async jobs.
+ * Without this, async handlers (AsyncWordPressActionHandler) and
+ * IntegrationListener subclasses never register their callbacks, because
+ * Symfony DI is lazy — services are only constructed when explicitly
+ * requested. Action Scheduler then fails with "no callbacks are registered"
+ * when processing queued async jobs.
  *
  * Works by convention: consumer services.yaml registers event handlers under
- * a namespace ending in \Application\EventHandlers\. This function finds all
- * service IDs matching that pattern and instantiates them.
+ * a namespace ending in \Application\EventHandlers\, and integration
+ * listeners under \Application\IntegrationListeners\. This function finds all
+ * service IDs matching either pattern and instantiates them.
  *
  * @param callable $di_getter Function that returns the DI container
  */
@@ -44,7 +46,9 @@ function register_event_handlers(callable $di_getter): void {
   }
 
   foreach ($container->getServiceIds() as $id) {
-    if (!str_contains($id, '\\Application\\EventHandlers\\')) continue;
+    $is_handler  = str_contains($id, '\\Application\\EventHandlers\\');
+    $is_listener = str_contains($id, '\\Application\\IntegrationListeners\\');
+    if (!$is_handler && !$is_listener) continue;
     if (!class_exists($id)) continue;
 
     try {

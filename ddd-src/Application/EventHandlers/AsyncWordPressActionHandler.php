@@ -3,9 +3,14 @@
 namespace TangibleDDD\Application\EventHandlers;
 
 /**
+ * @deprecated 0.2.0 — the "async domain handler" is a category error (the AS hop
+ * is another TIME, not another thread; serialization forces params into
+ * record-land regardless of intent). Decompose into an IntegrationListener
+ * (the policy) + a Command (the work, under command_audit). Removal: 0.3.0.
+ *
  * Event handler that automatically queues the actual handling
  * to run asynchronously via Action Scheduler.
- * 
+ *
  * When the domain event fires, it enqueues an async action.
  * The actual handle() method runs in a separate request.
  */

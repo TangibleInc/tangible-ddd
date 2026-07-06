@@ -70,3 +70,32 @@ function extract_correlation(array $params): array {
 
   return $params;
 }
+
+/**
+ * The integration-listener ceremony: hook a record's integration action,
+ * rebuild the typed event, restore journey context, translate to a Command.
+ *
+ * This is the internal primitive; the paved road is the IntegrationListener
+ * base class (named, enumerable, DI-constructed). Fn-form = escape hatch.
+ *
+ * @param class-string<\TangibleDDD\Domain\Events\IIntegrationEvent> $event_class
+ * @param callable(\TangibleDDD\Domain\Events\IIntegrationEvent): ?\TangibleDDD\Application\Commands\ICommand $translate
+ */
+function integration_listener(string $event_class, callable $translate): void {
+  if (!is_a($event_class, IIntegrationEvent::class, true)) {
+    throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
+  }
+
+  add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
+    $envelope = TransportEnvelope::unwrap($wrapped);
+    $envelope->restore_context();
+
+    $event = $event_class::from_payload($envelope->payload);
+    if ($envelope->event_id !== null) {
+      $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+    }
+
+    $command = $translate($event);
+    $command?->send();
+  }, 10, 1);
+}
