@@ -100,3 +100,15 @@ if (!function_exists('as_enqueue_async_action')) {
     return count($_test_scheduled_actions);
   }
 }
+
+if (!function_exists('as_schedule_single_action')) {
+  /** @var array<array{timestamp: int, hook: string, args: array, group: string}> */
+  global $_test_scheduled_actions;
+  $_test_scheduled_actions ??= [];
+
+  function as_schedule_single_action(int $timestamp, string $hook, array $args = [], string $group = ''): int {
+    global $_test_scheduled_actions;
+    $_test_scheduled_actions[] = ['timestamp' => $timestamp, 'hook' => $hook, 'args' => $args, 'group' => $group];
+    return count($_test_scheduled_actions);
+  }
+}
