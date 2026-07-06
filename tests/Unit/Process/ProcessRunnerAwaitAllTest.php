@@ -46,6 +46,30 @@ class ProcessRunnerAwaitAllTest extends TestCase {
     $this->runner->start($process);   // no register_event() call made
   }
 
+  public function test_registration_guard_is_not_relabelled_as_business_failure(): void {
+    // A wiring bug must propagate untouched: no 'failed' row, no ProcessFailed
+    // announcement — otherwise monitoring reads a config error as a saga failure.
+    $process_failed_fired = [];
+    add_action(
+      $this->config->hook('process_failed'),
+      function ($event) use (&$process_failed_fired) { $process_failed_fired[] = $event; }
+    );
+
+    $process = new FakeGatherProcess([1]);
+
+    try {
+      $this->runner->start($process);   // no register_event() call made
+      $this->fail('Expected AwaitedEventNotRegistered to propagate out of start()');
+    } catch (AwaitedEventNotRegistered $e) {
+      // expected
+    }
+
+    $saved = $this->repo->find($process->get_id());
+    $this->assertNotNull($saved, 'process row persisted at start()');
+    $this->assertNotSame('failed', $saved->status(), 'wiring bug must not mark the process failed');
+    $this->assertSame([], $process_failed_fired, 'ProcessFailed must not fire for a wiring bug');
+  }
+
   public function test_partial_arrival_accumulates_and_stays_suspended(): void {
     $this->runner->register_event(FakeResolvedEvent::class);
     $process = new FakeGatherProcess([1, 2]);

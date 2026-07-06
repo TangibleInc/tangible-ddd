@@ -213,6 +213,10 @@ final class ProcessRunner {
       } else {
         $this->execute_forward($process);
       }
+    } catch (AwaitedEventNotRegistered $e) {
+      // Config/wiring bug, not a business failure — don't mark the process
+      // failed or announce ProcessFailed; propagate so the wiring gets fixed.
+      throw $e;
     } catch (Throwable $e) {
       // Ensure we don't leave process in inconsistent state
       if ($process->status() !== 'failed') {
