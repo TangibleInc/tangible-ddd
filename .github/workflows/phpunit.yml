@@ -2,9 +2,9 @@ name: PHPUnit tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, v3-ddd, 'release/**' ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, v3-ddd, 'release/**' ]
 
 jobs:
   test:
