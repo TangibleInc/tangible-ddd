@@ -9,6 +9,7 @@ use TangibleDDD\Application\Outbox\OutboxEntry;
 use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Outbox\IOutboxPublisher;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Events\IntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IOutboxRepository;
 use TangibleDDD\Infra\Persistence\OutboxRepository;
@@ -108,28 +109,16 @@ final class OutboxPrimitiveTest extends IntegrationTestCase
     }
 
     /**
-     * Build a minimal IIntegrationEvent stub.
+     * Build a minimal IIntegrationEvent stub (a derived-only "twin" record).
      */
-    private function make_event(
-        string $type = 'outbox.test.event',
-        array  $payload = [],
-        int    $delay = 0,
-        bool   $is_unique = false
-    ): IIntegrationEvent {
-        return new class($type, $payload, $delay, $is_unique) implements IIntegrationEvent {
+    private function make_event(array $payload = []): IIntegrationEvent
+    {
+        return new class($payload) extends IntegrationEvent {
             public function __construct(
-                private string $type,
-                private array  $payload,
-                private int    $delay,
-                private bool   $unique
+                public readonly array $payload = []
             ) {}
+            protected static function prefix(): string { return 'outbox'; }
             public static function name(): string { return 'outbox.test.event'; }
-            public static function action(): string { return 'outbox_test_action'; }
-            public static function integration_action(): string { return 'outbox_test_integration_action'; }
-            public function payload(): array { return $this->payload; }
-            public function integration_payload(): array { return $this->payload; }
-            public function delay(): int { return $this->delay; }
-            public function is_unique(): bool { return $this->unique; }
         };
     }
 
@@ -171,7 +160,7 @@ final class OutboxPrimitiveTest extends IntegrationTestCase
         $this->assertSame($correlation, $row->correlation_id);
 
         $decoded = json_decode($row->payload, true);
-        $this->assertSame(['foo' => 'bar'], $decoded);
+        $this->assertSame(['payload' => ['foo' => 'bar']], $decoded);
     }
 
     /**
