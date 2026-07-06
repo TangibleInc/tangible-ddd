@@ -29,6 +29,7 @@ class EventPipelineTest extends TestCase {
     global $_test_actions, $_test_scheduled_actions;
     $_test_actions = [];
     $_test_scheduled_actions = [];
+    FakeGatherProcess::$last_routed_event = null;
     CorrelationContext::reset();
     CorrelationContext::init('pipe-corr');
 
@@ -70,14 +71,36 @@ class EventPipelineTest extends TestCase {
     $as_jobs = array_filter($_test_scheduled_actions, fn($a) => $a['hook'] === FakeResolvedEvent::integration_action());
     $this->assertCount(1, $as_jobs);
     $wrapped = array_values($as_jobs)[0]['args'][0];
-    $this->assertArrayHasKey('__correlation_id', $wrapped);
-    $this->assertArrayHasKey('__event_id', $wrapped);
+    // The VALUES survive the hop, not just the keys: the raise-time ambient
+    // correlation, and the event_id the outbox write() minted (which the bus
+    // stamped back onto the in-hand event — same identity as the row).
+    $this->assertSame('pipe-corr', $wrapped['__correlation_id']);
+    $this->assertSame('evt_1', $wrapped['__event_id']);
 
-    // 4. "AS worker" fires the hook — the wake
+    // 4. "AS worker" fires the hook — the wake. A real AS worker is a fresh
+    // request with NO ambient context; reset first so anything correlation-
+    // shaped observed after this point can only have come from the transport
+    // envelope, never from state leaked across the "process boundary".
+    CorrelationContext::reset();
     do_action(FakeResolvedEvent::integration_action(), $wrapped);
 
-    // 5. saga completed; coordinator saw the satisfied mechanism
+    // Context restore, proven on the woken event itself: register_event's
+    // callback unwrapped the envelope, hydrated the event, and stamped the
+    // transport journey onto it BEFORE routing — resolution_key (the key_by
+    // extractor the routing path calls) captured that exact instance.
+    // (CorrelationContext::peek() is deliberately NOT asserted here: it is
+    // null post-wake, because resume_on_event's CorrelationContext::with()
+    // scope-exit resets ambient state — worker hygiene, so one AS callback's
+    // correlation can't bleed into the next. Verified empirically.)
+    $woken = FakeGatherProcess::$last_routed_event;
+    $this->assertNotNull($woken, 'routing path saw the hydrated event');
+    $this->assertSame('pipe-corr', $woken->correlation_id());
+    $this->assertSame('evt_1', $woken->event_id());
+
+    // 5. saga completed; coordinator saw the satisfied mechanism; the saga
+    // row still carries the raise-time correlation (resume ran under it).
     $this->assertSame('completed', $repo->find($saga->get_id())->status());
+    $this->assertSame('pipe-corr', $repo->find($saga->get_id())->correlation_id());
     $this->assertTrue($saga->gather_seen->is_satisfied());
   }
 }

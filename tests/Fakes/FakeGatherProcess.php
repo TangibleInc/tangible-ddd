@@ -12,6 +12,13 @@ class FakeGatherProcess extends LongProcess {
   public array $executed_steps = [];
   public ?AwaitAll $gather_seen = null;
 
+  /**
+   * Last event the routing path extracted a key from — the exact hydrated
+   * (and, post-transport, journey-stamped) instance the runner routed.
+   * Lets pipeline tests assert on the woken event without altering behaviour.
+   */
+  public static ?FakeResolvedEvent $last_routed_event = null;
+
   public function __construct(public readonly array $request_ids = [1, 2, 3]) {
     parent::__construct(null);
   }
@@ -37,6 +44,7 @@ class FakeGatherProcess extends LongProcess {
   }
 
   public static function resolution_key(FakeResolvedEvent $e): int {
+    self::$last_routed_event = $e;
     return $e->request_id;
   }
 }
