@@ -9,7 +9,8 @@ use TangibleDDD\Application\Events\IIntegrationEventBus;
 use TangibleDDD\Domain\Events\IDomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Tests\Fakes\FakeDomainEvent;
-use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
+use TangibleDDD\Tests\Fakes\FakeOutcome;
+use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
 class EventRouterTest extends TestCase {
 
@@ -43,7 +44,10 @@ class EventRouterTest extends TestCase {
   }
 
   public function test_integration_event_dispatched_and_published_to_bus(): void {
-    $event = new FakeIntegrationEvent();
+    // FakeResolvedEvent is a self-publisher: a raisable DomainEvent that is
+    // ALSO an IIntegrationEvent. FakeIntegrationEvent (a pure twin) no longer
+    // qualifies here since it severed from IDomainEvent in 0.2.0.
+    $event = new FakeResolvedEvent(1, FakeOutcome::Accepted, new \DateTimeImmutable());
     $this->router->publish($event);
 
     $this->assertCount(1, $this->dispatched);
@@ -53,7 +57,7 @@ class EventRouterTest extends TestCase {
 
   public function test_multiple_events_routed_correctly(): void {
     $this->router->publish(new FakeDomainEvent(1));
-    $this->router->publish(new FakeIntegrationEvent(2));
+    $this->router->publish(new FakeResolvedEvent(2, FakeOutcome::Accepted, new \DateTimeImmutable()));
     $this->router->publish(new FakeDomainEvent(3));
 
     $this->assertCount(3, $this->dispatched);

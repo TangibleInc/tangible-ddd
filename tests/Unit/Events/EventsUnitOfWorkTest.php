@@ -6,7 +6,8 @@ use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Tests\Fakes\FakeDomainEvent;
-use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
+use TangibleDDD\Tests\Fakes\FakeOutcome;
+use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
 class EventsUnitOfWorkTest extends TestCase {
 
@@ -89,7 +90,7 @@ class EventsUnitOfWorkTest extends TestCase {
 
     $agg1->event(new FakeDomainEvent(1));
     $agg1->event(new FakeDomainEvent(2));
-    $agg2->event(new FakeIntegrationEvent(3));
+    $agg2->event(new FakeResolvedEvent(3, FakeOutcome::Accepted, new \DateTimeImmutable()));
 
     $this->uow->collect_from($agg1);
     $this->uow->collect_from($agg2);
@@ -108,7 +109,9 @@ class EventsUnitOfWorkTest extends TestCase {
   public function test_sealed_uow_accepts_integration_events(): void {
     $this->uow->seal();
 
-    $event = new FakeIntegrationEvent(7);
+    // Must be a self-publisher (also an IDomainEvent) — record() types
+    // IDomainEvent, and a pure twin (FakeIntegrationEvent) no longer qualifies.
+    $event = new FakeResolvedEvent(7, FakeOutcome::Accepted, new \DateTimeImmutable());
     $this->uow->record($event);
 
     $drained = $this->uow->drain();

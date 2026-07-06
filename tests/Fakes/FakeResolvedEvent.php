@@ -3,9 +3,10 @@
 namespace TangibleDDD\Tests\Fakes;
 
 use TangibleDDD\Domain\Events\DomainEvent;
+use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Events\IntegrationBehaviour;
 
-class FakeResolvedEvent extends DomainEvent {
+class FakeResolvedEvent extends DomainEvent implements IIntegrationEvent {
   use IntegrationBehaviour;
 
   public function __construct(
