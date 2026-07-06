@@ -49,8 +49,7 @@ final class AwaitEvent implements IAwaitMechanism {
   public function is_satisfied(): bool { return true; }
   public function resume_argument(?IIntegrationEvent $last_event): mixed { return $last_event; }
   public function timeout_seconds(): int { return 0; }
-  // NOTE: literal 'fail' for this task — AwaitAll::TIMEOUT_FAIL arrives in Task 8.
-  public function on_timeout(): string { return 'fail'; }
+  public function on_timeout(): string { return AwaitAll::TIMEOUT_FAIL; }
 
   public function to_array(): array {
     return ['event_class' => $this->event_class, 'match_criteria' => $this->match_criteria];
