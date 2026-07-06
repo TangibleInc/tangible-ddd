@@ -117,6 +117,7 @@ function install_process_tables(IDDDConfig $config): void {
     status ENUM('pending', 'running', 'scheduled', 'suspended', 'completed', 'failed') NOT NULL DEFAULT 'pending',
     waiting_for VARCHAR(255) NULL,
     match_criteria JSON NULL,
+    await_mechanism JSON NULL,
     payload JSON NULL,
     correlation_id CHAR(36) NOT NULL,
     last_error TEXT NULL,
