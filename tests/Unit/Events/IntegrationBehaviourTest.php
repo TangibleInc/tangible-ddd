@@ -7,7 +7,7 @@ use TangibleDDD\Domain\Events\NonReversibleValue;
 use TangibleDDD\Tests\Fakes\FakeOutcome;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
-class RecordBehaviourTest extends TestCase {
+class IntegrationBehaviourTest extends TestCase {
 
   public function test_integration_payload_is_named_scalars(): void {
     $e = new FakeResolvedEvent(request_id: 312, outcome: FakeOutcome::Accepted, resolved_at: new \DateTimeImmutable('2026-07-06T10:00:00+00:00'));

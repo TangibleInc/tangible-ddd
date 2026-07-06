@@ -3,10 +3,10 @@
 namespace TangibleDDD\Tests\Fakes;
 
 use TangibleDDD\Domain\Events\DomainEvent;
-use TangibleDDD\Domain\Events\RecordBehaviour;
+use TangibleDDD\Domain\Events\IntegrationBehaviour;
 
 class FakeResolvedEvent extends DomainEvent {
-  use RecordBehaviour;
+  use IntegrationBehaviour;
 
   public function __construct(
     public readonly int $request_id,

@@ -17,7 +17,7 @@ use ReflectionParameter;
  * DomainEvents (self-publishers). Host class must provide static prefix()
  * and name() (both via the Event root).
  */
-trait RecordBehaviour {
+trait IntegrationBehaviour {
 
   private ?string $journey_correlation_id = null;
   private ?string $journey_event_id = null;
