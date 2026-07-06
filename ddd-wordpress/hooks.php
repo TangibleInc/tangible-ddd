@@ -86,6 +86,21 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
       throw $e;
     }
   });
+
+  // Action Scheduler stores the scheduled args as an associative array
+  // (['process_id' => .., 'step_index' => ..]) and fires the callback via
+  // call_user_func_array(), which treats string-keyed arrays as named
+  // arguments (PHP 8+) — so the callback's parameter names must match the
+  // args keys exactly, same convention as process_continue above.
+  add_action($config->hook('await_timeout'), function(int $process_id, int $step_index) use ($config, $di_getter) {
+    try {
+      $runner = ($di_getter())->get(ProcessRunner::class);
+      $runner->handle_timeout($process_id, $step_index);
+    } catch (\Throwable $e) {
+      error_log(sprintf('[%s-process] Await-timeout handling failed for process %d: %s', $config->prefix(), $process_id, $e->getMessage()));
+      throw $e;
+    }
+  }, 10, 2);
 }
 
 /**
@@ -178,6 +193,11 @@ function register_processes_from_container(
 
   foreach ($tagged as $class => $tags) {
     $runner->register($class);
+
+    // Register awaited events declared via #[Awaits(...)] on the class
+    foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\Awaits::class) as $attr) {
+      $runner->register_event($attr->newInstance()->event_class);
+    }
 
     // Register awaited events from tag parameters
     foreach ($tags as $tag_attrs) {

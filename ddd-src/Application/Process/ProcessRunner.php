@@ -175,6 +175,50 @@ final class ProcessRunner {
   }
 
   /**
+   * Await-timeout alarm (wall clock — deliberately not pause-aware, see spec §6.3).
+   * Stale-timer guard: no-op unless still suspended at the SAME step index.
+   */
+  public function handle_timeout(int $process_id, int $step_index): void {
+    $process = $this->repository->find($process_id);
+
+    if ($process === null || $process->status() !== 'suspended') {
+      return;
+    }
+    if ($process->current_step_index() !== $step_index) {
+      return; // stale alarm — the saga already woke and moved on
+    }
+
+    $mechanism = $process->await_mechanism();
+    if ($mechanism === null) {
+      return;
+    }
+
+    CorrelationContext::with($process->correlation_id(), function () use ($process, $mechanism) {
+      if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
+        $process->advance_step();
+        $this->resume_argument = $mechanism->resume_argument(null);
+        $process->advance(status: 'running', payload: $process->payload());
+        $this->repository->save($process);
+        $this->run($process);
+        $this->resume_argument = null;
+        return;
+      }
+
+      // TIMEOUT_FAIL. Call execute_compensation() directly rather than run():
+      // when the suspended step is the process's first step, begin_compensation()
+      // leaves undo_index at -1 (nothing completed yet to undo), which is the
+      // same value is_compensating() reports for "no compensation in progress" —
+      // routing through run()'s is_compensating() gate would misfire back into
+      // execute_forward(). execute_forward()'s own failure handler sidesteps
+      // this the same way.
+      $missing = method_exists($mechanism, 'missing') ? implode(', ', $mechanism->missing()) : '';
+      $process->begin_compensation('Await timed out' . ($missing !== '' ? " — missing: $missing" : ''));
+      $this->repository->save($process);
+      $this->execute_compensation($process);
+    });
+  }
+
+  /**
    * Serialize accumulate/save per process via MySQL named lock.
    * Lock timeout → throw so ActionScheduler retries the delivery.
    */

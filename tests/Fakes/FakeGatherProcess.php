@@ -3,9 +3,11 @@
 namespace TangibleDDD\Tests\Fakes;
 
 use TangibleDDD\Application\Process\AwaitAll;
+use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\Result;
 
+#[Awaits(FakeResolvedEvent::class)]
 class FakeGatherProcess extends LongProcess {
   public array $executed_steps = [];
   public ?AwaitAll $gather_seen = null;
