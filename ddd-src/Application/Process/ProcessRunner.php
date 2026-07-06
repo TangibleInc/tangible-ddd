@@ -179,42 +179,56 @@ final class ProcessRunner {
    * Stale-timer guard: no-op unless still suspended at the SAME step index.
    */
   public function handle_timeout(int $process_id, int $step_index): void {
-    $process = $this->repository->find($process_id);
+    // AS-action entry point like continue_scheduled: arm the resource
+    // governor here. The FAIL branch below runs execute_compensation()
+    // without passing through run(), so without this, time_exceeded() sees
+    // null (governor off for the whole cascade) — or a stale started_at if
+    // the runner instance is reused across AS callbacks.
+    $this->started_at = time();
 
-    if ($process === null || $process->status() !== 'suspended') {
-      return;
-    }
-    if ($process->current_step_index() !== $step_index) {
-      return; // stale alarm — the saga already woke and moved on
-    }
+    // Same suspended-row mutation surface as resume_on_event — serialize with
+    // it via the per-process lock. The find and ALL guards must run inside
+    // the lock: a row read before the lock is won can be stale by the time we
+    // hold it (e.g. the final event just resumed the process), which would
+    // defeat the guards entirely.
+    $this->with_process_lock($process_id, function () use ($process_id, $step_index) {
+      $process = $this->repository->find($process_id);
 
-    $mechanism = $process->await_mechanism();
-    if ($mechanism === null) {
-      return;
-    }
+      if ($process === null || $process->status() !== 'suspended') {
+        return;
+      }
+      if ($process->current_step_index() !== $step_index) {
+        return; // stale alarm — the saga already woke and moved on
+      }
 
-    CorrelationContext::with($process->correlation_id(), function () use ($process, $mechanism) {
-      if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
-        $process->advance_step();
-        $this->resume_argument = $mechanism->resume_argument(null);
-        $process->advance(status: 'running', payload: $process->payload());
-        $this->repository->save($process);
-        $this->run($process);
-        $this->resume_argument = null;
+      $mechanism = $process->await_mechanism();
+      if ($mechanism === null) {
         return;
       }
 
-      // TIMEOUT_FAIL. Call execute_compensation() directly rather than run():
-      // when the suspended step is the process's first step, begin_compensation()
-      // leaves undo_index at -1 (nothing completed yet to undo), which is the
-      // same value is_compensating() reports for "no compensation in progress" —
-      // routing through run()'s is_compensating() gate would misfire back into
-      // execute_forward(). execute_forward()'s own failure handler sidesteps
-      // this the same way.
-      $missing = method_exists($mechanism, 'missing') ? implode(', ', $mechanism->missing()) : '';
-      $process->begin_compensation('Await timed out' . ($missing !== '' ? " — missing: $missing" : ''));
-      $this->repository->save($process);
-      $this->execute_compensation($process);
+      CorrelationContext::with($process->correlation_id(), function () use ($process, $mechanism) {
+        if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
+          $process->advance_step();
+          $this->resume_argument = $mechanism->resume_argument(null);
+          $process->advance(status: 'running', payload: $process->payload());
+          $this->repository->save($process);
+          $this->run($process);
+          $this->resume_argument = null;
+          return;
+        }
+
+        // TIMEOUT_FAIL. Call execute_compensation() directly rather than run():
+        // when the suspended step is the process's first step, begin_compensation()
+        // leaves undo_index at -1 (nothing completed yet to undo), which is the
+        // same value is_compensating() reports for "no compensation in progress" —
+        // routing through run()'s is_compensating() gate would misfire back into
+        // execute_forward(). execute_forward()'s own failure handler sidesteps
+        // this the same way.
+        $missing = method_exists($mechanism, 'missing') ? implode(', ', $mechanism->missing()) : '';
+        $process->begin_compensation('Await timed out' . ($missing !== '' ? " — missing: $missing" : ''));
+        $this->repository->save($process);
+        $this->execute_compensation($process);
+      });
     });
   }
 

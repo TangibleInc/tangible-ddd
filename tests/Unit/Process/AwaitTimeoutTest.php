@@ -7,8 +7,10 @@ use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\AwaitAll;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
+use TangibleDDD\Tests\Fakes\FakeGatherFailCompensatingProcess;
 use TangibleDDD\Tests\Fakes\FakeGatherProcess;
 use TangibleDDD\Tests\Fakes\FakeOutcome;
+use TangibleDDD\Tests\Fakes\FakePayload;
 use TangibleDDD\Tests\Fakes\FakeProcessRepository;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
@@ -84,5 +86,74 @@ class AwaitTimeoutTest extends TestCase {
     $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
 
     $this->assertSame('failed', $this->repo->find($p->get_id())->status());
+  }
+
+  public function test_fail_policy_runs_registered_compensations(): void {
+    // A completed step precedes the await, so undo_index >= 0 and the
+    // compensation loop actually iterates (not just finish_compensation()).
+    $p = new FakeGatherFailCompensatingProcess([1]);
+    $this->runner->start($p);
+    $this->assertSame(['reserve', 'dispatch'], $p->executed_steps);
+    $this->assertSame('suspended', $this->repo->find($p->get_id())->status());
+
+    $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
+
+    $this->assertSame(['reserve', 'dispatch', 'undo_reserve'], $p->executed_steps);
+    $this->assertInstanceOf(FakePayload::class, $p->checkpoint_seen);
+    $this->assertSame('reserve_checkpoint', $p->checkpoint_seen->data);
+    $this->assertSame('failed', $this->repo->find($p->get_id())->status());
+  }
+
+  public function test_handle_timeout_serializes_via_process_lock(): void {
+    // handle_timeout mutates the same suspended row as resume_on_event; it
+    // must take the per-process MySQL named lock so a late final event and
+    // the alarm can't interleave (last-writer-wins corruption).
+    $spy = new class extends \wpdb {
+      public array $lock_names = [];
+      public function prepare(string $query, ...$args): string {
+        if (str_contains($query, 'GET_LOCK')) {
+          $this->lock_names[] = $args[0] ?? null;
+        }
+        return $query;
+      }
+    };
+    $GLOBALS['wpdb'] = $spy;
+
+    $p = new \TangibleDDD\Tests\Fakes\FakeGatherFailProcess([1]);
+    $this->runner->start($p);
+
+    $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
+
+    $this->assertSame(['ddd_process_' . $p->get_id()], $spy->lock_names);
+    $this->assertSame('failed', $this->repo->find($p->get_id())->status());
+  }
+
+  public function test_handle_timeout_arms_the_resource_governor(): void {
+    // handle_timeout is an AS-action entry point like continue_scheduled: it
+    // must set started_at, or time_exceeded() stays false (started_at null)
+    // and the whole compensation cascade runs ungoverned. With the budget
+    // forced to zero, the governor must reschedule after the first
+    // compensation instead of finishing the cascade in-request.
+    $p = new FakeGatherFailCompensatingProcess([1]);
+    $this->runner->start($p);   // normal budget: runs to suspension
+
+    // Simulate a fresh AS-action entry (new request → new runner → alarm
+    // callback), where started_at has never been set by run().
+    $started_at = new \ReflectionProperty($this->runner, 'started_at');
+    $started_at->setValue($this->runner, null);
+
+    // Zero the budget only for the alarm handling.
+    $governor = new \ReflectionProperty($this->runner, 'max_execution_seconds');
+    $governor->setValue($this->runner, 0);
+
+    global $_test_scheduled_actions;
+    $_test_scheduled_actions = [];
+
+    $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
+
+    $this->assertContains('undo_reserve', $p->executed_steps);
+    $this->assertSame('scheduled', $this->repo->find($p->get_id())->status());
+    $continuations = array_filter($_test_scheduled_actions, fn($a) => str_contains($a['hook'], 'process_continue'));
+    $this->assertCount(1, $continuations);
   }
 }
