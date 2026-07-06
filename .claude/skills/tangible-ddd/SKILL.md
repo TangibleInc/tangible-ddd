@@ -13,6 +13,30 @@ Tangible DDD is organic. Every pattern was won through real problems, not textbo
 
 ---
 
+## ⚠️ Upcoming: 0.2.0 Event Taxonomy (DESIGNED, NOT YET BUILT)
+
+A hard-break redesign of the event system is fully specced. **Before writing any NEW
+integration event, listener, or await code — or implementing 0.2.0 itself — read:**
+
+- `docs/integration-event-evolution.md` (handoff — start here)
+- `docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md` (full spec)
+
+Key deltas vs. the v0.1 patterns documented below (which remain accurate for code
+as it exists today):
+
+| v0.1 (below, as-built) | 0.2.0 (specced) |
+|---|---|
+| `IntegrationEvent` = fat domain event, `scalarise()` flattens lossily | `IntegrationEvent` = **scalar-by-definition** (reversible ctor values only); strict `scalarise()` throws; total round-trip via `from_payload()` — typed events post-AS |
+| fat event crosses via entity→id flattening | fat moment implements `IAnnouncesIntegration::to_integration()` → hand-written scalar twin in `Integration\` sub-namespace (the 5 judgment lines: fact selection + naming) |
+| listeners = closures in `includes/hooks/integration/` | `IntegrationListener` classes in `Application\IntegrationListeners\` (auto-wired; `get_event_class()` + `get_command(): ?ICommand`) |
+| `AsyncWordpressActionHandler` for same-context deferred | **deprecated** — decomposes into `IntegrationListener` + Command (deferred work belongs under command_audit) |
+| `AwaitEvent` only (1-of-1) | `IAwaitMechanism` + `AwaitAll` (fan-in: expected ids, `key_by` static extractor on the process, mandatory wall-clock timeout); `#[Awaits]` class attribute replaces YAML `awaits:` |
+
+Even before 0.2.0 lands: **prefer scalar ctor params on new integration events** —
+they'll survive the migration unchanged.
+
+---
+
 ## Reference Implementation
 
 The `tangible-cred` repository is the canonical reference. If you need to see how a pattern is implemented, explore it there.
@@ -78,22 +102,43 @@ New business logic needed?
 ### Async Patterns
 
 ```
-Need async execution?
+Need async or multi-step execution?
 │
 ├─ Cross-context, OR must not share the originating transaction, OR
 │  needs durability/retry?  (this is almost always the answer)
 │  └─ Integration Event (Outbox → ActionScheduler)
 │
-├─ Genuinely same-context, fire-and-forget, no durability needed?
-│  └─ Async Domain Event (AsyncWordpressActionHandler) — rare; see caveat
+├─ Named business lifecycle whose steps belong together as one story?
+│  └─ LongProcess
 │
-├─ Configurable action sequence (retry, notify, wait)?
+├─ Admin/user-configurable behaviour sequence, especially batched or reusable?
 │  └─ Behaviour Workflow
 │
-│  // LongProcess is pretty powerful, should be reserved for situations when integration event choreography is too difficult
-└─ Multi-step with suspension, resource limits?
-   └─ LongProcess
+└─ Genuinely same-context, fire-and-forget, no durability needed?
+   └─ Async Domain Event (AsyncWordpressActionHandler) — rare; see caveat
 ```
+
+---
+
+### LongProcess vs BehaviourWorkflow
+
+Use **LongProcess** for developer-authored named business lifecycles. It is a
+process manager/saga: one place for the whole story when a process spans time,
+external callbacks, side effects, waits, resource limits, and compensation.
+Prefer it when integration-event choreography would hide the actual business
+flow.
+
+Example: ask a Georgia Respiratory client to present documents at an endpoint,
+wait for a webhook, ping an authority endpoint, send emails, then complete or
+fail the lifecycle. That belongs in one process, not scattered across a chain
+of integration-event reactions.
+
+Use **BehaviourWorkflow** for configurable behaviour execution. It is the right
+tool when the action sequence may be stored as JSON, assembled by admins/users,
+reused across records, batched over work items, retried, forked, or paused.
+
+Example: Tangible Cred-style behaviour config such as retry, notify, wait for
+user action, stop, or fork failed batch items into a child workflow.
 
 ---
 
@@ -171,6 +216,12 @@ class DeactivateTrackedAgencyLicensesOnUnenrol extends WordpressActionHandler {
 
 ### Domain Events (Async)
 
+> **⚠️ 0.2.0: deprecated entirely.** `AsyncWordpressActionHandler` is removed in 0.3.0 —
+> the "async domain handler" is a category error (the AS hop is another TIME, not another
+> thread; serialization forces record-land regardless of intent). Its use cases decompose
+> into `IntegrationListener` + Command, bringing the deferred work under command_audit.
+> Do not write new ones.
+
 > **Discouraged — prefer an Integration Event.** An "async domain event" is
 > mostly a semantic convenience: it reuses a domain event's class and hook but
 > runs _outside_ the originating transaction, in a separate request. Every
@@ -210,15 +261,21 @@ class IssueRetroactiveEarningsOnAgencyJoin extends AsyncWordpressActionHandler {
 
 **Example:** Earning issued → Reporting system reacts.
 
+> **⚠️ 0.2.0: the fat example below is v0.1 style and becomes ILLEGAL** — entity ctor
+> params on an `IntegrationEvent` will throw at first publish (strict `scalarise()`).
+> New events: scalar ctor params only (`earning_id: int`, not `Earning $earning`);
+> if in-process handlers genuinely need the entity, write a fat `DomainEvent` that
+> `IAnnouncesIntegration`-announces a scalar twin. See the 0.2.0 banner above.
+
 ```php
-// Event (extends IntegrationEvent, not DomainEvent)
+// Event (extends IntegrationEvent, not DomainEvent)  — v0.1 AS-BUILT STYLE
 class EarningIssued extends IntegrationEvent {
     public function __construct(
         public readonly Earning $earning,
         public readonly User $user,
     ) {}
 
-    // scalarise() auto-converts entities to IDs for transport
+    // scalarise() auto-converts entities to IDs for transport (v0.1: lossy, one-way)
 }
 
 // Written to Outbox, processed by OutboxProcessor, then ActionScheduler
@@ -250,6 +307,10 @@ Two rules that fall out of this:
 2. **Listeners live in `includes/hooks/integration/`, by bounded context** —
    not in `Application/EventHandlers/` next to domain-event handlers. They are
    wiring, not handlers.
+   *(⚠️ 0.2.0: hook-file closures are superseded by `IntegrationListener` classes
+   in `Application\IntegrationListeners\` — same thinness, but typed events,
+   auto-wiring, causation-correct ceremony, and dashboard-enumerable topology.
+   The thin-listener PRINCIPLE is unchanged; only the vessel changes.)*
 
 > **Anti-pattern (do not do this):** a `class FooHandler implements IEventHandler`
 > that registers `add_action(SomeEvent::integration_action(), ...)` in its own
@@ -328,7 +389,12 @@ class IssueContentRelatedAccreditationsHandler {
 
 ### Behaviour Workflows
 
-**When:** Configurable sequence of actions, especially for error handling (retry, notify, wait for user).
+**When:** Configurable sequence of actions, especially when admins/users may
+stitch behaviour together or when the system needs a reusable operational
+ledger over work items (retry, notify, wait for user, stop, fork failed items).
+
+BehaviourWorkflow is not just "async work." It is for behaviour configuration
+and batch/item execution where the sequence itself may be data.
 
 ```php
 // Configuration (stored as JSON)
@@ -349,38 +415,53 @@ $workflow->maybe_advance($executionResult);
 
 ### LongProcess
 
-**When:** Multi-step business process that may suspend, resume, or hit resource limits.
+**When:** Developer-authored multi-step business process that should read as
+one named lifecycle and may suspend, resume, hit resource limits, or compensate.
 
 **Key features:**
 
 - Pre-emptive rescheduling (20s time limit, 90% memory threshold)
 - Can await events (suspend until something happens)
 - Correlation ID preserved across steps
+- Keeps the process story in one class instead of spreading it across
+  integration-event choreography
+- Step discovery is intentionally source-order driven: protected methods that
+  return `Result` execute in the order they appear in the file
 
 ```php
 class SomeComplexProcess extends LongProcess {
     protected function step_one(): Result {
-        return Result::with_payload(['gathered' => $data])
-            ->with_commands([new DoSomething()]);
+        return new Result(
+            payload: new SomePayload(gathered: $data),
+            commands: [new DoSomething()],
+        );
     }
 
-    protected function step_two(): Result {
+    protected function step_two(SomePayload $payload): Result {
         // Access previous step's payload
-        $data = $this->payload['gathered'];
+        $data = $payload->gathered;
 
         // Suspend until event arrives
-        return Result::await(
-            UserConfirmedAction::class,
-            match_criteria: ['user_id' => $this->user_id]
+        return new Result(
+            payload: $payload,
+            await: new AwaitEvent(
+                UserConfirmedAction::class,
+                match_criteria: ['user_id' => $this->user_id],
+            ),
         );
     }
 
     #[Async] // Forces reschedule before execution
-    protected function step_three(): Result {
-        return Result::complete();
+    protected function step_three(SomePayload $payload, UserConfirmedAction $event): Result {
+        return new Result();
     }
 }
 ```
+
+Source-order reflection is a deliberate developer-experience choice: a process
+class should read top-to-bottom like the business lifecycle. Treat method
+reordering as a behaviour change, not a cosmetic refactor. Keep helper methods
+from returning `Result` unless they are actual process steps.
 
 **Reference:**
 
@@ -581,5 +662,7 @@ Before implementing a new feature:
 - [ ] Does this need async? It's almost certainly an integration event, not an async domain event.
 - INFO: Should I inform the user that I see a new domain need or relationship emerging?
 - [ ] Am I adding a new repository method? Consider query composition instead.
-- [ ] Is this configurable actions? Consider Behaviour Workflow.
-- [ ] Is this a long-running process? Consider LongProcess. // Consider only when palpable, multi-step business processes emerge
+- [ ] Is this a named business lifecycle that should be understood in one place? Consider LongProcess.
+- [ ] Would integration-event choreography hide the real process story? Prefer LongProcess.
+- [ ] Is this configurable/admin-authored behaviour, especially over batches or reusable actions? Consider BehaviourWorkflow.
+- [ ] Am I using BehaviourWorkflow just because it is async? STOP — decide whether this is user-configured behaviour or a named process.

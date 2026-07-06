@@ -45,3 +45,7 @@ htmlcov/
 
 
 .reference/
+
+# Claude session scratch
+.claude/worktrees/
+.playwright-cli/
