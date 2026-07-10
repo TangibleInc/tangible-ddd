@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Tests\Integration\Framework;
 
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Events\IntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IOutboxRepository;
 use TangibleDDD\Tests\Integration\IntegrationTestCase;
@@ -45,10 +46,21 @@ final class OutboxPauseTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
+        // parent::tearDown() ROLLBACKs the outer transaction, which can undo a
+        // set_pause() write that was never internally committed (the wildcard
+        // '*' branch of fetch_pending() returns early, before its own
+        // START TRANSACTION/COMMIT). When that happens, the WP options cache
+        // still holds the pre-rollback (paused) value, and clear_pause()/
+        // delete_option() below no-op against the cache because their
+        // underlying $wpdb update/delete affects zero rows (the row is
+        // already gone in the DB). Force-drop the cache entry so the next
+        // get_option() re-reads the (correctly rolled-back) DB state instead
+        // of leaking a stale wildcard pause into later tests in this process.
         parent::tearDown();
         $this->outbox->clear_pause('t');
         $this->outbox->clear_pause('w');
         delete_option($this->pauses_option);
+        wp_cache_delete($this->pauses_option, 'options');
         $this->wpdb->query($this->wpdb->prepare(
             "DELETE FROM `{$this->outbox_table}` WHERE correlation_id LIKE %s",
             self::CORRELATION_PREFIX . '%'
@@ -96,14 +108,9 @@ final class OutboxPauseTest extends IntegrationTestCase
 
     private function make_event(): IIntegrationEvent
     {
-        return new class implements IIntegrationEvent {
+        return new class extends IntegrationEvent {
+            protected static function prefix(): string { return 'outbox'; }
             public static function name(): string { return 'outbox.test.event'; }
-            public static function action(): string { return 'outbox_test_action'; }
-            public static function integration_action(): string { return 'outbox_test_integration_action'; }
-            public function payload(): array { return []; }
-            public function integration_payload(): array { return []; }
-            public function delay(): int { return 0; }
-            public function is_unique(): bool { return false; }
         };
     }
 }

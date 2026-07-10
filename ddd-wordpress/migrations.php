@@ -32,8 +32,9 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 1: original 6 tables
  *  - 2: command_audit gains causation_id + causation_type (+ idx_causation)
  *  - 3: behaviour_workflows gains correlation_id (+ idx_correlation)
+ *  - 4: long_processes gains await_mechanism
  */
-const DDD_SCHEMA_VERSION = 3;
+const DDD_SCHEMA_VERSION = 4;
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -82,6 +83,15 @@ function ddd_explicit_migrations(): array {
       $table = $config->table('behaviour_workflows');
       ddd_add_column_if_missing($table, 'correlation_id', 'CHAR(36) NULL', 'is_failed');
       ddd_add_index_if_missing($table, 'idx_correlation', '`correlation_id`');
+    },
+
+    // v4 — await_mechanism on long_processes. Additive; dbDelta covers fresh
+    // installs; explicit entry guarantees the column for consumers already at
+    // v3, whose fast-path in ddd_maybe_migrate() would otherwise never
+    // re-run dbDelta and leave ProcessRepository writing to a missing column.
+    4 => static function (IDDDConfig $config): void {
+      $table = $config->table('long_processes');
+      ddd_add_column_if_missing($table, 'await_mechanism', 'JSON NULL', 'match_criteria');
     },
   ];
 }

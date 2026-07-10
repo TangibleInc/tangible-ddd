@@ -33,10 +33,16 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
     }
 
     // Write event to outbox (within current transaction)
-    $this->outbox->write(
+    $event_id = $this->outbox->write(
       $event,
       CorrelationContext::get(),
       CorrelationContext::command_id()
     );
+
+    // Stamp the journey with the id the write path generated, so the event
+    // instance in hand now carries the same identity as its outbox row.
+    if (is_string($event_id) && $event_id !== '' && $event->event_id() === null) {
+      $event->stamp_journey(CorrelationContext::get(), $event_id);
+    }
   }
 }

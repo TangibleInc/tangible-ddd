@@ -31,8 +31,8 @@ final class ProcessRunner {
   /** @var array<string, bool> Tracks which events have action hooks registered */
   private array $registered_events = [];
 
-  /** @var IIntegrationEvent|null Transient - event that triggered current resume */
-  private ?IIntegrationEvent $resume_event = null;
+  /** @var mixed Transient - resume_argument() output from the mechanism that woke the process */
+  private mixed $resume_argument = null;
 
   public function __construct(
     private readonly IDDDConfig $config,
@@ -80,7 +80,17 @@ final class ProcessRunner {
 
     add_action(
       $event_class::integration_action(),
-      fn(array $payload) => $this->resume_on_event($event_class::from_payload($payload)),
+      function (array $payload) use ($event_class) {
+        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope->restore_context();
+
+        $event = $event_class::from_payload($envelope->payload);
+        if ($envelope->event_id !== null) {
+          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+        }
+
+        $this->resume_on_event($event);
+      },
       99 // Late priority - run after main handlers
     );
 
@@ -132,29 +142,113 @@ final class ProcessRunner {
     $waiting = $this->repository->find_waiting_for($event_class);
 
     foreach ($waiting as $process) {
-      $criteria = $process->match_criteria() ?? [];
-
-      if (!$this->event_matches_criteria($event, $criteria)) {
+      $mechanism = $process->await_mechanism();
+      if ($mechanism === null || !$mechanism->accepts($event)) {
         continue;
       }
 
-      // Scope the resume to the process's correlation (see continue_scheduled).
-      CorrelationContext::with($process->correlation_id(), function () use ($process, $event) {
-        // The awaited event arrived - complete the waiting step and move forward
-        $process->advance_step();
-        $this->resume_event = $event; // Store for next step to receive
-        $process->advance(status: 'running', payload: $process->payload());
-        $this->repository->save($process);
+      $this->with_process_lock($process->get_id(), function () use ($process, $event, $mechanism) {
+        $updated = $mechanism->accumulate($event);
 
-        $this->run($process);
+        if (!$updated->is_satisfied()) {
+          // Partial arrival: persist the tally, stay suspended.
+          $process->update_await($updated);
+          $this->repository->save($process);
+          return;
+        }
 
-        // Clear transient state
-        $this->resume_event = null;
+        CorrelationContext::with($process->correlation_id(), function () use ($process, $event, $updated) {
+          $process->advance_step();
+          $this->resume_argument = $updated->resume_argument($event);
+          $process->advance(status: 'running', payload: $process->payload());
+          $this->repository->save($process);
+
+          $this->run($process);
+
+          $this->resume_argument = null;
+        });
       });
 
-      // Only resume first matching process per event
-      // (if you need fan-out, remove this return)
+      // Only resume first accepting process per event (key sets are disjoint by construction).
       return;
+    }
+  }
+
+  /**
+   * Await-timeout alarm (wall clock — deliberately not pause-aware, see spec §6.3).
+   * Stale-timer guard: no-op unless still suspended at the SAME step index.
+   */
+  public function handle_timeout(int $process_id, int $step_index): void {
+    // AS-action entry point like continue_scheduled: arm the resource
+    // governor here. The FAIL branch below runs execute_compensation()
+    // without passing through run(), so without this, time_exceeded() sees
+    // null (governor off for the whole cascade) — or a stale started_at if
+    // the runner instance is reused across AS callbacks.
+    $this->started_at = time();
+
+    // Same suspended-row mutation surface as resume_on_event — serialize with
+    // it via the per-process lock. The find and ALL guards must run inside
+    // the lock: a row read before the lock is won can be stale by the time we
+    // hold it (e.g. the final event just resumed the process), which would
+    // defeat the guards entirely.
+    $this->with_process_lock($process_id, function () use ($process_id, $step_index) {
+      $process = $this->repository->find($process_id);
+
+      if ($process === null || $process->status() !== 'suspended') {
+        return;
+      }
+      if ($process->current_step_index() !== $step_index) {
+        return; // stale alarm — the saga already woke and moved on
+      }
+
+      $mechanism = $process->await_mechanism();
+      if ($mechanism === null) {
+        return;
+      }
+
+      CorrelationContext::with($process->correlation_id(), function () use ($process, $mechanism) {
+        if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
+          $process->advance_step();
+          $this->resume_argument = $mechanism->resume_argument(null);
+          $process->advance(status: 'running', payload: $process->payload());
+          $this->repository->save($process);
+          $this->run($process);
+          $this->resume_argument = null;
+          return;
+        }
+
+        // TIMEOUT_FAIL. Call execute_compensation() directly rather than run():
+        // when the suspended step is the process's first step, begin_compensation()
+        // leaves undo_index at -1 (nothing completed yet to undo), which is the
+        // same value is_compensating() reports for "no compensation in progress" —
+        // routing through run()'s is_compensating() gate would misfire back into
+        // execute_forward(). execute_forward()'s own failure handler sidesteps
+        // this the same way.
+        $missing = method_exists($mechanism, 'missing') ? implode(', ', $mechanism->missing()) : '';
+        $process->begin_compensation('Await timed out' . ($missing !== '' ? " — missing: $missing" : ''));
+        $this->repository->save($process);
+        $this->execute_compensation($process);
+      });
+    });
+  }
+
+  /**
+   * Serialize accumulate/save per process via MySQL named lock.
+   * Lock timeout → throw so ActionScheduler retries the delivery.
+   */
+  private function with_process_lock(int $process_id, callable $fn): void {
+    global $wpdb;
+    $name = 'ddd_process_' . $process_id;
+    $acquired = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $name));
+
+    if ((string) $acquired === '0') {
+      throw new \RuntimeException("Could not acquire process lock $name — delivery will be retried.");
+    }
+
+    try {
+      $fn();
+    } finally {
+      $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $name));
     }
   }
 
@@ -177,6 +271,10 @@ final class ProcessRunner {
       } else {
         $this->execute_forward($process);
       }
+    } catch (AwaitedEventNotRegistered $e) {
+      // Config/wiring bug, not a business failure — don't mark the process
+      // failed or announce ProcessFailed; propagate so the wiring gets fixed.
+      throw $e;
     } catch (Throwable $e) {
       // Ensure we don't leave process in inconsistent state
       if ($process->status() !== 'failed') {
@@ -231,7 +329,7 @@ final class ProcessRunner {
         // Advance to next step
         $process->advance_step();
         $process->advance(status: 'running', payload: $result->payload);
-        $this->resume_event = null; // Clear after first step post-resume
+        $this->resume_argument = null; // Clear after first step post-resume
         $this->repository->save($process);
 
         // Check resources after each step
@@ -240,6 +338,9 @@ final class ProcessRunner {
           return;
         }
 
+      } catch (AwaitedEventNotRegistered $e) {
+        // Config/wiring bug, not a business failure — don't compensate, fail fast.
+        throw $e;
       } catch (Throwable $e) {
         // Enter compensation mode
         $process->begin_compensation($e->getMessage());
@@ -312,6 +413,9 @@ final class ProcessRunner {
           return;
         }
 
+      } catch (AwaitedEventNotRegistered $e) {
+        // Config/wiring bug, not a compensation failure — don't relabel, fail fast.
+        throw $e;
       } catch (Throwable $e) {
         // Compensation failed - mark as failed and re-throw
         $process->fail('Compensation failed: ' . $e->getMessage());
@@ -350,8 +454,8 @@ final class ProcessRunner {
       return $step->invoke($process, $process->payload());
     }
 
-    // 2+ params: pass payload and event
-    return $step->invoke($process, $process->payload(), $this->resume_event);
+    // 2+ params: pass payload and the mechanism's resume argument
+    return $step->invoke($process, $process->payload(), $this->resume_argument);
   }
 
   /**
@@ -375,15 +479,28 @@ final class ProcessRunner {
    * Suspend process waiting for an integration event.
    */
   private function suspend_for_event(LongProcess $process, Result $result): void {
-    $await = $result->await;
+    $mechanism = $result->await;
+
+    if (!isset($this->registered_events[$mechanism->event_class()])) {
+      throw new AwaitedEventNotRegistered($mechanism->event_class(), get_class($process));
+    }
 
     $process->advance(
       status: 'suspended',
       payload: $result->payload,
-      waiting_for: $await->event_class,
-      match_criteria: $await->match_criteria,
+      waiting_for: $mechanism->event_class(),
+      await_mechanism: $mechanism,
     );
     $this->repository->save($process);
+
+    if ($mechanism->timeout_seconds() > 0) {
+      as_schedule_single_action(
+        time() + $mechanism->timeout_seconds(),
+        $this->config->hook('await_timeout'),
+        ['process_id' => $process->get_id(), 'step_index' => $process->current_step_index()],
+        $this->config->as_group('processes')
+      );
+    }
   }
 
   /**
@@ -495,18 +612,4 @@ final class ProcessRunner {
     return !empty($method->getAttributes(Async::class));
   }
 
-  /**
-   * Check if an event matches the stored criteria (strict comparison).
-   */
-  private function event_matches_criteria(IIntegrationEvent $event, array $criteria): bool {
-    foreach ($criteria as $key => $expected) {
-      if (!property_exists($event, $key)) {
-        return false;
-      }
-      if ($event->$key !== $expected) {
-        return false;
-      }
-    }
-    return true;
-  }
 }

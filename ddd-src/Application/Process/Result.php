@@ -27,8 +27,8 @@ final class Result {
     /** @var array Commands to dispatch (fire-and-forget) */
     public readonly array $commands = [],
 
-    /** Suspend and wait for this event */
-    public readonly ?AwaitEvent $await = null,
+    /** Suspend and wait per this mechanism */
+    public readonly ?IAwaitMechanism $await = null,
 
     /**
      * Checkpoint data for compensation.

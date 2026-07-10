@@ -40,6 +40,12 @@ class ProcessRepository implements IProcessRepository {
       'status' => $process->status(),
       'waiting_for' => $process->waiting_for(),
       'match_criteria' => $process->match_criteria() ? wp_json_encode($process->match_criteria()) : null,
+      'await_mechanism' => $process->await_mechanism()
+        ? wp_json_encode([
+            '_class' => get_class($process->await_mechanism()),
+            '_data'  => $process->await_mechanism()->to_array(),
+          ])
+        : null,
       'payload' => $payload ? wp_json_encode(JsonLifecycleValue::serialize_polymorphic($payload)) : null,
       'correlation_id' => $process->correlation_id(),
       'last_error' => $process->last_error(),
@@ -149,6 +155,22 @@ class ProcessRepository implements IProcessRepository {
       ? JsonLifecycleValue::deserialize_polymorphic(json_decode($row->payload, true))
       : null;
 
+    // Restore await mechanism (with legacy fallback for pre-0.2.0 rows)
+    $mechanism = null;
+    if (!empty($row->await_mechanism ?? null)) {
+      $decoded = json_decode($row->await_mechanism, true);
+      $mclass = $decoded['_class'] ?? null;
+      if ($mclass && is_a($mclass, \TangibleDDD\Application\Process\IAwaitMechanism::class, true)) {
+        $mechanism = $mclass::from_array($decoded['_data'] ?? []);
+      }
+    } elseif ($row->waiting_for && $row->status === 'suspended') {
+      // Legacy row from before 0.2.0 — reconstruct the 1-of-1 mechanism.
+      $mechanism = new \TangibleDDD\Application\Process\AwaitEvent(
+        $row->waiting_for,
+        $row->match_criteria ? (json_decode($row->match_criteria, true) ?? []) : []
+      );
+    }
+
     // Hydrate all framework state
     $process->hydrate(
       id: (int) $row->id,
@@ -161,6 +183,7 @@ class ProcessRepository implements IProcessRepository {
       last_error: $row->last_error,
       created_at: $row->created_at ? new DateTimeImmutable($row->created_at) : null,
       updated_at: $row->updated_at ? new DateTimeImmutable($row->updated_at) : null,
+      await_mechanism: $mechanism,
     );
 
     return $process;

@@ -3,8 +3,12 @@
 namespace TangibleDDD\Tests\Unit\WordPress;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 
+use function TangibleDDD\WordPress\ddd_explicit_migrations;
 use function TangibleDDD\WordPress\ddd_pending_migrations;
+
+use const TangibleDDD\WordPress\DDD_SCHEMA_VERSION;
 
 // migrations.php is a procedural ddd-wordpress file; load it directly for the
 // pure-logic test (no WP/DB needed for ddd_pending_migrations).
@@ -38,5 +42,37 @@ class MigrationsTest extends TestCase {
   public function test_installed_ahead_never_runs_backward(): void {
     // Downgrade / weird state must not produce negative or backward work.
     $this->assertSame([], ddd_pending_migrations(3, 2));
+  }
+
+  public function test_current_schema_version_is_4(): void {
+    // Regression guard for the v3-fast-path bug: a consumer already recorded
+    // as v3 must NOT be treated as up to date once await_mechanism ships.
+    $this->assertSame(4, DDD_SCHEMA_VERSION);
+  }
+
+  public function test_v4_migration_adds_await_mechanism_after_match_criteria_on_long_processes(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(4, $migrations, 'ddd_explicit_migrations() must define a v4 entry so consumers already at v3 actually get the column.');
+
+    // Spy wpdb: report the column as absent (get_var => 0) so the guarded
+    // helper proceeds to the ALTER, and capture the SQL it issues.
+    $spy = new class extends \wpdb {
+      public array $queries = [];
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 0;
+      }
+      public function query(string $query) {
+        $this->queries[] = $query;
+        return true;
+      }
+    };
+    $GLOBALS['wpdb'] = $spy;
+
+    $migrations[4](new FakeDDDConfig());
+
+    $this->assertCount(1, $spy->queries);
+    $this->assertStringContainsString('wp_test_long_processes', $spy->queries[0]);
+    $this->assertStringContainsString('ADD COLUMN `await_mechanism` JSON NULL', $spy->queries[0]);
+    $this->assertStringContainsString('AFTER `match_criteria`', $spy->queries[0]);
   }
 }

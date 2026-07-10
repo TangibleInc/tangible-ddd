@@ -3,6 +3,7 @@
 namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Events\TransportEnvelope;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
@@ -59,29 +60,42 @@ function extract_correlation(array $params): array {
     is_array($params[0]) &&
     isset($params[0]['__correlation_id'])
   ) {
-    $wrapped = $params[0];
-    CorrelationContext::init($wrapped['__correlation_id']);
+    $envelope = TransportEnvelope::unwrap($params[0]);
+    $envelope->restore_context();
 
-    if (isset($wrapped['__sequence'])) {
-      CorrelationContext::set_sequence((int) $wrapped['__sequence']);
-    }
-
-    // The triggering event is the causation of whatever command this handler
-    // dispatches (choreography). Stash it before stripping the transport keys —
-    // this is the __event_id that used to be discarded here.
-    if (isset($wrapped['__event_id'])) {
-      CorrelationContext::set_causation((string) $wrapped['__event_id'], 'integration_event');
-    }
-
-    unset($wrapped['__correlation_id'], $wrapped['__sequence'], $wrapped['__event_id']);
-
-    // Positional list payloads (the original contract — every existing consumer,
-    // e.g. all of tangible-cred) spread as positional args. Associative payloads
-    // pass through intact as a single arg, instead of being silently reindexed
-    // to positional by array_values(). Gated on array_is_list() so the list case
-    // is byte-for-byte unchanged — backwards compatible.
-    return array_is_list($wrapped) ? array_values($wrapped) : [$wrapped];
+    // Positional list payloads spread as positional args; associative payloads
+    // pass through intact as a single arg (see array_is_list gate rationale).
+    return array_is_list($envelope->payload) ? array_values($envelope->payload) : [$envelope->payload];
   }
 
   return $params;
+}
+
+/**
+ * The integration-listener ceremony: hook a record's integration action,
+ * rebuild the typed event, restore journey context, translate to a Command.
+ *
+ * This is the internal primitive; the paved road is the IntegrationListener
+ * base class (named, enumerable, DI-constructed). Fn-form = escape hatch.
+ *
+ * @param class-string<\TangibleDDD\Domain\Events\IIntegrationEvent> $event_class
+ * @param callable(\TangibleDDD\Domain\Events\IIntegrationEvent): ?\TangibleDDD\Application\Commands\ICommand $translate
+ */
+function integration_listener(string $event_class, callable $translate): void {
+  if (!is_a($event_class, IIntegrationEvent::class, true)) {
+    throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
+  }
+
+  add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
+    $envelope = TransportEnvelope::unwrap($wrapped);
+    $envelope->restore_context();
+
+    $event = $event_class::from_payload($envelope->payload);
+    if ($envelope->event_id !== null) {
+      $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+    }
+
+    $command = $translate($event);
+    $command?->send();
+  }, 10, 1);
 }

@@ -77,12 +77,14 @@ class ProcessRunnerTest extends TestCase {
   }
 
   public function test_suspending_process_waits_for_event(): void {
+    $this->runner->register_event(FakeIntegrationEvent::class);
     $process = new FakeSuspendingProcess();
     $this->runner->start($process);
 
     $this->assertSame('suspended', $process->status());
     $this->assertSame(FakeIntegrationEvent::class, $process->waiting_for());
-    $this->assertSame(['entity_id' => 42], $process->match_criteria());
+    $this->assertInstanceOf(\TangibleDDD\Application\Process\AwaitEvent::class, $process->await_mechanism());
+    $this->assertSame(['entity_id' => 42], $process->await_mechanism()->match_criteria);
     $this->assertSame(['request_action'], $process->executed_steps);
   }
 
