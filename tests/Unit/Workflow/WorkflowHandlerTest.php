@@ -177,12 +177,15 @@ class WorkflowHandlerTest extends TestCase {
     $this->assertGreaterThanOrEqual(1, $this->wf_repo->save_count);
   }
 
-  public function test_forking_on_batchable_failure(): void {
+  public function test_all_failed_batchable_reschedules_instead_of_forking(): void {
+    // When ALL items in a batchable step fail (no partial success), the fork gate
+    // must NOT fork — forking a 100%-failed batch gains nothing and wastes a retry
+    // budget. Instead the whole workflow reschedules for a step-level retry.
     $config = new FakeBatchableConfig(batch: [1, 2], batch_size: 10);
     $wf = new BehaviourWorkflow(null, 1, 'request', [$config]);
     $this->handler->workflows_to_return = [$wf];
 
-    // All items fail
+    // Both items fail — no partial success
     $this->handler->item_results = [
       new BehaviourExecutionResult('batch', false, ['message' => 'fail'], BehaviourExecutionStatus::failed, gmdate('c')),
       new BehaviourExecutionResult('batch', false, ['message' => 'fail'], BehaviourExecutionStatus::failed, gmdate('c')),
@@ -190,12 +193,47 @@ class WorkflowHandlerTest extends TestCase {
 
     $this->handler->handle($this->make_command());
 
-    // A forked child workflow should have been created
+    // No forked child workflow should exist in the repo
     $forked = array_filter($this->wf_repo->store, fn($w) => $w->is_forked());
-    $this->assertNotEmpty($forked, 'Should fork failed items into child workflow');
+    $this->assertEmpty($forked, 'All-fail case must NOT fork a child workflow');
 
-    // The forked workflow should be rescheduled
-    $this->assertNotEmpty($this->handler->rescheduled);
+    // The workflow itself must be rescheduled for a whole-step retry (max_retries > 0)
+    $this->assertNotEmpty($this->handler->rescheduled, 'All-fail case must reschedule the workflow for retry');
+
+    // The workflow must not be marked complete
+    $this->assertFalse($wf->is_complete(), 'Workflow must not be complete after an all-fail that is still within retry budget');
+  }
+
+  public function test_partial_failure_forks_child_workflow(): void {
+    // When SOME (but not all) items fail, the fork gate must create a child
+    // workflow holding only the failed items and reschedule it. This locks the
+    // "partial-failure → fork" branch of maybe_fork_or_fail().
+    //
+    // TestableWorkflowHandler::generate_work_items() always produces item-1 and
+    // item-2. We make item-1 succeed and item-2 fail so the aggregate is a
+    // partial failure.
+    $config = new FakeBatchableConfig(batch: [1, 2], batch_size: 10);
+    $wf = new BehaviourWorkflow(null, 1, 'request', [$config]);
+    $this->handler->workflows_to_return = [$wf];
+
+    // item-1 succeeds, item-2 fails → partial failure
+    $this->handler->item_results = [
+      new BehaviourExecutionResult('batch', true, ['message' => 'ok'], BehaviourExecutionStatus::completed, gmdate('c')),
+      new BehaviourExecutionResult('batch', false, ['message' => 'fail'], BehaviourExecutionStatus::failed, gmdate('c')),
+    ];
+
+    $this->handler->handle($this->make_command());
+
+    // A forked child workflow must have been created in the repo
+    $forked = array_filter($this->wf_repo->store, fn($w) => $w->is_forked());
+    $this->assertNotEmpty($forked, 'Partial-failure case must fork a child workflow');
+
+    // The forked child must be rescheduled
+    $this->assertNotEmpty($this->handler->rescheduled, 'Forked child must be rescheduled');
+
+    // The child must carry the failed item (item-2 is item_key 'item-2' in FakeWorkItemRepository)
+    $child = array_values($forked)[0];
+    $this->assertNotNull($child->get_id(), 'Forked child must be persisted with an ID');
   }
 
   public function test_work_items_reused_on_reentry(): void {

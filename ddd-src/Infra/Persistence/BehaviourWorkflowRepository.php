@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Infra\Persistence;
 
+use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
@@ -87,9 +88,10 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
     return $workflows;
   }
 
-  public function save(BehaviourWorkflow $workflow): void {
-    parent::save($workflow);
-  }
+  // save() is inherited from PersistsAggregatesRepository::save(Aggregate).
+  // PHP does not allow narrowing the parameter type in a child class, so we
+  // omit the override and rely on the parent's runtime type-check via
+  // get_aggregate_class() / TypeMismatchException.
 
   protected function persist(Aggregate $aggregate): void {
     /** @var BehaviourWorkflow $aggregate */
@@ -107,6 +109,7 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       'current_phase' => $aggregate->get_current_phase(),
       'is_complete' => $aggregate->is_complete() ? 1 : 0,
       'is_failed' => $aggregate->is_failed() ? 1 : 0,
+      'correlation_id' => CorrelationContext::peek(),
       'meta' => wp_json_encode($aggregate->get_all_meta(), JSON_UNESCAPED_SLASHES),
       'updated_at' => $now,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,

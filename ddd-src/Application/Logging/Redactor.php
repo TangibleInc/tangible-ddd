@@ -41,6 +41,15 @@ final class Redactor {
   private function process_object(string $path, object $obj, int $depth): array {
     $class = get_class($obj);
 
+    // Enums: log the backing value / case name, not "[ClassName]". Audit params were
+    // showing e.g. a schedule as "[…\EndpointDefinitionSendingSchedule]" instead of "every_4_h".
+    if ($obj instanceof \BackedEnum) {
+      return [$obj->value, []];
+    }
+    if ($obj instanceof \UnitEnum) {
+      return [$obj->name, []];
+    }
+
     if ($obj instanceof \DateTimeInterface) {
       return [$obj->format('c'), []];
     }

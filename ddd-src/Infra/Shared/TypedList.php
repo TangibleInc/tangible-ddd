@@ -187,13 +187,20 @@ abstract class TypedList implements \ArrayAccess, \Iterator, \Countable, \Seekab
 
   public function filter(callable $fn, bool $clone = false): static {
     if ($clone) {
-      return new static(array_filter(
-        array_merge([], $this->_list),
-        $fn
-      ));
+      $filtered = array_filter(array_merge([], $this->_list), $fn);
+      // Sequential lists must be re-indexed so the integer-position iterator
+      // (rewind/next/valid) can walk them correctly.  Associative lists keep
+      // their string/non-contiguous-integer keys intact.
+      if (!$this->_is_associated) {
+        $filtered = array_values($filtered);
+      }
+      return new static($filtered);
     }
 
     $this->_list = array_filter($this->_list, $fn);
+    if (!$this->_is_associated) {
+      $this->_list = array_values($this->_list);
+    }
     return $this;
   }
 

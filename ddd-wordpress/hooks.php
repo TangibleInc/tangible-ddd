@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\WordPress;
 
-use TangibleDDD\Application\Outbox\OutboxProcessor;
+use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\IDDDConfig;
 
@@ -18,20 +18,23 @@ function register_hooks(IDDDConfig $config, callable $di_getter): void {
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
   register_outbox_hooks($config, $di_getter);
+  register_migration_hooks($config);
 }
 
 /**
- * Eagerly instantiate all event handler services so their constructors
- * register WordPress action hooks (add_action).
+ * Eagerly instantiate all event handler and integration listener services so
+ * their constructors register WordPress action hooks (add_action).
  *
- * Without this, async handlers (AsyncWordPressActionHandler) never register
- * their callbacks, because Symfony DI is lazy — services are only constructed
- * when explicitly requested. Action Scheduler then fails with
- * "no callbacks are registered" when processing queued async jobs.
+ * Without this, async handlers (AsyncWordPressActionHandler) and
+ * IntegrationListener subclasses never register their callbacks, because
+ * Symfony DI is lazy — services are only constructed when explicitly
+ * requested. Action Scheduler then fails with "no callbacks are registered"
+ * when processing queued async jobs.
  *
  * Works by convention: consumer services.yaml registers event handlers under
- * a namespace ending in \Application\EventHandlers\. This function finds all
- * service IDs matching that pattern and instantiates them.
+ * a namespace ending in \Application\EventHandlers\, and integration
+ * listeners under \Application\IntegrationListeners\. This function finds all
+ * service IDs matching either pattern and instantiates them.
  *
  * @param callable $di_getter Function that returns the DI container
  */
@@ -43,7 +46,9 @@ function register_event_handlers(callable $di_getter): void {
   }
 
   foreach ($container->getServiceIds() as $id) {
-    if (!str_contains($id, '\\Application\\EventHandlers\\')) continue;
+    $is_handler  = str_contains($id, '\\Application\\EventHandlers\\');
+    $is_listener = str_contains($id, '\\Application\\IntegrationListeners\\');
+    if (!$is_handler && !$is_listener) continue;
     if (!class_exists($id)) continue;
 
     try {
@@ -81,6 +86,21 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
       throw $e;
     }
   });
+
+  // Action Scheduler stores the scheduled args as an associative array
+  // (['process_id' => .., 'step_index' => ..]) and fires the callback via
+  // call_user_func_array(), which treats string-keyed arrays as named
+  // arguments (PHP 8+) — so the callback's parameter names must match the
+  // args keys exactly, same convention as process_continue above.
+  add_action($config->hook('await_timeout'), function(int $process_id, int $step_index) use ($config, $di_getter) {
+    try {
+      $runner = ($di_getter())->get(ProcessRunner::class);
+      $runner->handle_timeout($process_id, $step_index);
+    } catch (\Throwable $e) {
+      error_log(sprintf('[%s-process] Await-timeout handling failed for process %d: %s', $config->prefix(), $process_id, $e->getMessage()));
+      throw $e;
+    }
+  }, 10, 2);
 }
 
 /**
@@ -173,6 +193,11 @@ function register_processes_from_container(
 
   foreach ($tagged as $class => $tags) {
     $runner->register($class);
+
+    // Register awaited events declared via #[Awaits(...)] on the class
+    foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\Awaits::class) as $attr) {
+      $runner->register_event($attr->newInstance()->event_class);
+    }
 
     // Register awaited events from tag parameters
     foreach ($tags as $tag_attrs) {

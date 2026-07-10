@@ -75,6 +75,7 @@ abstract class LongProcess extends Aggregate {
   protected string $correlation_id;
   protected ?string $waiting_for = null;
   protected ?array $match_criteria = null;
+  protected ?IAwaitMechanism $await_mechanism = null;
   protected ?string $last_error = null;
   protected ?DateTimeImmutable $created_at = null;
   protected ?DateTimeImmutable $updated_at = null;
@@ -105,6 +106,16 @@ abstract class LongProcess extends Aggregate {
 
   public function match_criteria(): ?array {
     return $this->match_criteria;
+  }
+
+  public function await_mechanism(): ?IAwaitMechanism {
+    return $this->await_mechanism;
+  }
+
+  /** Persist accumulated arrivals without advancing (partial fan-in). */
+  public function update_await(IAwaitMechanism $mechanism): void {
+    $this->await_mechanism = $mechanism;
+    $this->updated_at = new DateTimeImmutable();
   }
 
   public function payload(): ?JsonLifecycleValue {
@@ -247,11 +258,13 @@ abstract class LongProcess extends Aggregate {
     ?JsonLifecycleValue $payload = null,
     ?string $waiting_for = null,
     ?array $match_criteria = null,
+    ?IAwaitMechanism $await_mechanism = null,
   ): void {
     $this->status = $status;
     $this->payload = $payload;
     $this->waiting_for = $waiting_for;
     $this->match_criteria = $match_criteria;
+    $this->await_mechanism = $await_mechanism;
     $this->updated_at = new DateTimeImmutable();
   }
 
@@ -341,6 +354,7 @@ abstract class LongProcess extends Aggregate {
     ?string $last_error = null,
     ?DateTimeImmutable $created_at = null,
     ?DateTimeImmutable $updated_at = null,
+    ?IAwaitMechanism $await_mechanism = null,
   ): void {
     $this->id = $id;
     $this->status = $status;
@@ -352,5 +366,6 @@ abstract class LongProcess extends Aggregate {
     $this->last_error = $last_error;
     $this->created_at = $created_at;
     $this->updated_at = $updated_at;
+    $this->await_mechanism = $await_mechanism;
   }
 }

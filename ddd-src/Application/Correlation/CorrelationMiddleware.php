@@ -18,15 +18,18 @@ use League\Tactician\Middleware;
 final class CorrelationMiddleware implements Middleware {
 
   public function execute($command, callable $next) {
-    // Initialize correlation if not already set (e.g., from integration handler)
-    if (CorrelationContext::peek() === null) {
-      CorrelationContext::init();
-    }
+    // Enter a correlation scope for this command. enter() inherits an existing
+    // correlation (e.g. one a LongProcess run or integration callback has
+    // already established) or generates a fresh one for a new top-level command.
+    // leave() only tears the context down when the OUTERMOST scope exits, so a
+    // command dispatched inside a process/boundary scope no longer wipes the
+    // correlation out from under the work that wraps it.
+    CorrelationContext::enter();
 
     try {
       return $next($command);
     } finally {
-      CorrelationContext::reset();
+      CorrelationContext::leave();
     }
   }
 }

@@ -2,25 +2,32 @@
 
 namespace TangibleDDD\Domain\Events;
 
-interface IIntegrationEvent extends IDomainEvent {
-  /**
-   * WordPress action name for the integration (async) version of this event.
-   */
+/**
+ * The record contract: an event composed of reversible values, engineered so
+ * instances exist on BOTH sides of the ActionScheduler hop.
+ *
+ * SEVERED from IDomainEvent (0.2.0 partition): a class implementing ONLY this
+ * interface cannot be raised — EventsUnitOfWork::record() types IDomainEvent.
+ * Self-publishers implement both (extends DomainEvent + this interface).
+ */
+interface IIntegrationEvent {
+
+  public static function name(): string;
+
+  /** WordPress action name for the integration (async) surface. */
   public static function integration_action(): string;
 
-  /**
-   * Serializable payload for ActionScheduler/outbox.
-   * Should contain only scalar values.
-   */
+  /** Named array of reversible scalars. @throws NonReversibleValue */
   public function integration_payload(): array;
 
-  /**
-   * Delay in seconds before processing this event.
-   */
-  public function delay(): int;
+  /** The return ticket — total for every conforming record. */
+  public static function from_payload(array $payload): static;
 
-  /**
-   * Whether to deduplicate pending events of this type.
-   */
+  /** Journey slots — null until stamped (at publish and at hydrate). */
+  public function correlation_id(): ?string;
+  public function event_id(): ?string;
+  public function stamp_journey(string $correlation_id, string $event_id): void;
+
+  public function delay(): int;
   public function is_unique(): bool;
 }

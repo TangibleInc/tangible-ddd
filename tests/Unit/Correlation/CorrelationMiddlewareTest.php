@@ -78,4 +78,55 @@ class CorrelationMiddlewareTest extends TestCase {
       throw new \RuntimeException('boom');
     });
   }
+
+  /**
+   * A LongProcess step is designed to issue multiple commands via
+   * Result->commands; ProcessRunner dispatches them by looping $command->send(),
+   * each flowing through this middleware. The runner wraps the run in a
+   * correlation scope (CorrelationContext::with). Both commands must therefore
+   * observe the SAME saga correlation — the first command's scope exit must not
+   * tear down the outer process scope.
+   *
+   * Before the scoped fix this failed: the first command's unconditional reset
+   * wiped the context and the second command generated a fresh, unrelated id,
+   * shredding the saga's trace.
+   */
+  public function test_multiple_commands_within_a_process_scope_share_correlation(): void {
+    $middleware = new CorrelationMiddleware();
+    $seen = [];
+
+    // Model the fixed ProcessRunner: it wraps the run (and the commands a step
+    // dispatches) in a correlation scope.
+    CorrelationContext::with('saga-correlation', function () use ($middleware, &$seen) {
+      $middleware->execute(new \stdClass(), function () use (&$seen) {
+        $seen['cmd_a'] = CorrelationContext::get();
+        return 'ok';
+      });
+      $middleware->execute(new \stdClass(), function () use (&$seen) {
+        $seen['cmd_b'] = CorrelationContext::get();
+        return 'ok';
+      });
+    });
+
+    $this->assertSame('saga-correlation', $seen['cmd_a'], 'first command runs under the saga correlation');
+    $this->assertSame('saga-correlation', $seen['cmd_b'], 'second command stays in the same saga trace');
+    $this->assertNull(CorrelationContext::peek(), 'scope fully cleared after the process run');
+  }
+
+  /**
+   * A top-level command (no surrounding scope) still generates its own
+   * correlation and fully clears it on exit — the pre-existing contract.
+   */
+  public function test_top_level_command_generates_and_clears_correlation(): void {
+    $middleware = new CorrelationMiddleware();
+    $seen = null;
+
+    $middleware->execute(new \stdClass(), function () use (&$seen) {
+      $seen = CorrelationContext::get();
+      return 'ok';
+    });
+
+    $this->assertNotEmpty($seen, 'top-level command got a correlation');
+    $this->assertNull(CorrelationContext::peek(), 'context cleared after a top-level command');
+  }
 }

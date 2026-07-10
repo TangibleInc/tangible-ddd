@@ -3,6 +3,7 @@
 namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
+use TangibleDDD\Domain\Events\AlreadyIntegrated;
 use TangibleDDD\Domain\Events\IDomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\IRecordsDomainEvents;
@@ -41,6 +42,9 @@ class EventsUnitOfWork {
   }
 
   public function record(IDomainEvent $event): void {
+    if ($event instanceof IIntegrationEvent && $event->event_id() !== null) {
+      throw new AlreadyIntegrated(get_class($event), $event->event_id());
+    }
     if ($this->sealed && !$event instanceof IIntegrationEvent) {
       throw new DomainEventAfterSealException(get_class($event));
     }

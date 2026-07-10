@@ -46,10 +46,16 @@ final class CommandAuditMiddleware implements Middleware {
       'command_name' => $command_name,
       'source' => $source['type'],
       'source_id' => (string) ($source['id'] ?? ''),
+      'causation_id' => CorrelationContext::causation_id(),
+      'causation_type' => CorrelationContext::causation_type(),
       'blog_id' => $blog_id,
       'parameters' => $parameters,
       'environment' => $env,
     ]);
+
+    // Causation describes exactly the command just recorded. Consume it so it
+    // never bleeds into a sibling or the worker's next command.
+    CorrelationContext::clear_causation();
 
     $status = 'success';
     $error = null;

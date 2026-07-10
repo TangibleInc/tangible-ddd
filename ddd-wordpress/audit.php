@@ -38,6 +38,8 @@ function command_audit_preflight(IDDDConfig $config, array $data): void {
     'status' => 'in_progress',
     'source' => (string) ($data['source'] ?? 'system'),
     'source_id' => (string) ($data['source_id'] ?? ''),
+    'causation_id' => isset($data['causation_id']) ? (string) $data['causation_id'] : null,
+    'causation_type' => isset($data['causation_type']) ? (string) $data['causation_type'] : null,
     'blog_id' => (int) ($data['blog_id'] ?? (is_multisite() ? get_current_blog_id() : 1)),
     'started_at' => gmdate('Y-m-d H:i:s'),
     'parameters' => wp_json_encode($data['parameters'] ?? null, JSON_UNESCAPED_SLASHES),

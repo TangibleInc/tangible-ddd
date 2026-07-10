@@ -108,6 +108,33 @@ final class BehaviourExecutionResult extends DirectJsonLifecycleValue {
     return $this->status !== BehaviourExecutionStatus::failed ? $this->phase + 1 : $this->phase;
   }
 
+  // Restored (removed in 1f6ea33's refactor, but cred's execute_batch still
+  // depends on them). They recurse over $history, which the current model still
+  // maintains, so the restore is faithful to the original semantics. The
+  // longer-term direction is a work-item ledger (items->done()/failed()).
+  public function get_all_success_batch(): array {
+    $batch_success = $this->batch_success;
+    foreach ($this->history as $result) {
+      $batch_success = [...$batch_success, ...$result->get_all_success_batch()];
+    }
+    return $batch_success;
+  }
+
+  public function get_all_error_batch(): array {
+    $batch_error = $this->batch_error;
+    foreach ($this->history as $result) {
+      $batch_error = [...$batch_error, ...$result->get_all_error_batch()];
+    }
+    return array_values(array_unique($batch_error));
+  }
+
+  public function get_unresolved_error_batch(array $new_batch_success = []): array {
+    return array_diff(
+      $this->get_all_error_batch(),
+      [...$this->get_all_success_batch(), ...$new_batch_success]
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // NOTE: batch_success and batch_error are kept for AUDIT PURPOSES ONLY.
   //
