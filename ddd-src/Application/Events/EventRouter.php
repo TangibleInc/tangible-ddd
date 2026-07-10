@@ -2,14 +2,14 @@
 
 namespace TangibleDDD\Application\Events;
 
+use TangibleDDD\Domain\Events\IAnnouncesIntegration;
 use TangibleDDD\Domain\Events\IDomainEvent;
-use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
  * Routes domain events to appropriate destinations.
  *
- * 1. All domain events go to the dispatcher (WordPress hooks)
- * 2. Integration events additionally go to the bus (outbox)
+ * 1. All domain events go to the dispatcher (WordPress hooks).
+ * 2. Announcing events additionally send their record to the bus.
  */
 final class EventRouter {
   public function __construct(
@@ -20,8 +20,8 @@ final class EventRouter {
   public function publish(IDomainEvent $event): void {
     $this->dispatcher->dispatch($event);
 
-    if ($event instanceof IIntegrationEvent) {
-      $this->bus->publish($event);
+    if ($event instanceof IAnnouncesIntegration) {
+      $this->bus->publish($event->to_integration());
     }
   }
 }

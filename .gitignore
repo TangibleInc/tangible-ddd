@@ -43,3 +43,10 @@ htmlcov/
 *.swo
 *~
 
+
+.reference/
+
+# Claude session scratch
+.claude/worktrees/
+.playwright-cli/
+.superpowers/

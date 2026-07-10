@@ -3,25 +3,13 @@
 namespace TangibleDDD\Domain\Events;
 
 /**
- * Base class for domain events.
+ * Base class for domain events — the RAISABLE species. Validity is bounded
+ * by the request: instances die pre-ActionScheduler, always.
  *
- * Consumer plugins extend this class in their generated DomainEvent base,
+ * Consumer plugins extend this in their generated DomainEvent base,
  * providing the prefix() method.
  */
-abstract class DomainEvent implements IDomainEvent {
-  /**
-   * Consumer provides the prefix via generated base class.
-   */
-  abstract protected static function prefix(): string;
-
-  /**
-   * Short event name. Override in concrete events.
-   * Default: derive from class name (UserEarned -> user_earned).
-   */
-  public static function name(): string {
-    $class = (new \ReflectionClass(static::class))->getShortName();
-    return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $class));
-  }
+abstract class DomainEvent extends Event implements IDomainEvent {
 
   /**
    * WordPress action name for domain event publishing.

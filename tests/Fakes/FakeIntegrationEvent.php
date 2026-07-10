@@ -11,15 +11,4 @@ class FakeIntegrationEvent extends IntegrationEvent {
   ) {}
 
   protected static function prefix(): string { return 'test'; }
-
-  public function payload(): array {
-    return ['entity_id' => $this->entity_id, 'action_type' => $this->action_type];
-  }
-
-  public static function from_payload(array $payload): static {
-    return new static(
-      entity_id: (int) ($payload['entity_id'] ?? 0),
-      action_type: (string) ($payload['action_type'] ?? '')
-    );
-  }
 }

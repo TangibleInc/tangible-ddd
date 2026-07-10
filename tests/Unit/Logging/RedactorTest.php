@@ -134,6 +134,19 @@ class RedactorTest extends TestCase {
     $this->assertEmpty($redactions);
   }
 
+  public function test_backed_enum_logs_its_value(): void {
+    [$safe, $redactions] = $this->redactor->redact(['schedule' => RedactorTestSchedule::EveryFourHours]);
+
+    $this->assertSame('every_4_h', $safe['schedule']);
+    $this->assertEmpty($redactions);
+  }
+
+  public function test_pure_enum_logs_its_name(): void {
+    [$safe, ] = $this->redactor->redact(['suit' => RedactorTestSuit::Hearts]);
+
+    $this->assertSame('Hearts', $safe['suit']);
+  }
+
   public function test_mask_preserves_last_four_chars(): void {
     [$safe, ] = $this->redactor->redact(['password' => 'abcdefghij']);
     // 10 chars => 6 stars + last 4
@@ -158,4 +171,13 @@ class RedactorTest extends TestCase {
     $this->assertArrayHasKey('__summary', $safe['items']);
     $this->assertStringContainsString('truncated_list', $safe['items']['__summary']);
   }
+}
+
+enum RedactorTestSchedule: string {
+  case EveryFourHours = 'every_4_h';
+}
+
+enum RedactorTestSuit {
+  case Hearts;
+  case Spades;
 }

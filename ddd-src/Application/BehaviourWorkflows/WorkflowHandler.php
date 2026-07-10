@@ -4,7 +4,11 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
 
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
 use TangibleDDD\Application\Commands\ICommand;
+use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Infrastructure\WorkflowFailed;
 use TangibleDDD\Application\Process\RescheduleAware;
+use TangibleDDD\Domain\Exceptions\InvariantException;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
@@ -35,6 +39,10 @@ abstract class WorkflowHandler implements ICommandHandler {
   public function __construct(
     protected readonly IBehaviourWorkflowRepository $workflow_repo,
     protected readonly IWorkItemRepository $item_repo,
+    // Optional + distinctly named so it can't collide with a subclass's own
+    // $config property. Existing subclasses (parent::__construct(repo, item_repo))
+    // are unaffected; pass it to enable WorkflowFailed infrastructure events.
+    protected readonly ?IDDDConfig $infra_config = null,
   ) {}
 
   public function handle(ICommand $command): void {
@@ -102,7 +110,19 @@ abstract class WorkflowHandler implements ICommandHandler {
       $config = $workflow->get_current();
       $previous = $workflow->get_current_result();
 
-      $result = $this->execute_step($workflow, $config, $previous);
+      try {
+        $result = $this->execute_step($workflow, $config, $previous);
+      } catch (InvariantException $e) {
+        error_log(sprintf(
+          '[ddd-workflow] InvariantException in execute_one for workflow %d: %s',
+          $workflow->get_id(),
+          $e->getMessage()
+        ));
+        $workflow->fail();
+        $this->workflow_repo->save($workflow);
+        return;
+      }
+
       $complete = $workflow->maybe_advance($result);
 
       if ($result->status === BehaviourExecutionStatus::waiting) {
@@ -116,6 +136,13 @@ abstract class WorkflowHandler implements ICommandHandler {
 
       if ($result->status === BehaviourExecutionStatus::failed) {
         $workflow->fail();
+        // Infrastructure event — observability signal. Correlation comes from
+        // the active context (the workflow runs inside its driving command); no
+        // causation (a workflow is a coordinator, not a causer). Opt-in: only
+        // when the consumer wired IDDDConfig into the handler.
+        if ($this->infra_config !== null) {
+          (new WorkflowFailed($workflow, CorrelationContext::peek()))->dispatch($this->infra_config);
+        }
         break;
       }
     }
@@ -309,11 +336,16 @@ abstract class WorkflowHandler implements ICommandHandler {
   ): BehaviourExecutionResult {
     $failed_items = $items->failed();
 
-    // Can only fork if: config supports it, workflow isn't already forked, and we have failed items
+    // Fork only on PARTIAL failure: some items succeeded while others failed.
+    // When ALL items fail there is nothing gained by forking — fall through to
+    // the normal failed/reschedule path so the whole workflow retries together.
+    $has_non_failed = count($items) > count($failed_items);
+
     if (
       $config instanceof BatchableBehaviourConfig
       && !$workflow->is_forked()
       && !$failed_items->empty()
+      && $has_non_failed
     ) {
       $this->fork_workflow($workflow, $config, $failed_items);
       return $this->build_result($config, $phase, true, 'Forked failed items to child workflow', BehaviourExecutionStatus::forked);
@@ -425,6 +457,7 @@ abstract class WorkflowHandler implements ICommandHandler {
       WorkItemStatus::failed  => $this->build_result($config, $phase, false, 'Work items failed', BehaviourExecutionStatus::failed),
       WorkItemStatus::done,
       WorkItemStatus::skipped => $this->build_result($config, $phase, true, 'Work items done', BehaviourExecutionStatus::completed),
+      WorkItemStatus::cancelled => $this->build_result($config, $phase, true, 'Work items cancelled', BehaviourExecutionStatus::cancelled),
     };
   }
 
@@ -433,8 +466,8 @@ abstract class WorkflowHandler implements ICommandHandler {
       BehaviourExecutionStatus::completed => WorkItemStatus::done,
       BehaviourExecutionStatus::waiting   => WorkItemStatus::waiting,
       BehaviourExecutionStatus::skipped,
-      BehaviourExecutionStatus::cancelled,
       BehaviourExecutionStatus::preempted => WorkItemStatus::skipped,
+      BehaviourExecutionStatus::cancelled => WorkItemStatus::cancelled,
       BehaviourExecutionStatus::failed    => WorkItemStatus::failed,
       default => $result->success ? WorkItemStatus::done : WorkItemStatus::failed,
     };

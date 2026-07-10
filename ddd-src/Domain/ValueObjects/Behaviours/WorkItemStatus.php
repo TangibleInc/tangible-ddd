@@ -8,6 +8,7 @@ enum WorkItemStatus: string {
   case failed = 'failed';
   case done = 'done';
   case skipped = 'skipped';
+  case cancelled = 'cancelled';
 }
 
 

@@ -72,41 +72,15 @@ class DomainEventTest extends TestCase {
 
   public function test_from_payload_reconstructs_event(): void {
     $original = new FakeIntegrationEvent(entity_id: 99, action_type: 'deleted');
-    $reconstructed = FakeIntegrationEvent::from_payload($original->payload());
+    $reconstructed = FakeIntegrationEvent::from_payload($original->integration_payload());
 
     $this->assertSame(99, $reconstructed->entity_id);
     $this->assertSame('deleted', $reconstructed->action_type);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Scalarise
-  // ─────────────────────────────────────────────────────────────
-
-  public function test_scalarise_null(): void {
-    $this->assertNull(FakeIntegrationEvent::scalarise(null));
-  }
-
-  public function test_scalarise_scalar(): void {
-    $this->assertSame(42, FakeIntegrationEvent::scalarise(42));
-    $this->assertSame('hello', FakeIntegrationEvent::scalarise('hello'));
-    $this->assertTrue(FakeIntegrationEvent::scalarise(true));
-  }
-
-  public function test_scalarise_datetime(): void {
-    $dt = new \DateTimeImmutable('2025-06-15T10:30:00+00:00');
-    $this->assertSame('2025-06-15T10:30:00+00:00', FakeIntegrationEvent::scalarise($dt));
-  }
-
-  public function test_scalarise_backed_enum(): void {
-    // Use WorkItemStatus as a convenient backed enum
-    $status = \TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus::done;
-    $this->assertSame('done', FakeIntegrationEvent::scalarise($status));
-  }
-
-  public function test_scalarise_nested_array(): void {
-    $result = FakeIntegrationEvent::scalarise(['a' => 1, 'b' => ['c' => 2]]);
-    $this->assertSame(['a' => 1, 'b' => ['c' => 2]], $result);
-  }
+  // Note: scalarise() is no longer a public static method on IntegrationEvent —
+  // 0.2.0 replaced it with IntegrationBehaviour's private, strict scalarise_value(),
+  // exercised via integration_payload()/from_payload() in IntegrationBehaviourTest.
 
   // ─────────────────────────────────────────────────────────────
   // Name derivation edge cases

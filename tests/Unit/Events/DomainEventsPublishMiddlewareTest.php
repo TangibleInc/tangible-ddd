@@ -10,7 +10,8 @@ use TangibleDDD\Application\Events\IDomainEventDispatcher;
 use TangibleDDD\Application\Events\IIntegrationEventBus;
 use TangibleDDD\Domain\Events\IDomainEvent;
 use TangibleDDD\Tests\Fakes\FakeDomainEvent;
-use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
+use TangibleDDD\Tests\Fakes\FakeOutcome;
+use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
 class DomainEventsPublishMiddlewareTest extends TestCase {
 
@@ -70,7 +71,9 @@ class DomainEventsPublishMiddlewareTest extends TestCase {
     // Simulate a sync handler that records a further (integration) event while
     // the first event is being published — the transitive event must also flush.
     $first = new FakeDomainEvent(1);
-    $cascaded = new FakeIntegrationEvent(2);
+    // Self-publisher: must be a raisable IDomainEvent to be recorded on the
+    // UoW mid-dispatch — a pure twin (FakeIntegrationEvent) no longer is one.
+    $cascaded = new FakeResolvedEvent(2, FakeOutcome::Accepted, new \DateTimeImmutable());
 
     $dispatcher = $this->createMock(IDomainEventDispatcher::class);
     $dispatcher->method('dispatch')->willReturnCallback(function (IDomainEvent $e) use ($first, $cascaded) {

@@ -41,9 +41,14 @@ final class WorkItemList extends TypedList {
     return $this->filter(fn(WorkItem $i) => $i->status === WorkItemStatus::done, clone: true);
   }
 
+  public function cancelled(): self {
+    return $this->filter(fn(WorkItem $i) => $i->status === WorkItemStatus::cancelled, clone: true);
+  }
+
   public function has_pending(): bool { return !$this->pending()->empty(); }
   public function has_waiting(): bool { return !$this->waiting()->empty(); }
   public function has_failed(): bool { return !$this->failed()->empty(); }
+  public function has_cancelled(): bool { return !$this->cancelled()->empty(); }
 
   // ─────────────────────────────────────────────────────────────
   // Slicing
@@ -60,12 +65,13 @@ final class WorkItemList extends TypedList {
   /**
    * Determine the aggregate status of this list.
    *
-   * Priority: pending > waiting > failed > done
+   * Priority: pending > waiting > failed > cancelled > done
    */
   public function aggregate_status(): WorkItemStatus {
     if ($this->has_pending()) return WorkItemStatus::pending;
     if ($this->has_waiting()) return WorkItemStatus::waiting;
     if ($this->has_failed()) return WorkItemStatus::failed;
+    if ($this->has_cancelled()) return WorkItemStatus::cancelled;
     return WorkItemStatus::done;
   }
 
