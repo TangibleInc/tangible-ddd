@@ -3,7 +3,12 @@
 namespace TangibleDDD\Tests\Unit\WordPress;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
+use TangibleDDD\Tests\Fakes\FakeGatherProcess;
+use TangibleDDD\Tests\Fakes\FakeProcessRepository;
+use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 use TangibleDDD\WordPress\ConsumerRegistry;
 
 use function TangibleDDD\WordPress\boot;
@@ -106,5 +111,50 @@ class BootTest extends TestCase {
     });
 
     $this->assertSame([], consumers());
+  }
+
+  public function test_register_hooks_discovers_tagged_long_processes(): void {
+    global $_test_actions;
+
+    // Unique prefix so processes_enabled()'s static cache (keyed by prefix,
+    // poisoned to false by the other tests' stub wpdb) probes fresh.
+    $config = new class implements IDDDConfig {
+      public function prefix(): string { return 'proc'; }
+      public function table(string $name): string { return 'wp_proc_' . $name; }
+      public function hook(string $name): string { return 'proc_' . $name; }
+      public function as_group(string $name): string { return 'proc-' . $name; }
+      public function option(string $name): string { return 'proc_' . $name; }
+      public function domain_action(string $event_name): string { return 'proc_domain_' . $event_name; }
+      public function integration_action(string $event_name): string { return 'proc_integration_' . $event_name; }
+      public function version(): string { return 'proc'; }
+    };
+
+    // Answer every SHOW TABLES probe with the long_processes table name:
+    // the process gate opens, the outbox gate (comparing against its own
+    // table name) stays closed.
+    $GLOBALS['wpdb'] = new class extends \wpdb {
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 'wp_proc_long_processes';
+      }
+    };
+
+    $runner = new ProcessRunner($config, new FakeProcessRepository());
+    $container = new class($runner) {
+      public function __construct(private readonly ProcessRunner $runner) {}
+      public function getServiceIds(): array { return []; }
+      public function findTaggedServiceIds(string $tag): array {
+        return 'ddd.long_process' === $tag
+          ? [FakeGatherProcess::class => [[]]]
+          : [];
+      }
+      public function get(string $id): ProcessRunner { return $this->runner; }
+    };
+
+    \TangibleDDD\WordPress\register_hooks($config, static fn () => $container);
+
+    $this->assertNotEmpty(
+      $_test_actions[FakeResolvedEvent::integration_action()] ?? [],
+      'register_hooks must wire resume hooks for the #[Awaits] events of ddd.long_process-tagged classes',
+    );
   }
 }
