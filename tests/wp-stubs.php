@@ -77,6 +77,27 @@ if (!function_exists('do_action')) {
   }
 }
 
+if (!function_exists('add_filter')) {
+  /** @var array<string, array<callable>> */
+  global $_test_filters;
+  $_test_filters = [];
+
+  function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): void {
+    global $_test_filters;
+    $_test_filters[$hook][] = $callback;
+  }
+}
+
+if (!function_exists('apply_filters')) {
+  function apply_filters(string $hook, $value, ...$args) {
+    global $_test_filters;
+    foreach ($_test_filters[$hook] ?? [] as $callback) {
+      $value = $callback($value, ...$args);
+    }
+    return $value;
+  }
+}
+
 if (!function_exists('get_option')) {
   function get_option(string $option, $default = false) {
     return $default;
