@@ -3,7 +3,7 @@
  * Plugin Name: Tangible DDD
  * Plugin URI: https://tangible.one
  * Description: Domain-Driven Design framework for WordPress plugins
- * Version: 0.2.0-dev
+ * Version: 0.2.1
  * Author: Tangible
  * Author URI: https://tangible.one
  * License: MIT
@@ -38,7 +38,7 @@ declare(strict_types=1);
 // Guarded: the first copy to load wins the constant (oldest-loads-first is fine;
 // the registry, not the constant, determines the winner).
 if (!defined('TANGIBLE_DDD_VERSION')) {
-    define('TANGIBLE_DDD_VERSION', '0.2.0-dev');
+    define('TANGIBLE_DDD_VERSION', '0.2.1');
 }
 
 // ─── Tangible_DDD_Versions registry (defined once, first copy wins the class) ─
@@ -87,7 +87,7 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
         /**
          * Register a copy of tangible-ddd.
          *
-         * @param string      $version      SemVer string (e.g. '0.2.0-dev').
+         * @param string      $version      SemVer string (e.g. '0.2.1').
          * @param string      $path         Absolute path to the ddd plugin root.
          * @param callable    $initialize   Callback that boots THIS copy: receives $path.
          * @param string|null $min_required Minimum ddd version this consumer needs.
@@ -223,42 +223,42 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
 } // if (!class_exists('Tangible_DDD_Versions'))
 
 // ─── Version-named register function (guarded — safe in N copies) ────────────
-// Slug: 0.2.0-dev → 0_2_0_dev  (dots and hyphens → underscores)
-if (!function_exists('tangible_ddd_register_0_2_0_dev')) {
+// Slug: 0.2.1 → 0_2_1  (dots and hyphens → underscores)
+if (!function_exists('tangible_ddd_register_0_2_1')) {
 
     /**
-     * Register this copy (0.2.0-dev) into Tangible_DDD_Versions.
+     * Register this copy (0.2.1) into Tangible_DDD_Versions.
      * Hooked at plugins_loaded priority 0 so all copies register before pri-1 wins.
      */
-    function tangible_ddd_register_0_2_0_dev(): void
+    function tangible_ddd_register_0_2_1(): void
     {
         // Pass a closure so the callable type check passes even when this register
-        // function is invoked before tangible_ddd_initialize_0_2_0_dev() is defined
+        // function is invoked before tangible_ddd_initialize_0_2_1() is defined
         // (which can happen in unit-test context where add_action is absent and we
         // self-register immediately at file-include time).
         Tangible_DDD_Versions::instance()->register(
-            '0.2.0-dev',
+            '0.2.1',
             __DIR__,
             static function (string $path): void {
-                tangible_ddd_initialize_0_2_0_dev($path);
+                tangible_ddd_initialize_0_2_1($path);
             }
         );
     }
 
     if (function_exists('add_action')) {
-        add_action('plugins_loaded', 'tangible_ddd_register_0_2_0_dev', 0, 0);
+        add_action('plugins_loaded', 'tangible_ddd_register_0_2_1', 0, 0);
     } else {
         // Outside WP (unit tests / direct require with no hook system):
         // self-register immediately.  initialize_latest() is NOT called here
         // so that N copies included during tests can each register first;
         // test code can call Tangible_DDD_Versions::instance()->initialize_latest()
         // explicitly, or the bootstrap triggers it below.
-        tangible_ddd_register_0_2_0_dev();
+        tangible_ddd_register_0_2_1();
     }
 }
 
 // ─── Version-named initializer (guarded — the winner calls this) ──────────────
-if (!function_exists('tangible_ddd_initialize_0_2_0_dev')) {
+if (!function_exists('tangible_ddd_initialize_0_2_1')) {
 
     /**
      * Boot this copy of tangible-ddd as the site winner.
@@ -269,7 +269,7 @@ if (!function_exists('tangible_ddd_initialize_0_2_0_dev')) {
      *
      * @param string $path Absolute path to the winning ddd plugin root.
      */
-    function tangible_ddd_initialize_0_2_0_dev(string $path): void
+    function tangible_ddd_initialize_0_2_1(string $path): void
     {
         // (a) Prepend autoloader — winner's classes beat consumer psr-4 maps.
         spl_autoload_register(
@@ -386,6 +386,6 @@ if (
     && function_exists('doing_action') && !doing_action('plugins_loaded')
     && !Tangible_DDD_Versions::instance()->is_initialized()
 ) {
-    tangible_ddd_register_0_2_0_dev();
+    tangible_ddd_register_0_2_1();
     Tangible_DDD_Versions::instance()->initialize_latest();
 }
