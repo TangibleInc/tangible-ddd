@@ -554,6 +554,13 @@ services:
     autoconfigure: true
     public: true
 
+  # Every LongProcess subclass is auto-tagged; boot() discovers the tag at
+  # init:2 and registers each process (plus the resume hooks for its
+  # #[Awaits] events) with the ProcessRunner. No per-saga wiring needed.
+  _instanceof:
+    TangibleDDD\\Application\\Process\\LongProcess:
+      tags: ['ddd.long_process']
+
   # Config
   # Version is wired via the {$prefix}.version container parameter set in di/index.php
   # (sourced from the {$version_const} PHP constant when defined).

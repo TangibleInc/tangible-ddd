@@ -54,6 +54,19 @@ function register_hooks(IDDDConfig $config, callable $di_getter): void {
   ConsumerRegistry::add($config, $di_getter);
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
+
+  // Process discovery: register ddd.long_process-tagged classes (and the
+  // resume hooks for their #[Awaits] events) with the ProcessRunner. Needs
+  // findTaggedServiceIds — a ContainerBuilder API — so containers that don't
+  // expose it (dumped/opaque) skip discovery, same guard style as
+  // register_event_handlers' getServiceIds probe above.
+  if (processes_enabled($config)) {
+    $container = $di_getter();
+    if (method_exists($container, 'findTaggedServiceIds')) {
+      register_processes_from_container($config, $container);
+    }
+  }
+
   register_outbox_hooks($config, $di_getter);
   register_migration_hooks($config);
 }

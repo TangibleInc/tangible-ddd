@@ -198,7 +198,25 @@ regardless of which features it uses today:
 | `register_event_handlers` | async handlers + `IntegrationListener`s never `add_action` (Symfony DI is lazy) — AS fails with "no callbacks registered" |
 | `register_outbox_hooks` | **outbox never drains** — integration events written, never delivered (this exact bug shipped twice) |
 | `register_process_hooks` | sagas never resume after the AS hop |
+| process discovery | saga classes never registered with the `ProcessRunner` — awaited integration events fire but wake nothing (see below) |
 | `register_migration_hooks` | framework schema migrations never run — fresh installs never get their tables (the lane runs on `init` + `admin_init`; it replaces the activation hook entirely), upgraded installs drift |
+
+**Process discovery** (0.2.2): `register_hooks()` reads the
+`ddd.long_process` container tag and registers every tagged class — plus
+the resume hooks for its `#[Awaits(Event::class)]` events — with the
+`ProcessRunner`. The consumer's only job is the `_instanceof` rule the
+scaffolder already emits:
+
+```yaml
+_instanceof:
+  TangibleDDD\Application\Process\LongProcess:
+    tags: ['ddd.long_process']
+```
+
+Discovery needs `findTaggedServiceIds()` (a `ContainerBuilder` API) — with a
+dumped/opaque container it is skipped silently, same guard as the handler
+sweep. Declare awaited events with the `#[Awaits]` class attribute, not tag
+parameters.
 
 Anti-patterns seen in the wild:
 
@@ -207,6 +225,11 @@ Anti-patterns seen in the wild:
 - **Homegrown eager-boot registrars** duplicating `register_event_handlers`
   by iterating service ids. Delete them; the framework function covers
   `\Application\EventHandlers\` and `\Application\IntegrationListeners\`.
+- **Manual `register_processes_from_container()` calls** in consumer
+  bootstrap — redundant since 0.2.2 (idempotent, but delete on next touch).
+- **Consumer-prefixed process tags** (`acme.long_process`) — the framework
+  scans `ddd.long_process` only; a private tag name means your sagas are
+  never discovered.
 
 ## 7. Events — 0.2.0 taxonomy in four rules
 
