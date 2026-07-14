@@ -83,6 +83,10 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
 
   /**
    * Sync any properties set by from_json_instance back to init_state.
+   *
+   * init_state arrives as stdClass (json_decode default) OR as an assoc
+   * array — ProcessRepository decodes the payload column with assoc=true
+   * before deserialize_polymorphic. Both shapes must survive.
    */
   protected static function sync_init_state(stdClass|array $init_state, $instance): array|stdClass {
     $refl = new \ReflectionClass($instance);
@@ -93,7 +97,11 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
       }
 
       $property->setAccessible(true);
-      if (!property_exists($init_state, $name)) {
+      if (is_array($init_state)) {
+        if (!array_key_exists($name, $init_state)) {
+          $init_state[$name] = $property->getValue($instance);
+        }
+      } elseif (!property_exists($init_state, $name)) {
         $init_state->$name = $property->getValue($instance);
       }
     }

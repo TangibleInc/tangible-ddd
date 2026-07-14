@@ -257,6 +257,26 @@ function install_behaviour_workflow_item_tables(IDDDConfig $config): void {
 }
 
 /**
+ * Probe whether a table is reachable by query.
+ *
+ * NOT `SHOW TABLES` — the WP test harness creates tables as TEMPORARY,
+ * which SHOW TABLES never lists, so a SHOW-based probe reads every
+ * consumer integration-test environment as "feature off" (process
+ * discovery skipped, outbox lane closed). A SELECT under suppressed
+ * errors sees temporary and permanent tables alike; existence = the
+ * query didn't error (0 rows is still an int, error returns false).
+ */
+function table_reachable(string $table): bool {
+  global $wpdb;
+
+  $suppress = $wpdb->suppress_errors();
+  $found = $wpdb->query("SELECT 1 FROM `{$table}` LIMIT 1");
+  $wpdb->suppress_errors($suppress);
+
+  return false !== $found;
+}
+
+/**
  * Check if outbox tables exist.
  */
 function outbox_enabled(IDDDConfig $config): bool {
@@ -269,9 +289,7 @@ function outbox_enabled(IDDDConfig $config): bool {
     return $cache[$key];
   }
 
-  $table = $wpdb->prefix . $config->prefix() . '_integration_outbox';
-  $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
-  $cache[$key] = ((string) $found === $table);
+  $cache[$key] = table_reachable($wpdb->prefix . $config->prefix() . '_integration_outbox');
 
   return $cache[$key];
 }
@@ -289,9 +307,7 @@ function processes_enabled(IDDDConfig $config): bool {
     return $cache[$key];
   }
 
-  $table = $wpdb->prefix . $config->prefix() . '_long_processes';
-  $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
-  $cache[$key] = ((string) $found === $table);
+  $cache[$key] = table_reachable($wpdb->prefix . $config->prefix() . '_long_processes');
 
   return $cache[$key];
 }

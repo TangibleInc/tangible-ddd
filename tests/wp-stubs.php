@@ -17,6 +17,7 @@ if (!class_exists('wpdb')) {
     public ?int $insert_id = 0;
 
     public function query(string $query) { return true; }
+    public function suppress_errors(bool $suppress = true): bool { return false; }
     public function prepare(string $query, ...$args): string { return $query; }
     public function get_var(?string $query = null, int $x = 0, int $y = 0) { return null; }
     public function get_row(?string $query = null, string $output = 'OBJECT', int $y = 0) { return null; }
