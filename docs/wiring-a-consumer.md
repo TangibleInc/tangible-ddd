@@ -27,6 +27,31 @@ install must run the same framework major, and framework upgrades deploy in
 lockstep with a drained outbox (payload wire shapes are versioned by the
 framework, not per consumer).
 
+## Fast path: `wp ddd init`
+
+The framework ships a scaffolder that generates most of the ceremony:
+
+```bash
+composer require tangible/ddd:^0.2
+wp ddd init --prefix=acme_orders --namespace=Acme\\Orders --plugin-path=.
+```
+
+Generated: the `ddd-src/` directory tree, the `Infra\Config` class, the
+consumer `DomainEvent`/`IntegrationEvent` bases, `Command`/`Query` bases,
+`services.yaml` + `tactician.yaml`, and the DI index. It also prints a
+wiring snippet to paste into your main plugin file — the activation
+`install_tables()` call and the `init:2` `register_hooks()` call. Paste it;
+that's steps 2–6 of the checklist done.
+
+The scaffolder's output is pinned to the framework by
+`tests/Unit/Cli/ScaffoldTemplatesConformanceTest.php` (every referenced
+class must exist; every hand-listed constructor argument must match the
+real constructor) — if you change a framework constructor or move a class,
+that test tells you to update the templates.
+
+The manual checklist below is the same material spelled out — use it to
+**audit an existing consumer** or when scaffolding isn't an option.
+
 ## Checklist
 
 1. `composer require tangible/ddd:^0.2`
@@ -116,7 +141,11 @@ Canonical services.yaml fragment (Symfony DI, `autowire: true` defaults):
 ```
 
 Rule of thumb: prefer `~` (autowire). Every hand-listed argument above that
-duplicates what autowiring would inject is a future ProcessRunner bug.
+duplicates what autowiring would inject is a future ProcessRunner bug. This
+applies to the consumer's own services too: a hand-listed controller
+registrar rots the moment someone adds a constructor param (autowiring
+silently patches the hole, so nothing fails — until the list and the
+constructor disagree in order instead of count).
 
 ## 5. Command bus
 

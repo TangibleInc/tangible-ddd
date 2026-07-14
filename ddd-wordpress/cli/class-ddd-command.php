@@ -93,6 +93,7 @@ class DDD_Command {
       'ddd-src/Application/Queries',
       'ddd-src/Application/QueryHandlers',
       'ddd-src/Application/EventHandlers',
+      'ddd-src/Application/IntegrationListeners',
       'ddd-src/Application/Services',
       'ddd-src/Infra/Persistence',
       'ddd-src/Infra/Services',
@@ -203,6 +204,7 @@ PHP;
       'ddd-src/Application/Queries/Query.php' => $this->template_query( $prefix, $namespace ),
       'ddd-src/Application/QueryHandlers/.gitkeep' => '',
       'ddd-src/Application/EventHandlers/.gitkeep' => '',
+      'ddd-src/Application/IntegrationListeners/.gitkeep' => '',
       'ddd-src/Application/Services/.gitkeep' => '',
       'ddd-src/Infra/Persistence/.gitkeep' => '',
       'ddd-src/Infra/Services/.gitkeep' => '',
@@ -252,10 +254,15 @@ namespace {$namespace}\\Domain\\Events;
 use TangibleDDD\\Domain\\Events\\IntegrationEvent as BaseIntegrationEvent;
 
 /**
- * Base class for {$namespace} integration events.
+ * Base class for {$namespace} pure integration records (ddd 0.2.0 taxonomy).
  *
- * Integration events are published through the outbox to ActionScheduler
- * for reliable async processing.
+ * SEVERED from the domain-event hierarchy: subclasses cannot be record()ed
+ * on an aggregate — publish them straight onto IIntegrationEventBus. The
+ * scalarise codec runs on this base, so subclass constructor props must be
+ * protected (not private) readonly, and the constructor IS the wire schema.
+ * Facts that must also fire as sync domain events are self-publishers
+ * instead: extend DomainEvent, implement IIntegrationEvent +
+ * IAnnouncesIntegration, and mix in IntegrationBehaviour.
  */
 abstract class IntegrationEvent extends BaseIntegrationEvent {
   protected static function prefix(): string {
@@ -562,11 +569,10 @@ services:
   # Transaction middleware
   TangibleDDD\\Application\\Persistence\\TransactionMiddleware: ~
 
-  # Domain Event Dispatcher
+  # Domain Event Dispatcher (no constructor — arguments here would be
+  # silently discarded by PHP)
   TangibleDDD\\Application\\Events\\IDomainEventDispatcher:
     class: TangibleDDD\\Infra\\Services\\WordPressEventDispatcher
-    arguments:
-      - '@TangibleDDD\\Infra\\IDDDConfig'
 
   # Events Unit of Work and Router
   TangibleDDD\\Application\\Events\\EventsUnitOfWork: ~
@@ -595,7 +601,7 @@ services:
 
   # Resolved by the outbox processing cron (ddd hooks.php) every tick.
   # Autowired (~) by type so it can't drift from the constructor arg order.
-  TangibleDDD\\Application\\Outbox\\OutboxProcessor: ~
+  TangibleDDD\\Infra\\Services\\OutboxProcessor: ~
 
   # Integration Event Bus
   TangibleDDD\\Application\\Events\\IIntegrationEventBus:
@@ -609,17 +615,13 @@ services:
     arguments:
       - '@TangibleDDD\\Infra\\IDDDConfig'
 
-  TangibleDDD\\Application\\Process\\ProcessRunner:
-    arguments:
-      - '@TangibleDDD\\Infra\\IProcessRepository'
-      - '@TangibleDDD\\Application\\Correlation\\CorrelationContext'
+  # Autowired — hand-listed args drifted from the real constructor once
+  # already and shipped to every consumer; don't reintroduce them.
+  TangibleDDD\\Application\\Process\\ProcessRunner: ~
 
   # Command Audit (optional - configure Redactor separately)
   TangibleDDD\\Application\\Logging\\Redactor: ~
-  TangibleDDD\\Application\\Logging\\CommandAuditMiddleware:
-    arguments:
-      - '@TangibleDDD\\Application\\Events\\EventsUnitOfWork'
-      - '@TangibleDDD\\Application\\Logging\\Redactor'
+  TangibleDDD\\Application\\Logging\\CommandAuditMiddleware: ~
 
   # Plugin-specific service autoloading
   {$namespace}\\Application\\CommandHandlers\\:
@@ -635,6 +637,12 @@ services:
   {$namespace}\\Application\\EventHandlers\\:
     public: true
     resource: '../../ddd-src/Application/EventHandlers'
+
+  # Integration listeners: fact-in, command-out translators for the async
+  # surface — eager-booted by register_hooks() alongside event handlers.
+  {$namespace}\\Application\\IntegrationListeners\\:
+    public: true
+    resource: '../../ddd-src/Application/IntegrationListeners'
 
   {$namespace}\\Application\\Services\\:
     public: true
