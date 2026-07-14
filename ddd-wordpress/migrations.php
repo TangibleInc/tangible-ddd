@@ -171,9 +171,16 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
 
 /**
  * Register the per-consumer migration trigger. Called from register_hooks().
+ *
+ * Hooked on BOTH admin_init and init: admin_init alone never fires under
+ * WP-CLI or on activation-less installs (boot() has no activation hook), so
+ * fresh consumers would never get their tables. The up-to-date fast path in
+ * ddd_maybe_migrate() is one get_option, so the init tick is cheap.
  */
 function register_migration_hooks(IDDDConfig $config): void {
-  add_action('admin_init', static function () use ($config) {
+  $trigger = static function () use ($config) {
     ddd_maybe_migrate($config);
-  });
+  };
+  add_action('init', $trigger, 3);
+  add_action('admin_init', $trigger);
 }

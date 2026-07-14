@@ -38,10 +38,19 @@ wp ddd init --prefix=acme_orders --namespace=Acme\\Orders --plugin-path=.
 
 Generated: the `ddd-src/` directory tree, the `Infra\Config` class, the
 consumer `DomainEvent`/`IntegrationEvent` bases, `Command`/`Query` bases,
-`services.yaml` + `tactician.yaml`, and the DI index. It also prints a
-wiring snippet to paste into your main plugin file — the activation
-`install_tables()` call and the `init:2` `register_hooks()` call. Paste it;
-that's steps 2–6 of the checklist done.
+`services.yaml` + `tactician.yaml`, and the DI index — which ends with the
+whole framework handshake: `\TangibleDDD\WordPress\boot($config, fn () => di())`.
+Your main plugin file adds exactly one line (after the version constant and
+the autoloader):
+
+```php
+require_once __DIR__ . '/ddd-wordpress/di/index.php';
+```
+
+Plus the composer psr-4 mapping for the generated namespace
+(`"Acme\\Orders\\": "ddd-src/"`) — the full ceremony is those two edits.
+No activation hook: the migration lane creates/heals the framework tables
+on the first `init` tick.
 
 The scaffolder's output is pinned to the framework by
 `tests/Unit/Cli/ScaffoldTemplatesConformanceTest.php` (every referenced
@@ -56,10 +65,11 @@ The manual checklist below is the same material spelled out — use it to
 
 1. `composer require tangible/ddd:^0.2`
 2. Config class implementing `TangibleDDD\Infra\IDDDConfig`
-3. Table install at activation + version bump: `\TangibleDDD\WordPress\install_tables($config)`
+3. Tables: created/healed automatically by the migration lane once step 6 is
+   wired (an explicit activation-time `install_tables($config)` is optional)
 4. DI: the framework services block (below) in your services.yaml
 5. Tactician command bus with the middleware chain (below)
-6. Bootstrap: **exactly one call** — `\TangibleDDD\WordPress\register_hooks($config, $di_getter)` after the container compiles
+6. Bootstrap: **exactly one call** — `\TangibleDDD\WordPress\boot($config, $di_getter)` at include time
 7. Events per the 0.2.0 taxonomy (below)
 8. Consumers of integration events = `IntegrationListener` classes under `Application\IntegrationListeners\`
 9. Container smoke test covering the hand-wired framework service ids
@@ -161,14 +171,24 @@ atomically with aggregate writes — that ordering is the outbox pattern.
 
 ## 6. Bootstrap — the one call
 
-After the DI container compiles (typical: container on `init:1`, this on
-`init:2`):
+At include time (main plugin file or `plugins_loaded`):
 
 ```php
-$config = di()->get(\TangibleDDD\Infra\IDDDConfig::class);
-\TangibleDDD\WordPress\register_hooks($config, static fn () => di());
+\TangibleDDD\WordPress\boot(
+    new \Acme\Orders\Infra\Config(ACME_ORDERS_VERSION),
+    static fn () => \Acme\Orders\WordPress\DI\di(),
+);
 ```
 
+`boot()` announces the plugin to the **consumer registry** (discovery for
+the ops dashboard, WP-CLI, cross-consumer tooling — read via
+`\TangibleDDD\WordPress\consumers()`, filtered through
+`tangible_ddd_consumers`) and defers `register_hooks()` to `init:2`, after
+the container compiles on `init:1`. The scaffolder's generated
+`di/index.php` already ends with this call.
+
+Existing consumers that call `register_hooks()` directly on `init:2` are
+equivalent — it self-registers with the registry too. Either way,
 `register_hooks()` wires four surfaces, each feature-gated internally
 (gates = table existence), so the call is correct for every consumer
 regardless of which features it uses today:
@@ -178,7 +198,7 @@ regardless of which features it uses today:
 | `register_event_handlers` | async handlers + `IntegrationListener`s never `add_action` (Symfony DI is lazy) — AS fails with "no callbacks registered" |
 | `register_outbox_hooks` | **outbox never drains** — integration events written, never delivered (this exact bug shipped twice) |
 | `register_process_hooks` | sagas never resume after the AS hop |
-| `register_migration_hooks` | framework schema migrations never run on upgraded installs — tables drift from the framework's expectations |
+| `register_migration_hooks` | framework schema migrations never run — fresh installs never get their tables (the lane runs on `init` + `admin_init`; it replaces the activation hook entirely), upgraded installs drift |
 
 Anti-patterns seen in the wild:
 
