@@ -22,6 +22,12 @@ NEW integration event, listener, or await code, read:**
 - `docs/integration-event-evolution.md` (handoff — start here)
 - `docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md` (full spec)
 
+**Wiring a NEW consumer plugin to the framework — or auditing an existing
+one's wiring — read `docs/wiring-a-consumer.md` FIRST.** It is the canonical
+checklist (config, tables, DI block, bus chain, the one `register_hooks()`
+bootstrap call, event taxonomy rules, listener pattern, smoke tests, deploy
+rules) with the known anti-patterns called out.
+
 Key deltas vs. the v0.1 patterns documented below (which describe the pre-0.2.0
 world and remain useful history, but the right column is now what's on disk):
 
