@@ -98,14 +98,53 @@ final class ProcessRunner {
   }
 
   /**
-   * Start a new process.
+   * Start a new process — the EDGE door.
+   *
+   * Legal from flat contexts only: REST controllers, CLI, WP hook closures,
+   * the outbox drain (where #[StartsOn] ignition calls it). Inside a command
+   * pass it throws: running the first step there would nest the step's
+   * dispatched commands inside the caller's bus pass. Handlers announce an
+   * integration event instead and let #[StartsOn] react.
+   *
+   * The first step runs in-band, immediately — same rule as every wake:
+   * steps execute wherever ignition or waking legally happens; only awaits
+   * and timeouts create hops.
    */
   public function start(LongProcess $process): void {
+    if (null !== $inside = CorrelationContext::command_frame()) {
+      throw new ProcessStartedInsideCommand(get_class($process), $inside);
+    }
+
     $steps = $this->create_process_steps($process);
-    $process->start(CorrelationContext::get(), $steps);
+    $process->initialize_lifecycle(CorrelationContext::get(), $steps);
     $this->repository->save($process);
 
-    $this->run($process);
+    $this->with_process($process, fn () => $this->run($process));
+  }
+
+  /**
+   * The sealed bracket — every saga wake, any lane (start, continuation,
+   * resume, timeout), executes inside it. Owns, in order: the per-process
+   * lock (serializes concurrent wakes of one saga), the correlation scope
+   * (dispatched commands stay in the saga's trace; scope-exit is worker
+   * hygiene — AS reuses one worker for many callbacks), and the process
+   * frame (what makes command-inside-process-scope legible to the guards).
+   *
+   * Deliberately not a pluggable pipeline: the bracket set is fixed and
+   * framework-owned. If a real extension case arrives (ops pause, per-
+   * consumer wake policy), this body is where it graduates.
+   */
+  private function with_process(LongProcess $process, callable $work): void {
+    $this->with_process_lock($process->get_id(), function () use ($process, $work) {
+      CorrelationContext::with($process->correlation_id(), function () use ($process, $work) {
+        CorrelationContext::mark_process_frame((string) $process->get_id());
+        try {
+          $work();
+        } finally {
+          CorrelationContext::clear_process_frame();
+        }
+      });
+    });
   }
 
   /**
@@ -122,11 +161,9 @@ final class ProcessRunner {
       return; // Already finished
     }
 
-    // Scope the continuation to the process's correlation so it (and any
-    // commands it dispatches) stay in the original trace, AND so the context is
-    // cleared on exit — Action Scheduler reuses one worker for many callbacks,
-    // and a bare init() here would leak this correlation into the next one.
-    CorrelationContext::with($process->correlation_id(), function () use ($process) {
+    // The sealed bracket: lock (continuations previously ran unlocked and
+    // could race a resume on the same saga), correlation scope, frame.
+    $this->with_process($process, function () use ($process) {
       $process->advance(status: 'running', payload: $process->payload());
       $this->repository->save($process);
 
@@ -147,7 +184,10 @@ final class ProcessRunner {
         continue;
       }
 
-      $this->with_process_lock($process->get_id(), function () use ($process, $event, $mechanism) {
+      // Whole accepting-process block rides the sealed bracket. A partial
+      // arrival now updates its tally inside the saga's correlation scope
+      // too — harmless, and one bracket beats two topologies.
+      $this->with_process($process, function () use ($process, $event, $mechanism) {
         $updated = $mechanism->accumulate($event);
 
         if (!$updated->is_satisfied()) {
@@ -157,16 +197,14 @@ final class ProcessRunner {
           return;
         }
 
-        CorrelationContext::with($process->correlation_id(), function () use ($process, $event, $updated) {
-          $process->advance_step();
-          $this->resume_argument = $updated->resume_argument($event);
-          $process->advance(status: 'running', payload: $process->payload());
-          $this->repository->save($process);
+        $process->advance_step();
+        $this->resume_argument = $updated->resume_argument($event);
+        $process->advance(status: 'running', payload: $process->payload());
+        $this->repository->save($process);
 
-          $this->run($process);
+        $this->run($process);
 
-          $this->resume_argument = null;
-        });
+        $this->resume_argument = null;
       });
 
       // Only resume first accepting process per event (key sets are disjoint by construction).
@@ -206,7 +244,11 @@ final class ProcessRunner {
         return;
       }
 
-      CorrelationContext::with($process->correlation_id(), function () use ($process, $mechanism) {
+      // Sealed bracket for the wake itself. The outer with_process_lock
+      // stays: the find + guards above must run inside the lock (stale-read
+      // protection), and GET_LOCK is re-entrant per connection — the
+      // bracket's inner acquisition is balanced by its own release.
+      $this->with_process($process, function () use ($process, $mechanism) {
         if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
           $process->advance_step();
           $this->resume_argument = $mechanism->resume_argument(null);

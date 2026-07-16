@@ -33,7 +33,7 @@ class LongProcessTest extends TestCase {
     $process = new FakeThreeStepProcess();
     $steps = $this->make_steps();
 
-    $process->start('corr-123', $steps);
+    $process->initialize_lifecycle('corr-123', $steps);
 
     $this->assertSame('running', $process->status());
     $this->assertSame('corr-123', $process->correlation_id());
@@ -44,7 +44,7 @@ class LongProcessTest extends TestCase {
 
   public function test_advance_updates_state(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $payload = new FakePayload('step1_done', 1);
     $process->advance(status: 'running', payload: $payload);
@@ -56,7 +56,7 @@ class LongProcessTest extends TestCase {
 
   public function test_advance_with_suspension(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $process->advance(
       status: 'suspended',
@@ -72,7 +72,7 @@ class LongProcessTest extends TestCase {
 
   public function test_advance_step_moves_cursor(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $this->assertSame('initialize', $process->current_step_name());
     $this->assertSame(0, $process->current_step_index());
@@ -84,7 +84,7 @@ class LongProcessTest extends TestCase {
 
   public function test_advance_step_to_jumps_cursor(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $process->advance_step_to(2);
     $this->assertSame('finalize', $process->current_step_name());
@@ -93,7 +93,7 @@ class LongProcessTest extends TestCase {
 
   public function test_complete_sets_status(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $process->complete();
 
@@ -103,7 +103,7 @@ class LongProcessTest extends TestCase {
 
   public function test_fail_sets_status_and_error(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $process->fail('something broke');
 
@@ -113,7 +113,7 @@ class LongProcessTest extends TestCase {
 
   public function test_record_and_retrieve_checkpoint(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $cp = new FakePayload('checkpoint_data', 99);
     $process->record_checkpoint($cp);
@@ -125,7 +125,7 @@ class LongProcessTest extends TestCase {
 
   public function test_checkpoint_for_missing_step_returns_null(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $this->assertNull($process->checkpoint_for('nonexistent'));
   }
@@ -136,7 +136,7 @@ class LongProcessTest extends TestCase {
       steps: ['step_a', 'step_b'],
       compensations: ['step_a' => 'undo_a'],
     );
-    $process->start('corr-1', $steps);
+    $process->initialize_lifecycle('corr-1', $steps);
 
     // Advance past step_a
     $process->advance_step();
@@ -162,7 +162,7 @@ class LongProcessTest extends TestCase {
 
   public function test_find_step_index(): void {
     $process = new FakeThreeStepProcess();
-    $process->start('corr-1', $this->make_steps());
+    $process->initialize_lifecycle('corr-1', $this->make_steps());
 
     $this->assertSame(0, $process->find_step_index('initialize'));
     $this->assertSame(1, $process->find_step_index('process_data'));
@@ -205,7 +205,7 @@ class LongProcessTest extends TestCase {
   public function test_is_steps_complete(): void {
     $process = new FakeThreeStepProcess();
     $steps = new ProcessSteps(steps: ['a'], compensations: []);
-    $process->start('corr-1', $steps);
+    $process->initialize_lifecycle('corr-1', $steps);
 
     $this->assertFalse($process->is_steps_complete());
 

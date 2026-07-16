@@ -98,7 +98,7 @@ class ProcessRunnerTest extends TestCase {
       ),
       []
     );
-    $process->start('test-corr', $steps);
+    $process->initialize_lifecycle('test-corr', $steps);
     // Execute first step manually
     $process->advance_step();
     $process->advance(status: 'scheduled', payload: new FakePayload('initialized', 1));
@@ -164,7 +164,7 @@ class ProcessRunnerTest extends TestCase {
       ),
       []
     );
-    $process->start('leaky-proc-correlation', $steps);
+    $process->initialize_lifecycle('leaky-proc-correlation', $steps);
     $process->advance_step();
     $process->advance(status: 'scheduled', payload: new FakePayload('initialized', 1));
     $this->repo->save($process);
