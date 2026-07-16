@@ -38,10 +38,6 @@ final class Result {
     public readonly ?JsonLifecycleValue $checkpoint = null,
   ) {}
 
-  public function has_commands(): bool {
-    return !empty($this->commands);
-  }
-
   public function should_suspend(): bool {
     return $this->await !== null;
   }

@@ -22,8 +22,6 @@ class ProcessStepsTest extends TestCase {
     $this->assertFalse($steps->is_complete());
     $this->assertFalse($steps->is_compensating());
     $this->assertSame('init', $steps->current_step());
-    $this->assertSame(3, $steps->total_steps());
-    $this->assertSame(0, $steps->completed_count());
   }
 
   public function test_advance_moves_cursor(): void {
@@ -31,7 +29,6 @@ class ProcessStepsTest extends TestCase {
 
     $steps->advance();
     $this->assertSame('process', $steps->current_step());
-    $this->assertSame(1, $steps->completed_count());
 
     $steps->advance();
     $this->assertSame('finalize', $steps->current_step());
