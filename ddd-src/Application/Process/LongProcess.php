@@ -73,6 +73,16 @@ abstract class LongProcess extends Aggregate {
 
   protected string $status = 'pending';
   protected string $correlation_id;
+
+  /**
+   * Ignition metadata. ignited_by_event_id = the journey id of the
+   * integration event that ignited this process via #[StartsOn] (null for
+   * edge starts) — it is both the causation edge on the trajectory row and
+   * the replay-dedup key. source = the channel the process was born through
+   * ('cli' | 'web' | 'event').
+   */
+  protected ?string $ignited_by_event_id = null;
+  protected ?string $source = null;
   protected ?string $waiting_for = null;
   protected ?array $match_criteria = null;
   protected ?IAwaitMechanism $await_mechanism = null;
@@ -261,6 +271,8 @@ abstract class LongProcess extends Aggregate {
     ?string $waiting_for = null,
     ?array $match_criteria = null,
     ?IAwaitMechanism $await_mechanism = null,
+    ?string $ignited_by_event_id = null,
+    ?string $source = null,
   ): void {
     $this->status = $status;
     $this->payload = $payload;
@@ -357,6 +369,8 @@ abstract class LongProcess extends Aggregate {
     ?DateTimeImmutable $created_at = null,
     ?DateTimeImmutable $updated_at = null,
     ?IAwaitMechanism $await_mechanism = null,
+    ?string $ignited_by_event_id = null,
+    ?string $source = null,
   ): void {
     $this->id = $id;
     $this->status = $status;
@@ -369,5 +383,23 @@ abstract class LongProcess extends Aggregate {
     $this->created_at = $created_at;
     $this->updated_at = $updated_at;
     $this->await_mechanism = $await_mechanism;
+    $this->ignited_by_event_id = $ignited_by_event_id;
+    $this->source = $source;
+  }
+
+  public function mark_ignited_by(string $event_id): void {
+    $this->ignited_by_event_id = $event_id;
+  }
+
+  public function ignited_by_event_id(): ?string {
+    return $this->ignited_by_event_id;
+  }
+
+  public function mark_source(string $source): void {
+    $this->source = $source;
+  }
+
+  public function source(): ?string {
+    return $this->source;
   }
 }

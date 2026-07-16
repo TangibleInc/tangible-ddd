@@ -49,6 +49,77 @@ class DDD_Command {
    * @when before_wp_load
    */
   public function init( $args, $assoc_args ) {
+    $this->run_init( $args, $assoc_args );
+  }
+
+  /**
+   * Announce an integration event — the human cold-start door.
+   *
+   * The ctor-as-schema codec makes every integration event JSON-constructible:
+   * the payload keys are the constructor parameter names. The event is
+   * published on its owning consumer's bus, so it rides the outbox exactly
+   * like an organic fact — durable, journey-stamped, and indistinguishable
+   * to whatever reacts (listeners, #[StartsOn] ignitions, #[Awaits] resumes).
+   *
+   * You never cold-start a process from here; you announce the fact that
+   * ignites it.
+   *
+   * ## OPTIONS
+   *
+   * <event>
+   * : Fully-qualified integration event class name.
+   *
+   * --payload=<json>
+   * : JSON object whose keys are the event's constructor parameter names.
+   *
+   * ## EXAMPLES
+   *
+   *     wp ddd announce 'Tangible\Cred\Domain\Events\Completion\DeadlineCompletionStarted' \
+   *       --payload='{"user_id":3,"course_ids":[22,23],"deadline_hours":72,"reason":"manual"}'
+   */
+  public function announce( $args, $assoc_args ) {
+    [ $event_class ] = $args;
+    $event_class = ltrim( (string) $event_class, '\\' );
+
+    if ( ! class_exists( $event_class ) ) {
+      \WP_CLI::error( "Class not found: $event_class" );
+    }
+    if ( ! is_a( $event_class, \TangibleDDD\Domain\Events\IIntegrationEvent::class, true ) ) {
+      \WP_CLI::error( "$event_class is not an integration event." );
+    }
+
+    $payload = json_decode( (string) ( $assoc_args['payload'] ?? '' ), true );
+    if ( ! is_array( $payload ) ) {
+      \WP_CLI::error( '--payload must be a JSON object (keys = constructor parameter names).' );
+    }
+
+    $event = $event_class::from_payload( $payload );
+
+    // Find the owning consumer: its config prefixes the event's wire action.
+    $action = $event_class::integration_action();
+    $owner = null;
+    foreach ( \TangibleDDD\WordPress\consumers() as $prefix => $handle ) {
+      if ( str_starts_with( $action, $prefix . '_' ) ) {
+        $owner = $handle;
+        break;
+      }
+    }
+    if ( $owner === null ) {
+      \WP_CLI::error( "No registered consumer owns '$action' — is the plugin boot()ed?" );
+    }
+
+    $bus = $owner->container()->get( \TangibleDDD\Application\Events\IIntegrationEventBus::class );
+    $bus->publish( $event );
+
+    \WP_CLI::success( sprintf(
+      "Announced %s on '%s' (consumer %s) — riding the outbox; reactions fire at drain.",
+      $event_class,
+      $action,
+      $owner->prefix()
+    ) );
+  }
+
+  private function run_init( $args, $assoc_args ) {
     $prefix = $assoc_args['prefix'] ?? null;
     $path = $assoc_args['plugin-path'] ?? getcwd();
     $force = Utils\get_flag_value( $assoc_args, 'force', false );

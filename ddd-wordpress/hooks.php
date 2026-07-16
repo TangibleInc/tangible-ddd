@@ -249,6 +249,12 @@ function register_processes_from_container(
       $runner->register_event($attr->newInstance()->event_class);
     }
 
+    // Register ignitions declared via #[StartsOn(...)] — the reactive door:
+    // at drain time the event news the process (from_event) and starts it.
+    foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\StartsOn::class) as $attr) {
+      $runner->register_start($class, $attr->newInstance()->event_class);
+    }
+
     // Register awaited events from tag parameters
     foreach ($tags as $tag_attrs) {
       $awaits = $tag_attrs['awaits'] ?? [];

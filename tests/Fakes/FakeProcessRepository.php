@@ -31,6 +31,15 @@ final class FakeProcessRepository implements IProcessRepository {
     return $this->processes[$id] ?? null;
   }
 
+  public function has_ignition(string $process_class, string $event_id): bool {
+    foreach ($this->processes as $p) {
+      if ($p instanceof $process_class && $p->ignited_by_event_id() === $event_id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public function find_waiting_for(string $event_class): array {
     return array_filter(
       $this->processes,

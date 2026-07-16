@@ -31,6 +31,9 @@ final class ProcessRunner {
   /** @var array<string, bool> Tracks which events have action hooks registered */
   private array $registered_events = [];
 
+  /** @var array<string, array<string, bool>> process class → event class → ignition hook laid */
+  private array $registered_starts = [];
+
   /** @var mixed Transient - resume_argument() output from the mechanism that woke the process */
   private mixed $resume_argument = null;
 
@@ -98,6 +101,76 @@ final class ProcessRunner {
   }
 
   /**
+   * Register an ignition: integration event → new process, via #[StartsOn].
+   *
+   * A degenerate-in-reverse IntegrationListener: identical drain trigger and
+   * unwrap/hydrate/stamp preamble, identical right to decline (from_event
+   * returns null — the policy filter), but the reaction persists and stays
+   * alive. Ignition does NOT ride the bus: starting a saga is not an act,
+   * so no synthetic command pollutes the moment ledger — the process row
+   * (with ignited_by_event_id as the causation edge) is the birth record,
+   * and the first audit rows of the saga's life are its step commands.
+   *
+   * Priority 50: after plain listeners (10), before resumes (99) — so an
+   * event may ignite saga B before it wakes saga A, deterministically, and
+   * a saga that both StartsOn and Awaits one event class has its igniting
+   * instance consumed by ignition (the await sees only later arrivals).
+   *
+   * @return $this For fluent chaining
+   */
+  public function register_start(string $process_class, string $event_class): self {
+    if (isset($this->registered_starts[$process_class][$event_class])) {
+      return $this;
+    }
+
+    if (!is_subclass_of($process_class, LongProcess::class)) {
+      throw new \InvalidArgumentException("$process_class must extend LongProcess");
+    }
+    if (!is_a($event_class, IIntegrationEvent::class, true)) {
+      throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
+    }
+    if (!method_exists($process_class, 'from_event')) {
+      throw new \InvalidArgumentException(
+        "$process_class declares #[StartsOn] but has no static from_event() — the ignition projection is required."
+      );
+    }
+
+    $this->registered_starts[$process_class][$event_class] = true;
+
+    add_action(
+      $event_class::integration_action(),
+      function (array $payload) use ($process_class, $event_class) {
+        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope->restore_context();
+
+        $event = $event_class::from_payload($envelope->payload);
+        if ($envelope->event_id !== null) {
+          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+        }
+
+        $process = $process_class::from_event($event);
+        if ($process === null) {
+          return; // not my business — the policy declined
+        }
+
+        $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
+        if ($event_id !== null) {
+          if ($this->repository->has_ignition($process_class, $event_id)) {
+            return; // replay / redelivery — this fact already ignited its saga
+          }
+          $process->mark_ignited_by($event_id);
+        }
+        $process->mark_source('event');
+
+        $this->start($process);
+      },
+      50 // between listeners (10) and resumes (99)
+    );
+
+    return $this;
+  }
+
+  /**
    * Start a new process — the EDGE door.
    *
    * Legal from flat contexts only: REST controllers, CLI, WP hook closures,
@@ -113,6 +186,10 @@ final class ProcessRunner {
   public function start(LongProcess $process): void {
     if (null !== $inside = CorrelationContext::command_frame()) {
       throw new ProcessStartedInsideCommand(get_class($process), $inside);
+    }
+
+    if ($process->source() === null) {
+      $process->mark_source((defined('WP_CLI') && WP_CLI) || PHP_SAPI === 'cli' ? 'cli' : 'web');
     }
 
     $steps = $this->create_process_steps($process);

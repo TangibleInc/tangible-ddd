@@ -44,10 +44,10 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_4(): void {
+  public function test_current_schema_version_is_5(): void {
     // Regression guard for the v3-fast-path bug: a consumer already recorded
     // as v3 must NOT be treated as up to date once await_mechanism ships.
-    $this->assertSame(4, DDD_SCHEMA_VERSION);
+    $this->assertSame(5, DDD_SCHEMA_VERSION);
   }
 
   public function test_v4_migration_adds_await_mechanism_after_match_criteria_on_long_processes(): void {

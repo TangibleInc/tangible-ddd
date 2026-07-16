@@ -48,6 +48,8 @@ class ProcessRepository implements IProcessRepository {
         : null,
       'payload' => $payload ? wp_json_encode(JsonLifecycleValue::serialize_polymorphic($payload)) : null,
       'correlation_id' => $process->correlation_id(),
+      'ignited_by_event_id' => $process->ignited_by_event_id(),
+      'source' => $process->source(),
       'last_error' => $process->last_error(),
       'updated_at' => $now,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,
@@ -83,6 +85,18 @@ class ProcessRepository implements IProcessRepository {
     }
 
     return $this->hydrate_from_row($row);
+  }
+
+  public function has_ignition(string $process_class, string $event_id): bool {
+    global $wpdb;
+
+    return (bool) $wpdb->get_var($wpdb->prepare(
+      "SELECT 1 FROM `{$this->table_name()}`
+        WHERE process_class = %s AND ignited_by_event_id = %s
+        LIMIT 1",
+      $process_class,
+      $event_id
+    ));
   }
 
   public function find_waiting_for(string $event_class): array {
@@ -184,6 +198,8 @@ class ProcessRepository implements IProcessRepository {
       created_at: $row->created_at ? new DateTimeImmutable($row->created_at) : null,
       updated_at: $row->updated_at ? new DateTimeImmutable($row->updated_at) : null,
       await_mechanism: $mechanism,
+      ignited_by_event_id: $row->ignited_by_event_id ?? null,
+      source: $row->source ?? null,
     );
 
     return $process;

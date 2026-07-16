@@ -157,4 +157,44 @@ class BootTest extends TestCase {
       'register_hooks must wire resume hooks for the #[Awaits] events of ddd.long_process-tagged classes',
     );
   }
+
+  public function test_register_hooks_discovers_starts_on_ignitions(): void {
+    global $_test_actions;
+
+    $config = new class implements IDDDConfig {
+      public function prefix(): string { return 'ign'; }
+      public function table(string $name): string { return 'wp_ign_' . $name; }
+      public function hook(string $name): string { return 'ign_' . $name; }
+      public function as_group(string $name): string { return 'ign-' . $name; }
+      public function option(string $name): string { return 'ign_' . $name; }
+      public function domain_action(string $event_name): string { return 'ign_domain_' . $event_name; }
+      public function integration_action(string $event_name): string { return 'ign_integration_' . $event_name; }
+      public function version(): string { return 'ign'; }
+    };
+
+    $GLOBALS['wpdb'] = new class extends \wpdb {
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 'wp_ign_long_processes';
+      }
+    };
+
+    $runner = new ProcessRunner($config, new FakeProcessRepository());
+    $container = new class($runner) {
+      public function __construct(private readonly ProcessRunner $runner) {}
+      public function getServiceIds(): array { return []; }
+      public function findTaggedServiceIds(string $tag): array {
+        return 'ddd.long_process' === $tag
+          ? [\TangibleDDD\Tests\Fakes\FakeStartsOnProcess::class => [[]]]
+          : [];
+      }
+      public function get(string $id): ProcessRunner { return $this->runner; }
+    };
+
+    \TangibleDDD\WordPress\register_hooks($config, static fn () => $container);
+
+    $this->assertNotEmpty(
+      $_test_actions[FakeResolvedEvent::integration_action()] ?? [],
+      'register_hooks must wire ignition hooks for the #[StartsOn] events of tagged classes',
+    );
+  }
 }
