@@ -315,6 +315,12 @@ if (!function_exists('tangible_ddd_initialize_0_2_4')) {
             'ddd-wordpress/secret.php',
             'ddd-wordpress/integration-events.php',
             'ddd-wordpress/infrastructure-events.php',
+            // Executes WP_CLI::add_command (self-guarded on WP_CLI). Must be
+            // required explicitly — procedural side-effect files are invisible
+            // to the class autoloader, so "left to autoload" meant "never
+            // loaded" and `wp ddd` only existed where the plugin file itself
+            // was the active loader.
+            'ddd-wordpress/cli/register.php',
         ];
 
         foreach ($procedural as $rel) {
