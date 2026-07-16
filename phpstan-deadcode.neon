@@ -1,0 +1,50 @@
+# Dead-public-code sweep: flags public methods/properties/constants with no
+# caller anywhere in the analyzed universe. Test-only usage counts as UNUSED
+# (tests are not consumers). The framework is a library, so the universe
+# includes every consumer's src — "unused in tangible-ddd alone" would be
+# meaningless.
+#
+#   composer run deadcode
+#
+# Filter to framework findings only (consumers analyzed as usage providers):
+#   composer run deadcode | grep -E "ddd-(src|wordpress)"
+
+includes:
+  - vendor/tomasvotruba/unused-public/config/extension.neon
+
+parameters:
+  level: 0
+  phpVersion: 80200
+
+  # Symbol discovery only (not analyzed): third-party interfaces the framework
+  # implements live in consumer vendors, not ours.
+  scanDirectories:
+    - ../tangible-cred/vendor/league/tactician/src
+    - ../tangible-cred/vendor/psr/container/src
+
+  paths:
+    - ddd-src
+    - ddd-wordpress
+    - ../tangible-cred/src
+    - ../tangible-cred/includes
+    - ../tangible-datastream/src
+    - ../tangible-datastream/includes
+    - ../lms-monorepo/plugins/lms/src
+    - ../lms-monorepo/plugins/quiz/src
+
+  excludePaths:
+    - ddd-wordpress/cli/class-ddd-command.php   # scaffolder templates = heredoc code, not calls
+
+  unused_public:
+    methods: true
+    properties: true
+    constants: true
+
+  # We only want unused_public findings; silence ordinary level-0 errors
+  # (undefined WP functions etc.) — this config is a sweep, not CI.
+  ignoreErrors:
+    - identifier: class.notFound
+    - identifier: function.notFound
+    - identifier: constant.notFound
+
+  reportUnmatchedIgnoredErrors: false

@@ -1,46 +1,53 @@
 {
-  "name": "tangible/ddd",
-  "description": "Domain-Driven Design framework for WordPress plugins",
-  "type": "library",
-  "license": "MIT",
-  "authors": [
-    {
-      "name": "Tangible",
-      "email": "dev@tangible.one"
-    }
-  ],
-  "require": {
-    "php": ">=8.1",
-    "symfony/dependency-injection": "^7.4",
-    "league/tactician": "^2.0-rc1",
-    "woocommerce/action-scheduler": "^3.9",
-    "makinacorpus/query-builder": "^1.6",
-    "symfony/config": "^7.4"
-  },
-  "require-dev": {
-    "phpunit/phpunit": "^10.0|^11.0",
-    "wp-phpunit/wp-phpunit": "^7.0",
-    "yoast/phpunit-polyfills": "^4.0",
-    "symfony/yaml": "^7.4"
-  },
-  "autoload": {
-    "psr-4": {
-      "TangibleDDD\\": "ddd-src/"
+    "name": "tangible/ddd",
+    "description": "Domain-Driven Design framework for WordPress plugins",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Tangible",
+            "email": "dev@tangible.one"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "symfony/dependency-injection": "^7.4",
+        "league/tactician": "^2.0-rc1",
+        "woocommerce/action-scheduler": "^3.9",
+        "makinacorpus/query-builder": "^1.6",
+        "symfony/config": "^7.4"
     },
-    "files": [
-      "tangible-ddd.php"
-    ]
-  },
-  "autoload-dev": {
-    "psr-4": {
-      "TangibleDDD\\Tests\\": "tests/",
-      "Tangible\\Datastream\\": ".reference/tangible-datastream/src/"
-    }
-  },
-  "scripts": {
-    "ref:datastream": "test -d .reference/tangible-datastream || git clone --branch v3-ddd git@github.com:TangibleInc/tangible-datastream.git .reference/tangible-datastream || echo '[ddd] datastream v3 reference clone skipped (no git/SSH access)'",
-    "post-install-cmd": ["@ref:datastream"],
-    "post-update-cmd": ["@ref:datastream"]
-  },
-  "minimum-stability": "stable"
+    "require-dev": {
+        "phpunit/phpunit": "^10.0|^11.0",
+        "wp-phpunit/wp-phpunit": "^7.0",
+        "yoast/phpunit-polyfills": "^4.0",
+        "symfony/yaml": "^7.4",
+        "phpstan/phpstan": "^2.2",
+        "tomasvotruba/unused-public": "^2.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "TangibleDDD\\": "ddd-src/"
+        },
+        "files": [
+            "tangible-ddd.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "TangibleDDD\\Tests\\": "tests/",
+            "Tangible\\Datastream\\": ".reference/tangible-datastream/src/"
+        }
+    },
+    "scripts": {
+        "ref:datastream": "test -d .reference/tangible-datastream || git clone --branch v3-ddd git@github.com:TangibleInc/tangible-datastream.git .reference/tangible-datastream || echo '[ddd] datastream v3 reference clone skipped (no git/SSH access)'",
+        "post-install-cmd": [
+            "@ref:datastream"
+        ],
+        "post-update-cmd": [
+            "@ref:datastream"
+        ],
+        "deadcode": "phpstan analyse -c phpstan-deadcode.neon --memory-limit=1G --no-progress"
+    },
+    "minimum-stability": "stable"
 }
