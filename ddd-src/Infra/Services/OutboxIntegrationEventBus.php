@@ -24,6 +24,15 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
   ) {}
 
   public function publish(IIntegrationEvent $event): void {
+    // Trajectory→Fact guard (0.2.5): a saga step announcing directly would
+    // write an orphan fact (command_id null — no raiser edge). Steps
+    // sequence commands; handlers announce. The ground contact (step →
+    // command → handler announces) has both frames occupied and passes.
+    $parent = CorrelationContext::process_frame();
+    if ($parent !== null && CorrelationContext::command_frame() === null) {
+      throw new FactPublishedInsideProcess(get_class($event), $parent);
+    }
+
     // Handle is_unique: cancel existing pending events of same type
     if ($event->is_unique()) {
       $this->outbox->cancel_duplicates(
