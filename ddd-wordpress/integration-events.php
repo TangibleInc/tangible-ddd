@@ -3,7 +3,7 @@
 namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Application\Correlation\CorrelationContext;
-use TangibleDDD\Application\Events\TransportEnvelope;
+use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
@@ -64,7 +64,7 @@ function extract_correlation(array $params): array {
     is_array($params[0]) &&
     isset($params[0]['__correlation_id'])
   ) {
-    $envelope = TransportEnvelope::unwrap($params[0]);
+    $envelope = IntegrationEnvelope::unwrap($params[0]);
     $envelope->restore_context();
 
     // Positional list payloads spread as positional args; associative payloads
@@ -91,7 +91,7 @@ function integration_listener(string $event_class, callable $translate): void {
   }
 
   add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
-    $envelope = TransportEnvelope::unwrap($wrapped);
+    $envelope = IntegrationEnvelope::unwrap($wrapped);
     $envelope->restore_context();
 
     try {

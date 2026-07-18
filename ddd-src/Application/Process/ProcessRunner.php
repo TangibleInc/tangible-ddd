@@ -84,7 +84,7 @@ final class ProcessRunner {
     add_action(
       $event_class::integration_action(),
       function (array $payload) use ($event_class) {
-        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
         $envelope->restore_context();
 
         try {
@@ -144,7 +144,7 @@ final class ProcessRunner {
     add_action(
       $event_class::integration_action(),
       function (array $payload) use ($process_class, $event_class) {
-        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
         $envelope->restore_context();
 
         try {

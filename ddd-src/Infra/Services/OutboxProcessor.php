@@ -102,13 +102,17 @@ final class OutboxProcessor {
 
   /**
    * Wrap payload with correlation context for downstream tracing.
+   *
+   * Delegates to the envelope — wrap() and unwrap() are one codec in one
+   * home (0.2.5); this processor no longer knows the __-key wire format.
    */
   private function wrap_payload_for_transport(OutboxEntry $entry): array {
-    $payload = $entry->payload;
-    $payload['__correlation_id'] = $entry->correlation_id;
-    $payload['__sequence'] = $entry->sequence;
-    $payload['__event_id'] = $entry->event_id;
-    return $payload;
+    return \TangibleDDD\Application\Events\IntegrationEnvelope::wrap(
+      $entry->payload,
+      $entry->correlation_id,
+      $entry->sequence,
+      $entry->event_id,
+    );
   }
 
   /**
