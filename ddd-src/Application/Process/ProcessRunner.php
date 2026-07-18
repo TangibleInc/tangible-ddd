@@ -87,12 +87,16 @@ final class ProcessRunner {
         $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
         $envelope->restore_context();
 
-        $event = $event_class::from_payload($envelope->payload);
-        if ($envelope->event_id !== null) {
-          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-        }
+        try {
+          $event = $event_class::from_payload($envelope->payload);
+          if ($envelope->event_id !== null) {
+            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+          }
 
-        $this->resume_on_event($event);
+          $this->resume_on_event($event);
+        } finally {
+          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+        }
       },
       99 // Late priority - run after main handlers
     );
@@ -143,26 +147,30 @@ final class ProcessRunner {
         $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
         $envelope->restore_context();
 
-        $event = $event_class::from_payload($envelope->payload);
-        if ($envelope->event_id !== null) {
-          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-        }
-
-        $process = $process_class::from_event($event);
-        if ($process === null) {
-          return; // not my business — the policy declined
-        }
-
-        $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
-        if ($event_id !== null) {
-          if ($this->repository->has_ignition($process_class, $event_id)) {
-            return; // replay / redelivery — this fact already ignited its saga
+        try {
+          $event = $event_class::from_payload($envelope->payload);
+          if ($envelope->event_id !== null) {
+            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
           }
-          $process->mark_ignited_by($event_id);
-        }
-        $process->mark_source('event');
 
-        $this->start($process);
+          $process = $process_class::from_event($event);
+          if ($process === null) {
+            return; // not my business — the policy declined
+          }
+
+          $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
+          if ($event_id !== null) {
+            if ($this->repository->has_ignition($process_class, $event_id)) {
+              return; // replay / redelivery — this fact already ignited its saga
+            }
+            $process->mark_ignited_by($event_id);
+          }
+          $process->mark_source('event');
+
+          $this->start($process);
+        } finally {
+          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+        }
       },
       50 // between listeners (10) and resumes (99)
     );

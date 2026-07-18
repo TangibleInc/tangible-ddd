@@ -42,6 +42,10 @@ function integration_action(
         $e->getMessage()
       ));
       throw $e;
+    } finally {
+      // The drain armed the event as causation for its whole body (scope, not
+      // one-shot); teardown here so nothing bleeds into the worker's next action.
+      CorrelationContext::clear_causation();
     }
   }, $priority, $arg_count);
 }
@@ -90,12 +94,16 @@ function integration_listener(string $event_class, callable $translate): void {
     $envelope = TransportEnvelope::unwrap($wrapped);
     $envelope->restore_context();
 
-    $event = $event_class::from_payload($envelope->payload);
-    if ($envelope->event_id !== null) {
-      $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-    }
+    try {
+      $event = $event_class::from_payload($envelope->payload);
+      if ($envelope->event_id !== null) {
+        $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+      }
 
-    $command = $translate($event);
-    $command?->send();
+      $command = $translate($event);
+      $command?->send();
+    } finally {
+      CorrelationContext::clear_causation();   // scope teardown — see integration_action()
+    }
   }, 10, 1);
 }
