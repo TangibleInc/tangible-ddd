@@ -228,10 +228,12 @@ parameters.
    saga is this plus an intent command whose handler validates and
    `Events::record()`s the ignition fact — the handler never touches the
    runner.
-2. **Edge cold-start**: `ProcessRunner::start($process)` (or the
-   `StartsItself` trait's `(new P(...))->start()` via a consumer `Process`
-   base class, mirror of the `Command::send()` hatch) — from REST
-   controllers, CLI, WP hook closures. The first step runs in-band,
+2. **Edge cold-start**: `di()->get(ProcessRunner::class)->start($process)` —
+   from REST controllers, CLI, WP hook closures. (A `(new P(...))->start()`
+   self-dispatch hatch was built and stripped — it demanded a stamped
+   `Process` base per consumer for an ergonomic with zero callers; if it ever
+   earns its way back, the 0.2.5 registry scheme delivers it with no consumer
+   base.) The first step runs in-band,
    immediately: steps execute wherever ignition or waking legally happens;
    only awaits and timeouts create hops.
 3. **Human**: `wp ddd announce '<EventFQCN>' --payload='{...}'` — the total

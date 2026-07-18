@@ -251,8 +251,7 @@ abstract class LongProcess extends Aggregate {
   /**
    * Initialize a new process with correlation ID and step schema.
    * Called by ProcessRunner at start — @internal runner machinery, not the
-   * public ignition door (that is ProcessRunner::start / the StartsItself
-   * trait's start()).
+   * public ignition door (that is ProcessRunner::start).
    */
   public function initialize_lifecycle(string $correlation_id, ProcessSteps $steps): void {
     $this->correlation_id = $correlation_id;
