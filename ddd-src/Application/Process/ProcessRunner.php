@@ -196,6 +196,19 @@ final class ProcessRunner {
       throw new ProcessStartedInsideCommand(get_class($process), $inside);
     }
 
+    // The absorb (0.2.5): a manual ->start() inside a drain is a legal-but-
+    // dispreferred spelling of event ignition — the armed causation IS the
+    // igniting fact, so record the truth instead of a false cold root.
+    // (#[StartsOn] stays the better door: it adds dedup and discovery.)
+    if (
+      $process->ignited_by_event_id() === null
+      && CorrelationContext::causation_type() === 'integration_event'
+      && null !== $igniter = CorrelationContext::causation_id()
+    ) {
+      $process->mark_ignited_by($igniter);
+      $process->mark_source('event');
+    }
+
     if ($process->source() === null) {
       $process->mark_source((defined('WP_CLI') && WP_CLI) || PHP_SAPI === 'cli' ? 'cli' : 'web');
     }
