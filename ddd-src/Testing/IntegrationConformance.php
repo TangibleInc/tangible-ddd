@@ -155,17 +155,35 @@ final class IntegrationConformance {
       if ($file->getExtension() !== 'php') {
         continue;
       }
-      $declared = self::declared_in($file->getPathname());
+
+      // Load ONLY files with an integration surface. Consumer src is full of
+      // classes that parse only inside WP (infra repos extending WP types);
+      // forcing them through the autoloader fatals the scan. Everything we
+      // check mentions Integration* somewhere (the trait, a stamped
+      // IntegrationEvent base, IntegrationListener, IAnnouncesIntegration,
+      // or the Integration\ twin sub-namespace), so a substring pre-filter
+      // is a safe superset.
+      $source = (string) file_get_contents($file->getPathname());
+      if (!str_contains($source, 'Integration')) {
+        continue;
+      }
+
+      $declared = self::declared_in_source($source);
 
       // PSR-4 covers one-class-per-file; a file declaring several classes
-      // (fixtures, grouped fakes) needs loading directly. The token scan
-      // already proved it declares classes, so requiring it is safe.
-      if (array_filter($declared, static fn (string $c) => !class_exists($c))) {
-        require_once $file->getPathname();
+      // (fixtures, grouped fakes) needs loading directly. Guarded: a
+      // relevant-looking file that still can't parse outside WP is skipped,
+      // not fatal (consumer suites run with WP loaded; the dry-run may not).
+      try {
+        if (array_filter($declared, static fn (string $c) => !class_exists($c))) {
+          require_once $file->getPathname();
+        }
+      } catch (\Throwable) {
+        continue;
       }
 
       foreach ($declared as $class) {
-        if (class_exists($class, false) || class_exists($class)) {
+        if (class_exists($class, false)) {
           $classes[] = $class;
         }
       }
@@ -174,9 +192,9 @@ final class IntegrationConformance {
     return $classes;
   }
 
-  /** @return list<string> FQCNs declared in one file (token scan, no execution) */
-  private static function declared_in(string $path): array {
-    $tokens = token_get_all((string) file_get_contents($path));
+  /** @return list<string> FQCNs declared in one source string (token scan, no execution) */
+  private static function declared_in_source(string $source): array {
+    $tokens = token_get_all($source);
     $namespace = '';
     $classes = [];
 

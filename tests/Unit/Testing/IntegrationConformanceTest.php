@@ -88,6 +88,18 @@ class IntegrationConformanceTest extends TestCase {
     $this->assertStringContainsString('$entity', $text);
   }
 
+  public function test_files_without_integration_surface_are_never_loaded(): void {
+    // PoisonPill.php fatals if loaded (undefined parent — stands in for
+    // WP-only consumer infra). Surviving the scan proves the pre-filter.
+    IntegrationConformance::event_violations(self::FIXTURES);
+    IntegrationConformance::listener_violations(self::FIXTURES);
+
+    $this->assertFalse(
+      class_exists('TangibleDDD\\Tests\\Fakes\\Conformance\\PoisonPill', false),
+      'scanner loaded a file with no integration surface',
+    );
+  }
+
   public function test_missing_directory_yields_no_violations(): void {
     $this->assertSame([], IntegrationConformance::event_violations(self::FIXTURES . '/nope'));
     $this->assertSame([], IntegrationConformance::listener_violations(self::FIXTURES . '/nope'));
