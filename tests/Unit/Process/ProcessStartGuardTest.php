@@ -52,16 +52,10 @@ class ProcessStartGuardTest extends TestCase {
     $this->assertSame(['initialize', 'process_data', 'finalize'], $process->executed_steps);
   }
 
-  public function test_start_inside_a_process_scope_is_legal(): void {
-    // Future child-saga lane: a step spawning a process runs inside the
-    // runner's bracket (process frame, no command frame) — must pass.
-    CorrelationContext::mark_process_frame('99');
-
-    $runner = new ProcessRunner(new FakeDDDConfig(), new FakeProcessRepository());
-    $process = new FakeThreeStepProcess();
-    $runner->start($process);
-    $this->assertSame('completed', $process->status());
-
-    CorrelationContext::clear_process_frame();
-  }
+  // NOTE (0.2.5): the 0.2.4 test asserting start-inside-a-process-scope is
+  // LEGAL was superseded by an owner ruling — the "future child-saga lane"
+  // it reserved was decided AGAINST a direct spawn edge (the fan-out
+  // decision must be an audited command: parent step → Act → Fact →
+  // #[StartsOn] child). See ProcessStartInsideProcessTest and
+  // docs/0.3-trace-context.md §7.
 }

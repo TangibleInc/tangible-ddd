@@ -196,6 +196,10 @@ final class ProcessRunner {
       throw new ProcessStartedInsideCommand(get_class($process), $inside);
     }
 
+    if (null !== $parent = CorrelationContext::process_frame()) {
+      throw new ProcessStartedInsideProcess(get_class($process), $parent);
+    }
+
     // The absorb (0.2.5): a manual ->start() inside a drain is a legal-but-
     // dispreferred spelling of event ignition — the armed causation IS the
     // igniting fact, so record the truth instead of a false cold root.
