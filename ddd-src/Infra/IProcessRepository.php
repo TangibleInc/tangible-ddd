@@ -21,6 +21,13 @@ interface IProcessRepository {
   public function find(int $id): ?LongProcess;
 
   /**
+   * Has this process class already been ignited by this integration event?
+   * The #[StartsOn] replay-dedup check — event_id is per-publication stable
+   * across retries and replays, so redelivery can never mint a second saga.
+   */
+  public function has_ignition(string $process_class, string $event_id): bool;
+
+  /**
    * Find processes waiting for a specific event type.
    *
    * @return LongProcess[]

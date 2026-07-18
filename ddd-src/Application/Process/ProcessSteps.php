@@ -121,14 +121,6 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
     return $this->steps[$this->step_index] ?? null;
   }
 
-  public function total_steps(): int {
-    return count($this->steps);
-  }
-
-  public function completed_count(): int {
-    return $this->step_index;
-  }
-
   // ─────────────────────────────────────────────────────────────────────────
   // Mutations (forward execution)
   // ─────────────────────────────────────────────────────────────────────────

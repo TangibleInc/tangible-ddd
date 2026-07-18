@@ -218,6 +218,41 @@ dumped/opaque container it is skipped silently, same guard as the handler
 sweep. Declare awaited events with the `#[Awaits]` class attribute, not tag
 parameters.
 
+**Starting processes** (0.2.4) — three doors, one invariant:
+
+1. **Reactive** (the default for business flows): `#[StartsOn(Event::class)]`
+   on the process + a static `from_event(Event $e): ?static` (null = "not my
+   business" — the policy filter). Ignition happens at drain, dedups on the
+   journey `__event_id` (replay-safe), inherits the fact's correlation, and
+   records the fact as `ignited_by_event_id` on the process row. A requested
+   saga is this plus an intent command whose handler validates and
+   `Events::record()`s the ignition fact — the handler never touches the
+   runner.
+2. **Edge cold-start**: `di()->get(ProcessRunner::class)->start($process)` —
+   from REST controllers, CLI, WP hook closures. (A `(new P(...))->start()`
+   self-dispatch hatch was built and stripped — it demanded a stamped
+   `Process` base per consumer for an ergonomic with zero callers; if it ever
+   earns its way back, the 0.2.5 registry scheme delivers it with no consumer
+   base.) The first step runs in-band,
+   immediately: steps execute wherever ignition or waking legally happens;
+   only awaits and timeouts create hops.
+3. **Human**: `wp ddd announce '<EventFQCN>' --payload='{...}'` — the total
+   codec makes every integration event JSON-constructible; the announced
+   fact rides the outbox and is indistinguishable from an organic one.
+
+The invariant behind all three: **commands never nest, and processes never
+start inside a command pass.** The bus refuses nested dispatch
+(`CommandDispatchedInsideCommand`), and `start()` inside a handler throws
+(`ProcessStartedInsideCommand`) — record an event instead. A handler wanting
+a synchronous side effect calls a domain service in-band; a saga's ground
+contacts are dispatched flat by the runner with the process as causation.
+
+Anti-pattern this retires: **sync domain event handlers dispatching
+commands** (`->send()` inside `Application\EventHandlers\*`). Those run
+inside the publishing command's transaction and now throw. Atomic-with-
+command work belongs in a domain service; new-unit-of-work-later work
+belongs in an `IntegrationListener` (drain time, flat).
+
 Anti-patterns seen in the wild:
 
 - **À-la-carte calls** (`register_process_hooks` + `register_outbox_hooks`

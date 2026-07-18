@@ -34,6 +34,21 @@ final class CorrelationContext {
   private static ?string $causation_type = null;
 
   /**
+   * Execution frames — which machinery owns the current execution window.
+   *
+   * The context itself is a dumb frame-holder: the COMMAND frame is written
+   * only by CorrelationMiddleware (around every bus pass), the PROCESS frame
+   * only by ProcessRunner's sealed bracket (around every saga wake). The
+   * legality guards are readers: a command dispatched while the command
+   * frame is occupied throws (no command inside a command); a process
+   * started while it's occupied throws (handlers announce facts instead).
+   * Command-inside-process-scope — the saga ground contact — never trips
+   * anything, because the guards read the command frame only.
+   */
+  private static ?string $command_frame = null;
+  private static ?string $process_frame = null;
+
+  /**
    * Stack of active correlation scopes (most recent on top).
    *
    * Each frame is a correlation id. The stack gates teardown: the context is
@@ -124,6 +139,32 @@ final class CorrelationContext {
     self::$causation_type = null;
   }
 
+  /** Mark the command whose bus pass is currently executing. */
+  public static function mark_command_frame(string $command_class): void {
+    self::$command_frame = $command_class;
+  }
+
+  public static function command_frame(): ?string {
+    return self::$command_frame;
+  }
+
+  public static function clear_command_frame(): void {
+    self::$command_frame = null;
+  }
+
+  /** Mark the process whose wake bracket is currently executing. */
+  public static function mark_process_frame(string $process_id): void {
+    self::$process_frame = $process_id;
+  }
+
+  public static function process_frame(): ?string {
+    return self::$process_frame;
+  }
+
+  public static function clear_process_frame(): void {
+    self::$process_frame = null;
+  }
+
   /**
    * Set the sequence number (for resuming from AS job).
    */
@@ -209,6 +250,8 @@ final class CorrelationContext {
     self::$causation_id = null;
     self::$causation_type = null;
     self::$scope = [];
+    self::$command_frame = null;
+    self::$process_frame = null;
   }
 
   /**

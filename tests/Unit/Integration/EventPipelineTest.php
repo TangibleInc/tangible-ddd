@@ -58,10 +58,14 @@ class EventPipelineTest extends TestCase {
 
     $runner->register_event(FakeResolvedEvent::class);
 
-    // 1. saga starts, suspends on [1]
+    // 1. saga starts, suspends on [1]. start()'s sealed bracket scope-exits
+    //    with a context reset (worker hygiene) — the raiser below is
+    //    conceptually a separate pass with its own ambient correlation, so
+    //    restore it the way any real raising context would hold its own.
     $saga = new FakeGatherProcess([1]);
     $runner->start($saga);
     $this->assertSame('suspended', $saga->status());
+    CorrelationContext::init('pipe-corr');
 
     // 2. the fact occurs — raised through the ROUTER like production code
     $router->publish(new FakeResolvedEvent(1, FakeOutcome::Accepted, new \DateTimeImmutable('2026-07-06T10:00:00+00:00')));

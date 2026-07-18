@@ -17,7 +17,6 @@ class ResultTest extends TestCase {
     $this->assertEmpty($result->commands);
     $this->assertNull($result->await);
     $this->assertNull($result->checkpoint);
-    $this->assertFalse($result->has_commands());
     $this->assertFalse($result->should_suspend());
   }
 
@@ -34,7 +33,6 @@ class ResultTest extends TestCase {
     $cmd2 = new \stdClass();
     $result = new Result(commands: [$cmd1, $cmd2]);
 
-    $this->assertTrue($result->has_commands());
     $this->assertCount(2, $result->commands);
   }
 
@@ -69,7 +67,6 @@ class ResultTest extends TestCase {
     );
 
     $this->assertSame($payload, $result->payload);
-    $this->assertTrue($result->has_commands());
     $this->assertTrue($result->should_suspend());
     $this->assertSame($checkpoint, $result->checkpoint);
   }

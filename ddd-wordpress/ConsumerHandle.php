@@ -22,8 +22,36 @@ final class ConsumerHandle {
     private readonly IDDDConfig $config,
     callable $di_getter,
     private readonly ?string $custom_label = null,
+    private readonly ?string $custom_namespace_root = null,
   ) {
     $this->di_getter = $di_getter;
+  }
+
+  /**
+   * The PHP namespace subtree this consumer owns — the axis owner_of()
+   * resolves on. Defaults to the config class's own namespace with a
+   * trailing \Infra segment stripped (the scaffolder stamps Config at
+   * <root>\Infra\Config); pass an explicit root to boot() when the config
+   * lives elsewhere. Empty string for un-namespaced/anonymous configs —
+   * such a consumer owns nothing.
+   */
+  public function namespace_root(): string {
+    if ($this->custom_namespace_root !== null) {
+      return $this->custom_namespace_root;
+    }
+
+    $class = get_class($this->config);
+    $cut = strrpos($class, '\\');
+    if ($cut === false) {
+      return '';
+    }
+
+    $namespace = substr($class, 0, $cut);
+    if (str_ends_with($namespace, '\\Infra')) {
+      $namespace = substr($namespace, 0, -strlen('\\Infra'));
+    }
+
+    return $namespace;
   }
 
   public function prefix(): string {

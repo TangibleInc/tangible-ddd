@@ -17,12 +17,15 @@ use TangibleDDD\Infra\IDDDConfig;
  * @param IDDDConfig $config Plugin configuration
  * @param callable $di_getter Function that returns the DI container
  * @param string|null $label Human label for discovery surfaces (default: prefix)
+ * @param string|null $namespace_root PHP namespace subtree the consumer owns,
+ *   for ConsumerRegistry::owner_of() (default: derived from the config
+ *   class's namespace — see ConsumerHandle::namespace_root())
  */
-function boot(IDDDConfig $config, callable $di_getter, ?string $label = null): void {
-  ConsumerRegistry::add($config, $di_getter, $label);
+function boot(IDDDConfig $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): void {
+  ConsumerRegistry::add($config, $di_getter, $label, $namespace_root);
 
-  add_action('init', static function () use ($config, $di_getter): void {
-    register_hooks($config, $di_getter);
+  add_action('init', static function () use ($config, $di_getter, $label, $namespace_root): void {
+    register_hooks($config, $di_getter, $label, $namespace_root);
   }, 2);
 }
 
@@ -49,9 +52,12 @@ function consumers(): array {
  *
  * @param IDDDConfig $config Plugin configuration
  * @param callable $di_getter Function that returns the DI container
+ * @param string|null $label Human label — boot() threads its own through so
+ *   the deferred re-registration doesn't clobber it back to the prefix
+ * @param string|null $namespace_root Namespace subtree override, same deal
  */
-function register_hooks(IDDDConfig $config, callable $di_getter): void {
-  ConsumerRegistry::add($config, $di_getter);
+function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): void {
+  ConsumerRegistry::add($config, $di_getter, $label, $namespace_root);
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
 
@@ -247,6 +253,12 @@ function register_processes_from_container(
     // Register awaited events declared via #[Awaits(...)] on the class
     foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\Awaits::class) as $attr) {
       $runner->register_event($attr->newInstance()->event_class);
+    }
+
+    // Register ignitions declared via #[StartsOn(...)] — the reactive door:
+    // at drain time the event news the process (from_event) and starts it.
+    foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\StartsOn::class) as $attr) {
+      $runner->register_start($class, $attr->newInstance()->event_class);
     }
 
     // Register awaited events from tag parameters

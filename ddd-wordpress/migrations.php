@@ -34,7 +34,7 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 3: behaviour_workflows gains correlation_id (+ idx_correlation)
  *  - 4: long_processes gains await_mechanism
  */
-const DDD_SCHEMA_VERSION = 4;
+const DDD_SCHEMA_VERSION = 5;
 
 /**
  * Per-prefix option holding the installed schema version.

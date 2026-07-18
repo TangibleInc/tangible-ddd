@@ -13,5 +13,3 @@ final class Compensates {
     public readonly string $step
   ) {}
 }
-
-

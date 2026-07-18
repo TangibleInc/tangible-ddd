@@ -124,7 +124,16 @@ class AwaitTimeoutTest extends TestCase {
 
     $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
 
-    $this->assertSame(['ddd_process_' . $p->get_id()], $spy->lock_names);
+    // Two acquisitions of the SAME name: handle_timeout's outer lock (the
+    // find + stale-guards must run inside it) and the sealed bracket's
+    // re-entrant inner one. GET_LOCK is re-entrant per connection; what
+    // matters is that every acquisition names this process's lock.
+    $this->assertNotEmpty($spy->lock_names);
+    $this->assertSame(
+      ['ddd_process_' . $p->get_id()],
+      array_values(array_unique($spy->lock_names)),
+      'every lock acquisition must target this process'
+    );
     $this->assertSame('failed', $this->repo->find($p->get_id())->status());
   }
 
