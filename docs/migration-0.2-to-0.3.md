@@ -99,6 +99,11 @@ list of consumer-visible debts (append as 0.3 work lands):
   few reads documented in the skill) must move to the new facade.
 - [ ] lms handler migration (see 0.2.4) is a hard prerequisite: 0.3 requires
   all consumers on ≥0.2.4 semantics.
+- [ ] **Drop `@CommandAuditMiddleware` from tactician.yaml chains** (0.3
+  lane 1, 2026-07-19): the audit record moved into the act bracket
+  (CorrelationMiddleware) — the old middleware is a deprecated pass-through
+  kept only so existing chains compile. Remove the line; the class dies when
+  the last chain does. Harmless to leave meanwhile.
 
 ## How to verify a migration (any version)
 
