@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeOutcome;
@@ -25,7 +24,6 @@ class ProcessStartsOnTest extends TestCase {
   protected function setUp(): void {
     global $_test_actions;
     $_test_actions = [];
-    CorrelationContext::reset();
     $GLOBALS['wpdb'] = new \wpdb();
 
     $this->repo = new FakeProcessRepository();
@@ -33,7 +31,6 @@ class ProcessStartsOnTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    CorrelationContext::reset();
   }
 
   private function envelope(int $request_id, FakeOutcome $outcome, string $event_id): array {

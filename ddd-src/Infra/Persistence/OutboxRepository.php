@@ -3,7 +3,6 @@
 namespace TangibleDDD\Infra\Persistence;
 
 use DateTimeImmutable;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Application\Outbox\OutboxEntry;
@@ -45,7 +44,7 @@ class OutboxRepository implements IOutboxRepository {
       'correlation_id' => $correlation_id,
       'sequence' => \TangibleDDD\Application\Correlation\Correlation::peek() !== null
         ? \TangibleDDD\Application\Correlation\Correlation::next_sequence()
-        : CorrelationContext::next_sequence(),   // shim fallback — dies with consumer migration
+        : 1,   // a flat announce is position 1 of its own fresh story
       'command_id' => $command_id,
       'payload' => $payload_json,
       'delay_seconds' => $delay_seconds,

@@ -4,7 +4,6 @@ namespace TangibleDDD\Tests\Unit\Outbox;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
 use TangibleDDD\Tests\Fakes\FakeOutboxRepository;
@@ -14,12 +13,10 @@ class OutboxIntegrationEventBusTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   public function test_publish_writes_event_to_outbox(): void {
@@ -46,8 +43,6 @@ class OutboxIntegrationEventBusTest extends TestCase {
     $repo = new FakeOutboxRepository();
     $bus = new OutboxIntegrationEventBus($repo);
 
-    CorrelationContext::init('corr-1');
-
     $event = new FakeUniqueIntegrationEvent(entity_id: 1);
     $bus->publish($event);
 
@@ -57,8 +52,6 @@ class OutboxIntegrationEventBusTest extends TestCase {
   public function test_non_unique_event_does_not_cancel_duplicates(): void {
     $repo = new FakeOutboxRepository();
     $bus = new OutboxIntegrationEventBus($repo);
-
-    CorrelationContext::init('corr-1');
 
     $event = new FakeIntegrationEvent(entity_id: 1);
     $bus->publish($event);

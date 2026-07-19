@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\AwaitAll;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
@@ -21,9 +20,6 @@ class AwaitTimeoutTest extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    CorrelationContext::reset();
-    CorrelationContext::init('test-corr');
-
     // resume_on_event() takes a MySQL named lock via global $wpdb; the plain
     // wp-stubs wpdb::get_var() returns null (treated as "acquired").
     $GLOBALS['wpdb'] = new \wpdb();
@@ -35,7 +31,6 @@ class AwaitTimeoutTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    CorrelationContext::reset();
   }
 
   public function test_suspend_schedules_the_alarm(): void {

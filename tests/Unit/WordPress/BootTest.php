@@ -9,7 +9,7 @@ use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeGatherProcess;
 use TangibleDDD\Tests\Fakes\FakeProcessRepository;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
-use TangibleDDD\WordPress\ConsumerRegistry;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 
 use function TangibleDDD\WordPress\boot;
 use function TangibleDDD\WordPress\consumers;

@@ -5,7 +5,6 @@ namespace TangibleDDD\Application\Process;
 use ReflectionClass;
 use ReflectionMethod;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
@@ -88,7 +87,6 @@ final class ProcessRunner {
       $event_class::integration_action(),
       function (array $payload) use ($event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
-        $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
         $ctx = $envelope->trace_context();
         if ($ctx !== null && $envelope->event_id !== null) {
@@ -101,11 +99,7 @@ final class ProcessRunner {
           $this->resume_on_event($event);
         };
 
-        try {
-          $ctx !== null ? Correlation::within($ctx, $run) : $run();
-        } finally {
-          CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
-        }
+        $ctx !== null ? Correlation::within($ctx, $run) : $run();
       },
       99 // Late priority - run after main handlers
     );
@@ -154,7 +148,6 @@ final class ProcessRunner {
       $event_class::integration_action(),
       function (array $payload) use ($process_class, $event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
-        $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
         $ctx = $envelope->trace_context();
         if ($ctx !== null && $envelope->event_id !== null) {
@@ -181,11 +174,7 @@ final class ProcessRunner {
           $this->start($process);
         };
 
-        try {
-          $ctx !== null ? Correlation::within($ctx, $run) : $run();
-        } finally {
-          CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
-        }
+        $ctx !== null ? Correlation::within($ctx, $run) : $run();
       },
       50 // between listeners (10) and resumes (99)
     );
@@ -207,9 +196,7 @@ final class ProcessRunner {
    * and timeouts create hops.
    */
   public function start(LongProcess $process): void {
-    // Guards read the facade (0.3): "what am I inside?" is the ambient
-    // cause's kind. Legacy frame checks stay as transitional belt-and-braces
-    // (both worlds are dual-written until the dissolution).
+    // Guards read the facade: "what am I inside?" is the ambient cause's kind.
     $cause = Correlation::peek()?->cause;
 
     if ($cause?->kind === Kind::Act) {
@@ -223,30 +210,19 @@ final class ProcessRunner {
     // dispreferred spelling of event ignition — the ambient fact IS the
     // igniter, so record the truth instead of a false cold root.
     // (#[StartsOn] stays the better door: it adds dedup and discovery.)
-    // Facade-first; legacy causation slot as transitional fallback.
-    if ($process->ignited_by_event_id() === null) {
-      if ($cause?->kind === Kind::Fact) {
-        $process->mark_ignited_by($cause->id);
-        $process->mark_source('event');
-      } elseif (
-        CorrelationContext::causation_type() === 'integration_event'
-        && null !== $igniter = CorrelationContext::causation_id()
-      ) {
-        $process->mark_ignited_by($igniter);
-        $process->mark_source('event');
-      }
+    if ($process->ignited_by_event_id() === null && $cause?->kind === Kind::Fact) {
+      $process->mark_ignited_by($cause->id);
+      $process->mark_source('event');
     }
 
     if ($process->source() === null) {
       $process->mark_source((defined('WP_CLI') && WP_CLI) || PHP_SAPI === 'cli' ? 'cli' : 'web');
     }
 
-    // Story inheritance, facade-first: an ignition drain's scope wins, then
-    // a legacy-only ambient (un-migrated caller), then a fresh story —
+    // Story inheritance: an ignition drain's scope wins, else a fresh story —
     // minted WITHOUT touching the ambient (current() would persist a mint
     // into the worker and bleed into whatever runs next).
     $correlation = Correlation::peek()?->correlation_id
-      ?? CorrelationContext::peek()
       ?? \TangibleDDD\Domain\Shared\Uuid::v4();
 
     $steps = $this->create_process_steps($process);

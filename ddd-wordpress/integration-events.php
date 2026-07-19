@@ -3,15 +3,14 @@
 namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
- * Register an integration event handler with automatic correlation extraction.
+ * Register an integration event handler with automatic correlation scoping.
  *
- * This wraps add_action() to automatically extract and restore correlation
- * context from ActionScheduler job arguments.
+ * This wraps add_action() to unwrap the envelope and run the callback inside
+ * the fact's trace scope (Correlation::within).
  *
  * @param string $event_class The IntegrationEvent class name
  * @param callable $callback Handler receiving the event payload params
@@ -31,14 +30,11 @@ function integration_action(
   $action = $event_class::integration_action();
 
   add_action($action, function(...$params) use ($callback, $event_class) {
-    // The drain bracket (0.3): unwrap once, open a REAL facade scope with
-    // the fact as ambient cause for the WHOLE body. restore_context() stays
-    // as the legacy dual-write (wake-lane absorb + un-migrated readers);
-    // it dies with the dissolution.
+    // The drain bracket: unwrap once, open a facade scope with the fact as
+    // ambient cause for the WHOLE body.
     $envelope = null;
     if (count($params) === 1 && is_array($params[0]) && isset($params[0]['__correlation_id'])) {
       $envelope = IntegrationEnvelope::unwrap($params[0]);
-      $envelope->restore_context();
       $params = array_is_list($envelope->payload) ? array_values($envelope->payload) : [$envelope->payload];
     }
 
@@ -55,22 +51,20 @@ function integration_action(
       error_log(sprintf(
         '[DDD Integration] [%s] [correlation:%s]: %s',
         $event_class::name(),
-        CorrelationContext::peek() ?? 'none',
+        $envelope?->correlation_id ?? 'none',
         $e->getMessage()
       ));
       throw $e;
-    } finally {
-      // legacy teardown (scope, not one-shot) — dies with the dissolution
-      CorrelationContext::clear_causation();
     }
   }, $priority, $arg_count);
 }
 
 /**
- * Extract correlation context from ActionScheduler job args.
+ * Strip the journey keys from ActionScheduler job args.
  *
  * The OutboxProcessor wraps payload and injects __correlation_id and __event_id.
- * This extracts correlation, initializes context, and returns clean params.
+ * This unwraps and returns clean params — scoping is the caller's business
+ * (Correlation::within with the envelope's trace_context()).
  *
  * @internal
  */
@@ -81,7 +75,6 @@ function extract_correlation(array $params): array {
     isset($params[0]['__correlation_id'])
   ) {
     $envelope = IntegrationEnvelope::unwrap($params[0]);
-    $envelope->restore_context();
 
     // Positional list payloads spread as positional args; associative payloads
     // pass through intact as a single arg (see array_is_list gate rationale).
@@ -108,7 +101,6 @@ function integration_listener(string $event_class, callable $translate): void {
 
   add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
     $envelope = IntegrationEnvelope::unwrap($wrapped);
-    $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
     $ctx = $envelope->trace_context();
     if ($ctx !== null && $envelope->event_id !== null) {
@@ -122,10 +114,6 @@ function integration_listener(string $event_class, callable $translate): void {
       $command?->send();
     };
 
-    try {
-      $ctx !== null ? Correlation::within($ctx, $run) : $run();
-    } finally {
-      CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
-    }
+    $ctx !== null ? Correlation::within($ctx, $run) : $run();
   }, 10, 1);
 }

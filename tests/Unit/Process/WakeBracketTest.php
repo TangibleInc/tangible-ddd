@@ -5,7 +5,6 @@ namespace TangibleDDD\Tests\Unit\Process;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Process\LongProcess;
@@ -19,31 +18,27 @@ use TangibleDDD\Tests\Fakes\FakeProcessRepository;
  * ONE Correlation::within($ctx->for_trajectory(...)) — the story and the
  * cause travel in one value. dispatch_commands()'s per-command arming loop
  * is gone: commands dispatched by a step parent on the trajectory by BEING
- * INSIDE the scope. Legacy statics stay dual-written transitionally.
+ * INSIDE the scope.
  */
 class WakeBracketTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
     $GLOBALS['wpdb'] = new \wpdb();
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   private function probe(): LongProcess {
     return new class extends LongProcess {
       public ?TraceContext $facade_during_step = null;
-      public ?string $shim_story = null;
 
       public function __construct() { parent::__construct(null); }
 
       protected function observe(): Result {
         $this->facade_during_step = Correlation::current();
-        $this->shim_story = CorrelationContext::get();   // facade-first shim
         return new Result();
       }
     };
@@ -62,8 +57,6 @@ class WakeBracketTest extends TestCase {
     $this->assertSame((string) $probe->get_id(), $ctx->cause->id);
     $this->assertSame(get_class($probe), $ctx->cause->label);
     $this->assertSame('wake-corr', $ctx->correlation_id, 'the saga inherits the igniting story');
-
-    $this->assertSame('wake-corr', $probe->shim_story, 'the deprecated shim serves the saga story');
   }
 
   public function test_dispatched_commands_are_inside_the_trajectory_scope(): void {

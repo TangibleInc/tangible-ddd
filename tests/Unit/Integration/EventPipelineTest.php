@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\Integration;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\EventRouter;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Process\ProcessRunner;
@@ -30,8 +29,6 @@ class EventPipelineTest extends TestCase {
     $_test_actions = [];
     $_test_scheduled_actions = [];
     FakeGatherProcess::$last_routed_event = null;
-    CorrelationContext::reset();
-    CorrelationContext::init('pipe-corr');
 
     // ── wiring (real classes, in-memory persistence) ──
     // resume_on_event() takes a MySQL named lock via global $wpdb; the plain
@@ -63,12 +60,15 @@ class EventPipelineTest extends TestCase {
     //    conceptually a separate pass with its own ambient correlation, so
     //    restore it the way any real raising context would hold its own.
     $saga = new FakeGatherProcess([1]);
-    $runner->start($saga);
+    $pipe_ctx = new \TangibleDDD\Application\Correlation\TraceContext('pipe-corr');
+    \TangibleDDD\Application\Correlation\Correlation::within($pipe_ctx, static fn () => $runner->start($saga));
     $this->assertSame('suspended', $saga->status());
-    CorrelationContext::init('pipe-corr');
 
-    // 2. the fact occurs — raised through the ROUTER like production code
-    $router->publish(new FakeResolvedEvent(1, FakeOutcome::Accepted, new \DateTimeImmutable('2026-07-06T10:00:00+00:00')));
+    // 2. the fact occurs — raised through the ROUTER like production code,
+    //    from its own raising context holding the same story.
+    \TangibleDDD\Application\Correlation\Correlation::within($pipe_ctx, static fn () => $router->publish(
+      new FakeResolvedEvent(1, FakeOutcome::Accepted, new \DateTimeImmutable('2026-07-06T10:00:00+00:00'))
+    ));
 
     // 3. relay drains outbox → AS stub captures the wrapped payload
     $processor->process_batch();
@@ -85,17 +85,16 @@ class EventPipelineTest extends TestCase {
     // request with NO ambient context; reset first so anything correlation-
     // shaped observed after this point can only have come from the transport
     // envelope, never from state leaked across the "process boundary".
-    CorrelationContext::reset();
     do_action(FakeResolvedEvent::integration_action(), $wrapped);
 
     // Context restore, proven on the woken event itself: register_event's
     // callback unwrapped the envelope, hydrated the event, and stamped the
     // transport journey onto it BEFORE routing — resolution_key (the key_by
     // extractor the routing path calls) captured that exact instance.
-    // (CorrelationContext::peek() is deliberately NOT asserted here: it is
-    // null post-wake, because resume_on_event's CorrelationContext::with()
-    // scope-exit resets ambient state — worker hygiene, so one AS callback's
-    // correlation can't bleed into the next. Verified empirically.)
+    // (Correlation::peek() is deliberately NOT asserted here: it is null
+    // post-wake, because the wake bracket's scope-exit restores ambient
+    // state — worker hygiene, so one AS callback's correlation can't bleed
+    // into the next. Verified empirically.)
     $woken = FakeGatherProcess::$last_routed_event;
     $this->assertNotNull($woken, 'routing path saw the hydrated event');
     // 0.3: the woken event object carries no identity; the SAGA carries the

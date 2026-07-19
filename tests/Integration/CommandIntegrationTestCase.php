@@ -6,7 +6,6 @@ namespace TangibleDDD\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
 use Tangible\Datastream\Infra\Rules\RuleNodeRegistrar;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 
 /**
@@ -27,7 +26,7 @@ use TangibleDDD\Application\Events\EventsUnitOfWork;
  * Shared framework singletons reset on setUp/tearDown:
  *   - EventsUnitOfWork: the command bus pipeline seals the UoW after drain; without
  *     a reset, subsequent tests find a sealed UoW and throw on save().
- *   - CorrelationContext: static state; a leftover correlation_id from a previous
+ *   - Correlation facade: static state; a leftover scope from a previous
  *     command would pollute the audit trail of the next.
  */
 abstract class CommandIntegrationTestCase extends TestCase
@@ -62,7 +61,7 @@ abstract class CommandIntegrationTestCase extends TestCase
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
     /**
-     * Reset both shared framework singletons (EventsUnitOfWork + CorrelationContext).
+     * Reset both shared framework singletons (EventsUnitOfWork + the Correlation facade).
      *
      * Called in both setUp and tearDown — before and after — so a test that throws
      * mid-command still leaves things clean for the next test.
@@ -73,7 +72,7 @@ abstract class CommandIntegrationTestCase extends TestCase
             ->get(EventsUnitOfWork::class)
             ->reset();
 
-        CorrelationContext::reset();
+        \TangibleDDD\Application\Correlation\Correlation::reset();
     }
 
     /**

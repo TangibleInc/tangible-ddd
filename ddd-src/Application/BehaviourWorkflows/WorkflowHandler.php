@@ -4,7 +4,7 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
 
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
 use TangibleDDD\Application\Commands\ICommand;
-use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Infrastructure\WorkflowFailed;
 use TangibleDDD\Application\Process\RescheduleAware;
 use TangibleDDD\Domain\Exceptions\InvariantException;
@@ -141,7 +141,7 @@ abstract class WorkflowHandler implements ICommandHandler {
         // causation (a workflow is a coordinator, not a causer). Opt-in: only
         // when the consumer wired IDDDConfig into the handler.
         if ($this->infra_config !== null) {
-          (new WorkflowFailed($workflow, CorrelationContext::peek()))->dispatch($this->infra_config);
+          (new WorkflowFailed($workflow, Correlation::peek()?->correlation_id))->dispatch($this->infra_config);
         }
         break;
       }

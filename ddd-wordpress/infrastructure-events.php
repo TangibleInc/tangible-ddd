@@ -2,18 +2,22 @@
 
 namespace TangibleDDD\WordPress;
 
-use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Correlation\Cause;
+use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Correlation\Kind;
+use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\IInfrastructureEvent;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
  * Subscribe to an infrastructure event (e.g. 'outbox_dlq', 'process_failed').
  *
- * This is the infra-tier analogue of integration_action(): before invoking the
- * callback it RESTORES the carried trace context — correlation, and causation
- * when present — so the reaction (and any command it dispatches via ->send())
- * rejoins the originating trace instead of being born orphaned. Context is
- * reset afterwards so it cannot bleed into the next entry on the same worker.
+ * This is the infra-tier analogue of integration_action(): the callback runs
+ * inside the CARRIED trace — a Correlation::within() scope built from the
+ * event's correlation and causation — so the reaction (and any command it
+ * dispatches via ->send()) rejoins the originating trace instead of being
+ * born orphaned. An event with no correlation runs flat: causation alone
+ * cannot anchor a scope.
  *
  * The callback receives the IInfrastructureEvent; get the machinery fact via
  * $event->subject() (or a typed accessor like ->entry()).
@@ -22,18 +26,25 @@ use TangibleDDD\Infra\IDDDConfig;
  */
 function infrastructure_action(IDDDConfig $config, string $action, callable $callback, int $priority = 10): void {
   add_action($config->hook($action), function (IInfrastructureEvent $event) use ($callback) {
-    if ($event->correlation_id() !== null) {
-      CorrelationContext::init($event->correlation_id());
-    }
-
-    if ($event->causation_id() !== null && $event->causation_type() !== null) {
-      CorrelationContext::set_causation($event->causation_id(), $event->causation_type());
-    }
-
-    try {
+    if (null === $correlation = $event->correlation_id()) {
       $callback($event);
-    } finally {
-      CorrelationContext::reset();
+      return;
     }
+
+    $cause = null;
+    if ($event->causation_id() !== null && $event->causation_type() !== null) {
+      // The at-rest dialect, mapped back to the Kind (the write-side inverse
+      // of Cause::causation_type()).
+      $cause = new Cause($event->causation_id(), match ($event->causation_type()) {
+        'command' => Kind::Act,
+        'long_process' => Kind::Trajectory,
+        default => Kind::Fact,
+      });
+    }
+
+    Correlation::within(
+      new TraceContext($correlation, $cause),
+      static fn () => $callback($event)
+    );
   }, $priority, 1);
 }

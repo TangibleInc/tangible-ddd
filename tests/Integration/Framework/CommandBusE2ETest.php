@@ -71,7 +71,7 @@ final class CommandBusE2ETest extends CommandIntegrationTestCase
         // Delete rows written by this test class (scoped by source discriminator).
         $this->cleanup_rows($this->table, 'source', self::TEST_SOURCE);
 
-        parent::tearDown(); // resets UoW + CorrelationContext
+        parent::tearDown(); // resets UoW + Correlation facade
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────

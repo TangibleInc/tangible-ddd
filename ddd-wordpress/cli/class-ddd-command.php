@@ -390,9 +390,8 @@ services:
   TangibleDDD\\Infra\\IDDDConfig:
     alias: TangibleDDD\\Infra\\DDDConfig
 
-  # Correlation
+  # Correlation (the act bracket: guard + scope + audit record)
   TangibleDDD\\Application\\Correlation\\CorrelationMiddleware: ~
-  TangibleDDD\\Application\\Correlation\\CorrelationContext: ~
 
   # Transaction middleware
   TangibleDDD\\Application\\Persistence\\TransactionMiddleware: ~
@@ -449,7 +448,6 @@ services:
 
   # Command Audit (optional - configure Redactor separately)
   TangibleDDD\\Application\\Logging\\Redactor: ~
-  TangibleDDD\\Application\\Logging\\CommandAuditMiddleware: ~
 
   # Plugin-specific service autoloading
   {$namespace}\\Application\\CommandHandlers\\:
@@ -499,15 +497,13 @@ YAML;
 services:
   # Tactician Command Bus
   # Middleware order:
-  # 1. CommandAuditMiddleware - logs command, generates command_id
-  # 2. CorrelationMiddleware - initializes correlation context
-  # 3. TransactionMiddleware - starts database transaction
-  # 4. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
-  # 5. CommandHandlerMiddleware - executes the handler
+  # 1. CorrelationMiddleware - THE ACT BRACKET: guard + scope + audit record
+  # 2. TransactionMiddleware - starts database transaction
+  # 3. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
+  # 4. CommandHandlerMiddleware - executes the handler
   League\\Tactician\\CommandBus:
     public: true
     arguments:
-      - '@TangibleDDD\\Application\\Logging\\CommandAuditMiddleware'
       - '@TangibleDDD\\Application\\Correlation\\CorrelationMiddleware'
       - '@TangibleDDD\\Application\\Persistence\\TransactionMiddleware'
       - '@TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware'

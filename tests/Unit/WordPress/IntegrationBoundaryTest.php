@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\WordPress;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 
 use function TangibleDDD\WordPress\extract_correlation;
 
@@ -12,9 +11,10 @@ if (!function_exists('TangibleDDD\\WordPress\\extract_correlation')) {
 }
 
 /**
- * The integration boundary: unwraps the OutboxProcessor transport envelope,
- * restores correlation/sequence, stamps causation from __event_id, and hands
- * the payload to the handler.
+ * The integration boundary: unwraps the OutboxProcessor transport envelope
+ * and hands the payload to the handler. Scoping is the drain ceremony's
+ * business (Correlation::within with the envelope's trace_context()) — the
+ * unwrap itself must never touch ambient state.
  *
  * Backwards-compat contract: positional LIST payloads (every existing consumer)
  * spread as positional args exactly as before; ASSOCIATIVE payloads are now
@@ -23,11 +23,11 @@ if (!function_exists('TangibleDDD\\WordPress\\extract_correlation')) {
 class IntegrationBoundaryTest extends TestCase {
 
   protected function setUp(): void {
-    CorrelationContext::reset();
+    \TangibleDDD\Application\Correlation\Correlation::reset();
   }
 
   protected function tearDown(): void {
-    CorrelationContext::reset();
+    \TangibleDDD\Application\Correlation\Correlation::reset();
   }
 
   public function test_list_payload_spreads_positionally_backwards_compatible(): void {
@@ -58,18 +58,13 @@ class IntegrationBoundaryTest extends TestCase {
     );
   }
 
-  public function test_boundary_stamps_causation_from_event_id(): void {
-    extract_correlation([[ '__correlation_id' => 'R', '__event_id' => 'evt-7', 'a' => 1 ]]);
+  public function test_unwrap_does_not_touch_the_ambient(): void {
+    extract_correlation([[ '__correlation_id' => 'R-9', '__sequence' => '5', '__event_id' => 'evt-7', 'a' => 1 ]]);
 
-    $this->assertSame('evt-7', CorrelationContext::causation_id());
-    $this->assertSame('integration_event', CorrelationContext::causation_type());
-  }
-
-  public function test_correlation_and_sequence_restored(): void {
-    extract_correlation([[ '__correlation_id' => 'R-9', '__sequence' => '5', 'a' => 1 ]]);
-
-    $this->assertSame('R-9', CorrelationContext::get());
-    $this->assertSame(5, CorrelationContext::sequence());
+    $this->assertNull(
+      \TangibleDDD\Application\Correlation\Correlation::peek(),
+      'stripping journey keys is not scoping — the ceremony owns the bracket'
+    );
   }
 
   public function test_unwrapped_params_pass_through_untouched(): void {
