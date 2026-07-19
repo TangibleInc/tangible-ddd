@@ -157,6 +157,26 @@ BOTH repointed cred and datastream (version-manager loads the newest ddd
 copy process-wide — an unrepointed neighbor fatals). The standing "nothing
 0.2.4+ to lms boxes" rule already covers lms.
 
+## 0.5.0 (the touches lane — spec appendix 9, declared write-set)
+
+**Mandatory for consumers: NOTHING.** Fully additive: the `{prefix}_touches`
+table auto-installs via schema v6 on the migrations lane; unannotated
+events behave exactly as before (no touches key in the audit JSON, no rows).
+
+**Optional modernization:** annotate lifecycle-declaring events —
+
+    #[Touches(Op::Created, License::class, id: 'license_id')]
+
+Class refs, not strings (IDE/PHPStan via class-string<Aggregate>); `id:`
+optional when the `{canonical_name}_id` convention holds. ⚠️ On the first
+RENAME of an annotated aggregate class, pin `canonical_name()` to the
+historical string (at-rest names outlive class names). The conformance
+scan consumers already run validates declarations automatically (bad
+aggregate ref or unresolvable id = suite failure). Coverage is opt-in and
+grows organically — the biography is only as complete as the annotations
+(the declared-side blindness is by design; the observed collector is a
+separate, unbuilt decision).
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.

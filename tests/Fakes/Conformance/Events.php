@@ -93,3 +93,39 @@ abstract class AbstractEventBase extends DomainEvent implements IIntegrationEven
 class PlainValueHolder {
   public function __construct(public readonly FakeEntity $entity) {}
 }
+
+/** Legal declaration: aggregate class + explicit id param present. */
+#[\TangibleDDD\Domain\Events\Touches(\TangibleDDD\Domain\Events\Op::Created, \TangibleDDD\Tests\Fakes\Acme\Domain\StateLicense::class, id: 'lic')]
+class TouchingEvent extends DomainEvent implements IIntegrationEvent {
+  use IntegrationBehaviour;
+
+  public function __construct(public readonly int $lic) {}
+
+  protected static function prefix(): string { return 'test'; }
+
+  public function payload(): array { return $this->integration_payload(); }
+}
+
+/** VIOLATION: #[Touches] on a non-Aggregate — the attribute ctor guard throws. */
+#[\TangibleDDD\Domain\Events\Touches(\TangibleDDD\Domain\Events\Op::Updated, \stdClass::class)]
+class BadTouchEvent extends DomainEvent implements IIntegrationEvent {
+  use IntegrationBehaviour;
+
+  public function __construct(public readonly int $x) {}
+
+  protected static function prefix(): string { return 'test'; }
+
+  public function payload(): array { return $this->integration_payload(); }
+}
+
+/** VIOLATION: no explicit id: and no state_license_id convention param. */
+#[\TangibleDDD\Domain\Events\Touches(\TangibleDDD\Domain\Events\Op::Deleted, \TangibleDDD\Tests\Fakes\Acme\Domain\StateLicense::class)]
+class IdlessTouchEvent extends DomainEvent implements IIntegrationEvent {
+  use IntegrationBehaviour;
+
+  public function __construct(public readonly int $x) {}
+
+  protected static function prefix(): string { return 'test'; }
+
+  public function payload(): array { return $this->integration_payload(); }
+}

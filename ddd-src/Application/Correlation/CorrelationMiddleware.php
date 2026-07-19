@@ -12,6 +12,7 @@ use Throwable;
 use function TangibleDDD\WordPress\command_audit_enabled;
 use function TangibleDDD\WordPress\command_audit_preflight;
 use function TangibleDDD\WordPress\command_audit_finalise;
+use function TangibleDDD\WordPress\touches_record;
 
 /**
  * THE ACT BRACKET (0.3, spec §6.2): guard + scope + the audit record, one
@@ -88,14 +89,44 @@ final class CorrelationMiddleware implements Middleware {
 
     } finally {
       if ($audit) {
+        // The act's footprint (spec appendix 9): each published fact's entry
+        // carries its declared touches — provenance stays attached to the
+        // fact that made it — and the flat rows feed the touches index.
+        // Footprint::of_event never throws (post-commit decoration).
+        $event_entries = [];
+        $touch_rows = [];
+        foreach ($this->events->published() as $e) {
+          $entry = ['name' => $e::name()];
+          $touches = \TangibleDDD\Application\Events\Footprint::of_event($e);
+          if ($touches !== []) {
+            $entry['touches'] = $touches;
+            foreach ($touches as $touch) {
+              $touch_rows[] = [
+                'aggregate' => $touch['aggregate'],
+                'aggregate_id' => $touch['id'],
+                'op' => $touch['op'],
+                'event_name' => $e::name(),
+                'event_id' => \TangibleDDD\Application\Events\PublishedFacts::id_of($e),
+                'command_id' => $command_id,
+                'correlation_id' => $enclosing->correlation_id,
+              ];
+            }
+          }
+          $event_entries[] = $entry;
+        }
+
         command_audit_finalise($this->config, [
           'command_id' => $command_id,
           'status' => $status,
           'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
           'peak_memory_bytes' => memory_get_peak_usage(true),
-          'events' => array_map(static fn ($e) => ['name' => $e::name()], $this->events->published()),
+          'events' => $event_entries,
           'error' => $error,
         ]);
+
+        if ($touch_rows !== []) {
+          touches_record($this->config, $touch_rows);
+        }
       }
     }
   }

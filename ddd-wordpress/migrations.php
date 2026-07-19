@@ -34,7 +34,7 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 3: behaviour_workflows gains correlation_id (+ idx_correlation)
  *  - 4: long_processes gains await_mechanism
  */
-const DDD_SCHEMA_VERSION = 5;
+const DDD_SCHEMA_VERSION = 6;
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -92,6 +92,17 @@ function ddd_explicit_migrations(): array {
     4 => static function (IDDDConfig $config): void {
       $table = $config->table('long_processes');
       ddd_add_column_if_missing($table, 'await_mechanism', 'JSON NULL', 'match_criteria');
+    },
+
+    // v6 — the touches table (0.5.0). A NEW table, so dbDelta covers both
+    // fresh installs and existing consumers; the explicit entry guarantees
+    // it for consumers already at v5 whose fast-path would otherwise skip
+    // dbDelta. (v5 had no explicit entry — schema columns only.)
+    6 => static function (IDDDConfig $config): void {
+      if (!function_exists('dbDelta')) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+      }
+      install_touches_table($config);
     },
   ];
 }

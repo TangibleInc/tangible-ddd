@@ -19,6 +19,7 @@ function install_tables(IDDDConfig $config): void {
   install_outbox_tables($config);
   install_process_tables($config);
   install_command_audit_table($config);
+  install_touches_table($config);
   install_behaviour_workflow_tables($config);
   install_behaviour_workflow_item_tables($config);
 }
@@ -174,6 +175,41 @@ function install_command_audit_table(IDDDConfig $config): void {
     KEY idx_blog_started (blog_id, started_at),
     KEY idx_source (source, source_id),
     KEY idx_causation (causation_id)
+  ) $charset";
+
+  dbDelta($sql);
+}
+
+/**
+ * Install the touches table (spec appendix 9, the touches lane) — the flat,
+ * rebuildable query surface for declared state writes: one row per
+ * declaration, versions minted under the unique key. The audit row's
+ * enriched events JSON is the record; this is the index (never a write-side
+ * authority). The biography query: WHERE aggregate = ? AND aggregate_id = ?.
+ */
+function install_touches_table(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('touches');
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
+    aggregate VARCHAR(128) NOT NULL,
+    aggregate_id VARCHAR(64) NOT NULL,
+    op VARCHAR(16) NOT NULL,
+    version INT UNSIGNED NOT NULL,
+    event_name VARCHAR(255) NOT NULL,
+    event_id CHAR(36) NULL,
+    command_id CHAR(32) NULL,
+    correlation_id CHAR(36) NULL,
+    blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    occurred_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_aggregate_version (aggregate, aggregate_id, version),
+    KEY idx_aggregate (aggregate, aggregate_id),
+    KEY idx_correlation_id (correlation_id),
+    KEY idx_command_id (command_id)
   ) $charset";
 
   dbDelta($sql);

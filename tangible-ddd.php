@@ -3,7 +3,7 @@
  * Plugin Name: Tangible DDD
  * Plugin URI: https://tangible.one
  * Description: Domain-Driven Design framework for WordPress plugins
- * Version: 0.4.0
+ * Version: 0.5.0
  * Author: Tangible
  * Author URI: https://tangible.one
  * License: MIT
@@ -38,7 +38,7 @@ declare(strict_types=1);
 // Guarded: the first copy to load wins the constant (oldest-loads-first is fine;
 // the registry, not the constant, determines the winner).
 if (!defined('TANGIBLE_DDD_VERSION')) {
-    define('TANGIBLE_DDD_VERSION', '0.4.0');
+    define('TANGIBLE_DDD_VERSION', '0.5.0');
 }
 
 // ─── Tangible_DDD_Versions registry (defined once, first copy wins the class) ─
@@ -311,6 +311,7 @@ if (!function_exists('tangible_ddd_initialize_0_2_4')) {
             'ddd-wordpress/migrations.php',
             'ddd-wordpress/hooks.php',
             'ddd-wordpress/audit.php',
+            'ddd-wordpress/touches.php',
             'ddd-wordpress/locking.php',
             'ddd-wordpress/secret.php',
             'ddd-wordpress/integration-events.php',
