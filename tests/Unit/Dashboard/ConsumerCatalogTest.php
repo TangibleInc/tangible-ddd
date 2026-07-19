@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+namespace TangibleDDD\Tests\Unit\Dashboard;
+
+use PHPUnit\Framework\TestCase;
+use TangibleDDD\Infra\Config;
+use TangibleDDD\Infra\Consumers\ConsumerHandle;
+use TangibleDDD\Tests\Fakes\Dashboard\ScriptedDatabase;
+use TangibleDDD\Tests\Fakes\FakeDDDConfig;
+use TangibleDDD\WordPress\Admin\Dashboard\ConsumerCatalog;
+
+final class ConsumerCatalogTest extends TestCase
+{
+    public function test_it_combines_registered_self_and_ghost_consumers(): void
+    {
+        $db = new ScriptedDatabase('wp_x_');
+        $db->columns = [[
+            'wp_x_test_command_audit',
+            'wp_x_orphan_command_audit',
+        ]];
+        $handle = new ConsumerHandle(new FakeDDDConfig(), static fn (): object => new \stdClass());
+
+        $catalog = new ConsumerCatalog(
+            $db,
+            static fn (): array => ['test' => $handle],
+            static fn (): Config => new Config('wp_x_')
+        );
+
+        $all = $catalog->all();
+
+        self::assertSame(['test', 'tangible_ddd', 'orphan'], array_keys($all));
+        self::assertFalse($all['test']->ghost);
+        self::assertSame('test', $all['test']->config()?->prefix());
+        self::assertSame('tangible_ddd', $all['tangible_ddd']->config()?->prefix());
+        self::assertTrue($all['orphan']->ghost);
+        self::assertSame('wp_x_orphan_command_audit', $all['orphan']->config()?->table('command_audit'));
+        self::assertSame('orphan', $catalog->prefix('orphan'));
+        self::assertNull($catalog->get('missing'));
+    }
+}

@@ -316,6 +316,7 @@ if (!function_exists('tangible_ddd_initialize_0_2_4')) {
             'ddd-wordpress/secret.php',
             'ddd-wordpress/integration-events.php',
             'ddd-wordpress/infrastructure-events.php',
+            'ddd-wordpress/dashboard.php',
             // Executes WP_CLI::add_command (self-guarded on WP_CLI). Must be
             // required explicitly — procedural side-effect files are invisible
             // to the class autoloader, so "left to autoload" meant "never
@@ -329,6 +330,16 @@ if (!function_exists('tangible_ddd_initialize_0_2_4')) {
             if (file_exists($file)) {
                 require_once $file;
             }
+        }
+
+        // WordPress-only runtime surface. In pure PHP/unit contexts add_action
+        // is absent when this loader initializes, so loading the function above
+        // remains side-effect free.
+        if (
+            function_exists('add_action')
+            && function_exists('TangibleDDD\\WordPress\\register_dashboard')
+        ) {
+            \TangibleDDD\WordPress\register_dashboard($path);
         }
     }
 }
