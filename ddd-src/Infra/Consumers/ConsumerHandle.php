@@ -29,15 +29,23 @@ final class ConsumerHandle {
 
   /**
    * The PHP namespace subtree this consumer owns — the axis owner_of()
-   * resolves on. Defaults to the config class's own namespace with a
-   * trailing \Infra segment stripped (the scaffolder stamps Config at
-   * <root>\Infra\Config); pass an explicit root to boot() when the config
-   * lives elsewhere. Empty string for un-namespaced/anonymous configs —
-   * such a consumer owns nothing.
+   * resolves on. Resolution order:
+   *
+   *   1. explicit boot() override;
+   *   2. the config's own declaration (DDDConfig carries namespace_root as
+   *      a ctor arg; hand-written configs may duck-type the method);
+   *   3. derived from the config CLASS's namespace, trailing \Infra
+   *      stripped (the pre-0.2.5 stamped layout: <root>\Infra\Config).
+   *
+   * Empty string for un-namespaced/anonymous configs — owns nothing.
    */
   public function namespace_root(): string {
     if ($this->custom_namespace_root !== null) {
       return $this->custom_namespace_root;
+    }
+
+    if (is_callable([$this->config, 'namespace_root'])) {
+      return (string) $this->config->namespace_root();
     }
 
     $class = get_class($this->config);
