@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeFailingProcess;
@@ -20,16 +19,12 @@ class ProcessRunnerTest extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    CorrelationContext::reset();
-    CorrelationContext::init('test-corr');
-
     $this->config = new FakeDDDConfig();
     $this->repo = new FakeProcessRepository();
     $this->runner = new ProcessRunner($this->config, $this->repo);
   }
 
   protected function tearDown(): void {
-    CorrelationContext::reset();
   }
 
   public function test_three_step_process_runs_to_completion(): void {
@@ -130,29 +125,21 @@ class ProcessRunnerTest extends TestCase {
     $this->assertTrue(true);
   }
 
-  public function test_register_rejects_non_process_class(): void {
-    $this->expectException(\InvalidArgumentException::class);
-    $this->runner->register(\stdClass::class);
-  }
-
   public function test_correlation_context_set_on_start(): void {
-    CorrelationContext::init('my-correlation');
     $process = new FakeThreeStepProcess();
-    $this->runner->start($process);
+    \TangibleDDD\Application\Correlation\Correlation::within(
+      new \TangibleDDD\Application\Correlation\TraceContext('my-correlation'),
+      fn () => $this->runner->start($process)
+    );
 
     $this->assertSame('my-correlation', $process->correlation_id());
   }
 
   /**
-   * REGRESSION (known bug): ProcessRunner::continue_scheduled() / resume_on_event()
-   * call CorrelationContext::init($process->correlation_id()) but the file has NO
-   * reset. Action Scheduler reuses one PHP worker for many actions, so a resumed
-   * process leaves its correlation in static state — bleeding into whatever
-   * unrelated callback the worker runs next (false trace attribution).
-   *
-   * Expected after the scoped (CorrelationContext::with) fix: the process run
-   * clears its correlation on exit, so a fresh callback starts clean. Today this
-   * FAILS — peek() returns the leaked process correlation.
+   * REGRESSION pin: Action Scheduler reuses one PHP worker for many actions,
+   * so a resumed process must not leave its correlation in ambient state —
+   * it would bleed into whatever unrelated callback the worker runs next
+   * (false trace attribution). with_process()'s scope-exit is the fix.
    */
   public function test_resumed_process_does_not_leak_correlation_to_next_callback(): void {
     // Set up a process parked as 'scheduled' mid-execution, like an AS-deferred step.
@@ -170,8 +157,7 @@ class ProcessRunnerTest extends TestCase {
     $this->repo->save($process);
 
     // Simulate a fresh AS worker callback: no correlation set going in.
-    CorrelationContext::reset();
-    $this->assertNull(CorrelationContext::peek(), 'precondition: worker starts clean');
+    $this->assertNull(\TangibleDDD\Application\Correlation\Correlation::peek(), 'precondition: worker starts clean');
 
     // The worker runs the deferred process continuation.
     $this->runner->continue_scheduled($process->get_id());
@@ -179,7 +165,7 @@ class ProcessRunnerTest extends TestCase {
     // BUG: continuation init'd 'leaky-proc-correlation' and never reset it, so it
     // now leaks into the next unrelated callback this worker handles.
     $this->assertNull(
-      CorrelationContext::peek(),
+      \TangibleDDD\Application\Correlation\Correlation::peek(),
       'process continuation must not leak correlation into the next AS callback'
     );
   }

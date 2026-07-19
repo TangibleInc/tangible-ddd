@@ -4,7 +4,6 @@ namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Application\Process\ProcessStartedInsideProcess;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
@@ -22,13 +21,11 @@ class ProcessStartInsideProcessTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
     $GLOBALS['wpdb'] = new \wpdb();
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   public function test_start_inside_a_process_wake_throws(): void {

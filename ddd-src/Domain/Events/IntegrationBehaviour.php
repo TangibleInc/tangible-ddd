@@ -8,6 +8,7 @@ use DateTimeInterface;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionParameter;
+use TangibleDDD\Application\Events\PublishedFacts;
 
 /**
  * The record capability: strict scalarise codec (ctor IS the schema),
@@ -50,20 +51,9 @@ trait IntegrationBehaviour {
     return new static(...$args);
   }
 
-  // ── identity: READ-ONLY, publication-derived (0.3) ───────────────────
-  // Facts carry no mutable slots; these deprecated accessors answer from
-  // PublishedFacts — null on fresh/hydrated instances, populated the moment
-  // the bus writes the outbox row. stamp_journey() is gone.
-
-  /** @deprecated 0.3 — the story lives on the envelope/scope, not the fact. */
-  public function correlation_id(): ?string {
-    return \TangibleDDD\Application\Events\PublishedFacts::correlation_of($this);
-  }
-
-  /** @deprecated 0.3 — at-rest identity is the outbox row. */
-  public function event_id(): ?string {
-    return \TangibleDDD\Application\Events\PublishedFacts::id_of($this);
-  }
+  // Facts carry no identity: at rest it is the outbox row, in flight the
+  // envelope, in execution the ambient scope. The only per-instance memory
+  // is PublishedFacts (the re-raise guard's ledger).
 
   // ── identity announcement (self-publishers; twins never announce) ───
   public function to_integration(): static {

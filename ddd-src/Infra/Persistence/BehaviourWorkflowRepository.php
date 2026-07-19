@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Infra\Persistence;
 
-use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
@@ -109,7 +109,7 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       'current_phase' => $aggregate->get_current_phase(),
       'is_complete' => $aggregate->is_complete() ? 1 : 0,
       'is_failed' => $aggregate->is_failed() ? 1 : 0,
-      'correlation_id' => CorrelationContext::peek(),
+      'correlation_id' => Correlation::peek()?->correlation_id,
       'meta' => wp_json_encode($aggregate->get_all_meta(), JSON_UNESCAPED_SLASHES),
       'updated_at' => $now,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,

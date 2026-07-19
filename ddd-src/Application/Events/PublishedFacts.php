@@ -17,22 +17,16 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  */
 final class PublishedFacts {
 
-  /** @var \WeakMap<IIntegrationEvent, array{id: string, correlation: string}> */
+  /** @var \WeakMap<IIntegrationEvent, string> instance → outbox event_id */
   private static ?\WeakMap $published = null;
 
-  public static function mark(IIntegrationEvent $event, string $event_id, string $correlation_id = ''): void {
-    self::map()[$event] = ['id' => $event_id, 'correlation' => $correlation_id];
+  public static function mark(IIntegrationEvent $event, string $event_id): void {
+    self::map()[$event] = $event_id;
   }
 
   /** The outbox event_id this instance was published as, or null. */
   public static function id_of(IIntegrationEvent $event): ?string {
-    return (self::map()[$event] ?? null)['id'] ?? null;
-  }
-
-  /** The story this instance was published into, or null. */
-  public static function correlation_of(IIntegrationEvent $event): ?string {
-    $mark = self::map()[$event] ?? null;
-    return ($mark['correlation'] ?? '') !== '' ? $mark['correlation'] : null;
+    return self::map()[$event] ?? null;
   }
 
   private static function map(): \WeakMap {

@@ -5,7 +5,6 @@ namespace TangibleDDD\Tests\Unit\Correlation;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Logging\Redactor;
@@ -15,12 +14,10 @@ class CorrelationMiddlewareTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   /** The act bracket, audit-disabled (guard + scope behavior only). */
@@ -42,7 +39,7 @@ class CorrelationMiddlewareTest extends TestCase {
     $captured_id = null;
 
     $middleware->execute(new \stdClass(), function () use (&$captured_id) {
-      $captured_id = CorrelationContext::get();
+      $captured_id = Correlation::current()->correlation_id;
       return 'ok';
     });
 
@@ -51,13 +48,14 @@ class CorrelationMiddlewareTest extends TestCase {
   }
 
   public function test_preserves_existing_correlation(): void {
-    CorrelationContext::init('pre-existing');
     $middleware = $this->make_middleware();
     $captured_id = null;
 
-    $middleware->execute(new \stdClass(), function () use (&$captured_id) {
-      $captured_id = CorrelationContext::get();
-      return 'ok';
+    Correlation::within(new TraceContext('pre-existing'), function () use ($middleware, &$captured_id) {
+      $middleware->execute(new \stdClass(), function () use (&$captured_id) {
+        $captured_id = Correlation::current()->correlation_id;
+        return 'ok';
+      });
     });
 
     $this->assertSame('pre-existing', $captured_id);
@@ -68,7 +66,7 @@ class CorrelationMiddlewareTest extends TestCase {
 
     $middleware->execute(new \stdClass(), fn() => 'ok');
 
-    $this->assertNull(CorrelationContext::peek());
+    $this->assertNull(Correlation::peek());
   }
 
   public function test_resets_context_even_on_exception(): void {
@@ -80,7 +78,7 @@ class CorrelationMiddlewareTest extends TestCase {
       });
     } catch (\RuntimeException) {}
 
-    $this->assertNull(CorrelationContext::peek());
+    $this->assertNull(Correlation::peek());
   }
 
   public function test_returns_handler_result(): void {
@@ -104,7 +102,7 @@ class CorrelationMiddlewareTest extends TestCase {
    * A LongProcess step is designed to issue multiple commands via
    * Result->commands; ProcessRunner dispatches them by looping $command->send(),
    * each flowing through this middleware. The runner wraps the run in a
-   * correlation scope (CorrelationContext::with). Both commands must therefore
+   * correlation scope (Correlation::within). Both commands must therefore
    * observe the SAME saga correlation — the first command's scope exit must not
    * tear down the outer process scope.
    *
@@ -120,18 +118,18 @@ class CorrelationMiddlewareTest extends TestCase {
     // dispatches) in a correlation scope.
     Correlation::within(new TraceContext('saga-correlation'), function () use ($middleware, &$seen) {
       $middleware->execute(new \stdClass(), function () use (&$seen) {
-        $seen['cmd_a'] = CorrelationContext::get();
+        $seen['cmd_a'] = Correlation::current()->correlation_id;
         return 'ok';
       });
       $middleware->execute(new \stdClass(), function () use (&$seen) {
-        $seen['cmd_b'] = CorrelationContext::get();
+        $seen['cmd_b'] = Correlation::current()->correlation_id;
         return 'ok';
       });
     });
 
     $this->assertSame('saga-correlation', $seen['cmd_a'], 'first command runs under the saga correlation');
     $this->assertSame('saga-correlation', $seen['cmd_b'], 'second command stays in the same saga trace');
-    $this->assertNull(CorrelationContext::peek(), 'scope fully cleared after the process run');
+    $this->assertNull(Correlation::peek(), 'scope fully cleared after the process run');
   }
 
   /**
@@ -143,11 +141,11 @@ class CorrelationMiddlewareTest extends TestCase {
     $seen = null;
 
     $middleware->execute(new \stdClass(), function () use (&$seen) {
-      $seen = CorrelationContext::get();
+      $seen = Correlation::current()->correlation_id;
       return 'ok';
     });
 
     $this->assertNotEmpty($seen, 'top-level command got a correlation');
-    $this->assertNull(CorrelationContext::peek(), 'context cleared after a top-level command');
+    $this->assertNull(Correlation::peek(), 'context cleared after a top-level command');
   }
 }

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Events;
 
-use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Correlation\TraceContext;
 
 /**
  * The wire form of an integration event — the last member of the
@@ -50,28 +50,15 @@ final class IntegrationEnvelope {
    * outbox.command_id). Drains derive: trace_context()->for_fact($event_id).
    * Null when the bag had no journey keys (a bare hook call — nothing to scope).
    */
-  public function trace_context(): ?\TangibleDDD\Application\Correlation\TraceContext {
+  public function trace_context(): ?TraceContext {
     if ($this->correlation_id === null) {
       return null;
     }
 
-    return new \TangibleDDD\Application\Correlation\TraceContext(
+    return new TraceContext(
       $this->correlation_id,
       null,
       $this->sequence ?? 0,
     );
-  }
-
-  /** Restore ambient correlation + stash this event as causation for dispatched commands. */
-  public function restore_context(): void {
-    if ($this->correlation_id !== null) {
-      CorrelationContext::init($this->correlation_id);
-    }
-    if ($this->sequence !== null) {
-      CorrelationContext::set_sequence($this->sequence);
-    }
-    if ($this->event_id !== null) {
-      CorrelationContext::set_causation($this->event_id, 'integration_event');
-    }
   }
 }

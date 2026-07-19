@@ -103,9 +103,8 @@ Canonical services.yaml fragment (Symfony DI, `autowire: true` defaults):
   TangibleDDD\Infra\IDDDConfig:
     alias: My\Plugin\Infra\Config
 
-  # Correlation + transaction middleware
+  # Correlation middleware — THE ACT BRACKET (guard + scope + audit record)
   TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
-  TangibleDDD\Application\Correlation\CorrelationContext: ~
 
   # Domain event dispatcher. NO arguments — WordPressEventDispatcher has no
   # constructor; an argument here is silently discarded by PHP and rots.
@@ -153,9 +152,8 @@ Canonical services.yaml fragment (Symfony DI, `autowire: true` defaults):
     arguments: ['@TangibleDDD\Infra\IDDDConfig']
   TangibleDDD\Application\Process\ProcessRunner: ~
 
-  # Command audit
+  # Command audit (the act bracket writes the rows; Redactor masks params)
   TangibleDDD\Application\Logging\Redactor: ~
-  TangibleDDD\Application\Logging\CommandAuditMiddleware: ~
 ```
 
 Rule of thumb: prefer `~` (autowire). Every hand-listed argument above that
@@ -167,10 +165,10 @@ constructor disagree in order instead of count).
 
 ## 5. Command bus
 
-Tactician middleware order (audit outermost, handler innermost):
+Tactician middleware order (the act bracket outermost, handler innermost):
 
 ```
-CommandAuditMiddleware → CorrelationMiddleware → <your TransactionMiddleware>
+CorrelationMiddleware → <your TransactionMiddleware>
   → DomainEventsPublishMiddleware → CommandHandlerMiddleware
 ```
 

@@ -28,10 +28,8 @@ services:
       - '@TangibleDDD\Application\Events\EventRouter'
 
   # ============================================
-  # Correlation
+  # Correlation (the act bracket: guard + scope + audit record)
   # ============================================
-  # CorrelationContext is static, no DI needed
-
   TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
 
   # ============================================
@@ -43,12 +41,6 @@ services:
   # Command Audit
   # ============================================
   TangibleDDD\Application\Logging\Redactor: ~
-
-  TangibleDDD\Application\Logging\CommandAuditMiddleware:
-    arguments:
-      - '@TangibleDDD\Infra\IDDDConfig'
-      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
-      - '@TangibleDDD\Application\Logging\Redactor'
 
   # ============================================
   # Outbox

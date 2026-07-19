@@ -5,7 +5,6 @@ namespace TangibleDDD\Tests\Unit\Outbox;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Events\PublishedFacts;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\FactPublishedInsideProcess;
 use TangibleDDD\Infra\IOutboxRepository;
@@ -26,12 +25,10 @@ class FactPublishedInsideProcessTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   private function make_event(): FakeResolvedEvent {

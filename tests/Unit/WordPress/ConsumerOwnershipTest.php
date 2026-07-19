@@ -8,22 +8,18 @@ use TangibleDDD\Tests\Fakes\Acme\Infra\Config as AcmeConfig;
 use TangibleDDD\Tests\Fakes\Acme\Sub\Domain\Gadget;
 use TangibleDDD\Tests\Fakes\Acme\Sub\Infra\Config as AcmeSubConfig;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
-use TangibleDDD\WordPress\ConsumerRegistry;
-use TangibleDDD\WordPress\NoConsumerOwnsClass;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
+use TangibleDDD\Infra\Consumers\NoConsumerOwnsClass;
 
 use function TangibleDDD\WordPress\boot;
 use function TangibleDDD\WordPress\consumers;
 
 // Procedural ddd-wordpress files; load directly (mirrors BootTest).
+// The registry classes live in ddd-src (PSR-4 autoloaded).
 if (!function_exists('TangibleDDD\\WordPress\\boot')) {
   require_once __DIR__ . '/../../../ddd-wordpress/hooks.php';
   require_once __DIR__ . '/../../../ddd-wordpress/tables.php';
   require_once __DIR__ . '/../../../ddd-wordpress/migrations.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerHandle.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerRegistry.php';
-}
-if (!class_exists('TangibleDDD\\WordPress\\NoConsumerOwnsClass')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/NoConsumerOwnsClass.php';
 }
 
 /**

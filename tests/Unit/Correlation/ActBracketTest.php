@@ -4,12 +4,10 @@ namespace TangibleDDD\Tests\Unit\Correlation;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
-use TangibleDDD\Application\Logging\CommandAuditMiddleware;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
 
@@ -18,14 +16,6 @@ use TangibleDDD\Infra\IDDDConfig;
  * owns guard + scope + the audit record — the audit write happens at
  * bracket-open, where the ENCLOSING cause is still visible (two separate
  * middlewares can't both see the parent and own the scope; OTel's answer).
- * CommandAuditMiddleware becomes a deprecated pass-through (consumer
- * tactician chains still reference it).
- *
- * Transitional bridge (until the drain/wake lanes migrate): the bracket is
- * facade-first, legacy-fallback when deriving the enclosing context — a
- * drain that armed only CorrelationContext must still parent this command
- * and share its story. Inside the scope the legacy statics are dual-written
- * for un-migrated readers (outbox linking, the runner's guards).
  */
 class ActBracketTest extends TestCase {
 
@@ -36,14 +26,12 @@ class ActBracketTest extends TestCase {
 
   protected function setUp(): void {
     Correlation::reset();
-    CorrelationContext::reset();
     $this->inserts = [];
     $this->updates = [];
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   private function make_config(string $prefix): IDDDConfig {
@@ -85,30 +73,27 @@ class ActBracketTest extends TestCase {
       return [
         'facade_cause' => Correlation::current()->cause,
         'facade_story' => Correlation::current()->correlation_id,
-        'shim_story'   => CorrelationContext::get(),   // consumer reads are facade-first
       ];
     });
 
     $this->assertSame(Kind::Act, $seen['facade_cause']->kind);
     $this->assertSame('stdClass', $seen['facade_cause']->label);
-    $this->assertSame($seen['facade_story'], $seen['shim_story'], 'the deprecated shim serves the true ambient story');
 
     $this->assertNull(Correlation::peek(), 'scope closed on exit');
   }
 
-  public function test_legacy_drain_context_parents_the_command(): void {
-    // A 0.2.x drain: legacy-only ambient (facade flat).
-    CorrelationContext::init('corr-drain');
-    CorrelationContext::set_causation('evt-1', 'integration_event');
-
+  public function test_flat_dispatch_roots_a_fresh_story(): void {
+    // No ambient scope: the command is the root of its own story — the
+    // audit row gets a minted correlation and NO causation, and the mint
+    // never persists into the worker's ambient.
     $bracket = $this->make_bracket('actb2');
     $bracket->execute(new \stdClass(), static fn () => 'ok');
 
     $this->assertCount(1, $this->inserts);
     $row = $this->inserts[0];
-    $this->assertSame('corr-drain', $row['correlation_id'], 'the drain story, not a fresh mint');
-    $this->assertSame('evt-1', $row['causation_id']);
-    $this->assertSame('integration_event', $row['causation_type']);
+    $this->assertNotEmpty($row['correlation_id'], 'a root still belongs to a story');
+    $this->assertNull($row['causation_id'], 'roots have no parent');
+    $this->assertNull(Correlation::peek(), 'the mint did not leak into the ambient');
   }
 
   public function test_facade_scope_parents_the_command(): void {
@@ -184,25 +169,5 @@ class ActBracketTest extends TestCase {
       'sensitive properties are redacted in the audit row'
     );
     $this->assertArrayHasKey('events', $this->updates[0]);
-  }
-
-  public function test_command_audit_middleware_is_a_pass_through(): void {
-    $config = $this->make_config('actb7');
-    $GLOBALS['wpdb'] = (function () use ($config) {
-      $wpdb = $this->createMock(\wpdb::class);
-      $wpdb->method('get_var')->willReturn($config->table('command_audit'));
-      $wpdb->method('prepare')->willReturnArgument(0);
-      $wpdb->method('insert')->willReturnCallback(function ($t, $row) {
-        $this->inserts[] = $row;
-        return true;
-      });
-      return $wpdb;
-    })();
-
-    $legacy = new CommandAuditMiddleware($config, new EventsUnitOfWork(), new Redactor());
-    $result = $legacy->execute(new \stdClass(), static fn () => 'through');
-
-    $this->assertSame('through', $result);
-    $this->assertSame([], $this->inserts, 'dissolved into the act bracket — writes nothing');
   }
 }

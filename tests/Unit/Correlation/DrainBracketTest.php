@@ -4,7 +4,6 @@ namespace TangibleDDD\Tests\Unit\Correlation;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
@@ -23,9 +22,6 @@ if (!function_exists('TangibleDDD\\WordPress\\integration_action')) {
  * REAL facade scope — Correlation::within($envelope->trace_context()
  * ->for_fact($event_id), $body) — so the fact is the ambient cause for the
  * WHOLE body by scope semantics, not by armed-slot choreography.
- *
- * Transitional: legacy restore_context() still dual-writes (the wake lane's
- * absorb and un-migrated readers consume it); both die with the dissolution.
  */
 class DrainBracketTest extends TestCase {
 
@@ -37,13 +33,11 @@ class DrainBracketTest extends TestCase {
     $_test_actions = [];
     $_test_filters = [];
     Correlation::reset();
-    CorrelationContext::reset();
     $this->inserts = [];
   }
 
   protected function tearDown(): void {
     Correlation::reset();
-    CorrelationContext::reset();
   }
 
   private function make_bracket(string $prefix): CorrelationMiddleware {
@@ -89,7 +83,6 @@ class DrainBracketTest extends TestCase {
     $this->assertSame('evt-d1', $seen->cause->id);
     $this->assertSame(3, $seen->sequence);
     $this->assertNull(Correlation::peek(), 'facade scope closed at teardown');
-    $this->assertNull(CorrelationContext::causation_id(), 'legacy teardown intact');
   }
 
   public function test_integration_listener_opens_a_fact_scope(): void {

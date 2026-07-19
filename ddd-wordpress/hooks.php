@@ -83,8 +83,8 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
  * Eagerly instantiate all event handler and integration listener services so
  * their constructors register WordPress action hooks (add_action).
  *
- * Without this, async handlers (AsyncWordPressActionHandler) and
- * IntegrationListener subclasses never register their callbacks, because
+ * Without this, WordPressActionHandler and IntegrationListener subclasses
+ * never register their callbacks, because
  * Symfony DI is lazy — services are only constructed when explicitly
  * requested. Action Scheduler then fails with "no callbacks are registered"
  * when processing queued async jobs.
@@ -255,7 +255,10 @@ function register_processes_from_container(
   $runner = $container->get(ProcessRunner::class);
 
   foreach ($tagged as $class => $tags) {
-    $runner->register($class);
+    // Fail fast on a mis-tag: the ddd.long_process tag promises a saga.
+    if (!is_subclass_of($class, \TangibleDDD\Application\Process\LongProcess::class)) {
+      throw new \InvalidArgumentException("$class is tagged ddd.long_process but does not extend LongProcess");
+    }
 
     // Register awaited events declared via #[Awaits(...)] on the class
     foreach ((new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\Awaits::class) as $attr) {

@@ -25,13 +25,6 @@ use function TangibleDDD\WordPress\command_audit_finalise;
  * correlation = the enclosing story, causation = the enclosing cause in the
  * at-rest dialect. Inside the scope, Correlation::current()->cause is this
  * act — facts published take their raiser edge from it.
- *
- * TRANSITIONAL (until the drain and wake lanes migrate): the enclosing
- * context is facade-first, legacy-fallback — a 0.2.x drain that armed only
- * CorrelationContext must still parent this command and share its story.
- * Inside the scope the legacy statics are dual-written for un-migrated
- * readers (outbox linking, the runner's guards). The dual-writes die with
- * the dissolution commit.
  */
 final class CorrelationMiddleware implements Middleware {
 
@@ -82,9 +75,7 @@ final class CorrelationMiddleware implements Middleware {
     $error = null;
 
     try {
-      // The dissolution: no dual-writes, no re-seeds — the scope IS the
-      // mechanism. Anything still reading the legacy shim (consumer
-      // CorrelationContext::get() calls) is served facade-first by the shim.
+      // No dual-writes, no re-seeds — the scope IS the mechanism.
       return Correlation::within(
         $enclosing->for_act($command_id, $command_name),
         static fn () => $next($command)
@@ -110,29 +101,13 @@ final class CorrelationMiddleware implements Middleware {
   }
 
   /**
-   * Facade-first, legacy-fallback. A facade scope (a migrated drain or wake)
-   * wins; otherwise the enclosing context is DERIVED from the legacy statics
-   * so 0.2.x drains keep parenting commands into their own stories.
+   * The ambient scope wins; a genuinely flat dispatch (REST, CLI, WP hook)
+   * is the root of a fresh story. root() mints WITHOUT touching the ambient
+   * — deriving the enclosing context must never persist a mint into the
+   * worker.
    */
   private function enclosing_context(): TraceContext {
-    if (null !== $ctx = Correlation::peek()) {
-      return $ctx;
-    }
-
-    $cause = null;
-    if (null !== $causation_id = CorrelationContext::causation_id()) {
-      $cause = new Cause($causation_id, match (CorrelationContext::causation_type()) {
-        'long_process' => Kind::Trajectory,
-        default => Kind::Fact,
-      });
-    }
-
-    // peek, never get(): deriving the enclosing context must not MINT into
-    // the legacy ambient (that corrupted the was-set check and made every
-    // top-level command look like it ran inside a drain).
-    $correlation = CorrelationContext::peek() ?? \TangibleDDD\Domain\Shared\Uuid::v4();
-
-    return new TraceContext($correlation, $cause, CorrelationContext::sequence());
+    return Correlation::peek() ?? TraceContext::root();
   }
 
   private function resolve_source(): array {

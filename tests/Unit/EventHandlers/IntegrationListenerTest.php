@@ -3,7 +3,6 @@
 namespace TangibleDDD\Tests\Unit\EventHandlers;
 
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Tests\Fakes\FakeCapturingCommand;
 use TangibleDDD\Tests\Fakes\FakeRecordingListener;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
@@ -15,7 +14,6 @@ class IntegrationListenerTest extends TestCase {
     $_test_actions = [];
     FakeCapturingCommand::$sent = [];
     FakeRecordingListener::$received = null;
-    CorrelationContext::reset();
   }
 
   public function test_ceremony_delivers_typed_stamped_event_and_sends_command(): void {
@@ -34,7 +32,7 @@ class IntegrationListenerTest extends TestCase {
     // the envelope (see DrainBracketTest for the scope assertions).
     $this->assertCount(1, FakeCapturingCommand::$sent);
     $this->assertSame(312, FakeCapturingCommand::$sent[0]->request_id);
-    $this->assertSame('corr-1', CorrelationContext::peek());    // context restored for the send
+    $this->assertNull(\TangibleDDD\Application\Correlation\Correlation::peek(), 'drain scope closed — nothing bleeds into the worker');
   }
 
   public function test_null_command_is_a_no_op(): void {

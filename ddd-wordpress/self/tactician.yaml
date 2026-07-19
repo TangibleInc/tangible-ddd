@@ -5,7 +5,6 @@ services:
   League\Tactician\CommandBus:
     public: true
     arguments:
-      - '@TangibleDDD\Application\Logging\CommandAuditMiddleware'
       - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
       - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
       - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
