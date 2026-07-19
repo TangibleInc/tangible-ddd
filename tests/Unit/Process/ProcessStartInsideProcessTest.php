@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Application\Process\ProcessStartedInsideProcess;
@@ -20,21 +21,23 @@ use TangibleDDD\Tests\Fakes\FakeThreeStepProcess;
 class ProcessStartInsideProcessTest extends TestCase {
 
   protected function setUp(): void {
+    Correlation::reset();
     CorrelationContext::reset();
     $GLOBALS['wpdb'] = new \wpdb();
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
   public function test_start_inside_a_process_wake_throws(): void {
-    CorrelationContext::mark_process_frame('191');
-
     $runner = new ProcessRunner(new FakeDDDConfig(), $repo = new FakeProcessRepository());
 
     try {
-      $runner->start(new FakeThreeStepProcess());
+      Correlation::within(Correlation::current()->for_trajectory('191'), static function () use ($runner) {
+        $runner->start(new FakeThreeStepProcess());
+      });
       $this->fail('start() inside a saga wake must throw');
     } catch (ProcessStartedInsideProcess $e) {
       $this->assertStringContainsString(FakeThreeStepProcess::class, $e->getMessage());

@@ -4,6 +4,7 @@ namespace TangibleDDD\Tests\Unit\Correlation;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
@@ -117,7 +118,7 @@ class CorrelationMiddlewareTest extends TestCase {
 
     // Model the fixed ProcessRunner: it wraps the run (and the commands a step
     // dispatches) in a correlation scope.
-    CorrelationContext::with('saga-correlation', function () use ($middleware, &$seen) {
+    Correlation::within(new TraceContext('saga-correlation'), function () use ($middleware, &$seen) {
       $middleware->execute(new \stdClass(), function () use (&$seen) {
         $seen['cmd_a'] = CorrelationContext::get();
         return 'ok';

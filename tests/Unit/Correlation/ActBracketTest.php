@@ -78,26 +78,22 @@ class ActBracketTest extends TestCase {
     return new CorrelationMiddleware($config, new EventsUnitOfWork(), new Redactor());
   }
 
-  public function test_dispatch_opens_an_act_scope_with_dual_written_legacy(): void {
+  public function test_dispatch_opens_an_act_scope(): void {
     $bracket = $this->make_bracket('actb1');
 
     $seen = $bracket->execute(new \stdClass(), static function () {
       return [
         'facade_cause' => Correlation::current()->cause,
         'facade_story' => Correlation::current()->correlation_id,
-        'legacy_frame' => CorrelationContext::command_frame(),
-        'legacy_cmdid' => CorrelationContext::command_id(),
-        'legacy_story' => CorrelationContext::get(),
+        'shim_story'   => CorrelationContext::get(),   // consumer reads are facade-first
       ];
     });
 
     $this->assertSame(Kind::Act, $seen['facade_cause']->kind);
     $this->assertSame('stdClass', $seen['facade_cause']->label);
-    $this->assertSame('stdClass', $seen['legacy_frame'], 'dual-write: un-migrated guards read the frame');
-    $this->assertSame($seen['facade_cause']->id, $seen['legacy_cmdid'], 'outbox linking still works');
-    $this->assertSame($seen['facade_story'], $seen['legacy_story'], 'ONE story across both worlds');
+    $this->assertSame($seen['facade_story'], $seen['shim_story'], 'the deprecated shim serves the true ambient story');
 
-    $this->assertNull(Correlation::reset() ?? CorrelationContext::command_frame(), 'frame cleared on exit');
+    $this->assertNull(Correlation::peek(), 'scope closed on exit');
   }
 
   public function test_legacy_drain_context_parents_the_command(): void {
@@ -141,8 +137,7 @@ class ActBracketTest extends TestCase {
       $this->assertStringContainsString('DateTime', $e->getMessage());
     }
 
-    $this->assertNull(CorrelationContext::command_frame(), 'unwound');
-    $this->assertNull(Correlation::current()->cause);
+    $this->assertNull(Correlation::current()->cause, 'unwound');
   }
 
   public function test_audit_disabled_still_brackets_and_guards(): void {

@@ -51,12 +51,6 @@ final class CorrelationMiddleware implements Middleware {
         $enclosing->cause->label ?? $enclosing->cause->id
       );
     }
-    if (null !== $inside = CorrelationContext::command_frame()) {
-      // transitional belt-and-braces: a legacy-only marker (should be
-      // unreachable once every dispatch runs through this bracket)
-      throw new CommandDispatchedInsideCommand(get_class($command), $inside);
-    }
-
     $command_id = bin2hex(random_bytes(16));
     $command_name = get_class($command);
     $audit = command_audit_enabled($this->config);
@@ -88,36 +82,12 @@ final class CorrelationMiddleware implements Middleware {
     $error = null;
 
     try {
-      $ambient_was_set = CorrelationContext::peek() !== null;
-
+      // The dissolution: no dual-writes, no re-seeds — the scope IS the
+      // mechanism. Anything still reading the legacy shim (consumer
+      // CorrelationContext::get() calls) is served facade-first by the shim.
       return Correlation::within(
         $enclosing->for_act($command_id, $command_name),
-        function () use ($command, $next, $command_id, $command_name, $enclosing, $ambient_was_set) {
-          // dual-write for un-migrated readers (dies with the dissolution)
-          CorrelationContext::enter($enclosing->correlation_id);
-          CorrelationContext::mark_command_frame($command_name);
-          CorrelationContext::set_command_id($command_id);
-          try {
-            return $next($command);
-          } finally {
-            CorrelationContext::clear_command_frame();
-            CorrelationContext::leave();
-
-            // leave() on the outermost scope exit reset()s the ambient —
-            // including a DRAIN's correlation and armed causation, which the
-            // drain owns until ITS teardown. This silently broke sibling
-            // commands in real 0.2.5 chains (second command of one listener:
-            // fresh story, null parent). Re-seed ONLY what the bracket found
-            // already set — a top-level command's fresh mint still clears
-            // (worker hygiene). Dies when the drain lane opens real scopes.
-            if ($ambient_was_set && CorrelationContext::peek() === null) {
-              CorrelationContext::init($enclosing->correlation_id);
-              if ($enclosing->cause !== null) {
-                CorrelationContext::set_causation($enclosing->cause->id, $enclosing->cause->causation_type());
-              }
-            }
-          }
-        }
+        static fn () => $next($command)
       );
 
     } catch (Throwable $e) {

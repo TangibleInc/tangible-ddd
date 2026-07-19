@@ -221,15 +221,8 @@ final class ProcessRunner {
     if ($cause?->kind === Kind::Act) {
       throw new ProcessStartedInsideCommand(get_class($process), $cause->label ?? $cause->id);
     }
-    if (null !== $inside = CorrelationContext::command_frame()) {
-      throw new ProcessStartedInsideCommand(get_class($process), $inside);
-    }
-
     if ($cause?->kind === Kind::Trajectory) {
       throw new ProcessStartedInsideProcess(get_class($process), $cause->id);
-    }
-    if (null !== $parent = CorrelationContext::process_frame()) {
-      throw new ProcessStartedInsideProcess(get_class($process), $parent);
     }
 
     // The absorb: a manual ->start() inside a drain is a legal-but-
@@ -291,17 +284,7 @@ final class ProcessRunner {
 
       Correlation::within(
         $ctx->for_trajectory((string) $process->get_id(), get_class($process)),
-        static function () use ($process, $work) {
-          // legacy dual-write for un-migrated readers — dies with the dissolution
-          CorrelationContext::with($process->correlation_id(), static function () use ($process, $work) {
-            CorrelationContext::mark_process_frame((string) $process->get_id());
-            try {
-              $work();
-            } finally {
-              CorrelationContext::clear_process_frame();
-            }
-          });
-        }
+        $work
       );
     });
   }

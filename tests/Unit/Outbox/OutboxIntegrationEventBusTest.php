@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Outbox;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Tests\Fakes\FakeIntegrationEvent;
@@ -12,22 +13,26 @@ use TangibleDDD\Tests\Fakes\FakeUniqueIntegrationEvent;
 class OutboxIntegrationEventBusTest extends TestCase {
 
   protected function setUp(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
   public function test_publish_writes_event_to_outbox(): void {
+    // The raiser edge comes from the ambient ACT scope (0.3) — a fact's
+    // parent is the command whose handler announced it.
     $repo = new FakeOutboxRepository();
     $bus = new OutboxIntegrationEventBus($repo);
 
-    CorrelationContext::init('test-corr-123');
-    CorrelationContext::set_command_id('cmd-456');
-
     $event = new FakeIntegrationEvent(entity_id: 7, action_type: 'synced');
-    $bus->publish($event);
+    Correlation::within(
+      (new \TangibleDDD\Application\Correlation\TraceContext('test-corr-123'))->for_act('cmd-456'),
+      static fn () => $bus->publish($event),
+    );
 
     $this->assertCount(1, $repo->entries);
     $entry = $repo->entries[0];

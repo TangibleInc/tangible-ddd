@@ -37,15 +37,13 @@ class WakeBracketTest extends TestCase {
   private function probe(): LongProcess {
     return new class extends LongProcess {
       public ?TraceContext $facade_during_step = null;
-      public ?string $legacy_frame = null;
-      public ?string $legacy_corr = null;
+      public ?string $shim_story = null;
 
       public function __construct() { parent::__construct(null); }
 
       protected function observe(): Result {
         $this->facade_during_step = Correlation::current();
-        $this->legacy_frame = CorrelationContext::process_frame();
-        $this->legacy_corr = CorrelationContext::peek();
+        $this->shim_story = CorrelationContext::get();   // facade-first shim
         return new Result();
       }
     };
@@ -65,8 +63,7 @@ class WakeBracketTest extends TestCase {
     $this->assertSame(get_class($probe), $ctx->cause->label);
     $this->assertSame('wake-corr', $ctx->correlation_id, 'the saga inherits the igniting story');
 
-    $this->assertSame((string) $probe->get_id(), $probe->legacy_frame, 'legacy dual-write intact');
-    $this->assertSame('wake-corr', $probe->legacy_corr);
+    $this->assertSame('wake-corr', $probe->shim_story, 'the deprecated shim serves the saga story');
   }
 
   public function test_dispatched_commands_are_inside_the_trajectory_scope(): void {

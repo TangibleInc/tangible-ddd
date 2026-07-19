@@ -43,7 +43,9 @@ class OutboxRepository implements IOutboxRepository {
       'queue' => $this->config->prefix() . '-outbox',
       'payload_bytes' => $payload_bytes,
       'correlation_id' => $correlation_id,
-      'sequence' => CorrelationContext::next_sequence(),
+      'sequence' => \TangibleDDD\Application\Correlation\Correlation::peek() !== null
+        ? \TangibleDDD\Application\Correlation\Correlation::next_sequence()
+        : CorrelationContext::next_sequence(),   // shim fallback — dies with consumer migration
       'command_id' => $command_id,
       'payload' => $payload_json,
       'delay_seconds' => $delay_seconds,
