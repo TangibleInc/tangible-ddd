@@ -4,6 +4,8 @@ namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Infra\Consumers\ConsumerHandle;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
@@ -167,12 +169,17 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
     return;
   }
 
-  // Schedule recurring outbox processor
+  // Schedule recurring outbox processor. Interval comes from OutboxConfig
+  // (the <prefix>_outbox_processor_interval option, default 30s) — the knob
+  // existed since 0.2.0 but this site hardcoded 30, so the option silently
+  // did nothing (0.2.5 rider). NOTE: an already-scheduled action keeps its
+  // old cadence — changing the option takes effect after the existing AS
+  // action is unscheduled or on a fresh install.
   add_action('init', function() use ($config) {
     if (!as_next_scheduled_action($config->hook('outbox_process'))) {
       as_schedule_recurring_action(
         time(),
-        30, // Every 30 seconds
+        \TangibleDDD\Application\Outbox\OutboxConfig::from_options($config)->processor_interval_seconds,
         $config->hook('outbox_process'),
         [],
         $config->as_group('outbox')

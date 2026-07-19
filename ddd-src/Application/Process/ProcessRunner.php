@@ -84,15 +84,19 @@ final class ProcessRunner {
     add_action(
       $event_class::integration_action(),
       function (array $payload) use ($event_class) {
-        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
         $envelope->restore_context();
 
-        $event = $event_class::from_payload($envelope->payload);
-        if ($envelope->event_id !== null) {
-          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-        }
+        try {
+          $event = $event_class::from_payload($envelope->payload);
+          if ($envelope->event_id !== null) {
+            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
+          }
 
-        $this->resume_on_event($event);
+          $this->resume_on_event($event);
+        } finally {
+          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+        }
       },
       99 // Late priority - run after main handlers
     );
@@ -140,29 +144,33 @@ final class ProcessRunner {
     add_action(
       $event_class::integration_action(),
       function (array $payload) use ($process_class, $event_class) {
-        $envelope = \TangibleDDD\Application\Events\TransportEnvelope::unwrap($payload);
+        $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
         $envelope->restore_context();
 
-        $event = $event_class::from_payload($envelope->payload);
-        if ($envelope->event_id !== null) {
-          $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-        }
-
-        $process = $process_class::from_event($event);
-        if ($process === null) {
-          return; // not my business — the policy declined
-        }
-
-        $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
-        if ($event_id !== null) {
-          if ($this->repository->has_ignition($process_class, $event_id)) {
-            return; // replay / redelivery — this fact already ignited its saga
+        try {
+          $event = $event_class::from_payload($envelope->payload);
+          if ($envelope->event_id !== null) {
+            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
           }
-          $process->mark_ignited_by($event_id);
-        }
-        $process->mark_source('event');
 
-        $this->start($process);
+          $process = $process_class::from_event($event);
+          if ($process === null) {
+            return; // not my business — the policy declined
+          }
+
+          $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
+          if ($event_id !== null) {
+            if ($this->repository->has_ignition($process_class, $event_id)) {
+              return; // replay / redelivery — this fact already ignited its saga
+            }
+            $process->mark_ignited_by($event_id);
+          }
+          $process->mark_source('event');
+
+          $this->start($process);
+        } finally {
+          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+        }
       },
       50 // between listeners (10) and resumes (99)
     );
@@ -186,6 +194,23 @@ final class ProcessRunner {
   public function start(LongProcess $process): void {
     if (null !== $inside = CorrelationContext::command_frame()) {
       throw new ProcessStartedInsideCommand(get_class($process), $inside);
+    }
+
+    if (null !== $parent = CorrelationContext::process_frame()) {
+      throw new ProcessStartedInsideProcess(get_class($process), $parent);
+    }
+
+    // The absorb (0.2.5): a manual ->start() inside a drain is a legal-but-
+    // dispreferred spelling of event ignition — the armed causation IS the
+    // igniting fact, so record the truth instead of a false cold root.
+    // (#[StartsOn] stays the better door: it adds dedup and discovery.)
+    if (
+      $process->ignited_by_event_id() === null
+      && CorrelationContext::causation_type() === 'integration_event'
+      && null !== $igniter = CorrelationContext::causation_id()
+    ) {
+      $process->mark_ignited_by($igniter);
+      $process->mark_source('event');
     }
 
     if ($process->source() === null) {

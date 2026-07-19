@@ -177,4 +177,35 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
 
     return $services;
   }
+
+  // ── 0.2.5c: the scaffold stamps no classes ──────────────────────────
+
+  public function test_the_scaffold_stamps_no_classes(): void {
+    $php_files = array_filter(
+      array_keys( self::$templates ),
+      static fn ( string $file ) => str_ends_with( $file, '.php' ),
+    );
+
+    $this->assertSame(
+      [ 'ddd-wordpress/di/index.php' ],
+      array_values( $php_files ),
+      'every stamped class was consumer-repeated framework knowledge; ' .
+      'identity is data now (DDDConfig + owner_of)'
+    );
+  }
+
+  public function test_boot_declares_a_dddconfig_with_explicit_namespace_root(): void {
+    $index = self::$templates['ddd-wordpress/di/index.php'];
+
+    $this->assertStringContainsString( 'TangibleDDD\\Infra\\DDDConfig', $index );
+    $this->assertStringContainsString( "prefix: 'acme_orders'", $index );
+    $this->assertStringContainsString( "namespace_root: 'AcmeOrders'", $index );
+  }
+
+  public function test_tactician_binds_the_framework_inflector(): void {
+    $yaml = self::$templates['ddd-wordpress/di/tactician.yaml'];
+
+    $this->assertStringContainsString( 'TangibleDDD\Application\CQRS\HandlerClassNameInflector', $yaml );
+    $this->assertStringNotContainsString( 'AcmeOrders\WordPress\DI\HandlerClassNameInflector', $yaml );
+  }
 }

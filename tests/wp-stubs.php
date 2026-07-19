@@ -78,6 +78,13 @@ if (!function_exists('do_action')) {
   }
 }
 
+if (!function_exists('do_action_ref_array')) {
+  /** Same named-arg dispatch as real WP: string keys become named parameters. */
+  function do_action_ref_array(string $hook, array $args): void {
+    do_action($hook, ...$args);
+  }
+}
+
 if (!function_exists('add_filter')) {
   /** @var array<string, array<callable>> */
   global $_test_filters;

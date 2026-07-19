@@ -53,9 +53,9 @@ final class CommandAuditMiddleware implements Middleware {
       'environment' => $env,
     ]);
 
-    // Causation describes exactly the command just recorded. Consume it so it
-    // never bleeds into a sibling or the worker's next command.
-    CorrelationContext::clear_causation();
+    // Causation is a SCOPE, not a token (0.2.5): the drain that armed it owns
+    // teardown, so sibling commands of one fat listener all record the same
+    // event parent instead of silently showing up as roots. Audit only READS.
 
     $status = 'success';
     $error = null;

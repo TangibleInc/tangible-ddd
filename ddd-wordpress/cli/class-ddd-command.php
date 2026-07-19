@@ -252,17 +252,20 @@ PHP;
    * Get all template files.
    */
   private function get_templates( string $prefix, string $namespace, string $version_const ): array {
+    // 0.2.5c: the scaffold stamps NO classes. Identity is data (DDDConfig in
+    // the boot declaration + services.yaml, resolved at runtime by
+    // ConsumerRegistry::owner_of()) — events/commands/queries/VOs extend the
+    // framework bases directly, and the bus convention ships once
+    // (TangibleDDD\Application\CQRS\HandlerClassNameInflector). What remains
+    // is the consumer's own wiring and the directory skeleton.
     return [
-      'ddd-src/Domain/Events/DomainEvent.php' => $this->template_domain_event( $prefix, $namespace ),
-      'ddd-src/Domain/Events/IntegrationEvent.php' => $this->template_integration_event( $prefix, $namespace ),
+      'ddd-src/Domain/Events/.gitkeep' => '',
       'ddd-src/Domain/Services/.gitkeep' => '',
-      'ddd-src/Domain/Shared/JsonLifecycleValue.php' => $this->template_json_lifecycle_value( $prefix, $namespace ),
-      'ddd-src/Domain/Shared/DirectJsonLifecycleValue.php' => $this->template_direct_json_lifecycle_value( $prefix, $namespace ),
       'ddd-src/Domain/Exceptions/.gitkeep' => '',
       'ddd-src/Domain/Repositories/.gitkeep' => '',
-      'ddd-src/Application/Commands/Command.php' => $this->template_command( $prefix, $namespace ),
+      'ddd-src/Application/Commands/.gitkeep' => '',
       'ddd-src/Application/CommandHandlers/.gitkeep' => '',
-      'ddd-src/Application/Queries/Query.php' => $this->template_query( $prefix, $namespace ),
+      'ddd-src/Application/Queries/.gitkeep' => '',
       'ddd-src/Application/QueryHandlers/.gitkeep' => '',
       'ddd-src/Application/EventHandlers/.gitkeep' => '',
       'ddd-src/Application/IntegrationListeners/.gitkeep' => '',
@@ -270,275 +273,18 @@ PHP;
       'ddd-src/Infra/Persistence/.gitkeep' => '',
       'ddd-src/Infra/Services/.gitkeep' => '',
       'ddd-wordpress/tables/.gitkeep' => '',
-      'ddd-src/Infra/Config.php' => $this->template_config( $prefix, $namespace ),
       'ddd-wordpress/di/index.php' => $this->template_di_index( $prefix, $namespace, $version_const ),
       'ddd-wordpress/di/services.yaml' => $this->template_services_yaml( $prefix, $namespace, $version_const ),
       'ddd-wordpress/di/tactician.yaml' => $this->template_tactician_yaml( $prefix, $namespace ),
-      'ddd-wordpress/di/HandlerClassNameInflector.php' => $this->template_handler_inflector( $prefix, $namespace ),
     ];
   }
 
-  /**
-   * Template: Domain Event base class.
-   */
-  private function template_domain_event( string $prefix, string $namespace ): string {
-    return <<<PHP
-<?php
 
-namespace {$namespace}\\Domain\\Events;
 
-use TangibleDDD\\Domain\\Events\\DomainEvent as BaseDomainEvent;
 
-/**
- * Base class for {$namespace} domain events.
- *
- * All domain events in this plugin should extend this class.
- */
-abstract class DomainEvent extends BaseDomainEvent {
-  protected static function prefix(): string {
-    return '{$prefix}';
-  }
-}
 
-PHP;
-  }
 
-  /**
-   * Template: Integration Event base class.
-   */
-  private function template_integration_event( string $prefix, string $namespace ): string {
-    return <<<PHP
-<?php
 
-namespace {$namespace}\\Domain\\Events;
-
-use TangibleDDD\\Domain\\Events\\IntegrationEvent as BaseIntegrationEvent;
-
-/**
- * Base class for {$namespace} pure integration records (ddd 0.2.0 taxonomy).
- *
- * SEVERED from the domain-event hierarchy: subclasses cannot be record()ed
- * on an aggregate — publish them straight onto IIntegrationEventBus. The
- * scalarise codec runs on this base, so subclass constructor props must be
- * protected (not private) readonly, and the constructor IS the wire schema.
- * Facts that must also fire as sync domain events are self-publishers
- * instead: extend DomainEvent, implement IIntegrationEvent +
- * IAnnouncesIntegration, and mix in IntegrationBehaviour.
- */
-abstract class IntegrationEvent extends BaseIntegrationEvent {
-  protected static function prefix(): string {
-    return '{$prefix}';
-  }
-}
-
-PHP;
-  }
-
-  /**
-   * Template: JsonLifecycleValue base class with local DI renderer.
-   */
-  private function template_json_lifecycle_value( string $prefix, string $namespace ): string {
-    $di_namespace = "{$namespace}\\WordPress\\DI";
-
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\Domain\\Shared;
-
-use TangibleDDD\\Domain\\Shared\\JsonLifecycleValue as BaseJsonLifecycleValue;
-use TangibleDDD\\Domain\\Shared\\IValueRenderer;
-
-use function {$di_namespace}\\di;
-
-/**
- * Base class for {$namespace} value objects with JSON lifecycle.
- *
- * All JSON-serializable VOs in this plugin should extend this class
- * to automatically use the plugin's configured IValueRenderer.
- */
-abstract class JsonLifecycleValue extends BaseJsonLifecycleValue {
-
-  protected static function get_renderer(): ?IValueRenderer {
-    \$container = di();
-    if (\$container->has(IValueRenderer::class)) {
-      return \$container->get(IValueRenderer::class);
-    }
-    return null;
-  }
-}
-
-PHP;
-  }
-
-  /**
-   * Template: DirectJsonLifecycleValue base class.
-   */
-  private function template_direct_json_lifecycle_value( string $prefix, string $namespace ): string {
-    $di_namespace = "{$namespace}\\WordPress\\DI";
-
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\Domain\\Shared;
-
-use TangibleDDD\\Domain\\Shared\\DirectJsonLifecycleValue as BaseDirectJsonLifecycleValue;
-use TangibleDDD\\Domain\\Shared\\IValueRenderer;
-
-use function {$di_namespace}\\di;
-
-/**
- * Base class for {$namespace} directly-serializable value objects.
- *
- * Use this when VOs need to be created programmatically (not just from JSON).
- */
-abstract class DirectJsonLifecycleValue extends BaseDirectJsonLifecycleValue {
-
-  protected static function get_renderer(): ?IValueRenderer {
-    \$container = di();
-    if (\$container->has(IValueRenderer::class)) {
-      return \$container->get(IValueRenderer::class);
-    }
-    return null;
-  }
-}
-
-PHP;
-  }
-
-  /**
-   * Template: Command base class (auto-dispatching).
-   */
-  private function template_command( string $prefix, string $namespace ): string {
-    $di_namespace = "{$namespace}\\WordPress\\DI";
-
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\Application\\Commands;
-
-use TangibleDDD\\Application\\Commands\\ICommand;
-use TangibleDDD\\Application\\CQRS\\CommandBusAware;
-use Psr\\Container\\ContainerInterface;
-
-use function {$di_namespace}\\di;
-
-/**
- * Base class for {$namespace} commands.
- *
- * Commands extending this class can dispatch themselves:
- *
- *     \$result = (new CreateLicense(...))->send();
- *
- * The command is routed to its handler via Tactician.
- * Convention: CreateLicense -> CreateLicenseHandler
- */
-abstract class Command implements ICommand {
-  use CommandBusAware;
-
-  protected static function container(): ContainerInterface {
-    return di();
-  }
-}
-
-PHP;
-  }
-
-  /**
-   * Template: Query base class (auto-dispatching).
-   */
-  private function template_query( string $prefix, string $namespace ): string {
-    $di_namespace = "{$namespace}\\WordPress\\DI";
-
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\Application\\Queries;
-
-use TangibleDDD\\Application\\Queries\\IQuery;
-use TangibleDDD\\Application\\CQRS\\QueryBusAware;
-use Psr\\Container\\ContainerInterface;
-
-use function {$di_namespace}\\di;
-
-/**
- * Base class for {$namespace} queries.
- *
- * Queries extending this class can dispatch themselves:
- *
- *     \$license = (new GetLicense(id: 42))->send();
- *
- * The query is routed to its handler via the QueryBus.
- * Convention: GetLicense -> GetLicenseHandler
- */
-abstract class Query implements IQuery {
-  use QueryBusAware;
-
-  protected static function container(): ContainerInterface {
-    return di();
-  }
-}
-
-PHP;
-  }
-
-  /**
-   * Template: Config class implementing IDDDConfig.
-   */
-  private function template_config( string $prefix, string $namespace ): string {
-    $prefix_dashed = str_replace( '_', '-', $prefix );
-
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\Infra;
-
-use TangibleDDD\\Infra\\IDDDConfig;
-
-/**
- * DDD Framework configuration for {$namespace}.
- */
-class Config implements IDDDConfig {
-
-  public function __construct(
-    private readonly string \$version = 'dev',
-  ) {}
-
-  public function prefix(): string {
-    return '{$prefix}';
-  }
-
-  public function table( string \$name ): string {
-    global \$wpdb;
-    return \$wpdb->prefix . '{$prefix}_' . \$name;
-  }
-
-  public function hook( string \$name ): string {
-    return '{$prefix}_' . \$name;
-  }
-
-  public function as_group( string \$name ): string {
-    return '{$prefix_dashed}-' . \$name;
-  }
-
-  public function option( string \$name ): string {
-    return '{$prefix}_' . \$name;
-  }
-
-  public function domain_action( string \$event_name ): string {
-    return '{$prefix}_domain_' . \$event_name;
-  }
-
-  public function integration_action( string \$event_name ): string {
-    return '{$prefix}_integration_' . \$event_name;
-  }
-
-  public function version(): string {
-    return \$this->version;
-  }
-}
-
-PHP;
-  }
 
   /**
    * Template: DI container setup.
@@ -548,8 +294,6 @@ PHP;
 <?php
 
 namespace {$namespace}\\WordPress\\DI;
-
-require_once __DIR__ . '/HandlerClassNameInflector.php';
 
 use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
 use Symfony\\Component\\Config\\FileLocator;
@@ -605,8 +349,10 @@ add_action( 'init', __NAMESPACE__ . '\\compile_container', 1 );
 // init tick — no activation hook needed. Requires this file to be included
 // from the main plugin file or plugins_loaded.
 \\TangibleDDD\\WordPress\\boot(
-  new \\{$namespace}\\Infra\\Config(
-    defined( '{$version_const}' ) ? constant( '{$version_const}' ) : 'dev'
+  new \\TangibleDDD\\Infra\\DDDConfig(
+    prefix: '{$prefix}',
+    namespace_root: '{$namespace}',
+    version: defined( '{$version_const}' ) ? constant( '{$version_const}' ) : 'dev',
   ),
   static fn () => di()
 );
@@ -632,15 +378,17 @@ services:
     TangibleDDD\\Application\\Process\\LongProcess:
       tags: ['ddd.long_process']
 
-  # Config
-  # Version is wired via the {$prefix}.version container parameter set in di/index.php
-  # (sourced from the {$version_const} PHP constant when defined).
-  {$namespace}\\Infra\\Config:
+  # Config — the framework's concrete, parameterized with THIS consumer's
+  # identity (0.2.5c: no stamped Infra\\Config class). Version is wired via
+  # the {$prefix}.version container parameter set in di/index.php.
+  TangibleDDD\\Infra\\DDDConfig:
     arguments:
+      \$prefix: '{$prefix}'
+      \$namespace_root: '{$namespace}'
       \$version: '%{$prefix}.version%'
 
   TangibleDDD\\Infra\\IDDDConfig:
-    alias: {$namespace}\\Infra\\Config
+    alias: TangibleDDD\\Infra\\DDDConfig
 
   # Correlation
   TangibleDDD\\Application\\Correlation\\CorrelationMiddleware: ~
@@ -797,7 +545,7 @@ services:
       - '@tactician.method_name_inflector'
 
   tactician.class_name_inflector:
-    class: {$namespace}\\WordPress\\DI\\HandlerClassNameInflector
+    class: TangibleDDD\\Application\\CQRS\\HandlerClassNameInflector
 
   tactician.method_name_inflector:
     class: League\\Tactician\\Handler\\Mapping\\MethodName\\Handle
@@ -805,53 +553,4 @@ services:
 YAML;
   }
 
-  /**
-   * Template: Handler class name inflector.
-   */
-  private function template_handler_inflector( string $prefix, string $namespace ): string {
-    return <<<PHP
-<?php
-
-namespace {$namespace}\\WordPress\\DI;
-
-use League\\Tactician\\Handler\\Mapping\\ClassName\\ClassNameInflector;
-
-/**
- * Maps Command/Query classes to their Handler classes.
- *
- * Convention:
- *   {$namespace}\\Application\\Commands\\CreateOrder -> {$namespace}\\Application\\CommandHandlers\\CreateOrderHandler
- *   {$namespace}\\Application\\Queries\\GetOrder -> {$namespace}\\Application\\QueryHandlers\\GetOrderHandler
- */
-class HandlerClassNameInflector implements ClassNameInflector {
-
-  private array \$command_values = [ 'singular' => 'Command', 'plural' => 'Commands' ];
-  private array \$query_values   = [ 'singular' => 'Query', 'plural' => 'Queries' ];
-
-  private function isCommand( string \$commandClassName ): bool {
-    return str_contains( \$commandClassName, \$this->command_values['plural'] );
-  }
-
-  private function isQuery( string \$commandClassName ): bool {
-    return str_contains( \$commandClassName, \$this->query_values['plural'] );
-  }
-
-  public function getClassName( string \$commandClassName ): string {
-    if ( \$this->isCommand( \$commandClassName ) ) {
-      \$values = \$this->command_values;
-    } elseif ( \$this->isQuery( \$commandClassName ) ) {
-      \$values = \$this->query_values;
-    } else {
-      throw new \\LogicException( 'Command/Query bus expects either a Command or a Query' );
-    }
-
-    \$handler_name = str_replace( \$values['plural'], "{\$values['singular']}Handlers", \$commandClassName );
-    \$handler_name = substr_replace( \$handler_name, 'Handler', strrpos( \$handler_name, \$values['singular'] ) );
-
-    return \$handler_name;
-  }
-}
-
-PHP;
-  }
 }
