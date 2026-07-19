@@ -41,9 +41,10 @@ final class Footprint {
         $aggregate = ConsumerRegistry::owner_of($touches->aggregate)->prefix() . '.' . $local;
 
         $param = $touches->id ?? $local . '_id';
-        if (!property_exists($event, $param)) {
+        $ref = new \ReflectionClass($event);
+        if (!$ref->hasProperty($param) || !$ref->getProperty($param)->isPublic()) {
           throw new \LogicException(sprintf(
-            '%s touches %s but has no "%s" property to carry the subject id.',
+            '%s touches %s but has no public "%s" property to carry the subject id.',
             get_class($event),
             $aggregate,
             $param

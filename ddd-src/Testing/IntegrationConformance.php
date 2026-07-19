@@ -84,19 +84,21 @@ final class IntegrationConformance {
         continue;
       }
 
+      // The gate must match the runtime read: Footprint::of_event() reads a
+      // PUBLIC property (`$event->{$param}`). A ctor param that isn't a
+      // public promoted property would pass a name check and silently skip
+      // at harvest time.
       $id_param = $touches->id ?? $touches->aggregate::canonical_name() . '_id';
-      $ctor_params = array_map(
-        static fn ($p) => $p->getName(),
-        $ref->getConstructor()?->getParameters() ?? []
-      );
+      $readable = $ref->hasProperty($id_param) && $ref->getProperty($id_param)->isPublic();
 
-      if (!in_array($id_param, $ctor_params, true)) {
+      if (!$readable) {
         $problems[] = [
           'class' => $ref->getName(),
           'param' => $id_param,
           'problem' => sprintf(
-            'declares #[Touches(%s)] but has no "%s" ctor param to carry the subject id (name it explicitly with id: or add the param).',
+            'declares #[Touches(%s)] but has no public "%s" property to carry the subject id (the harvest reads $event->%s — promote it public, or name another with id:).',
             $touches->aggregate,
+            $id_param,
             $id_param
           ),
         ];
