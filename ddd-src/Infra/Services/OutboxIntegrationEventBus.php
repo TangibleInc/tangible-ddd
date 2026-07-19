@@ -6,6 +6,7 @@ use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Events\IIntegrationEventBus;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\IOutboxRepository;
 
 /**
@@ -48,7 +49,7 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
     // starts its own, minted without touching the ambient — and the raiser
     // edge: a fact's parent is the ACT it was announced from, null for the
     // sanctioned command-less doors.
-    $correlation = Correlation::peek()?->correlation_id ?? \TangibleDDD\Domain\Shared\Uuid::v4();
+    $correlation = Correlation::peek()?->correlation_id ?? Uuid::v4();
     $raiser = $cause?->kind === Kind::Act ? $cause->id : null;
 
     $event_id = $this->outbox->write($event, $correlation, $raiser);
@@ -57,7 +58,7 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
     // the at-rest identity is the outbox row, the in-flight identity is the
     // envelope. PublishedFacts is the re-raise guard's memory.
     if (is_string($event_id) && $event_id !== '') {
-      \TangibleDDD\Application\Events\PublishedFacts::mark($event, $event_id, $correlation);
+      \TangibleDDD\Application\Events\PublishedFacts::mark($event, $event_id);
     }
   }
 }

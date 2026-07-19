@@ -125,11 +125,6 @@ class ProcessRunnerTest extends TestCase {
     $this->assertTrue(true);
   }
 
-  public function test_register_rejects_non_process_class(): void {
-    $this->expectException(\InvalidArgumentException::class);
-    $this->runner->register(\stdClass::class);
-  }
-
   public function test_correlation_context_set_on_start(): void {
     $process = new FakeThreeStepProcess();
     \TangibleDDD\Application\Correlation\Correlation::within(

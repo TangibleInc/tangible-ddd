@@ -60,31 +60,6 @@ function integration_action(
 }
 
 /**
- * Strip the journey keys from ActionScheduler job args.
- *
- * The OutboxProcessor wraps payload and injects __correlation_id and __event_id.
- * This unwraps and returns clean params — scoping is the caller's business
- * (Correlation::within with the envelope's trace_context()).
- *
- * @internal
- */
-function extract_correlation(array $params): array {
-  if (
-    count($params) === 1 &&
-    is_array($params[0]) &&
-    isset($params[0]['__correlation_id'])
-  ) {
-    $envelope = IntegrationEnvelope::unwrap($params[0]);
-
-    // Positional list payloads spread as positional args; associative payloads
-    // pass through intact as a single arg (see array_is_list gate rationale).
-    return array_is_list($envelope->payload) ? array_values($envelope->payload) : [$envelope->payload];
-  }
-
-  return $params;
-}
-
-/**
  * The integration-listener ceremony: hook a record's integration action,
  * rebuild the typed event, restore journey context, translate to a Command.
  *

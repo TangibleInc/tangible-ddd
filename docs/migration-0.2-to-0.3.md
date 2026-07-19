@@ -95,7 +95,8 @@ list of consumer-visible debts (append as 0.3 work lands):
   `event_id()` survive as deprecated READ-ONLY accessors backed by
   PublishedFacts (null on fresh/hydrated instances; populated at publish) —
   the fleet's tests pinned exactly that contract, no consumer changes.
-  Eventually migrate reads to the envelope/scope and the accessors die.
+  RESOLVED in the 0.4.0 sweep: the accessors are deleted; fleet tests read
+  `PublishedFacts::id_of()` (the guard's ledger) instead.
 - [x] `CorrelationContext` dissolved (0.3 lane 4), then DELETED in 0.4.0 —
   the three shim caller lanes (consumer `get()` reads, `restore_context()`
   writers, test `command_id()`) were repointed to
@@ -138,10 +139,18 @@ where these classes are load-bearing; their repoints fold into the
 already-scheduled lms handler migration (0.2.4 prerequisite + these purge
 items, one pass).
 
-Still alive after 0.4.0 (deliberately): the deprecated read-only
-`correlation_id()`/`event_id()` accessors on IntegrationBehaviour — thin
-PublishedFacts reads, pinned by fleet tests; they die when consumer tests
-migrate to envelope/scope reads.
+Second wave (same sweep, owner ruling "afuera"): the deprecated read-only
+`correlation_id()`/`event_id()` accessors on IntegrationBehaviour are GONE
+(consumer tests read `PublishedFacts::id_of()` — cred's ten per-event tests
+and datastream's DeliveryEscalationTest repointed); `PublishedFacts` shrank
+to instance → event_id (the `correlation` field existed only for the dead
+accessor). Also deleted: `AsyncWordPressActionHandler` (deprecated 0.2.0,
+zero subclasses fleet-wide), `ProcessRunner::register()` (no-op; its
+LongProcess validation moved inline into tag discovery, which now throws on
+a mis-tag), and the internal `extract_correlation()` helper (ceremonies
+unwrap inline; the list/assoc spread contract is pinned through
+`integration_action()` itself). `Cause::causation_type()` stays by ruling
+(columns outlive fashions).
 
 **Deploy rule:** the first 0.4.0-carrying deploy to a shared box must carry
 BOTH repointed cred and datastream (version-manager loads the newest ddd

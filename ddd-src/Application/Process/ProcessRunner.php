@@ -49,22 +49,6 @@ final class ProcessRunner {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Register a process class.
-   *
-   * Currently a no-op - event registration is separate.
-   * Kept for API compatibility and potential future use.
-   *
-   * @return $this For fluent chaining
-   */
-  public function register(string $process_class): self {
-    if (!is_subclass_of($process_class, LongProcess::class)) {
-      throw new \InvalidArgumentException("$process_class must extend LongProcess");
-    }
-
-    return $this;
-  }
-
-  /**
    * Register an event type for process resume.
    *
    * Call this for each event type that processes may await.
@@ -123,7 +107,11 @@ final class ProcessRunner {
    * a saga that both StartsOn and Awaits one event class has its igniting
    * instance consumed by ignition (the await sees only later arrivals).
    *
+   * @param string $process_class
+   * @param string $event_class
    * @return $this For fluent chaining
+   * @throws ProcessStartedInsideCommand
+   * @throws ProcessStartedInsideProcess
    */
   public function register_start(string $process_class, string $event_class): self {
     if (isset($this->registered_starts[$process_class][$event_class])) {
