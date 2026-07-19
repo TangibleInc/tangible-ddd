@@ -52,6 +52,23 @@ class IntegrationEnvelopeTest extends TestCase {
     $this->assertInstanceOf(IntegrationEnvelope::class, $envelope);
   }
 
+  public function test_trace_context_exposes_the_journey_as_a_value(): void {
+    $envelope = IntegrationEnvelope::unwrap(
+      IntegrationEnvelope::wrap(['x' => 1], 'corr-tc', 7, 'evt-tc'),
+    );
+
+    $ctx = $envelope->trace_context();
+    $this->assertSame('corr-tc', $ctx->correlation_id);
+    $this->assertSame(7, $ctx->sequence);
+    $this->assertNull($ctx->cause, 'the envelope carries the journey, not a cause — drains derive for_fact()');
+  }
+
+  public function test_trace_context_is_null_without_journey_keys(): void {
+    $envelope = IntegrationEnvelope::unwrap(['plain' => 'args']);
+
+    $this->assertNull($envelope->trace_context(), 'a bare hook call has no journey to scope');
+  }
+
   public function test_restore_context_unchanged(): void {
     IntegrationEnvelope::unwrap(
       IntegrationEnvelope::wrap([], 'corr-r', 5, 'evt-r'),

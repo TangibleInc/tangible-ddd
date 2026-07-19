@@ -4,6 +4,7 @@ namespace TangibleDDD\Application\Process;
 
 use ReflectionClass;
 use ReflectionMethod;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
@@ -85,17 +86,26 @@ final class ProcessRunner {
       $event_class::integration_action(),
       function (array $payload) use ($event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
-        $envelope->restore_context();
+        $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
-        try {
+        $ctx = $envelope->trace_context();
+        if ($ctx !== null && $envelope->event_id !== null) {
+          $ctx = $ctx->for_fact($envelope->event_id, $event_class);
+        }
+
+        $run = function () use ($event_class, $envelope) {
           $event = $event_class::from_payload($envelope->payload);
           if ($envelope->event_id !== null) {
             $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
           }
 
           $this->resume_on_event($event);
+        };
+
+        try {
+          $ctx !== null ? Correlation::within($ctx, $run) : $run();
         } finally {
-          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+          CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
         }
       },
       99 // Late priority - run after main handlers
@@ -145,9 +155,14 @@ final class ProcessRunner {
       $event_class::integration_action(),
       function (array $payload) use ($process_class, $event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
-        $envelope->restore_context();
+        $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
-        try {
+        $ctx = $envelope->trace_context();
+        if ($ctx !== null && $envelope->event_id !== null) {
+          $ctx = $ctx->for_fact($envelope->event_id, $event_class);
+        }
+
+        $run = function () use ($process_class, $event_class, $envelope) {
           $event = $event_class::from_payload($envelope->payload);
           if ($envelope->event_id !== null) {
             $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
@@ -168,8 +183,12 @@ final class ProcessRunner {
           $process->mark_source('event');
 
           $this->start($process);
+        };
+
+        try {
+          $ctx !== null ? Correlation::within($ctx, $run) : $run();
         } finally {
-          CorrelationContext::clear_causation();   // drain scope teardown (0.2.5)
+          CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
         }
       },
       50 // between listeners (10) and resumes (99)
