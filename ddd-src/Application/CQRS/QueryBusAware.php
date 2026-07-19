@@ -4,40 +4,27 @@ namespace TangibleDDD\Application\CQRS;
 
 use League\Tactician\CommandBus;
 use Psr\Container\ContainerInterface;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 
 /**
  * Trait for queries that can dispatch themselves via the query bus.
  *
- * Consumer must provide a base Query class that implements the container() method:
- *
- * abstract class Query {
- *   use QueryBusAware;
- *
- *   protected static function container(): ContainerInterface {
- *     return \MyPlugin\Plugin\di();
- *   }
- * }
+ * container() defaults to registry resolution (0.2.5c) — same contract as
+ * CommandBusAware: the concrete query's namespace names its consumer, no
+ * stamped base needed, overrides keep winning, unowned classes fail loudly.
+ * No bus cache: resolution is per send, always current.
  */
 trait QueryBusAware {
-  private static CommandBus $query_bus;
 
-  /**
-   * Return the DI container.
-   * Consumer's base class must implement this.
-   */
-  abstract protected static function container(): ContainerInterface;
-
-  private static function init_query_bus(): void {
-    /** @var CommandBus $bus */
-    $bus = static::container()->get('tactician.query_bus');
-    static::$query_bus = $bus;
+  /** The owning consumer's DI container. Override to pin one explicitly. */
+  protected static function container(): ContainerInterface {
+    return ConsumerRegistry::owner_of(static::class)->container();
   }
 
   public function send(): mixed {
-    if (!isset(static::$query_bus)) {
-      static::init_query_bus();
-    }
+    /** @var CommandBus $bus */
+    $bus = static::container()->get('tactician.query_bus');
 
-    return static::$query_bus->handle($this);
+    return $bus->handle($this);
   }
 }
