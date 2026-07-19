@@ -8,7 +8,14 @@ services:
       - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
       - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
       - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+      - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
+
+  # Runs a SelfHandlingCommand's own handle() (terminal for those; short-
+  # circuits before the naming-convention resolver). No _defaults here, so
+  # register explicitly with the container as its sole argument.
+  TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
+    arguments: ['@service_container']
 
   tactician.middleware.command_handler:
     class: League\Tactician\Handler\CommandHandlerMiddleware

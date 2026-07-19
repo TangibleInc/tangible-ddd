@@ -498,14 +498,22 @@ services:
   # 1. CorrelationMiddleware - THE ACT BRACKET: guard + scope + audit record
   # 2. TransactionMiddleware - starts database transaction
   # 3. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
-  # 4. CommandHandlerMiddleware - executes the handler
+  # 4. SelfExecutingCommandMiddleware - runs a SelfHandlingCommand's own handle()
+  #    (terminal for those; short-circuits before the naming-convention resolver)
+  # 5. CommandHandlerMiddleware - executes the handler (plain commands)
   League\\Tactician\\CommandBus:
     public: true
     arguments:
       - '@TangibleDDD\\Application\\Correlation\\CorrelationMiddleware'
       - '@TangibleDDD\\Application\\Persistence\\TransactionMiddleware'
       - '@TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware'
+      - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
+
+  # Runs a SelfHandlingCommand's own handle() by reflection, method-injecting
+  # its dependencies. Explicit @service_container (not autowired by type).
+  TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware:
+    arguments: ['@service_container']
 
   # Dedicated Query Bus (read-only pipeline, no middleware)
   tactician.query_bus:

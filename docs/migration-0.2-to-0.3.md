@@ -198,6 +198,53 @@ touches write independent of the audit toggle.
 Mandatory: nothing. The audit events JSON is a name roster again; touches
 live only in `{prefix}_touches` — join on `command_id`.
 
+## 0.6.0 (target — self-handling commands, spec appendix §14 item 1)
+
+**Mandatory for consumers: NOTHING.** Fully additive and opt-in. The
+command/handler two-class shape stays 100% legal — a plain command still
+routes to its convention-named handler exactly as before. Nothing to migrate,
+nothing deprecated.
+
+**What shipped:** a `SelfExecutingCommandMiddleware` slotted into the onion
+immediately before `tactician.middleware.command_handler` (so self-handling
+commands still get the act bracket, transaction, and domain-event publishing).
+The framework's own `di/tactician.yaml`, `self/tactician.yaml`, and the
+scaffolder's tactician template already carry it. Consumers who ran the
+scaffolder BEFORE 0.6.0 and want the feature add two lines to their
+`di/tactician.yaml`:
+
+    League\Tactician\CommandBus:
+      arguments:
+        - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
+        - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
+        - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+        - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'   # add
+        - '@tactician.middleware.command_handler'
+
+      # add (explicit @service_container — not autowired by type):
+      TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
+        arguments: ['@service_container']
+
+(Consumers without `_defaults: autowire` must register the service explicitly
+as shown; those with it still want the explicit `@service_container` argument.)
+
+**Optional modernization:** collapse a thin, single-dependency
+command/handler pair into one class —
+
+    final class RecordThing extends SelfHandlingCommand {
+      public function __construct(private readonly int $thing_id) {}
+      protected function handle(ThingRepository $repo): void {
+        $repo->touch($this->thing_id);
+      }
+    }
+
+`handle()`'s params are method-injected from the container by reflection;
+`protected` keeps it uncallable except by the middleware. `handle()` stays
+VOID by default (the receipt rule) — it MAY return a scalar/DTO verdict for
+transport steering, MUST NOT return domain objects, and nothing downstream
+may depend on the return. Keep the separate-handler shape for
+dependency-heavy handlers; it is not going away.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.
