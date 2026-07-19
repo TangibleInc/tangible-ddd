@@ -38,7 +38,7 @@ class FactPublishedInsideProcessTest extends TestCase {
   private function make_bus(): OutboxIntegrationEventBus {
     $outbox = $this->createStub(IOutboxRepository::class);
     $outbox->method('write')->willReturn('evt-new');
-    return new OutboxIntegrationEventBus($outbox);
+    return new OutboxIntegrationEventBus($outbox, new \TangibleDDD\Tests\Fakes\FakeDDDConfig());
   }
 
   public function test_publishing_inside_a_bare_process_wake_throws(): void {

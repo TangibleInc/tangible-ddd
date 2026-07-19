@@ -185,6 +185,14 @@ stamped source also works (fallback). Framework-only fix: the shared
 query-bus yaml dropped the act bracket (consumer yamls were already clean —
 verify yours has no CorrelationMiddleware in tactician.query_bus).
 
+### 0.5.2 (the harvest moves to the bus)
+
+Mandatory: drop the hand-listed `arguments:` from your
+`OutboxIntegrationEventBus` wiring (ctor gained IDDDConfig — autowire
+handles it; cred/ds already updated in lockstep). Gains: announce-lane
+facts get biography rows; twins index with no association machinery;
+touches write independent of the audit toggle.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.

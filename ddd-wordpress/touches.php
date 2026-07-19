@@ -2,7 +2,38 @@
 
 namespace TangibleDDD\WordPress;
 
+use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;
+
+/**
+ * Index one published fact's declarations (0.5.2, the bus calls this): the
+ * fact carries its stamps, and its identity/story/raiser are in hand at the
+ * moment of publication — no source→twin association needed, and the
+ * command-less lanes (wp ddd announce, flat publishes) are covered because
+ * every fact passes the bus. Never throws (decoration).
+ */
+function touches_index_fact(
+  IDDDConfig $config,
+  IIntegrationEvent $fact,
+  string $event_id,
+  string $correlation_id,
+  ?string $command_id
+): void {
+  $touches = \TangibleDDD\Application\Events\Footprint::of_event($fact);
+  if ($touches === []) {
+    return;
+  }
+
+  touches_record($config, array_map(static fn (array $t) => [
+    'aggregate' => $t['aggregate'],
+    'aggregate_id' => $t['id'],
+    'op' => $t['op'],
+    'event_name' => $fact::name(),
+    'event_id' => $event_id,
+    'command_id' => $command_id,
+    'correlation_id' => $correlation_id,
+  ], $touches));
+}
 
 /**
  * The touches table writer (spec appendix 9, the touches lane): one row per

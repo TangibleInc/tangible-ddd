@@ -12,7 +12,6 @@ use Throwable;
 use function TangibleDDD\WordPress\command_audit_enabled;
 use function TangibleDDD\WordPress\command_audit_preflight;
 use function TangibleDDD\WordPress\command_audit_finalise;
-use function TangibleDDD\WordPress\touches_record;
 
 /**
  * THE ACT BRACKET (0.3, spec §6.2): guard + scope + the audit record, one
@@ -89,19 +88,17 @@ final class CorrelationMiddleware implements Middleware {
 
     } finally {
       if ($audit) {
-        // The act's footprint (spec appendix 9): each published fact's entry
-        // carries its declared touches — provenance stays attached to the
-        // fact that made it — and the flat rows feed the touches index.
+        // The audit row's events list, enriched with provenance (spec
+        // appendix 9): each published fact's entry carries its declared
+        // touches. The touches TABLE is written by the bus at publication
+        // (fact bookkeeping happens where facts happen) — this JSON is the
+        // act-side record only. Stamps live on the ANNOUNCED RECORD (the
+        // twin, in two-class style); record-first, source-fallback.
         // Footprint::of_event never throws (post-commit decoration).
         $event_entries = [];
-        $touch_rows = [];
         foreach ($this->events->published() as $e) {
           $entry = ['name' => $e::name()];
 
-          // The stamps live on the ANNOUNCED RECORD (the twin, in two-class
-          // style; the event itself for self-publishers) — record-first,
-          // source-fallback. Plain domain events have no record: their
-          // touches harvest with no outbox identity to link.
           $record = \TangibleDDD\Application\Events\PublishedFacts::fact_of($e);
           $touches = \TangibleDDD\Application\Events\Footprint::of_event($record ?? $e);
           if ($touches === [] && $record !== null && $record !== $e) {
@@ -110,19 +107,6 @@ final class CorrelationMiddleware implements Middleware {
 
           if ($touches !== []) {
             $entry['touches'] = $touches;
-            foreach ($touches as $touch) {
-              $touch_rows[] = [
-                'aggregate' => $touch['aggregate'],
-                'aggregate_id' => $touch['id'],
-                'op' => $touch['op'],
-                'event_name' => $e::name(),
-                'event_id' => $record !== null
-                  ? \TangibleDDD\Application\Events\PublishedFacts::id_of($record)
-                  : null,
-                'command_id' => $command_id,
-                'correlation_id' => $enclosing->correlation_id,
-              ];
-            }
           }
           $event_entries[] = $entry;
         }
@@ -135,10 +119,6 @@ final class CorrelationMiddleware implements Middleware {
           'events' => $event_entries,
           'error' => $error,
         ]);
-
-        if ($touch_rows !== []) {
-          touches_record($this->config, $touch_rows);
-        }
       }
     }
   }
