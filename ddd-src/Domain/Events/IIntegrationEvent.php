@@ -23,11 +23,6 @@ interface IIntegrationEvent {
   /** The return ticket — total for every conforming record. */
   public static function from_payload(array $payload): static;
 
-  /** Journey slots — null until stamped (at publish and at hydrate). */
-  public function correlation_id(): ?string;
-  public function event_id(): ?string;
-  public function stamp_journey(string $correlation_id, string $event_id): void;
-
   public function delay(): int;
   public function is_unique(): bool;
 }

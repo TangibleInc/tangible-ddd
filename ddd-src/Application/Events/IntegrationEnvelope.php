@@ -44,6 +44,24 @@ final class IntegrationEnvelope {
     return new self($wrapped, $correlation_id, $sequence, $event_id);
   }
 
+  /**
+   * The journey as a value (0.3): correlation + position, NO cause — the
+   * envelope never carries causes (the raiser edge is at rest in
+   * outbox.command_id). Drains derive: trace_context()->for_fact($event_id).
+   * Null when the bag had no journey keys (a bare hook call — nothing to scope).
+   */
+  public function trace_context(): ?\TangibleDDD\Application\Correlation\TraceContext {
+    if ($this->correlation_id === null) {
+      return null;
+    }
+
+    return new \TangibleDDD\Application\Correlation\TraceContext(
+      $this->correlation_id,
+      null,
+      $this->sequence ?? 0,
+    );
+  }
+
   /** Restore ambient correlation + stash this event as causation for dispatched commands. */
   public function restore_context(): void {
     if ($this->correlation_id !== null) {

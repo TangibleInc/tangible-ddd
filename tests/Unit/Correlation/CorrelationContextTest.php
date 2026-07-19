@@ -51,13 +51,6 @@ class CorrelationContextTest extends TestCase {
     $this->assertSame('second', CorrelationContext::get());
   }
 
-  public function test_command_id_lifecycle(): void {
-    $this->assertNull(CorrelationContext::command_id());
-
-    CorrelationContext::set_command_id('cmd-1');
-    $this->assertSame('cmd-1', CorrelationContext::command_id());
-  }
-
   public function test_sequence_starts_at_zero(): void {
     $this->assertSame(0, CorrelationContext::sequence());
   }
@@ -76,13 +69,11 @@ class CorrelationContextTest extends TestCase {
 
   public function test_reset_clears_everything(): void {
     CorrelationContext::init('to-clear');
-    CorrelationContext::set_command_id('cmd-to-clear');
     CorrelationContext::next_sequence();
 
     CorrelationContext::reset();
 
     $this->assertNull(CorrelationContext::peek());
-    $this->assertNull(CorrelationContext::command_id());
     $this->assertSame(0, CorrelationContext::sequence());
   }
 }

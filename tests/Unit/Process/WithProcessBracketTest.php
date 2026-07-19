@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessRunner;
@@ -19,12 +20,14 @@ use TangibleDDD\Tests\Fakes\FakeProcessRepository;
 class WithProcessBracketTest extends TestCase {
 
   protected function setUp(): void {
+    Correlation::reset();
     CorrelationContext::reset();
     CorrelationContext::init('bracket-corr');
     $GLOBALS['wpdb'] = new \wpdb();
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
@@ -36,7 +39,8 @@ class WithProcessBracketTest extends TestCase {
       public function __construct() { parent::__construct(null); }
 
       protected function observe(): Result {
-        $this->frame_during_step = CorrelationContext::process_frame();
+        $cause = Correlation::current()->cause;
+        $this->frame_during_step = $cause?->kind === \TangibleDDD\Application\Correlation\Kind::Trajectory ? $cause->id : null;
         $this->correlation_during_step = CorrelationContext::peek();
         return new Result();
       }
@@ -51,7 +55,7 @@ class WithProcessBracketTest extends TestCase {
 
     $this->assertSame((string) $probe->get_id(), $probe->frame_during_step);
     $this->assertSame('bracket-corr', $probe->correlation_during_step);
-    $this->assertNull(CorrelationContext::process_frame(), 'frame must clear when the wake ends');
+    $this->assertNull(Correlation::peek(), 'scope must close when the wake ends');
   }
 
   public function test_continuation_runs_inside_the_process_frame(): void {
@@ -65,10 +69,11 @@ class WithProcessBracketTest extends TestCase {
     $probe->advance(status: 'scheduled', payload: null);
     $repo->save($probe);
 
+    Correlation::reset();
     CorrelationContext::reset(); // fresh AS worker
     $runner->continue_scheduled($probe->get_id());
 
     $this->assertSame((string) $probe->get_id(), $probe->frame_during_step);
-    $this->assertNull(CorrelationContext::process_frame());
+    $this->assertNull(Correlation::peek(), 'scope closed after the continuation');
   }
 }

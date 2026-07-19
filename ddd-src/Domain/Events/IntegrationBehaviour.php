@@ -11,16 +11,15 @@ use ReflectionParameter;
 
 /**
  * The record capability: strict scalarise codec (ctor IS the schema),
- * total hydration, journey slots, identity announcement.
+ * total hydration, identity announcement. (Journey slots died in 0.3 —
+ * identity lives on the envelope and the outbox row; PublishedFacts
+ * carries the re-raise guard.)
  *
  * Used by the IntegrationEvent base (twins) and mixed into scalar
  * DomainEvents (self-publishers). Host class must provide static prefix()
  * and name() (both via the Event root).
  */
 trait IntegrationBehaviour {
-
-  private ?string $journey_correlation_id = null;
-  private ?string $journey_event_id = null;
 
   public static function integration_action(): string {
     return static::prefix() . '_integration_' . static::name();
@@ -51,13 +50,19 @@ trait IntegrationBehaviour {
     return new static(...$args);
   }
 
-  // ── journey slots (never ctor params, never in the payload) ─────────
-  public function correlation_id(): ?string { return $this->journey_correlation_id; }
-  public function event_id(): ?string { return $this->journey_event_id; }
+  // ── identity: READ-ONLY, publication-derived (0.3) ───────────────────
+  // Facts carry no mutable slots; these deprecated accessors answer from
+  // PublishedFacts — null on fresh/hydrated instances, populated the moment
+  // the bus writes the outbox row. stamp_journey() is gone.
 
-  final public function stamp_journey(string $correlation_id, string $event_id): void {
-    $this->journey_correlation_id = $correlation_id;
-    $this->journey_event_id = $event_id;
+  /** @deprecated 0.3 — the story lives on the envelope/scope, not the fact. */
+  public function correlation_id(): ?string {
+    return \TangibleDDD\Application\Events\PublishedFacts::correlation_of($this);
+  }
+
+  /** @deprecated 0.3 — at-rest identity is the outbox row. */
+  public function event_id(): ?string {
+    return \TangibleDDD\Application\Events\PublishedFacts::id_of($this);
   }
 
   // ── identity announcement (self-publishers; twins never announce) ───

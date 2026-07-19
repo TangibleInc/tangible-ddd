@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\WordPress;
 
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
@@ -30,10 +31,26 @@ function integration_action(
   $action = $event_class::integration_action();
 
   add_action($action, function(...$params) use ($callback, $event_class) {
-    $params = extract_correlation($params);
+    // The drain bracket (0.3): unwrap once, open a REAL facade scope with
+    // the fact as ambient cause for the WHOLE body. restore_context() stays
+    // as the legacy dual-write (wake-lane absorb + un-migrated readers);
+    // it dies with the dissolution.
+    $envelope = null;
+    if (count($params) === 1 && is_array($params[0]) && isset($params[0]['__correlation_id'])) {
+      $envelope = IntegrationEnvelope::unwrap($params[0]);
+      $envelope->restore_context();
+      $params = array_is_list($envelope->payload) ? array_values($envelope->payload) : [$envelope->payload];
+    }
+
+    $ctx = $envelope?->trace_context();
+    if ($ctx !== null && $envelope->event_id !== null) {
+      $ctx = $ctx->for_fact($envelope->event_id, $event_class);
+    }
+
+    $run = static fn () => $callback(...$params);
 
     try {
-      $callback(...$params);
+      $ctx !== null ? Correlation::within($ctx, $run) : $run();
     } catch (\Throwable $e) {
       error_log(sprintf(
         '[DDD Integration] [%s] [correlation:%s]: %s',
@@ -43,8 +60,7 @@ function integration_action(
       ));
       throw $e;
     } finally {
-      // The drain armed the event as causation for its whole body (scope, not
-      // one-shot); teardown here so nothing bleeds into the worker's next action.
+      // legacy teardown (scope, not one-shot) — dies with the dissolution
       CorrelationContext::clear_causation();
     }
   }, $priority, $arg_count);
@@ -92,18 +108,24 @@ function integration_listener(string $event_class, callable $translate): void {
 
   add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
     $envelope = IntegrationEnvelope::unwrap($wrapped);
-    $envelope->restore_context();
+    $envelope->restore_context();   // legacy dual-write — dies with the dissolution
 
-    try {
+    $ctx = $envelope->trace_context();
+    if ($ctx !== null && $envelope->event_id !== null) {
+      $ctx = $ctx->for_fact($envelope->event_id, $event_class);
+    }
+
+    $run = static function () use ($event_class, $envelope, $translate) {
       $event = $event_class::from_payload($envelope->payload);
-      if ($envelope->event_id !== null) {
-        $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-      }
 
       $command = $translate($event);
       $command?->send();
+    };
+
+    try {
+      $ctx !== null ? Correlation::within($ctx, $run) : $run();
     } finally {
-      CorrelationContext::clear_causation();   // scope teardown — see integration_action()
+      CorrelationContext::clear_causation();   // legacy teardown — dies with the dissolution
     }
   }, 10, 1);
 }

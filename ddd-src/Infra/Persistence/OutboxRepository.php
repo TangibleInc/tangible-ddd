@@ -43,7 +43,9 @@ class OutboxRepository implements IOutboxRepository {
       'queue' => $this->config->prefix() . '-outbox',
       'payload_bytes' => $payload_bytes,
       'correlation_id' => $correlation_id,
-      'sequence' => CorrelationContext::next_sequence(),
+      'sequence' => \TangibleDDD\Application\Correlation\Correlation::peek() !== null
+        ? \TangibleDDD\Application\Correlation\Correlation::next_sequence()
+        : CorrelationContext::next_sequence(),   // shim fallback — dies with consumer migration
       'command_id' => $command_id,
       'payload' => $payload_json,
       'delay_seconds' => $delay_seconds,
@@ -394,21 +396,10 @@ class OutboxRepository implements IOutboxRepository {
   }
 
   private function generate_uuid(): string {
-    try {
-      return sprintf(
-        '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0x0fff) | 0x4000,
-        random_int(0, 0x3fff) | 0x8000,
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0xffff)
-      );
-    } catch (\Exception $e) {
-      return wp_generate_uuid4();
-    }
+    // One mint, no fallback (0.3): wp_generate_uuid4() is mt_rand-based —
+    // silently degrading event-id uniqueness (the ignited_by dedup key!) on
+    // an entropy-less box was worse than failing loudly.
+    return \TangibleDDD\Domain\Shared\Uuid::v4();
   }
 
   private function get_worker_id(): string {

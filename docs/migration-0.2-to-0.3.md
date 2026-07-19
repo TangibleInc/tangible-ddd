@@ -90,15 +90,26 @@ list of consumer-visible debts (append as 0.3 work lands):
   `add_action` integration hook doing manual ceremony must move to the
   helpers (consumers using `integration_action()`/`IntegrationListener` are
   untouched — the helpers absorb the change).
-- [ ] `stamp_journey()` and event journey slots deleted (envelope-first
-  identity). Consumer code reading `$event->correlation_id()`/`event_id()`
-  inside listeners keeps working only if the helpers still stamp — flag any
-  direct `stamp_journey` calls in consumer code before 0.3 (none known today).
-- [ ] `CorrelationContext` dissolves into `Correlation` + `TraceContext`.
-  Consumer code touching `CorrelationContext::get()` directly (cred has a
-  few reads documented in the skill) must move to the new facade.
+- [x] `stamp_journey()` and the mutable journey slots are GONE (0.3 lane 5).
+  Resolution was gentler than predicted: `$event->correlation_id()` /
+  `event_id()` survive as deprecated READ-ONLY accessors backed by
+  PublishedFacts (null on fresh/hydrated instances; populated at publish) —
+  the fleet's tests pinned exactly that contract, no consumer changes.
+  Eventually migrate reads to the envelope/scope and the accessors die.
+- [x] `CorrelationContext` dissolved (0.3 lane 4): frames, scope stack,
+  `with()`, `enter/leave` deleted. It survives as a deprecated shim for
+  exactly three consumer-side callers: `get()` reads (facade-first),
+  `restore_context()` writers (datastream's relay publisher), and
+  `command_id()` in test fixtures (facade-first). Migrate those to
+  `Correlation`/`TraceContext`/`IntegrationEnvelope::trace_context()` and
+  the shim dies.
 - [ ] lms handler migration (see 0.2.4) is a hard prerequisite: 0.3 requires
   all consumers on ≥0.2.4 semantics.
+- [ ] **Drop `@CommandAuditMiddleware` from tactician.yaml chains** (0.3
+  lane 1, 2026-07-19): the audit record moved into the act bracket
+  (CorrelationMiddleware) — the old middleware is a deprecated pass-through
+  kept only so existing chains compile. Remove the line; the class dies when
+  the last chain does. Harmless to leave meanwhile.
 
 ## How to verify a migration (any version)
 

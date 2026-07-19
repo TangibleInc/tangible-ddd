@@ -40,20 +40,13 @@ class IntegrationBehaviourTest extends TestCase {
     $e->integration_payload();
   }
 
-  public function test_journey_slots_null_until_stamped_then_readable(): void {
-    $e = new FakeResolvedEvent(312, FakeOutcome::Accepted, new \DateTimeImmutable());
-    $this->assertNull($e->correlation_id());
-    $this->assertNull($e->event_id());
-    $e->stamp_journey('corr-1', 'ev-1');
-    $this->assertSame('corr-1', $e->correlation_id());
-    $this->assertSame('ev-1', $e->event_id());
-  }
+  public function test_no_identity_state_exists_to_leak_into_payloads(): void {
+    // 0.3: facts carry no journey slots at all — payload purity is
+    // structural, not guarded. The re-raise guard lives in PublishedFacts.
+    $e = new FakeResolvedEvent(1, FakeOutcome::Accepted, new \DateTimeImmutable('2026-07-06T10:00:00+00:00'));
 
-  public function test_journey_slots_never_enter_payload(): void {
-    $e = new FakeResolvedEvent(312, FakeOutcome::Accepted, new \DateTimeImmutable('2026-07-06T10:00:00+00:00'));
-    $e->stamp_journey('corr-1', 'ev-1');
-    $this->assertArrayNotHasKey('correlation_id', $e->integration_payload());
-    $this->assertArrayNotHasKey('event_id', $e->integration_payload());
+    $this->assertArrayNotHasKey('journey_correlation_id', get_object_vars($e));
+    $this->assertArrayNotHasKey('journey_event_id', get_object_vars($e));
   }
 
   public function test_identity_announcement(): void {

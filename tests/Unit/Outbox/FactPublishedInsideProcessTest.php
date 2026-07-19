@@ -3,6 +3,8 @@
 namespace TangibleDDD\Tests\Unit\Outbox;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Events\PublishedFacts;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\FactPublishedInsideProcess;
@@ -23,10 +25,12 @@ use TangibleDDD\Tests\Fakes\FakeOutcome;
 class FactPublishedInsideProcessTest extends TestCase {
 
   protected function setUp(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
@@ -41,10 +45,10 @@ class FactPublishedInsideProcessTest extends TestCase {
   }
 
   public function test_publishing_inside_a_bare_process_wake_throws(): void {
-    CorrelationContext::mark_process_frame('191');
-
     try {
-      $this->make_bus()->publish($this->make_event());
+      Correlation::within(Correlation::current()->for_trajectory('191'), function () {
+        $this->make_bus()->publish($this->make_event());
+      });
       $this->fail('a step publishing directly must throw');
     } catch (FactPublishedInsideProcess $e) {
       $this->assertStringContainsString(FakeResolvedEvent::class, $e->getMessage());
@@ -54,20 +58,22 @@ class FactPublishedInsideProcessTest extends TestCase {
   }
 
   public function test_saga_ground_contact_publish_is_legal(): void {
-    // step → command → handler announces: both frames occupied.
-    CorrelationContext::mark_process_frame('191');
-    CorrelationContext::mark_command_frame('Acme\\SomeCommand');
-
+    // step → command → handler announces: the ambient cause is the ACT.
     $event = $this->make_event();
-    $this->make_bus()->publish($event);
 
-    $this->assertSame('evt-new', $event->event_id());
+    Correlation::within(Correlation::current()->for_trajectory('191'), function () use ($event) {
+      Correlation::within(Correlation::current()->for_act('cmd-gc'), function () use ($event) {
+        $this->make_bus()->publish($event);
+      });
+    });
+
+    $this->assertSame('evt-new', PublishedFacts::id_of($event));
   }
 
   public function test_flat_and_command_pass_publishing_are_untouched(): void {
     $event = $this->make_event();
     $this->make_bus()->publish($event);      // flat: wp ddd announce lane
 
-    $this->assertSame('evt-new', $event->event_id());
+    $this->assertSame('evt-new', PublishedFacts::id_of($event));
   }
 }
