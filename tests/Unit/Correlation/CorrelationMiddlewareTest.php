@@ -3,21 +3,41 @@
 namespace TangibleDDD\Tests\Unit\Correlation;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
+use TangibleDDD\Application\Events\EventsUnitOfWork;
+use TangibleDDD\Application\Logging\Redactor;
+use TangibleDDD\Infra\DDDConfig;
 
 class CorrelationMiddlewareTest extends TestCase {
 
   protected function setUp(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
     CorrelationContext::reset();
   }
 
+  /** The act bracket, audit-disabled (guard + scope behavior only). */
+  private function make_middleware(): CorrelationMiddleware {
+    $wpdb = $this->createMock(\wpdb::class);
+    $wpdb->method('get_var')->willReturn(null);
+    $wpdb->method('prepare')->willReturnArgument(0);
+    $GLOBALS['wpdb'] = $wpdb;
+
+    return new CorrelationMiddleware(
+      new DDDConfig(prefix: 'corrmw', namespace_root: 'CorrMw\\Tests', version: 't'),
+      new EventsUnitOfWork(),
+      new Redactor(),
+    );
+  }
+
   public function test_generates_correlation_if_not_set(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $captured_id = null;
 
     $middleware->execute(new \stdClass(), function () use (&$captured_id) {
@@ -31,7 +51,7 @@ class CorrelationMiddlewareTest extends TestCase {
 
   public function test_preserves_existing_correlation(): void {
     CorrelationContext::init('pre-existing');
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $captured_id = null;
 
     $middleware->execute(new \stdClass(), function () use (&$captured_id) {
@@ -43,7 +63,7 @@ class CorrelationMiddlewareTest extends TestCase {
   }
 
   public function test_resets_context_after_command(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
 
     $middleware->execute(new \stdClass(), fn() => 'ok');
 
@@ -51,7 +71,7 @@ class CorrelationMiddlewareTest extends TestCase {
   }
 
   public function test_resets_context_even_on_exception(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
 
     try {
       $middleware->execute(new \stdClass(), function () {
@@ -63,13 +83,13 @@ class CorrelationMiddlewareTest extends TestCase {
   }
 
   public function test_returns_handler_result(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $result = $middleware->execute(new \stdClass(), fn() => 42);
     $this->assertSame(42, $result);
   }
 
   public function test_rethrows_handler_exception(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
 
     $this->expectException(\RuntimeException::class);
     $this->expectExceptionMessage('boom');
@@ -92,7 +112,7 @@ class CorrelationMiddlewareTest extends TestCase {
    * shredding the saga's trace.
    */
   public function test_multiple_commands_within_a_process_scope_share_correlation(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $seen = [];
 
     // Model the fixed ProcessRunner: it wraps the run (and the commands a step
@@ -118,7 +138,7 @@ class CorrelationMiddlewareTest extends TestCase {
    * correlation and fully clears it on exit — the pre-existing contract.
    */
   public function test_top_level_command_generates_and_clears_correlation(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $seen = null;
 
     $middleware->execute(new \stdClass(), function () use (&$seen) {

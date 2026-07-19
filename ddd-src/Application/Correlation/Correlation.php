@@ -32,6 +32,11 @@ final class Correlation {
     return self::$current ??= TraceContext::root();
   }
 
+  /** The ambient context WITHOUT minting — null means genuinely flat. */
+  public static function peek(): ?TraceContext {
+    return self::$current;
+  }
+
   /**
    * Run $work inside $ctx. The ONE scope verb — drains, command passes, and
    * saga wakes are all this bracket with different derivations.

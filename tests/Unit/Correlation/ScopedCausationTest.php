@@ -5,7 +5,8 @@ namespace TangibleDDD\Tests\Unit\Correlation;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
-use TangibleDDD\Application\Logging\CommandAuditMiddleware;
+use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
@@ -34,6 +35,7 @@ class ScopedCausationTest extends TestCase {
 
   protected function setUp(): void {
     global $_test_actions, $_test_filters;
+    Correlation::reset();
     $_test_actions = [];
     $_test_filters = [];
     CorrelationContext::reset();
@@ -71,10 +73,10 @@ class ScopedCausationTest extends TestCase {
     return $wpdb;
   }
 
-  private function make_middleware(string $prefix): CommandAuditMiddleware {
+  private function make_middleware(string $prefix): CorrelationMiddleware {
     $config = $this->make_config($prefix);
     $GLOBALS['wpdb'] = $this->capture_wpdb($config->table('command_audit'));
-    return new CommandAuditMiddleware($config, new EventsUnitOfWork(), new Redactor());
+    return new CorrelationMiddleware($config, new EventsUnitOfWork(), new Redactor());
   }
 
   public function test_sibling_commands_share_the_armed_causation(): void {

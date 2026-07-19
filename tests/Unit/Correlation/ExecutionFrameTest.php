@@ -48,8 +48,21 @@ class ExecutionFrameTest extends TestCase {
     $this->assertNull(CorrelationContext::process_frame());
   }
 
+  private function make_middleware(): \TangibleDDD\Application\Correlation\CorrelationMiddleware {
+    $wpdb = $this->createMock(\wpdb::class);
+    $wpdb->method('get_var')->willReturn(null);   // audit disabled — frames only
+    $wpdb->method('prepare')->willReturnArgument(0);
+    $GLOBALS['wpdb'] = $wpdb;
+
+    return new \TangibleDDD\Application\Correlation\CorrelationMiddleware(
+      new \TangibleDDD\Infra\DDDConfig(prefix: 'execframe', namespace_root: 'ExecFrame\\Tests', version: 't'),
+      new \TangibleDDD\Application\Events\EventsUnitOfWork(),
+      new \TangibleDDD\Application\Logging\Redactor(),
+    );
+  }
+
   public function test_middleware_marks_frame_for_the_duration_of_the_dispatch(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $command = new \stdClass();
 
     $seen = null;
@@ -63,7 +76,7 @@ class ExecutionFrameTest extends TestCase {
   }
 
   public function test_frame_clears_even_when_the_handler_throws(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
 
     try {
       $middleware->execute(new \stdClass(), function () {
@@ -77,7 +90,7 @@ class ExecutionFrameTest extends TestCase {
   }
 
   public function test_command_dispatched_inside_command_throws_naming_both(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
     $outer = new class {};
     $inner = new class {};
 
@@ -96,7 +109,7 @@ class ExecutionFrameTest extends TestCase {
   }
 
   public function test_command_inside_process_scope_is_legal(): void {
-    $middleware = new CorrelationMiddleware();
+    $middleware = $this->make_middleware();
 
     // The runner's bracket: process frame marked, correlation scoped —
     // exactly the context a saga step dispatches its Result commands from.
