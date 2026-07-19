@@ -1,4 +1,4 @@
-# Consumer migration ledger — 0.2.x → 0.3
+# Consumer migration ledger — 0.2.x → 0.3 → 0.4
 
 **What this is.** The framework is moving ahead of its consumers (owner
 directive 2026-07-19): tcred / datastream / lms / quiz evolve later, on
@@ -83,10 +83,10 @@ next touched, or never — but ALL become mandatory at 0.3):**
 Everything above stops being optional, plus the metamodel break. Running
 list of consumer-visible debts (append as 0.3 work lands):
 
-- [ ] Alias stubs die: `TransportEnvelope`, `TangibleDDD\WordPress\
-  ConsumerRegistry`/`ConsumerHandle`/`NoConsumerOwnsClass`. Grep and repoint
-  before taking 0.3.
-- [ ] `restore_context()` replaced by unwrap + scope composition; any raw
+- [x] Alias stubs die: `TransportEnvelope`, `TangibleDDD\WordPress\
+  ConsumerRegistry`/`ConsumerHandle`/`NoConsumerOwnsClass`. DONE in 0.4.0
+  (fleet grep was already clean).
+- [x] `restore_context()` replaced by unwrap + scope composition (0.4.0); any raw
   `add_action` integration hook doing manual ceremony must move to the
   helpers (consumers using `integration_action()`/`IntegrationListener` are
   untouched — the helpers absorb the change).
@@ -96,20 +96,57 @@ list of consumer-visible debts (append as 0.3 work lands):
   PublishedFacts (null on fresh/hydrated instances; populated at publish) —
   the fleet's tests pinned exactly that contract, no consumer changes.
   Eventually migrate reads to the envelope/scope and the accessors die.
-- [x] `CorrelationContext` dissolved (0.3 lane 4): frames, scope stack,
-  `with()`, `enter/leave` deleted. It survives as a deprecated shim for
-  exactly three consumer-side callers: `get()` reads (facade-first),
-  `restore_context()` writers (datastream's relay publisher), and
-  `command_id()` in test fixtures (facade-first). Migrate those to
-  `Correlation`/`TraceContext`/`IntegrationEnvelope::trace_context()` and
-  the shim dies.
+- [x] `CorrelationContext` dissolved (0.3 lane 4), then DELETED in 0.4.0 —
+  the three shim caller lanes (consumer `get()` reads, `restore_context()`
+  writers, test `command_id()`) were repointed to
+  `Correlation`/`TraceContext`/`IntegrationEnvelope::trace_context()` in the
+  same sweep (cred + datastream; lms/quiz deferred with their pin).
 - [ ] lms handler migration (see 0.2.4) is a hard prerequisite: 0.3 requires
   all consumers on ≥0.2.4 semantics.
-- [ ] **Drop `@CommandAuditMiddleware` from tactician.yaml chains** (0.3
+- [x] **Drop `@CommandAuditMiddleware` from tactician.yaml chains** (0.3
   lane 1, 2026-07-19): the audit record moved into the act bracket
-  (CorrelationMiddleware) — the old middleware is a deprecated pass-through
-  kept only so existing chains compile. Remove the line; the class dies when
-  the last chain does. Harmless to leave meanwhile.
+  (CorrelationMiddleware). DONE in 0.4.0 — the class is deleted; cred and
+  datastream chains repointed; lms/quiz chains keep the line until their
+  pinned 0.2.1 copy is migrated (it is load-bearing there).
+
+## 0.4.0 (shipped 2026-07-19 — THE SHIM PURGE)
+
+Every deprecated surface the 0.3 dissolution left standing is deleted.
+**Mandatory for consumers — a plugin still referencing any of these fatals
+at boot (container compile) or at call time:**
+
+- `CorrelationContext` — class GONE. Reads become facade reads
+  (`Correlation::current()->correlation_id` where a scope is guaranteed,
+  `Correlation::peek()?->correlation_id ?? Uuid::v4()` in fallbacks);
+  drop its `services.yaml` registration.
+- `CommandAuditMiddleware` — class GONE. Remove from `tactician.yaml`
+  chains (the bus chain starts with CorrelationMiddleware) and from
+  `services.yaml`.
+- `IntegrationEnvelope::restore_context()` — method GONE. Compose
+  `Correlation::within($envelope->trace_context()->for_fact(...), $body)`
+  (datastream's `DeliveryOutboxPublisher` is the reference).
+- `TransportEnvelope` + `TangibleDDD\WordPress\ConsumerRegistry`/
+  `ConsumerHandle`/`NoConsumerOwnsClass` alias stubs — GONE; import
+  `IntegrationEnvelope` / `TangibleDDD\Infra\Consumers\*`.
+- `infrastructure_action()` callbacks now run inside a real facade scope
+  (carried correlation + causation as the ambient Cause); no legacy statics
+  are armed. Consumers of the helper need no changes.
+
+Done in lockstep 2026-07-19: **cred** (8e772be) and **datastream** (8518b8f)
+repointed on their masters. **lms/quiz NOT migrated** — pinned to ddd 0.2.1
+where these classes are load-bearing; their repoints fold into the
+already-scheduled lms handler migration (0.2.4 prerequisite + these purge
+items, one pass).
+
+Still alive after 0.4.0 (deliberately): the deprecated read-only
+`correlation_id()`/`event_id()` accessors on IntegrationBehaviour — thin
+PublishedFacts reads, pinned by fleet tests; they die when consumer tests
+migrate to envelope/scope reads.
+
+**Deploy rule:** the first 0.4.0-carrying deploy to a shared box must carry
+BOTH repointed cred and datastream (version-manager loads the newest ddd
+copy process-wide — an unrepointed neighbor fatals). The standing "nothing
+0.2.4+ to lms boxes" rule already covers lms.
 
 ## How to verify a migration (any version)
 
