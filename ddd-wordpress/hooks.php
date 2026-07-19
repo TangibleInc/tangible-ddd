@@ -4,6 +4,8 @@ namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Infra\Consumers\ConsumerHandle;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
