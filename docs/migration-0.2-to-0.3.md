@@ -193,6 +193,11 @@ handles it; cred/ds already updated in lockstep). Gains: announce-lane
 facts get biography rows; twins index with no association machinery;
 touches write independent of the audit toggle.
 
+### 0.5.3 (no duplication)
+
+Mandatory: nothing. The audit events JSON is a name roster again; touches
+live only in `{prefix}_touches` — join on `command_id`.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.
