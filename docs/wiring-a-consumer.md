@@ -5,6 +5,14 @@
 > checklist — every block below is the as-built 0.2.0 shape, verified against
 > real consumers (tangible-cred, tangible-datastream, lms-monorepo's lms and
 > quiz). When this file conflicts with the code, the code wins; fix this file.
+
+> ⚠️ **0.2.5 changed the wiring story** (`docs/migration-0.2-to-0.3.md` is
+> the delta ledger — read it WITH this file): the stamped classes this guide
+> describes are now OPTIONAL. `wp ddd init` emits zero classes; identity is
+> a `DDDConfig` boot declaration (prefix + namespace_root + version) resolved
+> at runtime via `ConsumerRegistry::owner_of()`. Existing consumers' stamps
+> keep working (overrides win); fresh consumers start collapsed. The
+> checklist below still describes the existing fleet accurately.
 >
 > Reference implementations: `lms-monorepo/plugins/quiz` (leanest correct
 > wiring), `tangible-cred` (largest surface). Both migrated to 0.2.0 in July
