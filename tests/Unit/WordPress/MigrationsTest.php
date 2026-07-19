@@ -44,10 +44,16 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_5(): void {
-    // Regression guard for the v3-fast-path bug: a consumer already recorded
-    // as v3 must NOT be treated as up to date once await_mechanism ships.
-    $this->assertSame(5, DDD_SCHEMA_VERSION);
+  public function test_current_schema_version_is_6(): void {
+    // Regression guard for the v3-fast-path bug lineage: bumping the schema
+    // (v6 = the touches table) must move this constant, or consumers'
+    // fast-paths treat themselves as current and never create the table.
+    $this->assertSame(6, DDD_SCHEMA_VERSION);
+  }
+
+  public function test_v6_migration_installs_the_touches_table(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(6, $migrations, 'consumers already at v5 skip dbDelta on the fast path — the explicit entry creates the touches table for them.');
   }
 
   public function test_v4_migration_adds_await_mechanism_after_match_criteria_on_long_processes(): void {

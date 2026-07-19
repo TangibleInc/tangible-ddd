@@ -42,7 +42,16 @@ final class IntegrationConformance {
 
     foreach (self::classes_in($src_dir) as $class) {
       $ref = new ReflectionClass($class);
-      if ($ref->isAbstract() || !self::uses_trait($ref, IntegrationBehaviour::class)) {
+      if ($ref->isAbstract()) {
+        continue;
+      }
+
+      // #[Touches] well-formedness (the hard gate — the harvest never
+      // throws, so THIS is where a bad declaration fails). Applies to any
+      // event class, integration or plain domain.
+      array_push($violations, ...self::touches_problems($ref));
+
+      if (!self::uses_trait($ref, IntegrationBehaviour::class)) {
         continue;
       }
 
@@ -54,6 +63,47 @@ final class IntegrationConformance {
     }
 
     return $violations;
+  }
+
+  /**
+   * Validate a class's #[Touches] declarations: instantiation trips the
+   * attribute ctor guard (non-Aggregate references), and the subject id —
+   * explicit `id:` or the {canonical_name}_id convention — must name a real
+   * ctor param. Registry-free by design: the scan runs without boot().
+   *
+   * @return list<array{class: string, param: string, problem: string}>
+   */
+  private static function touches_problems(ReflectionClass $ref): array {
+    $problems = [];
+
+    foreach ($ref->getAttributes(\TangibleDDD\Domain\Events\Touches::class) as $attribute) {
+      try {
+        $touches = $attribute->newInstance();
+      } catch (\Throwable $e) {
+        $problems[] = ['class' => $ref->getName(), 'param' => 'touches', 'problem' => $e->getMessage()];
+        continue;
+      }
+
+      $id_param = $touches->id ?? $touches->aggregate::canonical_name() . '_id';
+      $ctor_params = array_map(
+        static fn ($p) => $p->getName(),
+        $ref->getConstructor()?->getParameters() ?? []
+      );
+
+      if (!in_array($id_param, $ctor_params, true)) {
+        $problems[] = [
+          'class' => $ref->getName(),
+          'param' => $id_param,
+          'problem' => sprintf(
+            'declares #[Touches(%s)] but has no "%s" ctor param to carry the subject id (name it explicitly with id: or add the param).',
+            $touches->aggregate,
+            $id_param
+          ),
+        ];
+      }
+    }
+
+    return $problems;
   }
 
   /** @return list<array{class: string, param: string, problem: string}> */

@@ -34,6 +34,23 @@ class IntegrationConformanceTest extends TestCase {
     );
   }
 
+  public function test_touching_event_with_valid_declaration_passes(): void {
+    $violations = IntegrationConformance::event_violations(self::FIXTURES);
+
+    $this->assertNotContains(
+      'TangibleDDD\\Tests\\Fakes\\Conformance\\TouchingEvent',
+      array_column($violations, 'class'),
+    );
+  }
+
+  public function test_touches_on_non_aggregate_is_flagged(): void {
+    $this->assertViolation('BadTouchEvent', 'not an Aggregate', param: 'touches');
+  }
+
+  public function test_touches_without_resolvable_id_is_flagged(): void {
+    $this->assertViolation('IdlessTouchEvent', 'state_license_id', param: 'state_license_id');
+  }
+
   public function test_entity_param_is_flagged(): void {
     $this->assertViolation('EntityLadenEvent', 'entity', param: 'entity');
   }
