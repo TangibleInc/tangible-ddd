@@ -6,6 +6,8 @@ use ReflectionClass;
 use ReflectionMethod;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationContext;
+use TangibleDDD\Application\Correlation\Kind;
+use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\IDDDConfig;
@@ -211,33 +213,57 @@ final class ProcessRunner {
    * and timeouts create hops.
    */
   public function start(LongProcess $process): void {
+    // Guards read the facade (0.3): "what am I inside?" is the ambient
+    // cause's kind. Legacy frame checks stay as transitional belt-and-braces
+    // (both worlds are dual-written until the dissolution).
+    $cause = Correlation::peek()?->cause;
+
+    if ($cause?->kind === Kind::Act) {
+      throw new ProcessStartedInsideCommand(get_class($process), $cause->label ?? $cause->id);
+    }
     if (null !== $inside = CorrelationContext::command_frame()) {
       throw new ProcessStartedInsideCommand(get_class($process), $inside);
     }
 
+    if ($cause?->kind === Kind::Trajectory) {
+      throw new ProcessStartedInsideProcess(get_class($process), $cause->id);
+    }
     if (null !== $parent = CorrelationContext::process_frame()) {
       throw new ProcessStartedInsideProcess(get_class($process), $parent);
     }
 
-    // The absorb (0.2.5): a manual ->start() inside a drain is a legal-but-
-    // dispreferred spelling of event ignition — the armed causation IS the
-    // igniting fact, so record the truth instead of a false cold root.
+    // The absorb: a manual ->start() inside a drain is a legal-but-
+    // dispreferred spelling of event ignition — the ambient fact IS the
+    // igniter, so record the truth instead of a false cold root.
     // (#[StartsOn] stays the better door: it adds dedup and discovery.)
-    if (
-      $process->ignited_by_event_id() === null
-      && CorrelationContext::causation_type() === 'integration_event'
-      && null !== $igniter = CorrelationContext::causation_id()
-    ) {
-      $process->mark_ignited_by($igniter);
-      $process->mark_source('event');
+    // Facade-first; legacy causation slot as transitional fallback.
+    if ($process->ignited_by_event_id() === null) {
+      if ($cause?->kind === Kind::Fact) {
+        $process->mark_ignited_by($cause->id);
+        $process->mark_source('event');
+      } elseif (
+        CorrelationContext::causation_type() === 'integration_event'
+        && null !== $igniter = CorrelationContext::causation_id()
+      ) {
+        $process->mark_ignited_by($igniter);
+        $process->mark_source('event');
+      }
     }
 
     if ($process->source() === null) {
       $process->mark_source((defined('WP_CLI') && WP_CLI) || PHP_SAPI === 'cli' ? 'cli' : 'web');
     }
 
+    // Story inheritance, facade-first: an ignition drain's scope wins, then
+    // a legacy-only ambient (un-migrated caller), then a fresh story —
+    // minted WITHOUT touching the ambient (current() would persist a mint
+    // into the worker and bleed into whatever runs next).
+    $correlation = Correlation::peek()?->correlation_id
+      ?? CorrelationContext::peek()
+      ?? \TangibleDDD\Domain\Shared\Uuid::v4();
+
     $steps = $this->create_process_steps($process);
-    $process->initialize_lifecycle(CorrelationContext::get(), $steps);
+    $process->initialize_lifecycle($correlation, $steps);
     $this->repository->save($process);
 
     $this->with_process($process, fn () => $this->run($process));
@@ -257,14 +283,26 @@ final class ProcessRunner {
    */
   private function with_process(LongProcess $process, callable $work): void {
     $this->with_process_lock($process->get_id(), function () use ($process, $work) {
-      CorrelationContext::with($process->correlation_id(), function () use ($process, $work) {
-        CorrelationContext::mark_process_frame((string) $process->get_id());
-        try {
-          $work();
-        } finally {
-          CorrelationContext::clear_process_frame();
+      // ONE scope value: the saga's story + itself as the ambient cause
+      // (0.3 lane 3). The story and the frame were always one concept —
+      // "the ambient is now this saga". Cross-story wakes (a saga woken by
+      // a foreign story's fact) switch here and restore on exit.
+      $ctx = new TraceContext($process->correlation_id());
+
+      Correlation::within(
+        $ctx->for_trajectory((string) $process->get_id(), get_class($process)),
+        static function () use ($process, $work) {
+          // legacy dual-write for un-migrated readers — dies with the dissolution
+          CorrelationContext::with($process->correlation_id(), static function () use ($process, $work) {
+            CorrelationContext::mark_process_frame((string) $process->get_id());
+            try {
+              $work();
+            } finally {
+              CorrelationContext::clear_process_frame();
+            }
+          });
         }
-      });
+      );
     });
   }
 
@@ -625,16 +663,13 @@ final class ProcessRunner {
    * Dispatch commands from a Result (fire-and-forget side effects).
    */
   private function dispatch_commands(Result $result, LongProcess $process): void {
+    // No arming loop (0.3): these sends run inside the wake bracket's
+    // trajectory scope — the act bracket reads the ambient cause, so every
+    // command parents on the saga by scope semantics. The old per-command
+    // set_causation/clear choreography was the one-shot idiom this design
+    // retired.
     foreach ($result->commands as $command) {
-      // Orchestration: the saga step IS the causer of these commands (dispatched
-      // in-line, no event hop). Stamp the process as the causation; clear after
-      // each so it can't bleed to a non-process command on the same worker.
-      CorrelationContext::set_causation((string) $process->get_id(), 'long_process');
-      try {
-        $command->send();
-      } finally {
-        CorrelationContext::clear_causation();
-      }
+      $command->send();
     }
   }
 
