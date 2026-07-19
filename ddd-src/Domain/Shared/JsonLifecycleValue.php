@@ -35,10 +35,25 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
   /**
    * Get the renderer for this value object.
    *
-   * Override in plugin-specific subclasses to return renderer from local DI container.
-   * Uses late static binding so each plugin's VOs use their own renderer.
+   * Default (0.2.5c): resolved from the OWNING consumer's container via the
+   * registry — no stamped per-consumer JLV middle class needed. Renderers
+   * are optional decoration, so unlike prefix()/container() this never
+   * throws: unowned VOs (the framework's own, test fixtures) and consumers
+   * without a bound IValueRenderer fall back to the explicit global, then
+   * null. Stamped overrides keep winning.
    */
   protected static function get_renderer(): ?IValueRenderer {
+    try {
+      $renderer = \TangibleDDD\Infra\Consumers\ConsumerRegistry::owner_of(static::class)
+        ->container()->get(IValueRenderer::class);
+      if ($renderer instanceof IValueRenderer) {
+        return $renderer;
+      }
+    } catch (\Throwable) {
+      // unowned class, container without a renderer, or container failure —
+      // decoration must never block hydration.
+    }
+
     return self::$renderer;
   }
 
