@@ -47,6 +47,13 @@ class IntegrationConformanceTest extends TestCase {
     $this->assertViolation('BadTouchEvent', 'not an Aggregate', param: 'touches');
   }
 
+  public function test_touches_with_private_id_property_is_flagged(): void {
+    // The harvest reads a PUBLIC property; a private promoted param would
+    // pass a ctor-name check and silently skip at runtime — the gate must
+    // match the runtime read.
+    $this->assertViolation('PrivateIdTouchEvent', 'public', param: 'hidden');
+  }
+
   public function test_touches_without_resolvable_id_is_flagged(): void {
     $this->assertViolation('IdlessTouchEvent', 'state_license_id', param: 'state_license_id');
   }

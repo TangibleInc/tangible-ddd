@@ -142,6 +142,70 @@ class ActFootprintTest extends TestCase {
     $this->assertSame([], $this->touch_rows(), 'no act row to join — no touches rows either');
   }
 
+  public function test_plain_domain_event_with_touches_never_fatals(): void {
+    // A stamped NON-integration event: id_of() must not be called on it
+    // (TypeError in the finally would mask the handler's real outcome).
+    // Its touches still harvest — with no outbox linkage (event_id null).
+    $bracket = $this->make_bracket();
+    $bracket->execute(new \stdClass(), function () {
+      $this->events->record(new PlainTouchingEvent(roster_id: 5));
+      $this->events->drain();
+      return 'ok';
+    });
+
+    $rows = $this->touch_rows();
+    $this->assertCount(1, $rows);
+    $this->assertSame('acme.roster', $rows[0][1]['aggregate']);
+    $this->assertNull($rows[0][1]['event_id'], 'never announced — no outbox identity to link');
+  }
+
+  public function test_twin_lane_harvests_the_announced_record(): void {
+    // Twin style (the cred shape): the SOURCE rides the UoW log, the TWIN
+    // rides the bus and carries the stamps. The finalise must follow the
+    // source → published-record link and harvest the twin, with its
+    // outbox event_id.
+    $roster = new \TangibleDDD\Tests\Fakes\Acme\Domain\Roster(7);
+    $source = new \TangibleDDD\Tests\Fakes\Acme\Domain\RosterSynced($roster, added: 3);
+
+    $bracket = $this->make_bracket();
+    $bracket->execute(new \stdClass(), function () use ($source) {
+      $twin = $source->to_integration();
+      \TangibleDDD\Application\Events\PublishedFacts::mark($twin, 'evt-twin-9');
+      \TangibleDDD\Application\Events\PublishedFacts::link_source($source, $twin);
+      $this->events->record($source);
+      $this->events->drain();
+      return 'ok';
+    });
+
+    $rows = $this->touch_rows();
+    $this->assertCount(1, $rows);
+    $this->assertSame('acme.roster', $rows[0][1]['aggregate']);
+    $this->assertSame('7', $rows[0][1]['aggregate_id']);
+    $this->assertSame('evt-twin-9', $rows[0][1]['event_id'], 'the twin is the announced record — its identity links the row');
+  }
+
+  public function test_event_router_links_the_twin_to_its_source(): void {
+    $roster = new \TangibleDDD\Tests\Fakes\Acme\Domain\Roster(7);
+    $source = new \TangibleDDD\Tests\Fakes\Acme\Domain\RosterSynced($roster, added: 3);
+
+    $bus = new class implements \TangibleDDD\Application\Events\IIntegrationEventBus {
+      public ?object $published = null;
+      public function publish(\TangibleDDD\Domain\Events\IIntegrationEvent $event): void { $this->published = $event; }
+    };
+    $dispatcher = new class implements \TangibleDDD\Application\Events\IDomainEventDispatcher {
+      public function dispatch(\TangibleDDD\Domain\Events\IDomainEvent $event): void {}
+    };
+
+    (new \TangibleDDD\Application\Events\EventRouter($dispatcher, $bus))->publish($source);
+
+    $this->assertInstanceOf(\TangibleDDD\Tests\Fakes\Acme\Domain\RosterSyncedTwin::class, $bus->published);
+    $this->assertSame(
+      $bus->published,
+      \TangibleDDD\Application\Events\PublishedFacts::fact_of($source),
+      'the router records which twin announced this source'
+    );
+  }
+
   public function test_undeclared_events_add_no_touches_key(): void {
     $bracket = $this->make_bracket();
     $bracket->execute(new \stdClass(), function () {
@@ -154,4 +218,11 @@ class ActFootprintTest extends TestCase {
     $this->assertArrayNotHasKey('touches', $events[0], 'lean JSON: no key when nothing declared');
     $this->assertSame([], $this->touch_rows());
   }
+}
+
+#[\TangibleDDD\Domain\Events\Touches(\TangibleDDD\Domain\Events\Op::Updated, \TangibleDDD\Tests\Fakes\Acme\Domain\Roster::class)]
+class PlainTouchingEvent extends \TangibleDDD\Domain\Events\DomainEvent {
+  public function __construct(public readonly int $roster_id) {}
+  public static function action(): string { return 'acme_plain_touching'; }
+  public function payload(): array { return ['roster_id' => $this->roster_id]; }
 }

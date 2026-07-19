@@ -129,3 +129,15 @@ class IdlessTouchEvent extends DomainEvent implements IIntegrationEvent {
 
   public function payload(): array { return $this->integration_payload(); }
 }
+
+/** VIOLATION: id param is a PRIVATE promoted property — harvest reads public. */
+#[\TangibleDDD\Domain\Events\Touches(\TangibleDDD\Domain\Events\Op::Updated, \TangibleDDD\Tests\Fakes\Acme\Domain\StateLicense::class, id: 'hidden')]
+class PrivateIdTouchEvent extends DomainEvent implements IIntegrationEvent {
+  use IntegrationBehaviour;
+
+  public function __construct(private readonly int $hidden) {}
+
+  protected static function prefix(): string { return 'test'; }
+
+  public function payload(): array { return ['hidden' => $this->hidden]; }
+}

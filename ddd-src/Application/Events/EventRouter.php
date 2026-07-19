@@ -21,7 +21,16 @@ final class EventRouter {
     $this->dispatcher->dispatch($event);
 
     if ($event instanceof IAnnouncesIntegration) {
-      $this->bus->publish($event->to_integration());
+      $fact = $event->to_integration();
+      $this->bus->publish($fact);
+
+      // Twin lane: remember which record announced this source, so the act
+      // bracket's footprint harvest can follow source → published record
+      // (stamps and outbox identity live on the twin). Self-publishers need
+      // no link — fact === source.
+      if ($fact !== $event) {
+        PublishedFacts::link_source($event, $fact);
+      }
     }
   }
 }

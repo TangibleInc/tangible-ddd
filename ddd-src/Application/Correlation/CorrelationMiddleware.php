@@ -97,7 +97,17 @@ final class CorrelationMiddleware implements Middleware {
         $touch_rows = [];
         foreach ($this->events->published() as $e) {
           $entry = ['name' => $e::name()];
-          $touches = \TangibleDDD\Application\Events\Footprint::of_event($e);
+
+          // The stamps live on the ANNOUNCED RECORD (the twin, in two-class
+          // style; the event itself for self-publishers) — record-first,
+          // source-fallback. Plain domain events have no record: their
+          // touches harvest with no outbox identity to link.
+          $record = \TangibleDDD\Application\Events\PublishedFacts::fact_of($e);
+          $touches = \TangibleDDD\Application\Events\Footprint::of_event($record ?? $e);
+          if ($touches === [] && $record !== null && $record !== $e) {
+            $touches = \TangibleDDD\Application\Events\Footprint::of_event($e);
+          }
+
           if ($touches !== []) {
             $entry['touches'] = $touches;
             foreach ($touches as $touch) {
@@ -106,7 +116,9 @@ final class CorrelationMiddleware implements Middleware {
                 'aggregate_id' => $touch['id'],
                 'op' => $touch['op'],
                 'event_name' => $e::name(),
-                'event_id' => \TangibleDDD\Application\Events\PublishedFacts::id_of($e),
+                'event_id' => $record !== null
+                  ? \TangibleDDD\Application\Events\PublishedFacts::id_of($record)
+                  : null,
                 'command_id' => $command_id,
                 'correlation_id' => $enclosing->correlation_id,
               ];
