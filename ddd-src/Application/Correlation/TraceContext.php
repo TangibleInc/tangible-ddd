@@ -24,7 +24,7 @@ final class TraceContext {
 
   /** A new story: no cause, position zero, coordination-free UUID v4. */
   public static function root(): self {
-    return new self(self::uuid4());
+    return new self(\TangibleDDD\Domain\Shared\Uuid::v4());
   }
 
   public function for_act(string $command_id, ?string $label = null): self {
@@ -39,14 +39,4 @@ final class TraceContext {
     return new self($this->correlation_id, new Cause($process_id, Kind::Trajectory, $label), $this->sequence);
   }
 
-  private static function uuid4(): string {
-    return sprintf(
-      '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-      random_int(0, 0xffff), random_int(0, 0xffff),
-      random_int(0, 0xffff),
-      random_int(0, 0x0fff) | 0x4000,
-      random_int(0, 0x3fff) | 0x8000,
-      random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff)
-    );
-  }
 }

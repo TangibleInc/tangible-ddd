@@ -394,21 +394,10 @@ class OutboxRepository implements IOutboxRepository {
   }
 
   private function generate_uuid(): string {
-    try {
-      return sprintf(
-        '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0x0fff) | 0x4000,
-        random_int(0, 0x3fff) | 0x8000,
-        random_int(0, 0xffff),
-        random_int(0, 0xffff),
-        random_int(0, 0xffff)
-      );
-    } catch (\Exception $e) {
-      return wp_generate_uuid4();
-    }
+    // One mint, no fallback (0.3): wp_generate_uuid4() is mt_rand-based —
+    // silently degrading event-id uniqueness (the ignited_by dedup key!) on
+    // an entropy-less box was worse than failing loudly.
+    return \TangibleDDD\Domain\Shared\Uuid::v4();
   }
 
   private function get_worker_id(): string {
