@@ -88,35 +88,15 @@ final class CorrelationMiddleware implements Middleware {
 
     } finally {
       if ($audit) {
-        // The audit row's events list, enriched with provenance (spec
-        // appendix 9): each published fact's entry carries its declared
-        // touches. The touches TABLE is written by the bus at publication
-        // (fact bookkeeping happens where facts happen) — this JSON is the
-        // act-side record only. Stamps live on the ANNOUNCED RECORD (the
-        // twin, in two-class style); record-first, source-fallback.
-        // Footprint::of_event never throws (post-commit decoration).
-        $event_entries = [];
-        foreach ($this->events->published() as $e) {
-          $entry = ['name' => $e::name()];
-
-          $record = \TangibleDDD\Application\Events\PublishedFacts::fact_of($e);
-          $touches = \TangibleDDD\Application\Events\Footprint::of_event($record ?? $e);
-          if ($touches === [] && $record !== null && $record !== $e) {
-            $touches = \TangibleDDD\Application\Events\Footprint::of_event($e);
-          }
-
-          if ($touches !== []) {
-            $entry['touches'] = $touches;
-          }
-          $event_entries[] = $entry;
-        }
-
+        // Names only — touches live in the touches table (the bus writes
+        // it at publication; JOIN via command_id when you want them
+        // together — owner ruling 2026-07-19: no duplication).
         command_audit_finalise($this->config, [
           'command_id' => $command_id,
           'status' => $status,
           'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
           'peak_memory_bytes' => memory_get_peak_usage(true),
-          'events' => $event_entries,
+          'events' => array_map(static fn ($e) => ['name' => $e::name()], $this->events->published()),
           'error' => $error,
         ]);
       }
