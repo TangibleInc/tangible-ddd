@@ -117,9 +117,6 @@ function integration_listener(string $event_class, callable $translate): void {
 
     $run = static function () use ($event_class, $envelope, $translate) {
       $event = $event_class::from_payload($envelope->payload);
-      if ($envelope->event_id !== null) {
-        $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-      }
 
       $command = $translate($event);
       $command?->send();

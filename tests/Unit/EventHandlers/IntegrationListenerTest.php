@@ -29,8 +29,9 @@ class IntegrationListenerTest extends TestCase {
     $received = FakeRecordingListener::$received;
     $this->assertInstanceOf(FakeResolvedEvent::class, $received);
     $this->assertSame(312, $received->request_id);
-    $this->assertSame('corr-1', $received->correlation_id());   // journey stamped at hydrate
-    $this->assertSame('ev-9', $received->event_id());
+    // 0.3: hydrated twins carry no identity — the drain SCOPE carries it.
+    // The ceremony test asserts the typed event arrived; identity lives on
+    // the envelope (see DrainBracketTest for the scope assertions).
     $this->assertCount(1, FakeCapturingCommand::$sent);
     $this->assertSame(312, FakeCapturingCommand::$sent[0]->request_id);
     $this->assertSame('corr-1', CorrelationContext::peek());    // context restored for the send

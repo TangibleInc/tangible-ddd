@@ -54,10 +54,11 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
 
     $event_id = $this->outbox->write($event, $correlation, $raiser);
 
-    // Stamp the journey with the id the write path generated, so the event
-    // instance in hand now carries the same identity as its outbox row.
-    if (is_string($event_id) && $event_id !== '' && $event->event_id() === null) {
-      $event->stamp_journey($correlation, $event_id);
+    // Mark the instance as published (0.3): facts carry no identity slots —
+    // the at-rest identity is the outbox row, the in-flight identity is the
+    // envelope. PublishedFacts is the re-raise guard's memory.
+    if (is_string($event_id) && $event_id !== '') {
+      \TangibleDDD\Application\Events\PublishedFacts::mark($event, $event_id, $correlation);
     }
   }
 }

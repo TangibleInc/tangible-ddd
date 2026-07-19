@@ -97,9 +97,6 @@ final class ProcessRunner {
 
         $run = function () use ($event_class, $envelope) {
           $event = $event_class::from_payload($envelope->payload);
-          if ($envelope->event_id !== null) {
-            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-          }
 
           $this->resume_on_event($event);
         };
@@ -166,9 +163,6 @@ final class ProcessRunner {
 
         $run = function () use ($process_class, $event_class, $envelope) {
           $event = $event_class::from_payload($envelope->payload);
-          if ($envelope->event_id !== null) {
-            $event->stamp_journey((string) $envelope->correlation_id, $envelope->event_id);
-          }
 
           $process = $process_class::from_event($event);
           if ($process === null) {

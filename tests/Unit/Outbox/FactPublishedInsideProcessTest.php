@@ -4,6 +4,7 @@ namespace TangibleDDD\Tests\Unit\Outbox;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Events\PublishedFacts;
 use TangibleDDD\Application\Correlation\CorrelationContext;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\FactPublishedInsideProcess;
@@ -66,13 +67,13 @@ class FactPublishedInsideProcessTest extends TestCase {
       });
     });
 
-    $this->assertSame('evt-new', $event->event_id());
+    $this->assertSame('evt-new', PublishedFacts::id_of($event));
   }
 
   public function test_flat_and_command_pass_publishing_are_untouched(): void {
     $event = $this->make_event();
     $this->make_bus()->publish($event);      // flat: wp ddd announce lane
 
-    $this->assertSame('evt-new', $event->event_id());
+    $this->assertSame('evt-new', PublishedFacts::id_of($event));
   }
 }

@@ -42,8 +42,8 @@ class EventsUnitOfWork {
   }
 
   public function record(IDomainEvent $event): void {
-    if ($event instanceof IIntegrationEvent && $event->event_id() !== null) {
-      throw new AlreadyIntegrated(get_class($event), $event->event_id());
+    if ($event instanceof IIntegrationEvent && null !== $published_as = PublishedFacts::id_of($event)) {
+      throw new AlreadyIntegrated(get_class($event), $published_as);
     }
     if ($this->sealed && !$event instanceof IIntegrationEvent) {
       throw new DomainEventAfterSealException(get_class($event));

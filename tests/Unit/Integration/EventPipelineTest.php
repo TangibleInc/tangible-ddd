@@ -98,8 +98,8 @@ class EventPipelineTest extends TestCase {
     // correlation can't bleed into the next. Verified empirically.)
     $woken = FakeGatherProcess::$last_routed_event;
     $this->assertNotNull($woken, 'routing path saw the hydrated event');
-    $this->assertSame('pipe-corr', $woken->correlation_id());
-    $this->assertSame('evt_1', $woken->event_id());
+    // 0.3: the woken event object carries no identity; the SAGA carries the
+    // story (asserted below) and the envelope carried the id to the drain.
 
     // 5. saga completed; coordinator saw the satisfied mechanism; the saga
     // row still carries the raise-time correlation (resume ran under it).
