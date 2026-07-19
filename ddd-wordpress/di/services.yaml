@@ -91,9 +91,9 @@ services:
   # ============================================
   # Default Event Bus Implementation
   # ============================================
-  TangibleDDD\Infra\Services\OutboxIntegrationEventBus:
-    arguments:
-      - '@TangibleDDD\Infra\IOutboxRepository'
+  # Autowired — hand-listed args drifted from real constructors twice
+  # already (the ProcessRunner lesson); ~ can't drift.
+  TangibleDDD\Infra\Services\OutboxIntegrationEventBus: ~
 
   # ============================================
   # Default Outbox Publisher (ActionScheduler)

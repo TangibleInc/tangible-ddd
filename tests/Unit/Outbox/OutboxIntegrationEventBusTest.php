@@ -23,7 +23,7 @@ class OutboxIntegrationEventBusTest extends TestCase {
     // The raiser edge comes from the ambient ACT scope (0.3) — a fact's
     // parent is the command whose handler announced it.
     $repo = new FakeOutboxRepository();
-    $bus = new OutboxIntegrationEventBus($repo);
+    $bus = new OutboxIntegrationEventBus($repo, new \TangibleDDD\Tests\Fakes\FakeDDDConfig());
 
     $event = new FakeIntegrationEvent(entity_id: 7, action_type: 'synced');
     Correlation::within(
@@ -41,7 +41,7 @@ class OutboxIntegrationEventBusTest extends TestCase {
 
   public function test_unique_event_cancels_duplicates(): void {
     $repo = new FakeOutboxRepository();
-    $bus = new OutboxIntegrationEventBus($repo);
+    $bus = new OutboxIntegrationEventBus($repo, new \TangibleDDD\Tests\Fakes\FakeDDDConfig());
 
     $event = new FakeUniqueIntegrationEvent(entity_id: 1);
     $bus->publish($event);
@@ -51,7 +51,7 @@ class OutboxIntegrationEventBusTest extends TestCase {
 
   public function test_non_unique_event_does_not_cancel_duplicates(): void {
     $repo = new FakeOutboxRepository();
-    $bus = new OutboxIntegrationEventBus($repo);
+    $bus = new OutboxIntegrationEventBus($repo, new \TangibleDDD\Tests\Fakes\FakeDDDConfig());
 
     $event = new FakeIntegrationEvent(entity_id: 1);
     $bus->publish($event);

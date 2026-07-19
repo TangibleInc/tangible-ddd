@@ -49,7 +49,7 @@ class EventPipelineTest extends TestCase {
     $processor = new OutboxProcessor($config, $outbox, $outbox_config, $publisher);
 
     // router: real EventRouter(WordPressEventDispatcher, OutboxIntegrationEventBus(outbox fake))
-    $bus = new OutboxIntegrationEventBus($outbox);
+    $bus = new OutboxIntegrationEventBus($outbox, $config);
     $dispatcher = new WordPressEventDispatcher();
     $router = new EventRouter($dispatcher, $bus);
 

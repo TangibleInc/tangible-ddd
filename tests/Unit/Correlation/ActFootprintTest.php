@@ -13,11 +13,11 @@ use TangibleDDD\Tests\Fakes\Acme\Domain\LicenseIssued;
 use TangibleDDD\Tests\Fakes\Acme\Infra\Config as AcmeConfig;
 
 /**
- * The act's footprint at rest (spec appendix 9, built as the touches lane):
- * finalise enriches the EXISTING events JSON entries with their touches
- * (provenance — the declaration stays attached to the fact that made it)
- * and writes one row per touch to {prefix}_touches, minting the version
- * via the unique key + retry (never a naked MAX()+1).
+ * The act's footprint at rest (spec appendix 9): finalise enriches the
+ * EXISTING events JSON entries with their touches (provenance — the
+ * declaration stays attached to the fact that made it). The touches TABLE
+ * is the bus's business since 0.5.2 (fact bookkeeping happens where facts
+ * happen — see OutboxBusTouchesTest).
  */
 class ActFootprintTest extends TestCase {
 
@@ -104,48 +104,19 @@ class ActFootprintTest extends TestCase {
     ], $events[0]['touches'], 'the declaration stays attached to the fact that made it');
   }
 
-  public function test_touch_rows_are_written_with_minted_versions(): void {
+  public function test_the_bracket_writes_no_touch_rows(): void {
+    // 0.5.2: the table is written by the bus at publication; the bracket's
+    // finalise only enriches the audit JSON. (These UoW-recorded events
+    // never passed the bus, so no rows anywhere.)
     $this->run_act($this->make_bracket());
 
-    $rows = $this->touch_rows();
-    $this->assertCount(2, $rows);
-
-    [$table, $license] = $rows[0];
-    $this->assertMatchesRegularExpression('/^wp_acmeact\d+_touches$/', $table);
-    $this->assertSame('acme.state_license', $license['aggregate']);
-    $this->assertSame('4021', $license['aggregate_id']);
-    $this->assertSame('created', $license['op']);
-    $this->assertSame(1, $license['version'], 'fresh aggregate: MAX is 0, first version is 1');
-    $this->assertSame(LicenseIssued::name(), $license['event_name']);
-    $this->assertNotEmpty($license['command_id'], 'joins back to the act record');
-    $this->assertNotEmpty($license['correlation_id'], 'joins into the story');
-
-    [, $roster] = $rows[1];
-    $this->assertSame('acme.roster', $roster['aggregate']);
-    $this->assertSame('7', $roster['aggregate_id']);
-  }
-
-  public function test_version_collision_retries_with_a_fresh_max(): void {
-    $this->max_version = 6;
-    $this->refuse_inserts = 1;   // first attempt hits the unique key
-
-    $this->run_act($this->make_bracket());
-
-    $rows = $this->touch_rows();
-    $this->assertCount(2, $rows, 'the refused insert was retried, not dropped');
-    $this->assertSame(7, $rows[0][1]['version'], 'version re-minted from a fresh MAX read');
-  }
-
-  public function test_audit_disabled_writes_no_touches(): void {
-    $this->run_act($this->make_bracket(audit_enabled: false));
-
-    $this->assertSame([], $this->touch_rows(), 'no act row to join — no touches rows either');
+    $this->assertSame([], $this->touch_rows());
   }
 
   public function test_plain_domain_event_with_touches_never_fatals(): void {
-    // A stamped NON-integration event: id_of() must not be called on it
-    // (TypeError in the finally would mask the handler's real outcome).
-    // Its touches still harvest — with no outbox linkage (event_id null).
+    // A stamped NON-integration event must not fatal the finally. Its
+    // touches appear in the audit JSON (provenance) — but it is not a
+    // fact, never passes the bus, and gets NO biography rows.
     $bracket = $this->make_bracket();
     $bracket->execute(new \stdClass(), function () {
       $this->events->record(new PlainTouchingEvent(roster_id: 5));
@@ -153,35 +124,34 @@ class ActFootprintTest extends TestCase {
       return 'ok';
     });
 
-    $rows = $this->touch_rows();
-    $this->assertCount(1, $rows);
-    $this->assertSame('acme.roster', $rows[0][1]['aggregate']);
-    $this->assertNull($rows[0][1]['event_id'], 'never announced — no outbox identity to link');
+    $events = json_decode($this->updates[0]['events'], true);
+    $this->assertSame('acme.roster', $events[0]['touches'][0]['aggregate']);
+    $this->assertSame([], $this->touch_rows(), 'not a fact — no rows');
   }
 
-  public function test_twin_lane_harvests_the_announced_record(): void {
-    // Twin style (the cred shape): the SOURCE rides the UoW log, the TWIN
-    // rides the bus and carries the stamps. The finalise must follow the
-    // source → published-record link and harvest the twin, with its
-    // outbox event_id.
+  public function test_twin_lane_json_shows_the_announced_records_touches(): void {
+    // Twin style: the SOURCE rides the UoW log, the stamps live on the
+    // TWIN. The finalise follows the source → record link so the audit
+    // JSON's provenance still nests the twin's touches under the source's
+    // entry. (Rows are the bus's business — OutboxBusTouchesTest.)
     $roster = new \TangibleDDD\Tests\Fakes\Acme\Domain\Roster(7);
     $source = new \TangibleDDD\Tests\Fakes\Acme\Domain\RosterSynced($roster, added: 3);
 
     $bracket = $this->make_bracket();
     $bracket->execute(new \stdClass(), function () use ($source) {
       $twin = $source->to_integration();
-      \TangibleDDD\Application\Events\PublishedFacts::mark($twin, 'evt-twin-9');
       \TangibleDDD\Application\Events\PublishedFacts::link_source($source, $twin);
       $this->events->record($source);
       $this->events->drain();
       return 'ok';
     });
 
-    $rows = $this->touch_rows();
-    $this->assertCount(1, $rows);
-    $this->assertSame('acme.roster', $rows[0][1]['aggregate']);
-    $this->assertSame('7', $rows[0][1]['aggregate_id']);
-    $this->assertSame('evt-twin-9', $rows[0][1]['event_id'], 'the twin is the announced record — its identity links the row');
+    $events = json_decode($this->updates[0]['events'], true);
+    $this->assertSame(
+      [['aggregate' => 'acme.roster', 'id' => '7', 'op' => 'updated']],
+      $events[0]['touches'],
+      "the twin's declarations, nested under the source entry"
+    );
   }
 
   public function test_event_router_links_the_twin_to_its_source(): void {

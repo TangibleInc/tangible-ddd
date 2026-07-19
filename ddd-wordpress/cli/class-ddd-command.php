@@ -433,8 +433,6 @@ services:
   # Integration Event Bus
   TangibleDDD\\Application\\Events\\IIntegrationEventBus:
     class: TangibleDDD\\Infra\\Services\\OutboxIntegrationEventBus
-    arguments:
-      - '@TangibleDDD\\Infra\\IOutboxRepository'
 
   # Long-running Processes
   TangibleDDD\\Infra\\IProcessRepository:

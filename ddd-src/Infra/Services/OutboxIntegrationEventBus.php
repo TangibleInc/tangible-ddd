@@ -22,7 +22,8 @@ use TangibleDDD\Infra\IOutboxRepository;
 final class OutboxIntegrationEventBus implements IIntegrationEventBus {
 
   public function __construct(
-    private readonly IOutboxRepository $outbox
+    private readonly IOutboxRepository $outbox,
+    private readonly \TangibleDDD\Infra\IDDDConfig $config,
   ) {}
 
   public function publish(IIntegrationEvent $event): void {
@@ -59,6 +60,16 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
     // envelope. PublishedFacts is the re-raise guard's memory.
     if (is_string($event_id) && $event_id !== '') {
       \TangibleDDD\Application\Events\PublishedFacts::mark($event, $event_id);
+
+      // The touches index (0.5.2): fact bookkeeping happens where facts
+      // happen — the fact is in hand with its stamps, identity, story, and
+      // raiser; every publication lane (act, announce, flat) passes here.
+      // Never throws (decoration). If publish() ever gains a second
+      // bookkeeping concern, this body graduates into a small fixed
+      // pipeline (the with_process stance) — one stage buys no abstraction.
+      \TangibleDDD\WordPress\touches_index_fact(
+        $this->config, $event, $event_id, $correlation, $raiser
+      );
     }
   }
 }
