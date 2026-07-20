@@ -8,7 +8,26 @@ services:
       - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
       - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
       - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
+      - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
+
+  # Query bus (read-only pipeline): NO act bracket — queries are reads, not
+  # moments. The shared self-executing middleware runs a SelfHandlingQuery's
+  # own handle() (returns the read result); a plain query passes through to
+  # the resolver. Nothing else belongs in this chain.
+  tactician.query_bus:
+    class: League\Tactician\CommandBus
+    public: true
+    arguments:
+      - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
+      - '@tactician.middleware.query_handler'
+
+  # Runs a SelfHandlingCommand's or SelfHandlingQuery's own handle()
+  # (terminal for those; short-circuits before the naming-convention
+  # resolver). No _defaults here, so register explicitly with the container
+  # as its sole argument.
+  TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
+    arguments: ['@service_container']
 
   tactician.middleware.command_handler:
     class: League\Tactician\Handler\CommandHandlerMiddleware
@@ -16,7 +35,19 @@ services:
       - '@service_container'
       - '@tactician.command_to_handler_mapping'
 
+  tactician.middleware.query_handler:
+    class: League\Tactician\Handler\CommandHandlerMiddleware
+    arguments:
+      - '@service_container'
+      - '@tactician.query_to_handler_mapping'
+
   tactician.command_to_handler_mapping:
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention
+    arguments:
+      - '@tactician.class_name_inflector'
+      - '@tactician.method_name_inflector'
+
+  tactician.query_to_handler_mapping:
     class: League\Tactician\Handler\Mapping\MapByNamingConvention
     arguments:
       - '@tactician.class_name_inflector'

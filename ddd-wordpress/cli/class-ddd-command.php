@@ -498,20 +498,32 @@ services:
   # 1. CorrelationMiddleware - THE ACT BRACKET: guard + scope + audit record
   # 2. TransactionMiddleware - starts database transaction
   # 3. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
-  # 4. CommandHandlerMiddleware - executes the handler
+  # 4. SelfExecutingCommandMiddleware - runs a SelfHandlingCommand's own handle()
+  #    (terminal for those; short-circuits before the naming-convention resolver)
+  # 5. CommandHandlerMiddleware - executes the handler (plain commands)
   League\\Tactician\\CommandBus:
     public: true
     arguments:
       - '@TangibleDDD\\Application\\Correlation\\CorrelationMiddleware'
       - '@TangibleDDD\\Application\\Persistence\\TransactionMiddleware'
       - '@TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware'
+      - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
 
-  # Dedicated Query Bus (read-only pipeline, no middleware)
+  # Runs a SelfHandlingCommand's or SelfHandlingQuery's own handle() by
+  # reflection, method-injecting its dependencies (one middleware serves both
+  # buses). Explicit @service_container (not autowired by type).
+  TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware:
+    arguments: ['@service_container']
+
+  # Dedicated Query Bus (read-only pipeline — no act bracket: queries are
+  # reads, not moments). The self-executing middleware is terminal for a
+  # SelfHandlingQuery and returns the read result; nothing else belongs here.
   tactician.query_bus:
     class: League\\Tactician\\CommandBus
     public: true
     arguments:
+      - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.query_handler'
 
   tactician.middleware.command_handler:
