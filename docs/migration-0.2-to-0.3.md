@@ -198,7 +198,18 @@ touches write independent of the audit toggle.
 Mandatory: nothing. The audit events JSON is a name roster again; touches
 live only in `{prefix}_touches` — join on `command_id`.
 
-## 0.6.0 (target — self-handling commands AND queries, spec appendix §14 item 1)
+## 0.6.0 (RELEASED — self-handling commands AND queries + loader identity fix)
+
+**Loader identity fix (fleet-relevant, zero consumer action):** since 0.2.5
+every release's copy registered itself into the version-negotiation loader
+under the frozen key `'0.2.4'` (and the frozen function slugs `_0_2_4`), so
+"newest copy wins" silently degenerated to "first-loaded wins" among any set
+of 0.2.5–0.5.x copies. 0.6.0 registers as `'0.6.0'` with `_0_6_0` slugs, and
+`LoaderIdentityTest` now asserts header == constant == register literal ==
+slugs — a release with stale identification can no longer pass its own suite.
+Deploy note: a 0.6.0 copy correctly outranks every earlier copy INCLUDING the
+mislabeled 0.2.5–0.5.x ones (0.6.0 > 0.2.4); boxes mixing only 0.2.5–0.5.x
+copies (no 0.6.0) remain load-order-dependent until upgraded.
 
 **Mandatory for consumers: NOTHING.** Fully additive and opt-in. The
 command/handler and query/handler two-class shapes stay 100% legal — a plain
