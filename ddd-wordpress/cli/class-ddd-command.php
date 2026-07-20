@@ -510,16 +510,20 @@ services:
       - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
 
-  # Runs a SelfHandlingCommand's own handle() by reflection, method-injecting
-  # its dependencies. Explicit @service_container (not autowired by type).
+  # Runs a SelfHandlingCommand's or SelfHandlingQuery's own handle() by
+  # reflection, method-injecting its dependencies (one middleware serves both
+  # buses). Explicit @service_container (not autowired by type).
   TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware:
     arguments: ['@service_container']
 
-  # Dedicated Query Bus (read-only pipeline, no middleware)
+  # Dedicated Query Bus (read-only pipeline — no act bracket: queries are
+  # reads, not moments). The self-executing middleware is terminal for a
+  # SelfHandlingQuery and returns the read result; nothing else belongs here.
   tactician.query_bus:
     class: League\\Tactician\\CommandBus
     public: true
     arguments:
+      - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.query_handler'
 
   tactician.middleware.command_handler:

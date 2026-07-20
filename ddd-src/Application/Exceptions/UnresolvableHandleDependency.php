@@ -3,7 +3,8 @@
 namespace TangibleDDD\Application\Exceptions;
 
 /**
- * A SelfHandlingCommand's handle() parameter could not be method-injected.
+ * A SelfHandlingCommand's or SelfHandlingQuery's handle() parameter could
+ * not be method-injected.
  *
  * Method injection resolves each parameter by its named, non-builtin class
  * type from the container (the same shape as Symfony's ArgumentResolver).

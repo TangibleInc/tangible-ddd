@@ -11,22 +11,40 @@ use ReflectionNamedType;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandHasNoHandler;
 use TangibleDDD\Application\Exceptions\UnresolvableHandleDependency;
+use TangibleDDD\Application\Queries\SelfHandlingQuery;
 
 /**
- * Runs a SelfHandlingCommand's own handle() (spec §14 item 1). Sits in the
- * onion IMMEDIATELY BEFORE the naming-convention handler resolver
- * (CommandHandlerMiddleware), so a self-handling command still passes through
- * the act bracket, the transaction, and domain-event publishing — then this
- * middleware short-circuits before the resolver would look for a separate
- * handler class that does not exist.
+ * Runs a SelfHandlingCommand's or SelfHandlingQuery's own handle() (spec §14
+ * item 1). Sits in each bus's onion IMMEDIATELY BEFORE the naming-convention
+ * handler resolver — in the COMMAND bus before
+ * `tactician.middleware.command_handler` (so a self-handling command still
+ * passes through the act bracket, the transaction, and domain-event
+ * publishing), and in the QUERY bus before
+ * `tactician.middleware.query_handler` (where it is the only other
+ * middleware: the query bus deliberately carries no act bracket) — then
+ * short-circuits before the resolver would look for a separate handler class
+ * that does not exist.
+ *
+ * ONE middleware, BOTH bases, explicit union check: `SelfHandlingCommand ||
+ * SelfHandlingQuery` rather than a shared marker interface. A marker would
+ * be new public naming surface (a name consumers would type and we would
+ * owe compatibility on) for zero behavior — per the naming rulings, that
+ * needs an owner ruling; the union check does not. The class KEEPS its
+ * command-era name for the same reason: renaming it would be a break with
+ * no behavior attached.
  *
  * Dispatch decision:
- *  - NOT a SelfHandlingCommand  → `$next($command)` unchanged; the command
- *    routes to its convention-named handler like any plain command.
- *  - a SelfHandlingCommand      → this middleware is the TERMINAL. It does
- *    NOT call `$next` (that would reach the resolver and fail to find a
- *    handler class). It reflects handle(), method-injects its dependencies,
- *    invokes it, and propagates the return value up the onion.
+ *  - neither base            → `$next($command)` unchanged; plain commands
+ *    and queries route to their convention-named handlers like before.
+ *  - either base             → this middleware is the TERMINAL. It does NOT
+ *    call `$next` (that would reach the resolver and fail to find a handler
+ *    class). It reflects handle(), method-injects its dependencies, invokes
+ *    it, and propagates the return value up the onion.
+ *
+ * The return-value asymmetry lives in the bases, not here: a command's
+ * handle() is void-by-default (the receipt rule → the pass yields null); a
+ * query's handle() returns the read result (that is what a query IS). This
+ * middleware just propagates whatever handle() returns.
  *
  * Method injection (Symfony has no `container->call()`, so we do it here, the
  * way Symfony's ArgumentResolver does): each handle() parameter is resolved
@@ -41,7 +59,7 @@ final class SelfExecutingCommandMiddleware implements Middleware {
   ) {}
 
   public function execute($command, callable $next) {
-    if (!$command instanceof SelfHandlingCommand) {
+    if (!$command instanceof SelfHandlingCommand && !$command instanceof SelfHandlingQuery) {
       return $next($command);
     }
 
@@ -56,7 +74,8 @@ final class SelfExecutingCommandMiddleware implements Middleware {
     // here and only here — no public escape hatch for manual callers.
     $method->setAccessible(true);
 
-    // Propagate whatever handle() returns (void → null) — the receipt rule.
+    // Propagate whatever handle() returns — a command's receipt (void →
+    // null), a query's read result.
     return $method->invokeArgs($command, $args);
   }
 

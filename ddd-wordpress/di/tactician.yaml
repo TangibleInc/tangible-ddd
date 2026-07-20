@@ -43,17 +43,24 @@ services:
   # and must never re-finalise the previous act's un-reset event log. A query
   # rides the ambient scope of whoever dispatched it (consumer yamls and the
   # scaffolder already have this shape; this was drift).
+  #
+  # The self-executing middleware (shared with the command bus) runs a
+  # SelfHandlingQuery's own handle() and returns the read result — terminal
+  # for those; a plain query passes through to the resolver. Nothing else
+  # belongs in this chain.
   tactician.query_bus:
     class: League\Tactician\CommandBus
     public: true
     arguments:
+      - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.query_handler'
 
   # ============================================
-  # Self-executing command middleware
+  # Self-executing middleware (commands AND queries)
   # ============================================
-  # Runs a SelfHandlingCommand's own protected handle() by reflection,
-  # method-injecting its dependencies from the container. Explicit
+  # Runs a SelfHandlingCommand's or SelfHandlingQuery's own protected
+  # handle() by reflection, method-injecting its dependencies from the
+  # container (one middleware serves both bus chains). Explicit
   # @service_container argument — it is not reliably autowired by type.
   TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
     arguments: ['@service_container']

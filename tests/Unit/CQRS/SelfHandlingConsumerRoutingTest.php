@@ -11,6 +11,7 @@ use TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DDDConfig;
 use TangibleDDD\Tests\Fakes\Acme\Application\AcmeDoThingCommand;
+use TangibleDDD\Tests\Fakes\Acme\Application\AcmeFindThingQuery;
 use TangibleDDD\Tests\Fakes\Acme\Application\AcmeService;
 
 /**
@@ -43,10 +44,12 @@ class SelfHandlingConsumerRoutingTest extends TestCase {
     $this->acme_container = $this->make_container([
       AcmeService::class => $this->acme_service,
       CommandBus::class => $this->spy_bus('handled-by-acme'),
+      'tactician.query_bus' => $this->spy_bus('read-from-acme'),
     ]);
 
     $this->framework_container = $this->make_container([
       CommandBus::class => $this->spy_bus('handled-by-framework-self'),
+      'tactician.query_bus' => $this->spy_bus('read-from-framework-self'),
     ]);
 
     ConsumerRegistry::add(
@@ -122,6 +125,40 @@ class SelfHandlingConsumerRoutingTest extends TestCase {
       $this->acme_service,
       $command->got,
       'handle() received the exact AcmeService instance from Acme\'s container'
+    );
+  }
+
+  // ── the QUERY side: same routing story, on the query bus ─────────────
+
+  public function test_query_container_resolves_to_the_owning_consumers_container(): void {
+    $method = new \ReflectionMethod(AcmeFindThingQuery::class, 'container');
+    $method->setAccessible(true);
+
+    $this->assertSame(
+      $this->acme_container,
+      $method->invoke(null),
+      'a consumer SelfHandlingQuery resolves owner_of(static::class) → ACME'
+    );
+  }
+
+  public function test_query_send_rides_the_owning_consumers_query_bus(): void {
+    $result = (new AcmeFindThingQuery())->send();
+
+    $this->assertSame('read-from-acme', $result, 'dispatch went through Acme\'s query bus');
+  }
+
+  public function test_query_middleware_injects_the_consumers_service_and_returns_the_read_result(): void {
+    $middleware = new SelfExecutingCommandMiddleware($this->acme_container);
+    $query = new AcmeFindThingQuery();
+
+    $result = $middleware->execute($query, static function (): void {
+      throw new \LogicException('$next must not be called for a self-handling query');
+    });
+
+    $this->assertSame(
+      ['found_with' => $this->acme_service],
+      $result,
+      'handle() got Acme\'s service and its RETURN VALUE propagated (queries return data)'
     );
   }
 }

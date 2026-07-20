@@ -198,20 +198,46 @@ touches write independent of the audit toggle.
 Mandatory: nothing. The audit events JSON is a name roster again; touches
 live only in `{prefix}_touches` — join on `command_id`.
 
-## 0.6.0 (target — self-handling commands, spec appendix §14 item 1)
+## 0.6.0 (target — self-handling commands AND queries, spec appendix §14 item 1)
 
 **Mandatory for consumers: NOTHING.** Fully additive and opt-in. The
-command/handler two-class shape stays 100% legal — a plain command still
-routes to its convention-named handler exactly as before. Nothing to migrate,
-nothing deprecated.
+command/handler and query/handler two-class shapes stay 100% legal — a plain
+command or query still routes to its convention-named handler exactly as
+before. Nothing to migrate, nothing deprecated.
 
-**What shipped:** a `SelfExecutingCommandMiddleware` slotted into the onion
-immediately before `tactician.middleware.command_handler` (so self-handling
-commands still get the act bracket, transaction, and domain-event publishing).
-The framework's own `di/tactician.yaml`, `self/tactician.yaml`, and the
-scaffolder's tactician template already carry it. Consumers who ran the
-scaffolder BEFORE 0.6.0 and want the feature add two lines to their
-`di/tactician.yaml`:
+**⚠️ THE CONSUMER-ROUTING FIX (if you read the earlier branch state):** as
+first built, `SelfHandlingCommand` extended the framework's self-consumer
+`Command` base — whose `container()` override pins
+`TangibleDDD\WordPress\SelfConsumer\di()`. A CONSUMER command extending the
+base would therefore have dispatched through the FRAMEWORK's bus and resolved
+its handle() deps from the framework's container, where consumer services do
+not exist. Fatal. The base no longer pins the self-consumer container: it is
+a standalone `abstract class SelfHandlingCommand implements ICommand { use
+CommandBusAware; }`, so `container()` falls through to the trait's registry
+default (0.2.5c) — `ConsumerRegistry::owner_of(static::class)->container()` —
+and a consumer's self-handling command rides its OWN bus and container.
+`SelfHandlingQuery` was born with the same shape (QueryBusAware's identical
+default). No consumer ever shipped against the pinned state; nothing to do.
+
+**What shipped:**
+
+- `SelfHandlingCommand` — the command carries its own
+  `protected function handle(...$deps)`; `SelfExecutingCommandMiddleware`
+  slotted into the command onion immediately before
+  `tactician.middleware.command_handler` (so self-handling commands still get
+  the act bracket, transaction, and domain-event publishing).
+- `SelfHandlingQuery` (additive, opt-in) — the read-side twin. The SAME
+  middleware (explicit union check, no new marker interface) is slotted into
+  the QUERY bus immediately before `tactician.middleware.query_handler`, and
+  is terminal for a self-handling query. THE ASYMMETRY IS THE POINT: a
+  command's handle() stays void-by-default (the receipt rule); a query's
+  handle() RETURNS the read result — returning data is what a query is. The
+  query chain stays read-shaped: no CorrelationMiddleware, no act bracket.
+
+The framework's own `di/tactician.yaml`, `self/tactician.yaml` (which gained
+its first query lane with this), and the scaffolder's tactician template
+already carry both slots. Consumers who ran the scaffolder BEFORE 0.6.0 and
+want the feature add three lines to their `di/tactician.yaml`:
 
     League\Tactician\CommandBus:
       arguments:
@@ -220,6 +246,13 @@ scaffolder BEFORE 0.6.0 and want the feature add two lines to their
         - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
         - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'   # add
         - '@tactician.middleware.command_handler'
+
+    tactician.query_bus:
+      class: League\Tactician\CommandBus
+      public: true
+      arguments:
+        - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'   # add
+        - '@tactician.middleware.query_handler'
 
       # add (explicit @service_container — not autowired by type):
       TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
@@ -238,12 +271,25 @@ command/handler pair into one class —
       }
     }
 
+— and the query twin —
+
+    final class FindThing extends SelfHandlingQuery {
+      public function __construct(private readonly int $thing_id) {}
+      protected function handle(ThingReadModel $things): ?ThingView {
+        return $things->find($this->thing_id);
+      }
+    }
+
+    $view = (new FindThing(42))->send();
+
 `handle()`'s params are method-injected from the container by reflection;
-`protected` keeps it uncallable except by the middleware. `handle()` stays
-VOID by default (the receipt rule) — it MAY return a scalar/DTO verdict for
-transport steering, MUST NOT return domain objects, and nothing downstream
-may depend on the return. Keep the separate-handler shape for
-dependency-heavy handlers; it is not going away.
+`protected` keeps it uncallable except by the middleware. A COMMAND's
+`handle()` stays VOID by default (the receipt rule) — it MAY return a
+scalar/DTO verdict for transport steering, MUST NOT return domain objects,
+and nothing downstream may depend on the return. A QUERY's `handle()` returns
+the read result, and `send()` hands it back — no receipt rule for reads. Keep
+the separate-handler shape for dependency-heavy handlers; it is not going
+away.
 
 ## How to verify a migration (any version)
 
