@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Application\Commands;
 
+use TangibleDDD\Application\CQRS\CommandBusAware;
+
 /**
  * A command that carries its own handler (spec §14 item 1; name ruled over
  * `SelfContainedCommand`, the `IHandlesItself` working title retired).
@@ -28,6 +30,18 @@ namespace TangibleDDD\Application\Commands;
  * site. The middleware short-circuits the naming-convention handler resolver
  * for these commands, so no separate handler class is looked up.
  *
+ * CONSUMER ROUTING: this base is STANDALONE — it deliberately does NOT
+ * extend the framework's self-consumer `Command` base, whose container()
+ * override pins `TangibleDDD\WordPress\SelfConsumer\di()`. That pin would
+ * send a CONSUMER's self-handling command through the FRAMEWORK's bus and
+ * resolve its handle() deps from a container where consumer services do not
+ * exist. Instead, container() falls through to CommandBusAware's registry
+ * default (0.2.5c): `ConsumerRegistry::owner_of(static::class)->container()`
+ * — the concrete command's namespace names its consumer, ->send() rides that
+ * consumer's bus, and its handle() deps resolve from that consumer's
+ * container. The framework's OWN commands may extend this base only because
+ * the framework registers itself as a consumer on the `TangibleDDD` root.
+ *
  * handle() stays VOID by default (the receipt rule, spec §14 item 2): it MAY
  * return a scalar/DTO verdict for transport steering, MUST NOT return domain
  * objects, and nothing downstream may depend on the return — the middleware
@@ -39,11 +53,13 @@ namespace TangibleDDD\Application\Commands;
  * subclass may not add required parameters to an inherited abstract method).
  * The base is therefore a pure marker the middleware detects via
  * `instanceof SelfHandlingCommand`; it declares no handle() signature and
- * inherits send()/container() from the self-consumer Command base.
+ * gets send()/container() from CommandBusAware.
  *
  * The handler-as-separate-class path remains fully legal (and preferable for
  * dependency-heavy handlers): a plain command NOT extending this base routes
  * to its convention-named handler exactly as before.
  */
-abstract class SelfHandlingCommand extends Command {
+abstract class SelfHandlingCommand implements ICommand {
+
+  use CommandBusAware;
 }
