@@ -42,7 +42,7 @@ canonical skill.
 - Produces: a focused PHPUnit gate for required files, actionable removed API
   forms, historical banners, and local links.
 
-- [ ] **Step 1: Write the failing currentness test**
+- [x] **Step 1: Write the failing currentness test**
 
 Create a PHPUnit test with these exact operational paths:
 
@@ -76,7 +76,7 @@ design spec. Its link test must parse Markdown links, ignore absolute URLs and
 fragment-only links, strip fragments from local targets, resolve relative to
 the containing file, and assert the target exists.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -89,7 +89,7 @@ Expected: FAIL because `README.md`, `docs/README.md`, and
 `docs/consumer-modules.md` do not exist; current skill examples also contain
 removed actionable APIs.
 
-- [ ] **Step 3: Commit the failing test**
+- [x] **Step 3: Commit the failing test**
 
 ```bash
 git add tests/Unit/Documentation/DocumentationCurrentnessTest.php
@@ -111,7 +111,7 @@ git commit -m "test: pin current tangible ddd documentation"
 - Consumes: the 0.6.2 source tree and dashboard implementation.
 - Produces: entry points and unambiguous document status.
 
-- [ ] **Step 1: Write the root README**
+- [x] **Step 1: Write the root README**
 
 Include: requirements; newest-copy loader; consumer-scoped storage; command and
 query buses; synchronous domain events; outbox-backed integration events;
@@ -121,13 +121,13 @@ docs index, wiring guide, module guide, migration ledger, and canonical skill.
 Keep quick-start code to the Composer command and `wp ddd init`; detailed YAML
 belongs in the wiring guide.
 
-- [ ] **Step 2: Write the docs index**
+- [x] **Step 2: Write the docs index**
 
 Define three labels: `CURRENT`, `HISTORICAL`, and `DESIGN ONLY`. List every
 top-level Markdown document and classify the dated `docs/superpowers/` and
 dashboard iteration directories as historical collections.
 
-- [ ] **Step 3: Add status banners without rewriting history**
+- [x] **Step 3: Add status banners without rewriting history**
 
 Use these meanings:
 
@@ -139,13 +139,13 @@ Use these meanings:
 - Consumer review: historical audit whose findings drove later releases.
 - Integration evolution: historical 0.1-to-0.2 handoff, not current API.
 
-- [ ] **Step 4: Run the documentation test**
+- [x] **Step 4: Run the documentation test**
 
 Expected: it still fails only on the not-yet-written module/wiring/skill
 surfaces or their removed actionable examples; historical banner assertions and
 new README links pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/README.md docs/0.3-trace-context.md \
@@ -166,7 +166,7 @@ git commit -m "docs: separate current guidance from history"
   `DDDCompilerPasses`, `LongProcessCatalog`, and loader priority contracts.
 - Produces: supported host and module integration guidance.
 
-- [ ] **Step 1: Rewrite top-level consumer wiring**
+- [x] **Step 1: Rewrite top-level consumer wiring**
 
 Document exact 0.6.2 order: Composer copy registration at
 `plugins_loaded:0`, winner initialization at `1`, consumer bootstrap at `10`,
@@ -176,7 +176,7 @@ integration listeners, outbox, migrations, compiler passes, private process
 definitions, dumped-container parity, tests, and deployment checks. Link module
 packaging to `consumer-modules.md`; never present it as a second `boot()`.
 
-- [ ] **Step 2: Write the consumer module guide**
+- [x] **Step 2: Write the consumer module guide**
 
 Document:
 
@@ -193,19 +193,19 @@ Document:
 - active process row/deactivation warning; and
 - opaque/dumped-container contract tests.
 
-- [ ] **Step 3: Reframe and extend the migration ledger**
+- [x] **Step 3: Reframe and extend the migration ledger**
 
 Retitle it as the release and migration ledger while retaining its filename for
 inbound links. Preserve historical entries. Add exact 0.6.1 compiler catalog
 and 0.6.2 consumer module sections, including loader identities and rollout
 constraints.
 
-- [ ] **Step 4: Run the focused documentation test**
+- [x] **Step 4: Run the focused documentation test**
 
 Expected: required-file and local-link assertions pass. Any remaining failure
 is confined to the old canonical skill.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/wiring-a-consumer.md docs/consumer-modules.md \
@@ -224,7 +224,7 @@ git commit -m "docs: define the tangible ddd 0.6 operating contract"
 - Consumes: current operational docs and scaffolder template map.
 - Produces: canonical decision guide and a thin consumer-local handoff skill.
 
-- [ ] **Step 1: Add the failing scaffold test**
+- [x] **Step 1: Add the failing scaffold test**
 
 Extend `ScaffoldTemplatesConformanceTest` to assert the template map contains
 `.claude/skills/tangible-ddd/SKILL.md`; the generated content contains
@@ -235,7 +235,7 @@ the `.claude/skills/tangible-ddd` directory.
 Run the focused scaffold test. Expected: FAIL because the skill template and
 directory are absent.
 
-- [ ] **Step 2: Rewrite the canonical skill**
+- [x] **Step 2: Rewrite the canonical skill**
 
 Keep it below 500 lines. Include version/source verification; decision rules;
 hard invariants; current command/query options; event taxonomy; routines versus
@@ -243,7 +243,7 @@ long processes; correlation; touches/biography; consumer ownership/modules;
 removed API names as non-actionable migration notes; links; and a final
 checklist. Do not copy full service YAML.
 
-- [ ] **Step 3: Generate the thin skill from `wp ddd init`**
+- [x] **Step 3: Generate the thin skill from `wp ddd init`**
 
 Add the directory to the scaffolder's directory list and the skill to the
 template map. The generated skill must tell the agent to:
@@ -255,7 +255,7 @@ template map. The generated skill must tell the agent to:
 
 Do not embed framework patterns in the generated file.
 
-- [ ] **Step 4: Run focused tests and skill validation**
+- [x] **Step 4: Run focused tests and skill validation**
 
 Run:
 
@@ -271,7 +271,7 @@ Validate the skill frontmatter with the available skill validator or, if it
 cannot target repository-local skills, parse the YAML frontmatter and verify
 `name` plus `description` manually.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .claude/skills/tangible-ddd/SKILL.md \
@@ -286,11 +286,11 @@ git commit -m "docs: make the current ddd skill canonical"
 
 **Interfaces:** Produces release-ready evidence, not new behavior.
 
-- [ ] **Step 1: Run PHP lint for every changed PHP file**
+- [x] **Step 1: Run PHP lint for every changed PHP file**
 
 Expected: no syntax errors.
 
-- [ ] **Step 2: Run the full framework suite**
+- [x] **Step 2: Run the full framework suite**
 
 ```bash
 php -d auto_prepend_file=/tmp/tangible-ddd-docs-preload.php \
@@ -299,13 +299,13 @@ php -d auto_prepend_file=/tmp/tangible-ddd-docs-preload.php \
 
 Expected: zero failures; the nine existing PHPUnit deprecations may remain.
 
-- [ ] **Step 3: Run repository checks**
+- [x] **Step 3: Run repository checks**
 
 Run `git diff --check`, the operational removed-pattern scan, required local
 link checks, and `wc -l .claude/skills/tangible-ddd/SKILL.md`. Expected: clean
 diff, no actionable removed patterns, all links present, skill under 500 lines.
 
-- [ ] **Step 4: Forward-test the skill**
+- [x] **Step 4: Forward-test the skill**
 
 Give a fresh agent only the installed canonical skill plus a request to explain
 how to access current correlation, wire a dumped-container LongProcess, and add
@@ -313,7 +313,7 @@ a host-native sidecar command. Expected: it uses `Correlation`/`TraceContext`,
 compiled `LongProcessCatalog`, and consumer modules; it must not prescribe any
 removed API.
 
-- [ ] **Step 5: Request whole-branch review and fix all Important findings**
+- [x] **Step 5: Request whole-branch review and fix all Important findings**
 
 Review the complete base-to-head diff for present-tense accuracy, source/API
 agreement, copy/paste safety, link integrity, and accidental historical edits.
