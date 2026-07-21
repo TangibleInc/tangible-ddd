@@ -279,7 +279,7 @@ the enrollment command transaction, later integration consequences,
 configurable routine, possible durable lifecycle, idempotency, and plugin
 ownership using current APIs only.
 
-- [ ] **Step 2: Run final documentation and framework verification**
+- [x] **Step 2: Run final documentation and framework verification**
 
 Run:
 
@@ -302,7 +302,7 @@ Fix only an Important failure: prescribing before questioning, contradicting a
 hard invariant, using a removed API, or omitting transaction/plugin ownership.
 Re-run Steps 1 and 2 after any correction.
 
-- [ ] **Step 4: Record final branch state**
+- [x] **Step 4: Record final branch state**
 
 ```bash
 git status --short
