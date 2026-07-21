@@ -132,6 +132,13 @@ Use a synchronous event handler only when the reaction must commit atomically
 with the raising command. It may call repositories or domain services directly,
 but it may not dispatch a command.
 
+`EventsUnitOfWork` is container-managed state owned by the command middleware.
+Inject it or resolve the live container service; never cache it in a static
+consumer facade. The middleware must reset, seal, and drain the same instance
+repositories record into. During the sealed transitive drain, only an event
+implementing `IAnnouncesIntegration` may be newly recorded; both scalar
+self-publishers and rich events with a scalar twin satisfy that contract.
+
 ### Integration event
 
 An integration record implements `IIntegrationEvent`. Its constructor is its

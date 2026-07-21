@@ -341,6 +341,18 @@ or `findTaggedServiceIds()`, so 0.6.0 silently skipped `#[Awaits]` and
 `#[StartsOn]` registration there even when the same process worked against a
 development `ContainerBuilder`.
 
+0.6.1 also corrects the event-unit-of-work seal after the 0.2 taxonomy split.
+The sealed drain now admits every domain event implementing
+`IAnnouncesIntegration`, including a rich event that announces a separate
+scalar twin. The old `IIntegrationEvent` check admitted self-publishers but
+incorrectly rejected twin-style announcers. This is an additive correctness
+fix; consumers do not need to change their event classes.
+
+Consumer facades must still resolve the live container-managed
+`EventsUnitOfWork` rather than cache it statically. A stale cached object is a
+separate consumer wiring bug: middleware may reset and seal one instance while
+the facade records into another.
+
 0.6.1 also corrects the scaffolder's main-plugin snippet. The Tangible DDD
 loader registers copies at `plugins_loaded:0` and initializes the winner (its
 class autoloader plus `TangibleDDD\WordPress\boot()`) at priority 1. Requiring

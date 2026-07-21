@@ -128,6 +128,12 @@ If aggregate writes use Doctrine/PDO, the outbox repository and transaction
 middleware must use that same transaction boundary. Substituting the default
 wpdb repository would make aggregate and outbox commits independent.
 
+The `EventsUnitOfWork` object is equally identity-sensitive. The command
+middleware resets, seals, and drains that container-managed instance. Inject it
+into repositories/services or resolve the live shared service; never retain it
+in a process-static consumer facade, because a rebuilt/test-swapped container
+would leave the facade recording into a stale sealed instance.
+
 ## Command and query buses
 
 The command middleware order is outermost to innermost:
@@ -202,6 +208,10 @@ namespaces and resolves them. Do not duplicate that scan in consumer code.
 
 - A `DomainEvent` is recorded by an aggregate, collected by its repository,
   and published synchronously inside the command transaction.
+- Once the handler returns, the event unit of work is sealed while synchronous
+  handlers drain. Newly recorded events must implement
+  `IAnnouncesIntegration`; this admits scalar self-publishers and rich events
+  with scalar twins while preventing an unbounded plain-domain-event cascade.
 - An `IntegrationEvent` is a reversible record crossing a consistency/time
   boundary through the transactional outbox.
 - A rich domain event can implement `IAnnouncesIntegration` and return a scalar
