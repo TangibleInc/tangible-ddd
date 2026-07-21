@@ -14,6 +14,12 @@
 > keep working (overrides win); fresh consumers start collapsed. The
 > checklist below still describes the existing fleet accurately.
 >
+> **0.6.1 fixes process discovery in dumped Symfony containers.** Consumers
+> must register the DDD compiler passes before `compile()` and register their
+> `Application/Process` namespace as private discovery definitions. At runtime,
+> `register_hooks()` prefers the compiled `LongProcessCatalog`; retained
+> `ContainerBuilder` consumers keep the 0.6.0 tag-query fallback.
+>
 > Reference implementations: `lms-monorepo/plugins/quiz` (leanest correct
 > wiring), `tangible-cred` (largest surface). Both migrated to 0.2.0 in July
 > 2026; their PRs are worked examples of every rule here.
@@ -40,23 +46,29 @@ framework, not per consumer).
 The framework ships a scaffolder that generates most of the ceremony:
 
 ```bash
-composer require tangible/ddd:^0.2
+composer require tangible/ddd:^0.6.1
 wp ddd init --prefix=acme_orders --namespace=Acme\\Orders --plugin-path=.
 ```
 
-Generated: the `ddd-src/` directory tree, the `Infra\Config` class, the
-consumer `DomainEvent`/`IntegrationEvent` bases, `Command`/`Query` bases,
-`services.yaml` + `tactician.yaml`, and the DI index — which ends with the
-whole framework handshake: `\TangibleDDD\WordPress\boot($config, fn () => di())`.
-Your main plugin file adds exactly one line (after the version constant and
-the autoloader):
+Generated: the class-free `ddd-src/` directory tree (including
+`Application/Process`), `services.yaml` + `tactician.yaml`, and the DI index.
+The index registers `DDDCompilerPasses`, compiles on `init:1`, and ends with
+the whole framework handshake:
+`\TangibleDDD\WordPress\boot($config, fn () => di())`.
+Your main plugin file schedules that index after the winning framework copy
+initializes (and after defining the version constant/loading Composer):
 
 ```php
-require_once __DIR__ . '/ddd-wordpress/di/index.php';
+add_action('plugins_loaded', static function (): void {
+    require_once __DIR__ . '/ddd-wordpress/di/index.php';
+}, 10);
 ```
 
 Plus the composer psr-4 mapping for the generated namespace
-(`"Acme\\Orders\\": "ddd-src/"`) — the full ceremony is those two edits.
+(`"Acme\\Orders\\": "ddd-src/"`) — the full ceremony is that wrapper plus
+the mapping. Do not require the index immediately from the plugin file:
+Tangible DDD chooses its winning copy at `plugins_loaded:1`, and neither its
+class autoloader nor `TangibleDDD\WordPress\boot()` exists before then.
 No activation hook: the migration lane creates/heals the framework tables
 on the first `init` tick.
 
@@ -71,13 +83,16 @@ The manual checklist below is the same material spelled out — use it to
 
 ## Checklist
 
-1. `composer require tangible/ddd:^0.2`
+1. `composer require tangible/ddd:^0.6.1`
 2. Config class implementing `TangibleDDD\Infra\IDDDConfig`
 3. Tables: created/healed automatically by the migration lane once step 6 is
    wired (an explicit activation-time `install_tables($config)` is optional)
-4. DI: the framework services block (below) in your services.yaml
+4. DI: the framework services block and private process resource (below) in services.yaml
 5. Tactician command bus with the middleware chain (below)
-6. Bootstrap: **exactly one call** — `\TangibleDDD\WordPress\boot($config, $di_getter)` at include time
+6. Bootstrap: enter after framework initialization at `plugins_loaded:1`
+   (the scaffolder and current fleet use priority 10), register
+   `DDDCompilerPasses` before `compile()`, then make **exactly one call** to
+   `\TangibleDDD\WordPress\boot($config, $di_getter)`
 7. Events per the 0.2.0 taxonomy (below)
 8. Consumers of integration events = `IntegrationListener` classes under `Application\IntegrationListeners\`
 9. Container smoke test covering the hand-wired framework service ids
@@ -99,6 +114,18 @@ it doesn't manage (see `plugins/lms/ddd-tables.php` in lms-monorepo).
 Canonical services.yaml fragment (Symfony DI, `autowire: true` defaults):
 
 ```yaml
+  # Compiler-pass input: definitions only. LongProcess objects carry
+  # journey state and must never be resolved from the container.
+  _instanceof:
+    TangibleDDD\Application\Process\LongProcess:
+      tags: ['ddd.long_process']
+
+  My\Plugin\Application\Process\:
+    resource: '../../ddd-src/Application/Process'
+    autowire: false
+    shared: false
+    public: false
+
   # Config — the consumer's identity
   TangibleDDD\Infra\IDDDConfig:
     alias: My\Plugin\Infra\Config
@@ -177,7 +204,27 @@ atomically with aggregate writes — that ordering is the outbox pattern.
 
 ## 6. Bootstrap — the one call
 
-At include time (main plugin file or `plugins_loaded`):
+Register the framework compiler passes after every YAML resource is loaded and
+before the container compiles:
+
+```php
+use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
+
+$loader->load('tactician.yaml');
+$loader->load('services.yaml');
+DDDCompilerPasses::register($container_builder);
+
+// Later, after any consumer pre-compile hook:
+$container_builder->compile();
+```
+
+Use that same construction path in development, integration tests, and the
+release builder that invokes Symfony `PhpDumper`. Calling the pass only in the
+development bootstrap recreates the `WP_DEBUG=true`/production mismatch that
+0.6.1 fixes.
+
+After the framework loader initializes, normally inside the generated index
+required at `plugins_loaded:10`:
 
 ```php
 \TangibleDDD\WordPress\boot(
@@ -191,7 +238,10 @@ the ops dashboard, WP-CLI, cross-consumer tooling — read via
 `\TangibleDDD\WordPress\consumers()`, filtered through
 `tangible_ddd_consumers`) and defers `register_hooks()` to `init:2`, after
 the container compiles on `init:1`. The scaffolder's generated
-`di/index.php` already ends with this call.
+`di/index.php` already ends with this call, and its main-plugin wrapper waits
+until priority 10. Requiring that index directly during plugin-file execution
+is invalid: the framework registers copies at `plugins_loaded:0`, initializes
+the winner and defines `boot()` at priority 1, then consumers may boot.
 
 Existing consumers that call `register_hooks()` directly on `init:2` are
 equivalent — it self-registers with the registry too. Either way,
@@ -207,22 +257,37 @@ regardless of which features it uses today:
 | process discovery | saga classes never registered with the `ProcessRunner` — awaited integration events fire but wake nothing (see below) |
 | `register_migration_hooks` | framework schema migrations never run — fresh installs never get their tables (the lane runs on `init` + `admin_init`; it replaces the activation hook entirely), upgraded installs drift |
 
-**Process discovery** (0.2.2): `register_hooks()` reads the
-`ddd.long_process` container tag and registers every tagged class — plus
-the resume hooks for its `#[Awaits(Event::class)]` events — with the
-`ProcessRunner`. The consumer's only job is the `_instanceof` rule the
-scaffolder already emits:
+**Process discovery** (compiled in 0.6.1): the consumer's `_instanceof` rule
+tags each registered process definition, and `DDDCompilerPasses` consumes
+those tags while the `ContainerBuilder` still owns its definitions:
 
 ```yaml
 _instanceof:
   TangibleDDD\Application\Process\LongProcess:
     tags: ['ddd.long_process']
+
+My\Plugin\Application\Process\:
+  resource: '../../ddd-src/Application/Process'
+  autowire: false
+  shared: false
+  public: false
 ```
 
-Discovery needs `findTaggedServiceIds()` (a `ContainerBuilder` API) — with a
-dumped/opaque container it is skipped silently, same guard as the handler
-sweep. Declare awaited events with the `#[Awaits]` class attribute, not tag
-parameters.
+The pass validates and de-duplicates process classes, preserves legacy
+`awaits:` tag attributes, and registers a public `LongProcessCatalog` whose
+constructor data contains class names and tag metadata only. Symfony can dump
+that ordinary data without retaining definitions or instantiating a process.
+
+At `init:2`, `register_hooks()` prefers `LongProcessCatalog` and reflects each
+class's `#[Awaits]` and `#[StartsOn]` attributes. If no catalog exists but the
+runtime object still exposes `findTaggedServiceIds()`, the public
+`register_processes_from_container()` compatibility path preserves 0.6.0-era
+retained builders. A dumped container has no tag-query API, so registering the
+compiler passes in every build path is mandatory for dev/production parity.
+
+Late process registration from a side plugin is not supported in 0.6.1; that
+runtime extension API is reserved for 0.6.2. Every 0.6.1 process must be known
+to the consumer's `ContainerBuilder` before compilation.
 
 **Starting processes** (0.2.4) — three doors, one invariant:
 
@@ -267,10 +332,12 @@ Anti-patterns seen in the wild:
   by iterating service ids. Delete them; the framework function covers
   `\Application\EventHandlers\` and `\Application\IntegrationListeners\`.
 - **Manual `register_processes_from_container()` calls** in consumer
-  bootstrap — redundant since 0.2.2 (idempotent, but delete on next touch).
+  bootstrap — keep the function only as the retained-builder compatibility
+  API; new consumers register `DDDCompilerPasses` and let `register_hooks()`
+  read the catalog.
 - **Consumer-prefixed process tags** (`acme.long_process`) — the framework
-  scans `ddd.long_process` only; a private tag name means your sagas are
-  never discovered.
+  compiler pass consumes `ddd.long_process` only; a private tag name means
+  your sagas are never cataloged.
 
 ## 7. Events — 0.2.0 taxonomy in four rules
 
@@ -330,12 +397,28 @@ spine** — `OutboxProcessor`, `ProcessRunner`, `IOutboxRepository`,
 `IIntegrationEventBus`, `EventRouter`, `IDomainEventDispatcher`. Namespace
 sweeps never touch these ids; stale FQCNs and ctor drift hide there.
 
+For a consumer that dumps its production container, add one `PhpDumper`
+regression: compile a scalar-constructor `LongProcess`, load the generated
+runtime container, assert its public `LongProcessCatalog` contains the class,
+and assert the process constructor was never called. Run hook registration
+against that runtime container so `#[Awaits]` and `#[StartsOn]` parity is part
+of the test rather than inferred from the development builder.
+
 If a test bootstrap doesn't load WordPress, stub `get_option`/`update_option`
 backed by a global array (`OutboxConfig::from_options` and pause holds read
 options at construction/runtime). Reset that state per test — under
 WorDBless, options persist for the whole process.
 
 ## 10. Deploy
+
+0.6.1 rolls out after the framework tag exists, in this order:
+
+1. Publish Tangible DDD `v0.6.1`.
+2. Update Cred and Datastream compile setup plus dependency metadata.
+3. Update LMS/Quiz development and `bin/build-php` compile setup.
+4. Update LMS/Quiz constraints and lockfiles against the published tag.
+5. Build both release containers and verify their process catalogs under
+   `WP_DEBUG=false`.
 
 - Framework major upgrades: **drain or pause the outbox** across the cutover
   (wire shapes change), and move every consumer on the install in one

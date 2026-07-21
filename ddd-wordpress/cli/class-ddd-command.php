@@ -165,6 +165,7 @@ class DDD_Command {
       'ddd-src/Application/QueryHandlers',
       'ddd-src/Application/EventHandlers',
       'ddd-src/Application/IntegrationListeners',
+      'ddd-src/Application/Process',
       'ddd-src/Application/Services',
       'ddd-src/Infra/Persistence',
       'ddd-src/Infra/Services',
@@ -214,9 +215,10 @@ class DDD_Command {
     WP_CLI::log( "       \"autoload\": { \"psr-4\": { \"{$namespace}\\\\\\\\\": \"ddd-src/\" } }" );
     WP_CLI::log( '       composer dump-autoload' );
     WP_CLI::log( '' );
-    WP_CLI::log( '  3. Include the generated DI index from your main plugin file' );
+    WP_CLI::log( '  3. Schedule the generated DI index from your main plugin file' );
     WP_CLI::log( "     (after {$version_const} is defined and the autoloader is loaded)." );
-    WP_CLI::log( '     It carries the whole framework handshake — container, boot(),' );
+    WP_CLI::log( '     The wrapper waits for the framework loader; the index carries' );
+    WP_CLI::log( '     the whole handshake — container, boot(),' );
     WP_CLI::log( '     consumer registration, table migrations:' );
     WP_CLI::log( '' );
     WP_CLI::log( $this->template_main_plugin_snippet( $prefix, $namespace, $version_const ) );
@@ -233,18 +235,20 @@ class DDD_Command {
   }
 
   /**
-   * Render the post-scaffold wiring snippet — the single line the user pastes
-   * into their main plugin file. The generated di/index.php carries the whole
-   * handshake (container, boot(), consumer registration, migrations), so the
-   * consumer's entry file only includes it.
+   * Render the post-scaffold wiring wrapper for the consumer's main plugin.
+   * The winning framework copy defines boot() at plugins_loaded:1. The
+   * generated wrapper follows the fleet convention of priority 10 before
+   * carrying the whole handshake (container, boot(), registration, migrations).
    *
    * Intentionally emitted to stdout (not written to disk) so we never touch
    * the consumer's user-owned plugin entry file.
    */
   private function template_main_plugin_snippet( string $prefix, string $namespace, string $version_const ): string {
     return <<<PHP
-// tangible-ddd: container + framework handshake (after {$version_const} and the autoloader)
-require_once __DIR__ . '/ddd-wordpress/di/index.php';
+// tangible-ddd: wait for the winning framework copy, then boot this consumer.
+add_action( 'plugins_loaded', static function (): void {
+  require_once __DIR__ . '/ddd-wordpress/di/index.php';
+}, 10 );
 PHP;
   }
 
@@ -269,6 +273,7 @@ PHP;
       'ddd-src/Application/QueryHandlers/.gitkeep' => '',
       'ddd-src/Application/EventHandlers/.gitkeep' => '',
       'ddd-src/Application/IntegrationListeners/.gitkeep' => '',
+      'ddd-src/Application/Process/.gitkeep' => '',
       'ddd-src/Application/Services/.gitkeep' => '',
       'ddd-src/Infra/Persistence/.gitkeep' => '',
       'ddd-src/Infra/Services/.gitkeep' => '',
@@ -298,6 +303,7 @@ namespace {$namespace}\\WordPress\\DI;
 use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
 use Symfony\\Component\\Config\\FileLocator;
 use Symfony\\Component\\DependencyInjection\\Loader\\YamlFileLoader;
+use TangibleDDD\\Infra\\DependencyInjection\\DDDCompilerPasses;
 
 \$container_builder = new ContainerBuilder();
 
@@ -311,6 +317,7 @@ use Symfony\\Component\\DependencyInjection\\Loader\\YamlFileLoader;
 \$loader = new YamlFileLoader( \$container_builder, new FileLocator( __DIR__ ) );
 \$loader->load( 'tactician.yaml' );
 \$loader->load( 'services.yaml' );
+DDDCompilerPasses::register( \$container_builder );
 
 /**
  * Get the DI container.
@@ -346,8 +353,8 @@ add_action( 'init', __NAMESPACE__ . '\\compile_container', 1 );
 // The whole tangible-ddd handshake: announces this plugin to the consumer
 // registry and defers register_hooks() to init:2 (after the compile above).
 // Framework tables are created/healed by the migration lane on the first
-// init tick — no activation hook needed. Requires this file to be included
-// from the main plugin file or plugins_loaded.
+// init tick — no activation hook needed. The generated main-plugin wrapper
+// includes this file at plugins_loaded:10, after framework initialization.
 \\TangibleDDD\\WordPress\\boot(
   new \\TangibleDDD\\Infra\\DDDConfig(
     prefix: '{$prefix}',
@@ -371,9 +378,9 @@ services:
     autoconfigure: true
     public: true
 
-  # Every LongProcess subclass is auto-tagged; boot() discovers the tag at
-  # init:2 and registers each process (plus the resume hooks for its
-  # #[Awaits] events) with the ProcessRunner. No per-saga wiring needed.
+  # Every registered LongProcess subclass is auto-tagged. The DDD compiler
+  # pass materializes these process types into a runtime catalog before the
+  # container is dumped; discovery definitions are never resolved as objects.
   _instanceof:
     TangibleDDD\\Application\\Process\\LongProcess:
       tags: ['ddd.long_process']
@@ -443,6 +450,12 @@ services:
   # Autowired — hand-listed args drifted from the real constructor once
   # already and shipped to every consumer; don't reintroduce them.
   TangibleDDD\\Application\\Process\\ProcessRunner: ~
+
+  {$namespace}\\Application\\Process\\:
+    resource: '../../ddd-src/Application/Process'
+    autowire: false
+    shared: false
+    public: false
 
   # Command Audit (optional - configure Redactor separately)
   TangibleDDD\\Application\\Logging\\Redactor: ~

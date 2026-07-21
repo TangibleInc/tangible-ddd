@@ -3,6 +3,7 @@
 namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Infra\Services\OutboxProcessor;
+use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerHandle;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
@@ -13,8 +14,9 @@ use TangibleDDD\Infra\IDDDConfig;
  * the consumer registry immediately, and defers register_hooks() to init:2 —
  * after the consumer's DI container compiles on init:1.
  *
- * Call at include time from the main plugin file or plugins_loaded (the
- * generated ddd-wordpress/di/index.php does exactly this).
+ * Call only after the winning framework copy initializes at plugins_loaded:1.
+ * The generated main-plugin wrapper requires ddd-wordpress/di/index.php at
+ * priority 10, and that index calls boot() during its own include.
  *
  * @param IDDDConfig $config Plugin configuration
  * @param callable $di_getter Function that returns the DI container
@@ -35,7 +37,7 @@ function boot(IDDDConfig $config, callable $di_getter, ?string $label = null, ?s
  * All registered consumers, filtered through `tangible_ddd_consumers`
  * (relabel / hide / inject). Populated by boot()/register_hooks(), so read
  * after init:2 — a dashboard or CLI reading earlier sees only consumers
- * that boot()ed at include time.
+ * whose post-loader bootstrap has already called boot().
  *
  * @return array<string, ConsumerHandle> prefix => handle
  */
@@ -63,14 +65,20 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
 
-  // Process discovery: register ddd.long_process-tagged classes (and the
-  // resume hooks for their #[Awaits] events) with the ProcessRunner. Needs
-  // findTaggedServiceIds — a ContainerBuilder API — so containers that don't
-  // expose it (dumped/opaque) skip discovery, same guard style as
-  // register_event_handlers' getServiceIds probe above.
+  // Prefer the catalog materialized by the DDD compiler pass. Retained
+  // ContainerBuilder consumers without that pass keep the tagged fallback.
   if (processes_enabled($config)) {
     $container = $di_getter();
-    if (method_exists($container, 'findTaggedServiceIds')) {
+    if (method_exists($container, 'has') && $container->has(LongProcessCatalog::class)) {
+      $entries = $container->get(LongProcessCatalog::class)->all();
+      if (!empty($entries)) {
+        register_process_entries(
+          $config,
+          $container->get(ProcessRunner::class),
+          $entries,
+        );
+      }
+    } elseif (method_exists($container, 'findTaggedServiceIds')) {
       register_processes_from_container($config, $container);
     }
   }
@@ -215,9 +223,11 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
 }
 
 /**
- * Register process classes from DI container tags.
+ * Register process classes from tags on a retained ContainerBuilder.
  *
- * Call this from 'tgbl_{prefix}_post_compile_di' hook.
+ * This public function is the 0.6.0 compatibility path. New consumers should
+ * register DDDCompilerPasses before compilation and let register_hooks() read
+ * LongProcessCatalog, which also works after Symfony dumps the container.
  *
  * Tag format in services.yaml:
  * ```yaml
@@ -254,7 +264,24 @@ function register_processes_from_container(
 
   $runner = $container->get(ProcessRunner::class);
 
-  foreach ($tagged as $class => $tags) {
+  register_process_entries($config, $runner, $tagged);
+}
+
+/**
+ * Register process hooks from class names and their ddd.long_process tags.
+ *
+ * @param array<class-string<\TangibleDDD\Application\Process\LongProcess>, list<array<string, mixed>>> $entries
+ */
+function register_process_entries(
+  IDDDConfig $config,
+  ProcessRunner $runner,
+  array $entries,
+): void {
+  if (!processes_enabled($config)) {
+    return;
+  }
+
+  foreach ($entries as $class => $tags) {
     // Fail fast on a mis-tag: the ddd.long_process tag promises a saga.
     if (!is_subclass_of($class, \TangibleDDD\Application\Process\LongProcess::class)) {
       throw new \InvalidArgumentException("$class is tagged ddd.long_process but does not extend LongProcess");

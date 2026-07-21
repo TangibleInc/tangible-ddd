@@ -13,6 +13,34 @@ is urgent until the 0.3 section.
 
 ---
 
+## 0.6.1 correctness rider — seal keys on IAnnouncesIntegration
+
+**Mandatory for consumers: NOTHING** — a correctness fix, fully additive.
+
+The per-command seal (`EventsUnitOfWork::record()`) rejected any post-seal
+event that wasn't an `IIntegrationEvent`. That was written pre-0.2.0, when
+`IIntegrationEvent extended IDomainEvent` — so it meant "let integration-capable
+domain events through the seal." The 0.2.0 taxonomy split **severed**
+`IIntegrationEvent` from `IDomainEvent` and made `IAnnouncesIntegration` the
+raisable "integrable" marker (`IIntegrationEvent` became the scalar twin/record
+contract), but the seal condition was left testing `IIntegrationEvent` —
+silently narrowing the exemption to self-publishers and wrongly rejecting
+**twin-style announcers** (a fat domain event implementing `IAnnouncesIntegration`
+whose `to_integration()` returns a separate scalar twin) raised in a sealed
+context.
+
+The seal now keys on **`IAnnouncesIntegration`** (the `IIntegrationEvent` clause
+in the `AlreadyIntegrated`/`PublishedFacts` re-raise guard is unchanged — that's
+a different concern). This mirrors `EventRouter`'s routing gate: **raised past
+the seal ⟹ routed to the bus.** It vindicates the twin pattern — a fat
+`IAnnouncesIntegration` domain event with a scalar twin is now first-class
+raisable in a sealed drain, no self-publisher conversion required.
+
+This correction ships in 0.6.1 alongside compiled `LongProcess` catalog
+support. It is independent of the 0.6.2 consumer-module capability.
+
+---
+
 ## 0.2.4 (shipped 2026-07-18)
 
 **Mandatory, already done for cred + datastream** (master merges 8fa27f7 /
@@ -146,8 +174,9 @@ and datastream's DeliveryEscalationTest repointed); `PublishedFacts` shrank
 to instance → event_id (the `correlation` field existed only for the dead
 accessor). Also deleted: `AsyncWordPressActionHandler` (deprecated 0.2.0,
 zero subclasses fleet-wide), `ProcessRunner::register()` (no-op; its
-LongProcess validation moved inline into tag discovery, which now throws on
-a mis-tag), and the internal `extract_correlation()` helper (ceremonies
+LongProcess validation moved inline into the then-current runtime tag
+discovery, which throws on a mis-tag), and the internal
+`extract_correlation()` helper (ceremonies
 unwrap inline; the list/assoc spread contract is pinned through
 `integration_action()` itself). `Cause::causation_type()` stays by ruling
 (columns outlive fashions).
@@ -301,6 +330,74 @@ and nothing downstream may depend on the return. A QUERY's `handle()` returns
 the read result, and `send()` hands it back — no receipt rule for reads. Keep
 the separate-handler shape for dependency-heavy handlers; it is not going
 away.
+
+## 0.6.1 (compiled LongProcess catalog compatibility patch)
+
+0.6.1 makes the existing `ddd.long_process` contract work in Symfony
+`PhpDumper` containers. A dumped runtime container has no service definitions
+or `findTaggedServiceIds()`, so 0.6.0 silently skipped `#[Awaits]` and
+`#[StartsOn]` registration there even when the same process worked against a
+development `ContainerBuilder`.
+
+0.6.1 also corrects the scaffolder's main-plugin snippet. The Tangible DDD
+loader registers copies at `plugins_loaded:0` and initializes the winner (its
+class autoloader plus `TangibleDDD\WordPress\boot()`) at priority 1. Requiring
+the generated `ddd-wordpress/di/index.php` immediately from a plugin file can
+therefore fatal before either `DDDCompilerPasses` or `boot()` exists. Fresh
+scaffolds wrap that require at `plugins_loaded:10`; existing consumers already
+using a priority-10 bootstrap need no change:
+
+    add_action('plugins_loaded', static function (): void {
+        require_once __DIR__ . '/ddd-wordpress/di/index.php';
+    }, 10);
+
+**Mandatory for consumers that compile or dump a container:**
+
+1. Require `tangible/ddd:^0.6.1` after the tag is published.
+2. Register `DDDCompilerPasses` after loading YAML and before `compile()` in
+   every development, integration-test, and release-build construction path:
+
+       use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
+
+       $loader->load('tactician.yaml');
+       $loader->load('services.yaml');
+       DDDCompilerPasses::register($container_builder);
+       $container_builder->compile();
+
+3. When the consumer has processes, register its namespace as discovery-only
+   definitions and retain the framework tag rule:
+
+       services:
+         _instanceof:
+           TangibleDDD\Application\Process\LongProcess:
+             tags: ['ddd.long_process']
+
+         Acme\Application\Process\:
+           resource: '../../ddd-src/Application/Process'
+           autowire: false
+           shared: false
+           public: false
+
+The compiler pass validates and de-duplicates class names, carries legacy
+`awaits:` tag attributes into a public `LongProcessCatalog`, and never resolves
+a process definition. At runtime `register_hooks()` prefers the catalog and
+reflects `#[Awaits]`/`#[StartsOn]`; retained `ContainerBuilder` consumers with
+no compiler pass still use the public `register_processes_from_container()`
+fallback. Runtime/late side-plugin registration is not part of 0.6.1 and is
+reserved for 0.6.2.
+
+**Post-tag rollout order:**
+
+1. Publish Tangible DDD `v0.6.1`.
+2. Register the passes in Cred and Datastream, make their process definitions
+   private, update dependency metadata, and replace the local `0.2.9999`
+   version with `0.6.1`.
+3. Register the passes in LMS/Quiz development, integration-test, and shared
+   `bin/build-php` release compilation. Do not add empty Process resources
+   until either plugin introduces its first process.
+4. Update LMS/Quiz constraints and lockfiles against the published tag.
+5. Rebuild both production containers and verify their catalogs with
+   `WP_DEBUG=false`; generated containers remain uncommitted artifacts.
 
 ## How to verify a migration (any version)
 
