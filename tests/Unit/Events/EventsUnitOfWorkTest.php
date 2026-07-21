@@ -6,6 +6,7 @@ use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Tests\Fakes\FakeDomainEvent;
+use TangibleDDD\Tests\Fakes\FakeFatMoment;
 use TangibleDDD\Tests\Fakes\FakeOutcome;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 
@@ -112,6 +113,25 @@ class EventsUnitOfWorkTest extends TestCase {
     // Must be a self-publisher (also an IDomainEvent) — record() types
     // IDomainEvent, and a pure twin (FakeIntegrationEvent) no longer qualifies.
     $event = new FakeResolvedEvent(7, FakeOutcome::Accepted, new \DateTimeImmutable());
+    $this->uow->record($event);
+
+    $drained = $this->uow->drain();
+    $this->assertCount(1, $drained);
+    $this->assertSame($event, $drained[0]);
+  }
+
+  public function test_sealed_uow_accepts_twin_style_announcers(): void {
+    // The seal exempts INTEGRABLE events — those EventRouter will route to the
+    // bus — and that marker is IAnnouncesIntegration, not IIntegrationEvent.
+    // A fat domain event that announces a SEPARATE scalar twin
+    // (IAnnouncesIntegration, but NOT itself an IIntegrationEvent) must survive
+    // the seal: its to_integration() twin reaches the bus. This was wrongly
+    // rejected while the seal keyed on IIntegrationEvent (a regression the
+    // 0.2.0 taxonomy split introduced — before the split IIntegrationEvent WAS
+    // a domain event, so the old condition meant the same thing).
+    $this->uow->seal();
+
+    $event = new FakeFatMoment((object) ['id' => 9]);
     $this->uow->record($event);
 
     $drained = $this->uow->drain();

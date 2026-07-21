@@ -4,6 +4,7 @@ namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Domain\Events\AlreadyIntegrated;
+use TangibleDDD\Domain\Events\IAnnouncesIntegration;
 use TangibleDDD\Domain\Events\IDomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\IRecordsDomainEvents;
@@ -34,18 +35,29 @@ class EventsUnitOfWork {
   }
 
   /**
-   * Close the open phase. After this, only integration events may be recorded;
-   * a plain domain event recorded past the seal throws.
+   * Close the open phase. After this, only INTEGRABLE events may be recorded
+   * (those implementing IAnnouncesIntegration — they announce a fact routed to
+   * the bus); a plain, non-integrable domain event recorded past the seal throws.
    */
   public function seal(): void {
     $this->sealed = true;
   }
 
   public function record(IDomainEvent $event): void {
+    // Re-raise guard: keyed on IIntegrationEvent because PublishedFacts tracks
+    // published FACTS (self-publisher instances). Distinct from the seal.
     if ($event instanceof IIntegrationEvent && null !== $published_as = PublishedFacts::id_of($event)) {
       throw new AlreadyIntegrated(get_class($event), $published_as);
     }
-    if ($this->sealed && !$event instanceof IIntegrationEvent) {
+    // The seal exempts INTEGRABLE events — those that announce an integration
+    // and will be routed to the bus by EventRouter (which gates on exactly this
+    // interface). Keyed on IAnnouncesIntegration, NOT IIntegrationEvent: the
+    // latter is the scalar twin/record contract (severed from IDomainEvent at
+    // the 0.2.0 split, so a pure twin can't even reach record()), while
+    // IAnnouncesIntegration is the raisable "can be turned into a fact" marker
+    // — covering both self-publishers and twin-style announcers. This mirrors
+    // EventRouter's routing gate: raised past the seal ⟹ routed to the bus.
+    if ($this->sealed && !$event instanceof IAnnouncesIntegration) {
       throw new DomainEventAfterSealException(get_class($event));
     }
     $this->queued[] = $event;

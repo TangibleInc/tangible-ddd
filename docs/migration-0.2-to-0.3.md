@@ -13,6 +13,34 @@ is urgent until the 0.3 section.
 
 ---
 
+## Unreleased fix — seal keys on IAnnouncesIntegration (version TBD)
+
+**Mandatory for consumers: NOTHING** — a correctness fix, fully additive.
+
+The per-command seal (`EventsUnitOfWork::record()`) rejected any post-seal
+event that wasn't an `IIntegrationEvent`. That was written pre-0.2.0, when
+`IIntegrationEvent extended IDomainEvent` — so it meant "let integration-capable
+domain events through the seal." The 0.2.0 taxonomy split **severed**
+`IIntegrationEvent` from `IDomainEvent` and made `IAnnouncesIntegration` the
+raisable "integrable" marker (`IIntegrationEvent` became the scalar twin/record
+contract), but the seal condition was left testing `IIntegrationEvent` —
+silently narrowing the exemption to self-publishers and wrongly rejecting
+**twin-style announcers** (a fat domain event implementing `IAnnouncesIntegration`
+whose `to_integration()` returns a separate scalar twin) raised in a sealed
+context.
+
+The seal now keys on **`IAnnouncesIntegration`** (the `IIntegrationEvent` clause
+in the `AlreadyIntegrated`/`PublishedFacts` re-raise guard is unchanged — that's
+a different concern). This mirrors `EventRouter`'s routing gate: **raised past
+the seal ⟹ routed to the bus.** It vindicates the twin pattern — a fat
+`IAnnouncesIntegration` domain event with a scalar twin is now first-class
+raisable in a sealed drain, no self-publisher conversion required.
+
+Version-less on purpose: codex is cutting 0.6.1/0.6.2 in parallel; the release
+coordinator folds this into whichever train and assigns the version.
+
+---
+
 ## 0.2.4 (shipped 2026-07-18)
 
 **Mandatory, already done for cred + datastream** (master merges 8fa27f7 /

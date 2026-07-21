@@ -17,7 +17,8 @@ class DomainEventAfterSealException extends ApplicationException {
   public function __construct(string $event_class) {
     parent::__construct(sprintf(
       'Domain event %s was recorded after the unit of work was sealed. '
-      . 'Event handlers may only emit integration events.',
+      . 'Past the seal, handlers may only emit integrable events '
+      . '(IAnnouncesIntegration) — those announce a fact routed to the bus.',
       $event_class
     ));
   }
