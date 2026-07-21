@@ -1,15 +1,17 @@
-# Consumer migration ledger — 0.2.x → 0.3 → 0.4
+# Consumer release and migration ledger — through 0.6.2
 
-**What this is.** The framework is moving ahead of its consumers (owner
-directive 2026-07-19): tcred / datastream / lms / quiz evolve later, on
-their own schedules. This file is the running ledger of what each framework
-version *lets* a consumer do (optional modernizations) and what 0.3 will
-*make* them do (the flag-day debts). Append as versions land; a consumer
-migrating later reads this top to bottom.
+> **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
+> links. Read the entry for every version between the consumer's installed
+> package and its target, then verify against the target source and tests.
 
-**The standing rule:** every 0.2.x change is additive — stamped classes and
-old names keep working via overrides and alias stubs. Nothing in this file
-is urgent until the 0.3 section.
+The framework can move ahead of Cred, Datastream, LMS, and Quiz; each consumer
+migrates on its own schedule, but WordPress loads one winning Tangible DDD copy
+for the whole request. A newly bundled version must therefore remain compatible
+with every plugin on the same site, not only the plugin that carries it.
+
+The earliest entries preserve their contemporaneous migration language. In
+particular, the old rule that 0.2.x changes were additive was true for that
+release line; later flag-day and shim-purge entries supersede it.
 
 ---
 
@@ -398,6 +400,75 @@ reserved for 0.6.2.
 4. Update LMS/Quiz constraints and lockfiles against the published tag.
 5. Rebuild both production containers and verify their catalogs with
    `WP_DEBUG=false`; generated containers remain uncommitted artifacts.
+
+## 0.6.2 (consumer modules)
+
+0.6.2 depends on the compiled-catalog behavior introduced in 0.6.1. It adds a
+supported way for separately deployed code to define host-native commands,
+queries, events, listeners, and `LongProcess` types without mutating the host's
+compiled container or creating another persistence identity.
+
+**Mandatory for existing consumers: nothing** unless the consumer will host a
+module. Existing top-level consumers continue to own their own config,
+container, tables, workers, migrations, and dddash entry.
+
+**New public surfaces:**
+
+- `TangibleDDD\WordPress\boot_module($host_prefix, $namespace_root, $di_getter)`
+- `ConsumerRegistry::consumer($prefix)`
+- `ConsumerRegistry::config_for($prefix)`
+- get-only `ConsumerRegistry::service_for($prefix, $service_id)`
+- `ConsumerRegistry::add_module(...)`
+- `ConsumerRegistry::modules_for($host_prefix)`
+
+`ConsumerRegistry::all()` remains the top-level consumer list. Module routes
+participate in longest-root `owner_of()` resolution but do not become another
+dashboard consumer, table prefix, migration lane, or worker set.
+
+**Mandatory for a module-capable host:**
+
+1. Require `tangible/ddd:^0.6.2` once the release is available.
+2. Use `boot()` after the framework winner initializes and before
+   `plugins_loaded:30`; priority 10 is the generated convention. A host that
+   first announces itself through `register_hooks()` at `init:2` is too late.
+3. Keep the 0.6.1 `DDDCompilerPasses` registration in every retained and
+   dumped-container build path.
+4. Expose every stateful service imported by released modules under a stable
+   public service ID. The command transaction service is host-specific: LMS
+   and Quiz use Doctrine middleware, while stock wpdb consumers use the
+   framework transaction middleware.
+5. Contract-test the actual dumped host container and those exact public IDs.
+
+**Mandatory for the module/sidecar:**
+
+1. Bundle a compatible 0.6.2 copy and load its Composer autoloader from the
+   plugin file so it participates in version negotiation at
+   `plugins_loaded:0`. Do not autoload framework runtime classes before the
+   winner initializes at priority 1.
+2. Build a separate module container, bind `IDDDConfig` through
+   `ConsumerRegistry::config_for($host_prefix)`, and call `boot_module()` at
+   `plugins_loaded:30` with a strict descendant namespace root.
+3. Import the host's exact correlation, transaction, event-publication,
+   unit-of-work, outbox, and process objects through `service_for()`. Keep only
+   terminal command/query resolution and module application services local.
+4. Register `DDDCompilerPasses` in the module build. Private
+   `ddd.long_process` definitions compile into its `LongProcessCatalog`.
+
+Module runtime wiring occurs at `init:3`, after host hooks at `init:2`.
+Listeners are eagerly constructed from the module container. A non-empty
+module catalog is validated and registered on the host's exact
+`ProcessRunner`; the host catalog/container are never changed. Identical class
+and tag metadata are de-duplicated, while conflicts fail before that module's
+listeners or process callbacks run. Missing or empty catalogs are valid for
+modules without processes.
+
+**Operational warning:** persisted process rows contain the module process
+FQCN. Before deactivating a sidecar or renaming one of its processes, drain,
+complete, fail, migrate, or preserve compatibility for every non-terminal row
+and its scheduled callbacks. Version 0.6.2 does not automate that migration.
+
+See [Consumer modules](consumer-modules.md) for complete bootstrap, bridge,
+routing, dump, failure, and deactivation contracts.
 
 ## How to verify a migration (any version)
 
