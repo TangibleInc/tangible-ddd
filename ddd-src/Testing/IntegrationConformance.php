@@ -208,15 +208,11 @@ final class IntegrationConformance {
         continue;
       }
 
-      // Load ONLY files with an integration surface. Consumer src is full of
-      // classes that parse only inside WP (infra repos extending WP types);
-      // forcing them through the autoloader fatals the scan. Everything we
-      // check mentions Integration* somewhere (the trait, a stamped
-      // IntegrationEvent base, IntegrationListener, IAnnouncesIntegration,
-      // or the Integration\ twin sub-namespace), so a substring pre-filter
-      // is a safe superset.
+      // Load only files with a checked integration or touches surface.
+      // Consumer src is full of classes that parse only inside WP; forcing
+      // unrelated files through the autoloader can fatal the scan.
       $source = (string) file_get_contents($file->getPathname());
-      if (!str_contains($source, 'Integration')) {
+      if (!str_contains($source, 'Integration') && !str_contains($source, 'Touches')) {
         continue;
       }
 
