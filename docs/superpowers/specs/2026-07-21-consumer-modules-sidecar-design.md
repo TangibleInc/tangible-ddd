@@ -318,10 +318,18 @@ with the same prefix. The module therefore imports the host's actual public
 instances through `ConsumerRegistry::service_for()`:
 
 - `CorrelationMiddleware`;
-- the host transaction middleware;
+- the host transaction middleware, using its host-specific service ID;
 - `DomainEventsPublishMiddleware` and its `EventsUnitOfWork`;
 - `IIntegrationEventBus` and `IOutboxRepository`; and
 - `ProcessRunner`.
+
+The current LMS, Quiz, Cred, and Datastream service YAMLs set
+`_defaults.public: true`. The six non-transaction IDs above are common across
+those hosts. Transaction is not: Cred and Datastream command buses use
+`TangibleDDD\Application\Persistence\TransactionMiddleware`, while LMS and
+Quiz command buses use their own `DoctrineTransactionMiddleware` services.
+The exact transaction ID is therefore part of the host/module contract, not a
+framework-wide default.
 
 Only the terminal command/query resolution layer is module-container bound so
 it can resolve module handlers and self-handling command dependencies.
@@ -350,7 +358,7 @@ services:
     factory: ['TangibleDDD\Infra\Consumers\ConsumerRegistry', 'service_for']
     arguments:
       - 'tgbl_lms'
-      - 'Tangible\LMS\Infra\Persistence\TransactionMiddleware'
+      - 'Tangible\LMS\Application\Middleware\DoctrineTransactionMiddleware'
 
   TangibleDDD\Application\Events\DomainEventsPublishMiddleware:
     factory: ['TangibleDDD\Infra\Consumers\ConsumerRegistry', 'service_for']
@@ -392,9 +400,10 @@ services:
     arguments: ['@service_container']
 ```
 
-The host-specific transaction service ID is an explicit sidecar dependency and
-must be verified against the released dumped host container. The bridge calls
-only `get()` on that opaque container; it never mutates it.
+The host-specific transaction service ID is an explicit sidecar dependency.
+It must be declared in the sidecar wiring and covered by a dumped-container
+contract test. The bridge calls only `get()` on that opaque container; it never
+mutates it.
 
 If a host does not expose a required custom infrastructure service, full
 host-native semantics are blocked until the host publishes a stable public
@@ -539,7 +548,9 @@ If a dumped host makes a custom middleware or repository private, a module
 cannot fetch it. Full host-native module execution is blocked until a normal
 host release publishes that service under a stable public ID. Reconstructing
 an equivalent stateful service is not a supported workaround, and runtime
-container mutation is never the workaround.
+container mutation is never the workaround. All four current fleet YAMLs use
+public defaults, but each released dumped container still needs a contract
+test for the exact IDs consumed by its sidecars.
 
 ### Duplicate hook boot
 
@@ -631,8 +642,9 @@ Focused spike tests must prove:
 - the opaque host container receives only the expected `get()` calls and has
   no builder/mutation dependency.
 
-After the 0.6.1 rebase, add a real `PhpDumper` end-to-end test for the full
-WordPress facade and runtime process overlay.
+The spike includes a real `PhpDumper` test for the get-only cross-container
+bridge and shared object identity. After the 0.6.1 rebase, extend that proof to
+the full WordPress facade and runtime process overlay.
 
 ## Documentation Propagation Checklist
 
@@ -673,9 +685,10 @@ The release patch is incomplete until all of these surfaces agree:
    `owner_of()` source-compatible through an interface, or retain an ordinary
    `ConsumerHandle` plus overlay metadata? The spike deliberately chooses the
    smaller, source-compatible form.
-2. Which exact LMS and Quiz service IDs should become the stable public module
-   bridge contract? `service_for()` is the mechanism, but released dumped
-   container visibility still requires verification after 0.6.1 rollout.
+2. Should the known fleet service IDs become a documented framework contract,
+   or should each sidecar declare a versioned host-service manifest? The
+   transaction ID already differs: LMS and Quiz use their host Doctrine
+   middleware, while Cred and Datastream use the framework middleware.
 3. Should module process conflicts be rejected by a dedicated runtime catalog
    object or directly by `boot_module()` before calling
    `register_process_entries()`? The answer should follow the final 0.6.1 API,
