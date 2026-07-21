@@ -211,10 +211,11 @@ separate, unbuilt decision).
 ### 0.5.1 (integrity fixes — codex audit)
 
 Mandatory: nothing. Twin-style consumers (cred): stamp the TWIN (the
-announced record) — the harvest follows source → record automatically; a
-stamped source also works (fallback). Framework-only fix: the shared
-query-bus yaml dropped the act bracket (consumer yamls were already clean —
-verify yours has no CorrelationMiddleware in tactician.query_bus).
+announced record). The old source-event fallback applied to the 0.5.1 harvest
+lane only and is superseded by 0.5.2: once harvesting moved to the outbox bus,
+only the published integration record is inspected. Framework-only fix: the
+shared query-bus yaml dropped the act bracket (consumer yamls were already
+clean — verify yours has no CorrelationMiddleware in tactician.query_bus).
 
 ### 0.5.2 (the harvest moves to the bus)
 
