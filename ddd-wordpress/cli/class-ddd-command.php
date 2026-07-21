@@ -154,24 +154,7 @@ class DDD_Command {
     $files_created = 0;
 
     // Create directory structure
-    $dirs = [
-      'ddd-src/Domain/Events',
-      'ddd-src/Domain/Shared',
-      'ddd-src/Domain/Exceptions',
-      'ddd-src/Domain/Repositories',
-      'ddd-src/Application/Commands',
-      'ddd-src/Application/CommandHandlers',
-      'ddd-src/Application/Queries',
-      'ddd-src/Application/QueryHandlers',
-      'ddd-src/Application/EventHandlers',
-      'ddd-src/Application/IntegrationListeners',
-      'ddd-src/Application/Process',
-      'ddd-src/Application/Services',
-      'ddd-src/Infra/Persistence',
-      'ddd-src/Infra/Services',
-      'ddd-wordpress/di',
-      'ddd-wordpress/tables',
-    ];
+    $dirs = $this->get_directories();
 
     foreach ( $dirs as $dir ) {
       $full_path = "{$path}/{$dir}";
@@ -234,6 +217,29 @@ class DDD_Command {
     return implode( '', array_map( 'ucfirst', $parts ) );
   }
 
+  /** @return list<string> */
+  private function get_directories(): array {
+    return [
+      'ddd-src/Domain/Events',
+      'ddd-src/Domain/Shared',
+      'ddd-src/Domain/Exceptions',
+      'ddd-src/Domain/Repositories',
+      'ddd-src/Application/Commands',
+      'ddd-src/Application/CommandHandlers',
+      'ddd-src/Application/Queries',
+      'ddd-src/Application/QueryHandlers',
+      'ddd-src/Application/EventHandlers',
+      'ddd-src/Application/IntegrationListeners',
+      'ddd-src/Application/Process',
+      'ddd-src/Application/Services',
+      'ddd-src/Infra/Persistence',
+      'ddd-src/Infra/Services',
+      'ddd-wordpress/di',
+      'ddd-wordpress/tables',
+      '.claude/skills/tangible-ddd',
+    ];
+  }
+
   /**
    * Render the post-scaffold wiring wrapper for the consumer's main plugin.
    * The winning framework copy defines boot() at plugins_loaded:1. The
@@ -281,6 +287,7 @@ PHP;
       'ddd-wordpress/di/index.php' => $this->template_di_index( $prefix, $namespace, $version_const ),
       'ddd-wordpress/di/services.yaml' => $this->template_services_yaml( $prefix, $namespace, $version_const ),
       'ddd-wordpress/di/tactician.yaml' => $this->template_tactician_yaml( $prefix, $namespace ),
+      '.claude/skills/tangible-ddd/SKILL.md' => $this->template_consumer_skill(),
     ];
   }
 
@@ -290,6 +297,33 @@ PHP;
 
 
 
+
+  /** Keep consumer-local guidance tied to the installed framework copy. */
+  private function template_consumer_skill(): string {
+    return <<<'MARKDOWN'
+---
+name: tangible-ddd
+description: Use when changing domain, application, event, process, workflow, or DDD container code in this WordPress plugin.
+---
+
+# Tangible DDD consumer handoff
+
+Before changing this consumer:
+
+1. Verify the installed `tangible/ddd` version with Composer. Do not assume the
+   repository's newest docs match the consumer's lockfile or vendored copy.
+2. Read the installed canonical guide at
+   `vendor/tangible/ddd/.claude/skills/tangible-ddd/SKILL.md`. If Composer uses
+   another install path, locate that package's copy instead.
+3. When guidance conflicts, inspect that installed package's current source and
+   tests. Runtime code and executable contracts win over remembered examples.
+4. Then read this consumer's architecture docs, DI YAML, tests, and local
+   conventions. Local guidance may specialize the framework contract; it must
+   not silently replace it.
+
+This file is only the handoff. Do not grow it into a copied framework manual.
+MARKDOWN;
+  }
 
   /**
    * Template: DI container setup.

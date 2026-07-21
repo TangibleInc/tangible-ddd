@@ -252,6 +252,41 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
     );
   }
 
+  public function test_scaffold_includes_a_thin_canonical_skill_handoff(): void {
+    $path = '.claude/skills/tangible-ddd/SKILL.md';
+
+    $this->assertArrayHasKey( $path, self::$templates );
+    $skill = self::$templates[ $path ];
+
+    $this->assertStringContainsString(
+      'vendor/tangible/ddd/.claude/skills/tangible-ddd/SKILL.md',
+      $skill,
+    );
+
+    foreach ( [
+      'CorrelationContext::',
+      'extends AsyncWordPressActionHandler',
+      'extends AsyncWordpressActionHandler',
+      'new CommandAuditMiddleware',
+      "'@TangibleDDD\\Application\\Logging\\CommandAuditMiddleware'",
+      'TransportEnvelope::',
+      'composer require tangible/ddd:^0.2',
+    ] as $removed ) {
+      $this->assertStringNotContainsString( $removed, $skill );
+    }
+  }
+
+  public function test_scaffold_creates_the_agent_skill_directory(): void {
+    $command = ( new \ReflectionClass( DDD_Command::class ) )->newInstanceWithoutConstructor();
+    $method = new \ReflectionMethod( DDD_Command::class, 'get_directories' );
+    $method->setAccessible( true );
+
+    $this->assertContains(
+      '.claude/skills/tangible-ddd',
+      $method->invoke( $command ),
+    );
+  }
+
   public function test_main_plugin_snippet_waits_for_the_framework_loader(): void {
     $framework = dirname( __DIR__, 3 );
     $temp = sys_get_temp_dir() . '/ddd-scaffold-load-order-' . bin2hex( random_bytes( 8 ) );
