@@ -3,6 +3,7 @@
 namespace TangibleDDD\WordPress;
 
 use TangibleDDD\Infra\Services\OutboxProcessor;
+use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerHandle;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
@@ -63,14 +64,20 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
   register_event_handlers($di_getter);
   register_process_hooks($config, $di_getter);
 
-  // Process discovery: register ddd.long_process-tagged classes (and the
-  // resume hooks for their #[Awaits] events) with the ProcessRunner. Needs
-  // findTaggedServiceIds — a ContainerBuilder API — so containers that don't
-  // expose it (dumped/opaque) skip discovery, same guard style as
-  // register_event_handlers' getServiceIds probe above.
+  // Prefer the catalog materialized by the DDD compiler pass. Retained
+  // ContainerBuilder consumers without that pass keep the tagged fallback.
   if (processes_enabled($config)) {
     $container = $di_getter();
-    if (method_exists($container, 'findTaggedServiceIds')) {
+    if (method_exists($container, 'has') && $container->has(LongProcessCatalog::class)) {
+      $entries = $container->get(LongProcessCatalog::class)->all();
+      if (!empty($entries)) {
+        register_process_entries(
+          $config,
+          $container->get(ProcessRunner::class),
+          $entries,
+        );
+      }
+    } elseif (method_exists($container, 'findTaggedServiceIds')) {
       register_processes_from_container($config, $container);
     }
   }
@@ -254,7 +261,24 @@ function register_processes_from_container(
 
   $runner = $container->get(ProcessRunner::class);
 
-  foreach ($tagged as $class => $tags) {
+  register_process_entries($config, $runner, $tagged);
+}
+
+/**
+ * Register process hooks from class names and their ddd.long_process tags.
+ *
+ * @param array<class-string<\TangibleDDD\Application\Process\LongProcess>, list<array<string, mixed>>> $entries
+ */
+function register_process_entries(
+  IDDDConfig $config,
+  ProcessRunner $runner,
+  array $entries,
+): void {
+  if (!processes_enabled($config)) {
+    return;
+  }
+
+  foreach ($entries as $class => $tags) {
     // Fail fast on a mis-tag: the ddd.long_process tag promises a saga.
     if (!is_subclass_of($class, \TangibleDDD\Application\Process\LongProcess::class)) {
       throw new \InvalidArgumentException("$class is tagged ddd.long_process but does not extend LongProcess");
