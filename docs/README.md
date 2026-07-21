@@ -41,6 +41,7 @@ first; then the current documents below.
 
 | Document | Scope |
 | --- | --- |
+| [DDDash v2 working scope](dashboard/V2-OUTLINE.md) | Agreed unified trace, Biography, and consumer-provenance direction; not yet an implementation commitment |
 | [Outbox transport payload strategies](outbox-transport-payload-strategies.md) | Possible transport optimization; explicitly not a current change |
 | [Multi-item behaviour topology](topology/multi-item-behaviour-topology.md) | Topology exploration rather than a shipped contract |
 
