@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../ddd-src/Infra/DependencyInjection/DDDCompilerP
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\LongProcessCatalog;
@@ -67,6 +68,28 @@ class LongProcessCatalogPassTest extends TestCase {
     );
   }
 
+  public function test_resolves_the_effective_class_of_a_tagged_child_definition(): void {
+    $builder = new ContainerBuilder();
+    $builder->register('process.prototype', RequiredConstructorProcess::class)
+      ->setAbstract(true)
+      ->setAutowired(false)
+      ->setPublic(false);
+    $builder->setDefinition(
+      'consumer.process',
+      (new ChildDefinition('process.prototype'))
+        ->addTag('ddd.long_process'),
+    );
+
+    DDDCompilerPasses::register($builder);
+    $builder->compile();
+
+    $this->assertSame(
+      [RequiredConstructorProcess::class => [[]]],
+      $builder->get(LongProcessCatalog::class)->all(),
+    );
+    $this->assertSame(0, RequiredConstructorProcess::$constructions);
+  }
+
   public function test_merges_duplicate_definitions_under_one_process_class(): void {
     $builder = new ContainerBuilder();
     $builder->register('first_process_definition', RequiredConstructorProcess::class)
@@ -92,7 +115,7 @@ class LongProcessCatalogPassTest extends TestCase {
 
   public function test_rejects_a_tagged_non_process_definition(): void {
     $builder = new ContainerBuilder();
-    $builder->register(\stdClass::class)
+    $builder->register('not_a_process', \stdClass::class)
       ->setPublic(false)
       ->addTag('ddd.long_process');
 

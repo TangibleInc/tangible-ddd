@@ -269,6 +269,10 @@ namespace Symfony\Component\DependencyInjection\Compiler {
   interface CompilerPassInterface {
     public function process(\Symfony\Component\DependencyInjection\ContainerBuilder $container): void;
   }
+
+  final class PassConfig {
+    public const TYPE_BEFORE_REMOVING = 'beforeRemoving';
+  }
 }
 
 namespace Symfony\Component\DependencyInjection {
