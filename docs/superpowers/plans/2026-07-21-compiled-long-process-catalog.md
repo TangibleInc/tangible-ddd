@@ -377,4 +377,3 @@ Record commits, exact test counts, any existing deprecations, and this post-tag 
 3. Update LMS/Quiz development and `bin/build-php` compile setup.
 4. Update LMS/Quiz constraints and locks against the published tag.
 5. Build both release containers and verify process catalogs under `WP_DEBUG=false`.
-

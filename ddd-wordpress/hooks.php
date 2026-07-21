@@ -14,8 +14,9 @@ use TangibleDDD\Infra\IDDDConfig;
  * the consumer registry immediately, and defers register_hooks() to init:2 —
  * after the consumer's DI container compiles on init:1.
  *
- * Call at include time from the main plugin file or plugins_loaded (the
- * generated ddd-wordpress/di/index.php does exactly this).
+ * Call only after the winning framework copy initializes at plugins_loaded:1.
+ * The generated main-plugin wrapper requires ddd-wordpress/di/index.php at
+ * priority 10, and that index calls boot() during its own include.
  *
  * @param IDDDConfig $config Plugin configuration
  * @param callable $di_getter Function that returns the DI container
@@ -36,7 +37,7 @@ function boot(IDDDConfig $config, callable $di_getter, ?string $label = null, ?s
  * All registered consumers, filtered through `tangible_ddd_consumers`
  * (relabel / hide / inject). Populated by boot()/register_hooks(), so read
  * after init:2 — a dashboard or CLI reading earlier sees only consumers
- * that boot()ed at include time.
+ * whose post-loader bootstrap has already called boot().
  *
  * @return array<string, ConsumerHandle> prefix => handle
  */
@@ -222,9 +223,11 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
 }
 
 /**
- * Register process classes from DI container tags.
+ * Register process classes from tags on a retained ContainerBuilder.
  *
- * Call this from 'tgbl_{prefix}_post_compile_di' hook.
+ * This public function is the 0.6.0 compatibility path. New consumers should
+ * register DDDCompilerPasses before compilation and let register_hooks() read
+ * LongProcessCatalog, which also works after Symfony dumps the container.
  *
  * Tag format in services.yaml:
  * ```yaml
