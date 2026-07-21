@@ -1,5 +1,9 @@
 # Integration Event Evolution — Handoff Document
 
+> **Status: HISTORICAL 0.1-TO-0.2 HANDOFF.** This records the event-taxonomy
+> transition that led to the current model. It is not a current API guide;
+> later source, tests, and operational documentation take precedence.
+
 **Purpose:** Self-contained briefing for a fresh session (human or AI) on the tangible-ddd 0.2.0 event-architecture evolution. Everything here was designed and decided in a multi-day design dialogue (2026-06-29 → 2026-07-04). The formal spec lives at `docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md` in this repo — read it after this for full detail. This document explains the system as it IS, what it BECOMES, and WHY.
 
 **Repos involved:**

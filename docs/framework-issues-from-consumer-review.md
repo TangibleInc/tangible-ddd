@@ -1,5 +1,9 @@
 # Tangible DDD Framework Issues From Consumer Review
 
+> **Status: HISTORICAL AUDIT.** These findings informed subsequent framework
+> releases. Read current source, tests, and the operational guides before
+> acting on any class name or wiring recommendation preserved here.
+
 Date: 2026-06-24
 
 This note captures framework-level issues found while reviewing real consumers,

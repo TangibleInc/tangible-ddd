@@ -1,9 +1,8 @@
 # TangibleDDD Dashboard — Build Outline
 
-> **Status:** planning / "we finna build this". Authoritative scope doc for the operational
-> dashboard. Grounded against `tangible-ddd @ v3-ddd`, verified 2026-06-29 by reading the
-> source (file:line cited in §1). Read §1 before writing any code — it is the anti-hallucination
-> contract. If a claim here ever conflicts with the code, the code wins; fix this doc.
+> **Status: HISTORICAL V1 BUILD PLAN.** The framework dashboard now lives in
+> `ddd-wordpress/Admin/Dashboard`. This document preserves the plan that led to
+> it; its old middleware and API names are not current integration guidance.
 >
 > **See also (older / partially superseded):** `docs/dashboard/ddd-drill-inspector-dashboard-plan.md`,
 > `docs/outbox-transport-payload-strategies.md`.
