@@ -5,13 +5,15 @@ namespace TangibleDDD\Infra\Consumers;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
- * One registered ddd consumer, as seen by discovery surfaces (the ops
- * dashboard, WP-CLI, cross-consumer tooling).
+ * One DDD config/container routing handle.
  *
- * Carries exactly what register_hooks()/boot() received: the consumer's
- * IDDDConfig (prefix → tables, hooks, options) and its DI getter. The
- * getter stays uncalled until container() — registration happens during
- * plugin bootstrap, long before it is safe or cheap to build containers.
+ * Top-level handles are visible to discovery surfaces and own persistence,
+ * hooks, workers, CLI, and dashboard identity. Module handles live only in
+ * ConsumerRegistry's routing overlay: they reuse their host's exact config,
+ * expose their module container, and never become a second consumer in all().
+ *
+ * The getter stays uncalled until container(); registration happens during
+ * plugin bootstrap, before it is safe or cheap to build containers.
  */
 final class ConsumerHandle {
 
@@ -31,7 +33,7 @@ final class ConsumerHandle {
    * The PHP namespace subtree this consumer owns — the axis owner_of()
    * resolves on. Resolution order:
    *
-   *   1. explicit boot() override;
+   *   1. explicit boot()/boot_module() override;
    *   2. the config's own declaration (DDDConfig carries namespace_root as
    *      a ctor arg; hand-written configs may duck-type the method);
    *   3. derived from the config CLASS's namespace, trailing \Infra
@@ -76,6 +78,26 @@ final class ConsumerHandle {
 
   public function config(): IDDDConfig {
     return $this->config;
+  }
+
+  /**
+   * Whether a repeated top-level registration describes this exact handle.
+   *
+   * @internal Used by ConsumerRegistry to keep a host immutable once modules
+   *   share its config and runtime services.
+   */
+  public function matches_registration(
+    IDDDConfig $config,
+    callable $di_getter,
+    ?string $label = null,
+    ?string $namespace_root = null,
+  ): bool {
+    $candidate = new self($config, $di_getter, $label, $namespace_root);
+
+    return $this->config === $candidate->config
+      && $this->di_getter === $candidate->di_getter
+      && $this->label() === $candidate->label()
+      && $this->namespace_root() === $candidate->namespace_root();
   }
 
   /**

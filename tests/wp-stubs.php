@@ -89,18 +89,35 @@ if (!function_exists('add_action')) {
   global $_test_actions;
   $_test_actions = [];
 
+  /** @var array<string, list<array{callback: callable, priority: int, accepted_args: int}>> */
+  global $_test_action_registrations;
+  $_test_action_registrations = [];
+
   function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): void {
-    global $_test_actions;
+    global $_test_actions, $_test_action_registrations;
     $_test_actions[$hook][] = $callback;
+    $_test_action_registrations[$hook][] = compact('callback', 'priority', 'accepted_args');
   }
 }
 
 if (!function_exists('do_action')) {
+  /** @var array<string, int> */
+  global $_test_did_actions;
+  $_test_did_actions = [];
+
   function do_action(string $hook, ...$args): void {
-    global $_test_actions;
+    global $_test_actions, $_test_did_actions;
+    $_test_did_actions[$hook] = ($_test_did_actions[$hook] ?? 0) + 1;
     foreach ($_test_actions[$hook] ?? [] as $callback) {
       $callback(...$args);
     }
+  }
+}
+
+if (!function_exists('did_action')) {
+  function did_action(string $hook): int {
+    global $_test_did_actions;
+    return $_test_did_actions[$hook] ?? 0;
   }
 }
 

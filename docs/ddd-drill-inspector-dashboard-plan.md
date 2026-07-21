@@ -1,5 +1,10 @@
 # DDD Drill Inspector Dashboard Plan
 
+> **Status: HISTORICAL DIRECTION.** This early dashboard proposal was
+> superseded operationally by the dashboard under
+> `ddd-wordpress/Admin/Dashboard`. It remains useful as design provenance, not
+> as a current API or build checklist.
+
 Date: 2026-06-24
 
 This document captures the dashboard direction that emerged from reviewing

@@ -10,9 +10,13 @@ use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
- * The consumer's whole wiring ceremony in one call: announces the plugin to
- * the consumer registry immediately, and defers register_hooks() to init:2 —
- * after the consumer's DI container compiles on init:1.
+ * A top-level consumer's whole wiring ceremony in one call: announces the
+ * plugin to the top-level registry immediately, and defers register_hooks()
+ * to init:2, after its DI container compiles on init:1.
+ *
+ * Sidecars must use boot_module() at plugins_loaded:30. Once a module attaches,
+ * this host handle is stable because its exact config and runtime services are
+ * shared by every module route.
  *
  * Call only after the winning framework copy initializes at plugins_loaded:1.
  * The generated main-plugin wrapper requires ddd-wordpress/di/index.php at
@@ -34,7 +38,8 @@ function boot(IDDDConfig $config, callable $di_getter, ?string $label = null, ?s
 }
 
 /**
- * All registered consumers, filtered through `tangible_ddd_consumers`
+ * All registered top-level persistence consumers, filtered through
+ * `tangible_ddd_consumers`
  * (relabel / hide / inject). Populated by boot()/register_hooks(), so read
  * after init:2 — a dashboard or CLI reading earlier sees only consumers
  * whose post-loader bootstrap has already called boot().
@@ -50,9 +55,11 @@ function consumers(): array {
 }
 
 /**
- * Register all DDD framework hooks.
+ * Register all hooks for one top-level DDD consumer.
  *
- * Call this after DI container is compiled.
+ * Call this after DI container is compiled. This remains the compatibility
+ * entry point for older hosts; separately deployed modules use boot_module()
+ * and never call register_hooks() for themselves.
  *
  * @param IDDDConfig $config Plugin configuration
  * @param callable $di_getter Function that returns the DI container
@@ -103,8 +110,9 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
  * service IDs matching either pattern and instantiates them.
  *
  * @param callable $di_getter Function that returns the DI container
+ * @param bool $fail_fast Re-throw construction errors for module boot
  */
-function register_event_handlers(callable $di_getter): void {
+function register_event_handlers(callable $di_getter, bool $fail_fast = false): void {
   $container = $di_getter();
 
   if (!method_exists($container, 'getServiceIds')) {
@@ -120,6 +128,10 @@ function register_event_handlers(callable $di_getter): void {
     try {
       $container->get($id);
     } catch (\Throwable $e) {
+      if ($fail_fast) {
+        throw $e;
+      }
+
       error_log(sprintf(
         '[ddd-event-handlers] Failed to boot handler %s: %s',
         $id,

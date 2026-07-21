@@ -71,6 +71,7 @@ final class IntegrationConformance {
    * explicit `id:` or the {canonical_name}_id convention — must name a real
    * ctor param. Registry-free by design: the scan runs without boot().
    *
+   * @param ReflectionClass<object> $ref
    * @return list<array{class: string, param: string, problem: string}>
    */
   private static function touches_problems(ReflectionClass $ref): array {
@@ -142,7 +143,11 @@ final class IntegrationConformance {
     return $violations;
   }
 
-  /** One line per violation — ready for an assertion message or doctor output. */
+  /**
+   * One line per violation — ready for an assertion message or doctor output.
+   *
+   * @param list<array{class: string, param: string, problem: string}> $violations
+   */
   public static function describe(array $violations): string {
     return implode("\n", array_map(
       static fn (array $v) => sprintf('%s::$%s — %s', $v['class'], $v['param'], $v['problem']),
@@ -208,15 +213,11 @@ final class IntegrationConformance {
         continue;
       }
 
-      // Load ONLY files with an integration surface. Consumer src is full of
-      // classes that parse only inside WP (infra repos extending WP types);
-      // forcing them through the autoloader fatals the scan. Everything we
-      // check mentions Integration* somewhere (the trait, a stamped
-      // IntegrationEvent base, IntegrationListener, IAnnouncesIntegration,
-      // or the Integration\ twin sub-namespace), so a substring pre-filter
-      // is a safe superset.
+      // Load only files with a checked integration or touches surface.
+      // Consumer src is full of classes that parse only inside WP; forcing
+      // unrelated files through the autoloader can fatal the scan.
       $source = (string) file_get_contents($file->getPathname());
-      if (!str_contains($source, 'Integration')) {
+      if (!str_contains($source, 'Integration') && !str_contains($source, 'Touches')) {
         continue;
       }
 
@@ -288,6 +289,7 @@ final class IntegrationConformance {
     return $classes;
   }
 
+  /** @param list<array{0: int, 1: string, 2: int}|string> $tokens */
   private static function prev_meaningful(array $tokens, int $i): mixed {
     for ($j = $i - 1; $j >= 0; $j--) {
       if (!is_array($tokens[$j]) || !in_array($tokens[$j][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
@@ -297,6 +299,10 @@ final class IntegrationConformance {
     return null;
   }
 
+  /**
+   * @param ReflectionClass<object> $ref
+   * @param class-string $trait
+   */
   private static function uses_trait(ReflectionClass $ref, string $trait): bool {
     foreach (self::all_traits($ref) as $used) {
       if ($used === $trait) {
@@ -306,7 +312,12 @@ final class IntegrationConformance {
     return false;
   }
 
-  /** Traits of the class, its ancestors, and traits-of-traits. */
+  /**
+   * Traits of the class, its ancestors, and traits-of-traits.
+   *
+   * @param ReflectionClass<object> $ref
+   * @return array<int, class-string>
+   */
   private static function all_traits(ReflectionClass $ref): array {
     $traits = [];
     $current = $ref;

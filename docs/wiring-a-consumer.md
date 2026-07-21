@@ -1,62 +1,30 @@
-# Wiring a plugin to tangible-ddd
+# Wiring a consumer to Tangible DDD
 
-> Audience: AI assistants (and humans) adding tangible-ddd to a WordPress
-> plugin, or auditing an existing consumer's wiring. This is the canonical
-> checklist — every block below is the as-built 0.2.0 shape, verified against
-> real consumers (tangible-cred, tangible-datastream, lms-monorepo's lms and
-> quiz). When this file conflicts with the code, the code wins; fix this file.
+> **Status: CURRENT FOR 0.6.2.** This is the supported top-level consumer
+> contract. Check the installed package version, source, and tests when working
+> on an older consumer or when this guide disagrees with executable behavior.
 
-> ⚠️ **0.2.5 changed the wiring story** (`docs/migration-0.2-to-0.3.md` is
-> the delta ledger — read it WITH this file): the stamped classes this guide
-> describes are now OPTIONAL. `wp ddd init` emits zero classes; identity is
-> a `DDDConfig` boot declaration (prefix + namespace_root + version) resolved
-> at runtime via `ConsumerRegistry::owner_of()`. Existing consumers' stamps
-> keep working (overrides win); fresh consumers start collapsed. The
-> checklist below still describes the existing fleet accurately.
->
-> **0.6.1 fixes process discovery in dumped Symfony containers.** Consumers
-> must register the DDD compiler passes before `compile()` and register their
-> `Application/Process` namespace as private discovery definitions. At runtime,
-> `register_hooks()` prefers the compiled `LongProcessCatalog`; retained
-> `ContainerBuilder` consumers keep the 0.6.0 tag-query fallback.
->
-> Reference implementations: `lms-monorepo/plugins/quiz` (leanest correct
-> wiring), `tangible-cred` (largest surface). Both migrated to 0.2.0 in July
-> 2026; their PRs are worked examples of every rule here.
+A top-level consumer is one WordPress plugin with one DDD prefix, namespace
+root, DI container, persistence identity, migration lane, worker set, and
+dashboard entry. A separately deployed extension that must retain this identity
+is a [consumer module](consumer-modules.md), not another call to `boot()`.
 
-## What a consumer is
+## Fast path
 
-A consumer = one plugin with its own `IDDDConfig` prefix. The prefix scopes
-everything: six framework tables (`{wp_prefix}{prefix}_integration_outbox`,
-`_integration_dlq`, `_long_processes`, `_command_audit`,
-`_behaviour_workflows`, `_behaviour_workflow_items`), WP hook names
-(`{prefix}_domain_*`, `{prefix}_integration_*`), options
-(`{prefix}_outbox_*`, `{prefix}_ddd_schema_version`), and one ActionScheduler
-relay. Two consumers on one site are two parallel universes that may talk
-only over WP hooks — never over each other's tables.
-
-⚠️ `TangibleDDD\` is an unscoped namespace and every consumer vendors its own
-copy — the first-autoloaded copy wins process-wide. All consumers on one
-install must run the same framework major, and framework upgrades deploy in
-lockstep with a drained outbox (payload wire shapes are versioned by the
-framework, not per consumer).
-
-## Fast path: `wp ddd init`
-
-The framework ships a scaffolder that generates most of the ceremony:
+From the consumer plugin directory:
 
 ```bash
-composer require tangible/ddd:^0.6.1
-wp ddd init --prefix=acme_orders --namespace=Acme\\Orders --plugin-path=.
+composer require tangible/ddd:^0.6.2
+wp ddd init --prefix=acme_orders --namespace='Acme\Orders' --plugin-path=.
 ```
 
-Generated: the class-free `ddd-src/` directory tree (including
-`Application/Process`), `services.yaml` + `tactician.yaml`, and the DI index.
-The index registers `DDDCompilerPasses`, compiles on `init:1`, and ends with
-the whole framework handshake:
-`\TangibleDDD\WordPress\boot($config, fn () => di())`.
-Your main plugin file schedules that index after the winning framework copy
-initializes (and after defining the version constant/loading Composer):
+The command creates the class-free `ddd-src/` skeleton, DI YAML, container
+index, private process resource, seven-table declarations, and a thin local
+agent skill that points to the installed package's canonical skill. Existing
+files are skipped unless `--force` is supplied.
+
+Add the printed wrapper to the main plugin file after its version constant and
+Composer autoloader are loaded:
 
 ```php
 add_action('plugins_loaded', static function (): void {
@@ -64,364 +32,325 @@ add_action('plugins_loaded', static function (): void {
 }, 10);
 ```
 
-Plus the composer psr-4 mapping for the generated namespace
-(`"Acme\\Orders\\": "ddd-src/"`) — the full ceremony is that wrapper plus
-the mapping. Do not require the index immediately from the plugin file:
-Tangible DDD chooses its winning copy at `plugins_loaded:1`, and neither its
-class autoloader nor `TangibleDDD\WordPress\boot()` exists before then.
-No activation hook: the migration lane creates/heals the framework tables
-on the first `init` tick.
+Do not require the generated index immediately during plugin-file execution.
+The framework winner has not initialized yet at that point.
 
-The scaffolder's output is pinned to the framework by
-`tests/Unit/Cli/ScaffoldTemplatesConformanceTest.php` (every referenced
-class must exist; every hand-listed constructor argument must match the
-real constructor) — if you change a framework constructor or move a class,
-that test tells you to update the templates.
+## Required lifecycle
 
-The manual checklist below is the same material spelled out — use it to
-**audit an existing consumer** or when scaffolding isn't an option.
+| WordPress phase | Contract |
+| --- | --- |
+| Plugin-file load | Every bundled Composer copy registers its framework callback for `plugins_loaded:0`. |
+| `plugins_loaded:0` | Each copy registers its version and path with `Tangible_DDD_Versions`. |
+| `plugins_loaded:1` | The newest copy initializes once and loads the framework classes and WordPress functions. |
+| `plugins_loaded:10` | The consumer includes its DI index and calls `boot()`. The consumer handle is registered immediately. |
+| `init:1` | The consumer constructs or compiles its container. |
+| `init:2` | The callback installed by `boot()` registers handlers, process routes, outbox workers, and migrations. |
 
-## Checklist
+This order is part of the API. A host that must accept consumer modules has to
+call `boot()` before `plugins_loaded:30`; calling `register_hooks()` for the
+first time at `init:2` is too late for module attachment.
 
-1. `composer require tangible/ddd:^0.6.1`
-2. Config class implementing `TangibleDDD\Infra\IDDDConfig`
-3. Tables: created/healed automatically by the migration lane once step 6 is
-   wired (an explicit activation-time `install_tables($config)` is optional)
-4. DI: the framework services block and private process resource (below) in services.yaml
-5. Tactician command bus with the middleware chain (below)
-6. Bootstrap: enter after framework initialization at `plugins_loaded:1`
-   (the scaffolder and current fleet use priority 10), register
-   `DDDCompilerPasses` before `compile()`, then make **exactly one call** to
-   `\TangibleDDD\WordPress\boot($config, $di_getter)`
-7. Events per the 0.2.0 taxonomy (below)
-8. Consumers of integration events = `IntegrationListener` classes under `Application\IntegrationListeners\`
-9. Container smoke test covering the hand-wired framework service ids
+## Consumer identity
 
-## 3. Tables
-
-Call from an activation/upgrade initializer (idempotent dbDelta):
+Fresh consumers use `DDDConfig` directly:
 
 ```php
-\TangibleDDD\WordPress\install_tables(new Infra\Config(PLUGIN_VERSION));
+$config = new \TangibleDDD\Infra\DDDConfig(
+    prefix: 'acme_orders',
+    namespace_root: 'Acme\Orders',
+    version: ACME_ORDERS_VERSION,
+);
+
+\TangibleDDD\WordPress\boot(
+    $config,
+    static fn () => \Acme\Orders\WordPress\DI\di(),
+    label: 'Acme Orders',
+);
 ```
 
-If the plugin also runs Doctrine ORM, list the six framework table bare-names
-in an excluded-tables config so `migration:diff` never emits DROPs for tables
-it doesn't manage (see `plugins/lms/ddd-tables.php` in lms-monorepo).
+The namespace root drives `ConsumerRegistry::owner_of()`. Commands, queries,
+and events defined below that root resolve the consumer container and prefix
+without stamped consumer base classes. Hand-written `IDDDConfig`
+implementations and old base-class overrides remain valid when their installed
+framework version supports them.
 
-## 4. DI — the framework block
+`boot()` is the only top-level handshake. It inserts a `ConsumerHandle` into
+the registry and schedules the complete runtime hook registration. Read
+top-level discovery through `TangibleDDD\WordPress\consumers()` after
+`init:2`; it applies the `tangible_ddd_consumers` filter.
 
-Canonical services.yaml fragment (Symfony DI, `autowire: true` defaults):
+## Container construction
+
+The generated index follows this shape:
+
+```php
+$container_builder = new ContainerBuilder();
+$loader = new YamlFileLoader($container_builder, new FileLocator(__DIR__));
+$loader->load('tactician.yaml');
+$loader->load('services.yaml');
+
+DDDCompilerPasses::register($container_builder);
+
+add_action('init', static function () use ($container_builder): void {
+    $container_builder->compile();
+}, 1);
+
+\TangibleDDD\WordPress\boot($config, static fn () => $container_builder);
+```
+
+Register `DDDCompilerPasses` after all YAML/resources are loaded and before
+`compile()` in every construction path: development, tests, and the release
+builder that invokes Symfony `PhpDumper`. Registering it only in a debug
+bootstrap recreates a development/production process-discovery split.
+
+### Core service bindings
+
+Prefer autowiring for framework classes. Hand-listed positional constructor
+arguments have repeatedly drifted as framework constructors evolved.
+
+| Service ID | Normal implementation or role |
+| --- | --- |
+| `TangibleDDD\Infra\IDDDConfig` | Alias to this consumer's config |
+| `CorrelationMiddleware` | Outermost command scope, nesting guard, correlation, audit |
+| `TransactionMiddleware` | Framework wpdb transaction for `ITransactionalCommand`, or a consumer-specific transaction middleware with an explicitly verified gate |
+| `EventsUnitOfWork` | Collects aggregate domain events |
+| `IDomainEventDispatcher` | `WordPressEventDispatcher` |
+| `DomainEventsPublishMiddleware` | Drains domain events before transaction commit |
+| `IOutboxRepository` | Framework wpdb repository or a transaction-compatible consumer implementation |
+| `IOutboxPublisher` | Action Scheduler or routing publisher |
+| `IIntegrationEventBus` | `OutboxIntegrationEventBus` |
+| `OutboxProcessor` | Relay, retry, and dead-letter processing |
+| `IProcessRepository` | Consumer-scoped process persistence |
+| `ProcessRunner` | Process start, continuation, await, timeout, and compensation |
+| `Redactor` | Command-audit parameter masking |
+
+If aggregate writes use Doctrine/PDO, the outbox repository and transaction
+middleware must use that same transaction boundary. Substituting the default
+wpdb repository would make aggregate and outbox commits independent.
+
+The `EventsUnitOfWork` object is equally identity-sensitive. The command
+middleware resets, seals, and drains that container-managed instance. Inject it
+into repositories/services or resolve the live shared service; never retain it
+in a process-static consumer facade, because a rebuilt/test-swapped container
+would leave the facade recording into a stale sealed instance.
+
+## Command and query buses
+
+The command middleware order is outermost to innermost:
+
+```text
+CorrelationMiddleware
+  -> TransactionMiddleware
+  -> DomainEventsPublishMiddleware
+  -> SelfExecutingCommandMiddleware
+  -> CommandHandlerMiddleware
+```
+
+The stock `TransactionMiddleware` starts a database transaction only when the
+message implements `ITransactionalCommand`. For such a command, the transaction
+wraps event publication so aggregate writes and outbox rows can commit
+atomically when they use the same connection. An unmarked command still passes
+through the middleware chain but no wpdb transaction is opened. Inspect and
+test the equivalent gate when the consumer supplies Doctrine/PDO middleware.
+
+`SelfExecutingCommandMiddleware` is terminal only for a
+`SelfHandlingCommand`; otherwise execution continues to the normal
+naming-convention handler. Either handler shape implements
+`ITransactionalCommand` when its writes require the stock transaction.
+
+The query bus is deliberately read-shaped:
+
+```text
+SelfExecutingCommandMiddleware -> QueryHandlerMiddleware
+```
+
+It contains no correlation/audit, transaction, or event-publication
+middleware. `SelfHandlingQuery` returns its read result; a plain query uses its
+mapped handler.
+
+Both message shapes remain supported:
+
+- Plain `ICommand`/`IQuery` plus `CommandBusAware`/`QueryBusAware` and a
+  convention-named handler.
+- Opt-in `SelfHandlingCommand` or `SelfHandlingQuery` with protected `handle()`
+  dependencies method-injected from the owning container.
+
+A separate `ICommandHandler::handle()` returns `void`. A self-handling command
+also normally returns `void`; a scalar or DTO verdict may steer transport, but
+must not expose a domain object or become a hidden dependency between domain
+steps. Queries return read data.
+
+Every application state change enters the command bus. A command or synchronous
+domain-event handler never dispatches another command. Same-transaction work is
+performed directly through aggregates, repositories, or domain services; a
+later unit of work starts from an integration event.
+
+## Service resources
+
+Register application services by namespace. Command/query handlers should be
+non-shared; event handlers and integration listeners must be public so the
+framework can eagerly construct them at `init:2`:
 
 ```yaml
-  # Compiler-pass input: definitions only. LongProcess objects carry
-  # journey state and must never be resolved from the container.
+services:
+  Acme\Orders\Application\CommandHandlers\:
+    resource: '../../ddd-src/Application/CommandHandlers'
+    shared: false
+
+  Acme\Orders\Application\QueryHandlers\:
+    resource: '../../ddd-src/Application/QueryHandlers'
+    shared: false
+
+  Acme\Orders\Application\EventHandlers\:
+    resource: '../../ddd-src/Application/EventHandlers'
+
+  Acme\Orders\Application\IntegrationListeners\:
+    resource: '../../ddd-src/Application/IntegrationListeners'
+```
+
+`register_event_handlers()` searches service IDs under the two event/listener
+namespaces and resolves them. Do not duplicate that scan in consumer code.
+
+## Event boundary
+
+- A `DomainEvent` is recorded by an aggregate, collected by its repository,
+  and published synchronously during command execution. It shares a database
+  transaction only when the command and configured middleware actually open
+  one.
+- Once the handler returns, the event unit of work is sealed while synchronous
+  handlers drain. Newly recorded events must implement
+  `IAnnouncesIntegration`; this admits scalar self-publishers and rich events
+  with scalar twins while preventing an unbounded plain-domain-event cascade.
+- An `IntegrationEvent` is a reversible record crossing a consistency/time
+  boundary through the transactional outbox.
+- A rich domain event can implement `IAnnouncesIntegration` and return a scalar
+  twin. A scalar event needed on both surfaces can announce itself with
+  `IntegrationBehaviour`.
+- Constructor parameter names and reversible types form the integration wire
+  schema. Treat published action names and payload keys as cross-plugin API.
+- An `IntegrationListener` under `Application\IntegrationListeners` translates
+  one typed integration event into `?ICommand`. Work stays in the command
+  handler.
+
+Raw WordPress subscribers receive one associative payload containing the wire
+keys plus `__` transport metadata. They must read named keys and tolerate
+additions. Framework listeners restore trace context and hydrate the event
+before calling consumer policy.
+
+## Long-process discovery
+
+Long processes are lifecycle values reconstructed by `ProcessRunner`, not
+services to instantiate. Register their definitions privately for compile-time
+discovery:
+
+```yaml
+services:
   _instanceof:
     TangibleDDD\Application\Process\LongProcess:
       tags: ['ddd.long_process']
 
-  My\Plugin\Application\Process\:
+  Acme\Orders\Application\Process\:
     resource: '../../ddd-src/Application/Process'
     autowire: false
     shared: false
     public: false
-
-  # Config — the consumer's identity
-  TangibleDDD\Infra\IDDDConfig:
-    alias: My\Plugin\Infra\Config
-
-  # Correlation middleware — THE ACT BRACKET (guard + scope + audit record)
-  TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
-
-  # Domain event dispatcher. NO arguments — WordPressEventDispatcher has no
-  # constructor; an argument here is silently discarded by PHP and rots.
-  TangibleDDD\Application\Events\IDomainEventDispatcher:
-    class: TangibleDDD\Infra\Services\WordPressEventDispatcher
-
-  # Events unit of work + router + publish middleware
-  TangibleDDD\Application\Events\EventsUnitOfWork: ~
-  TangibleDDD\Application\Events\EventRouter: ~
-  TangibleDDD\Application\Events\DomainEventsPublishMiddleware: ~
-
-  # Outbox
-  TangibleDDD\Application\Outbox\OutboxConfig:
-    factory: ['TangibleDDD\Application\Outbox\OutboxConfig', 'from_options']
-    arguments: ['@TangibleDDD\Infra\IDDDConfig']
-
-  # Default wpdb-backed repository. Substitute your own ONLY if your writes
-  # must share a PDO transaction with aggregate persistence (Doctrine
-  # consumers) — and then you owe the FULL interface, including the relay
-  # pause lane (set_pause / clear_pause / is_paused + holds-aware
-  # fetch_pending). See lms's Doctrine OutboxRepository as the reference.
-  TangibleDDD\Infra\IOutboxRepository:
-    class: TangibleDDD\Infra\Persistence\OutboxRepository
-    arguments:
-      - '@TangibleDDD\Infra\IDDDConfig'
-      - '@TangibleDDD\Application\Outbox\OutboxConfig'
-
-  TangibleDDD\Application\Outbox\IOutboxPublisher:
-    class: TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher
-    arguments: ['@TangibleDDD\Application\Outbox\OutboxConfig']
-
-  # Lives in Infra\Services since 0.2.0 (moved from Application\Outbox).
-  # Autowired — 4-arg constructor, do not hand-list arguments.
-  TangibleDDD\Infra\Services\OutboxProcessor: ~
-
-  TangibleDDD\Application\Events\IIntegrationEventBus:
-    class: TangibleDDD\Infra\Services\OutboxIntegrationEventBus
-    arguments: ['@TangibleDDD\Infra\IOutboxRepository']
-
-  # Long processes. ProcessRunner MUST be autowired — its constructor is
-  # (IDDDConfig, IProcessRepository); several consumers shipped wrong
-  # hand-listed args for months, latent until the first saga awaits.
-  TangibleDDD\Infra\IProcessRepository:
-    class: TangibleDDD\Infra\Persistence\ProcessRepository
-    arguments: ['@TangibleDDD\Infra\IDDDConfig']
-  TangibleDDD\Application\Process\ProcessRunner: ~
-
-  # Command audit (the act bracket writes the rows; Redactor masks params)
-  TangibleDDD\Application\Logging\Redactor: ~
 ```
 
-Rule of thumb: prefer `~` (autowire). Every hand-listed argument above that
-duplicates what autowiring would inject is a future ProcessRunner bug. This
-applies to the consumer's own services too: a hand-listed controller
-registrar rots the moment someone adds a constructor param (autowiring
-silently patches the hole, so nothing fails — until the list and the
-constructor disagree in order instead of count).
+`LongProcessCatalogPass` validates and de-duplicates the tagged definitions,
+then materializes class names and legacy tag metadata into the public
+`LongProcessCatalog`. At `init:2`, runtime registration reflects `#[Awaits]`
+and `#[StartsOn]` without constructing a process or asking a dumped container
+for tags.
 
-## 5. Command bus
+A retained `ContainerBuilder` without the compiler pass can still use the
+0.6.0 `findTaggedServiceIds()` fallback. A dumped container cannot, so the
+compiled catalog is mandatory for production parity.
 
-Tactician middleware order (the act bracket outermost, handler innermost):
+Use `#[StartsOn]` plus `from_event()` for reactive ignition, `#[Awaits]` for
+wake routes, and `#[Compensates]` for rollback steps. Starting a process inside
+a command or process step is rejected; announce the event that starts the next
+lifecycle instead. Process steps may return commands because coordinating
+separate units of work is their purpose.
 
-```
-CorrelationMiddleware → <your TransactionMiddleware>
-  → DomainEventsPublishMiddleware → CommandHandlerMiddleware
-```
+## Consumer-scoped tables
 
-The transaction middleware wraps event publishing so outbox rows commit
-atomically with aggregate writes — that ordering is the outbox pattern.
+The migration lane creates and heals these seven tables under the WordPress and
+consumer prefixes:
 
-## 6. Bootstrap — the one call
+1. `integration_outbox`
+2. `integration_dlq`
+3. `long_processes`
+4. `command_audit`
+5. `touches`
+6. `behaviour_workflows`
+7. `behaviour_workflow_items`
 
-Register the framework compiler passes after every YAML resource is loaded and
-before the container compiles:
+`boot()` registers migrations on `init` and `admin_init`; a separate activation
+hook is optional. `install_tables($config)` remains an idempotent explicit
+installer when an activation/CLI path needs it.
 
-```php
-use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
+Doctrine consumers must exclude the seven framework table bare names from ORM
+schema-diff ownership. WordPress `dbDelta`, not Doctrine migrations, owns them.
 
-$loader->load('tactician.yaml');
-$loader->load('services.yaml');
-DDDCompilerPasses::register($container_builder);
+Touches are a rebuildable index over declared aggregate state changes. They
+power the dashboard Biography but are not a write-side authority or event
+store.
 
-// Later, after any consumer pre-compile hook:
-$container_builder->compile();
-```
+## What `register_hooks()` owns
 
-Use that same construction path in development, integration tests, and the
-release builder that invokes Symfony `PhpDumper`. Calling the pass only in the
-development bootstrap recreates the `WP_DEBUG=true`/production mismatch that
-0.6.1 fixes.
+The one call scheduled by `boot()` registers all supported surfaces:
 
-After the framework loader initializes, normally inside the generated index
-required at `plugins_loaded:10`:
+| Surface | Failure when missing |
+| --- | --- |
+| Event handlers/listeners | Lazy services never attach their WordPress callbacks |
+| Process hooks/catalog | processes cannot ignite, await, resume, or time out |
+| Outbox hooks | committed integration records never drain |
+| Migration hooks | new and upgraded sites drift from the required schema |
 
-```php
-\TangibleDDD\WordPress\boot(
-    new \Acme\Orders\Infra\Config(ACME_ORDERS_VERSION),
-    static fn () => \Acme\Orders\WordPress\DI\di(),
-);
-```
+Do not call only selected helpers, and do not call
+`register_processes_from_container()` manually in new consumers.
 
-`boot()` announces the plugin to the **consumer registry** (discovery for
-the ops dashboard, WP-CLI, cross-consumer tooling — read via
-`\TangibleDDD\WordPress\consumers()`, filtered through
-`tangible_ddd_consumers`) and defers `register_hooks()` to `init:2`, after
-the container compiles on `init:1`. The scaffolder's generated
-`di/index.php` already ends with this call, and its main-plugin wrapper waits
-until priority 10. Requiring that index directly during plugin-file execution
-is invalid: the framework registers copies at `plugins_loaded:0`, initializes
-the winner and defines `boot()` at priority 1, then consumers may boot.
+## Verification
 
-Existing consumers that call `register_hooks()` directly on `init:2` are
-equivalent — it self-registers with the registry too. Either way,
-`register_hooks()` wires four surfaces, each feature-gated internally
-(gates = table existence), so the call is correct for every consumer
-regardless of which features it uses today:
+Before shipping a consumer or framework-version bump:
 
-| Surface | What breaks without it |
-|---|---|
-| `register_event_handlers` | async handlers + `IntegrationListener`s never `add_action` (Symfony DI is lazy) — AS fails with "no callbacks registered" |
-| `register_outbox_hooks` | **outbox never drains** — integration events written, never delivered (this exact bug shipped twice) |
-| `register_process_hooks` | sagas never resume after the AS hop |
-| process discovery | saga classes never registered with the `ProcessRunner` — awaited integration events fire but wake nothing (see below) |
-| `register_migration_hooks` | framework schema migrations never run — fresh installs never get their tables (the lane runs on `init` + `admin_init`; it replaces the activation hook entirely), upgraded installs drift |
+1. Compile the real YAML container and resolve every consumer service plus the
+   hand-wired framework spine.
+2. Build the actual `PhpDumper` production container with the same compiler
+   passes. Assert it exposes `LongProcessCatalog` when processes exist and that
+   process routes register with `WP_DEBUG=false`.
+3. Run `IntegrationConformance::event_violations()` for reflected integration
+   wire types and `#[Touches]` declarations, and `listener_violations()` for
+   integration-listener constructor policy.
+4. Separately execute representative codec round trips, pin action names and
+   payload keys, and test process attributes through the compiled catalog.
+5. Verify `ConsumerRegistry::owner_of()` resolves representative command,
+   query, event, aggregate, and process classes to the intended prefix.
+6. Exercise one `ITransactionalCommand` that writes aggregate state plus an
+   outbox row, prove commit and rollback on the real connection, then drain it
+   through Action Scheduler.
+7. Verify all seven tables and the consumer schema-version option on a fresh
+   database and an upgraded database.
+8. Confirm the consumer appears once in dddash and its trace joins command,
+   outbox, process, workflow, and touches data as expected.
 
-**Process discovery** (compiled in 0.6.1): the consumer's `_instanceof` rule
-tags each registered process definition, and `DDDCompilerPasses` consumes
-those tags while the `ContainerBuilder` still owns its definitions:
+When an integration wire shape changes, deploy publisher and subscribers
+together and account for already-pending outbox rows. A framework copy at 0.6.2
+correctly outranks earlier copies, but every plugin sharing the site must still
+be compatible with the winner.
 
-```yaml
-_instanceof:
-  TangibleDDD\Application\Process\LongProcess:
-    tags: ['ddd.long_process']
+## Common wiring failures
 
-My\Plugin\Application\Process\:
-  resource: '../../ddd-src/Application/Process'
-  autowire: false
-  shared: false
-  public: false
-```
+- Requiring the DI index before `plugins_loaded:1`.
+- Calling `register_hooks()` piecemeal or for the first time too late.
+- Hand-listing stale constructor arguments instead of autowiring.
+- Putting `CorrelationMiddleware` on the query bus.
+- Using a transaction/outbox connection different from aggregate persistence.
+- Making `LongProcess` definitions public runtime services.
+- Registering compiler passes only in development, not the release builder.
+- Scanning tags from a dumped Symfony container.
+- Dispatching a command from a command or synchronous domain-event handler.
+- Calling `boot()` for a sidecar that should be a consumer module.
 
-The pass validates and de-duplicates process classes, preserves legacy
-`awaits:` tag attributes, and registers a public `LongProcessCatalog` whose
-constructor data contains class names and tag metadata only. Symfony can dump
-that ordinary data without retaining definitions or instantiating a process.
-
-At `init:2`, `register_hooks()` prefers `LongProcessCatalog` and reflects each
-class's `#[Awaits]` and `#[StartsOn]` attributes. If no catalog exists but the
-runtime object still exposes `findTaggedServiceIds()`, the public
-`register_processes_from_container()` compatibility path preserves 0.6.0-era
-retained builders. A dumped container has no tag-query API, so registering the
-compiler passes in every build path is mandatory for dev/production parity.
-
-Late process registration from a side plugin is not supported in 0.6.1; that
-runtime extension API is reserved for 0.6.2. Every 0.6.1 process must be known
-to the consumer's `ContainerBuilder` before compilation.
-
-**Starting processes** (0.2.4) — three doors, one invariant:
-
-1. **Reactive** (the default for business flows): `#[StartsOn(Event::class)]`
-   on the process + a static `from_event(Event $e): ?static` (null = "not my
-   business" — the policy filter). Ignition happens at drain, dedups on the
-   journey `__event_id` (replay-safe), inherits the fact's correlation, and
-   records the fact as `ignited_by_event_id` on the process row. A requested
-   saga is this plus an intent command whose handler validates and
-   `Events::record()`s the ignition fact — the handler never touches the
-   runner.
-2. **Edge cold-start**: `di()->get(ProcessRunner::class)->start($process)` —
-   from REST controllers, CLI, WP hook closures. (A `(new P(...))->start()`
-   self-dispatch hatch was built and stripped — it demanded a stamped
-   `Process` base per consumer for an ergonomic with zero callers; if it ever
-   earns its way back, the 0.2.5 registry scheme delivers it with no consumer
-   base.) The first step runs in-band,
-   immediately: steps execute wherever ignition or waking legally happens;
-   only awaits and timeouts create hops.
-3. **Human**: `wp ddd announce '<EventFQCN>' --payload='{...}'` — the total
-   codec makes every integration event JSON-constructible; the announced
-   fact rides the outbox and is indistinguishable from an organic one.
-
-The invariant behind all three: **commands never nest, and processes never
-start inside a command pass.** The bus refuses nested dispatch
-(`CommandDispatchedInsideCommand`), and `start()` inside a handler throws
-(`ProcessStartedInsideCommand`) — record an event instead. A handler wanting
-a synchronous side effect calls a domain service in-band; a saga's ground
-contacts are dispatched flat by the runner with the process as causation.
-
-Anti-pattern this retires: **sync domain event handlers dispatching
-commands** (`->send()` inside `Application\EventHandlers\*`). Those run
-inside the publishing command's transaction and now throw. Atomic-with-
-command work belongs in a domain service; new-unit-of-work-later work
-belongs in an `IntegrationListener` (drain time, flat).
-
-Anti-patterns seen in the wild:
-
-- **À-la-carte calls** (`register_process_hooks` + `register_outbox_hooks`
-  only) — silently skips migrations and eager handler boot.
-- **Homegrown eager-boot registrars** duplicating `register_event_handlers`
-  by iterating service ids. Delete them; the framework function covers
-  `\Application\EventHandlers\` and `\Application\IntegrationListeners\`.
-- **Manual `register_processes_from_container()` calls** in consumer
-  bootstrap — keep the function only as the retained-builder compatibility
-  API; new consumers register `DDDCompilerPasses` and let `register_hooks()`
-  read the catalog.
-- **Consumer-prefixed process tags** (`acme.long_process`) — the framework
-  compiler pass consumes `ddd.long_process` only; a private tag name means
-  your sagas are never cataloged.
-
-## 7. Events — 0.2.0 taxonomy in four rules
-
-Full spec: `docs/integration-event-evolution.md`. The wiring-level rules:
-
-1. **Domain event** (`extends <YourPrefix>DomainEvent`): raisable via
-   `record()`/aggregate `event()`; dies before ActionScheduler; hand-written
-   `payload()` feeds the sync WP hook.
-2. **Pure integration record** (`extends <YourPrefix>IntegrationEvent`, the
-   severed base): NOT raisable — publish it straight on
-   `IIntegrationEventBus`. Constructor props must be **`protected`** readonly
-   (the codec runs on the base via `IntegrationBehaviour` and cannot read
-   subclass-private props). No `payload()` — the ctor is the schema.
-3. **Self-publisher** (born-scalar fact needed on both surfaces):
-   `extends <YourPrefix>DomainEvent implements IIntegrationEvent,
-   IAnnouncesIntegration { use IntegrationBehaviour; }` — raise site
-   unchanged, `to_integration()` returns `$this`. `private` props are fine
-   here (the trait is mixed into the class itself). Keep `payload()` (the
-   `DomainEvent` base requires it).
-4. **Fat moment** → hand-written scalar twin in the `Integration\`
-   sub-namespace via `to_integration()` (same short name = same hook).
-
-**Contract-frozen wire shapes**: when hook name or payload keys are an
-external contract (another plugin already subscribes), override the codec
-pair — `integration_action()` and/or `integration_payload()` +
-`from_payload()` — as class methods (they beat the trait). Keep the pair
-total: whatever `integration_payload()` emits, `from_payload()` must revive.
-Worked example: quiz's `AttemptCompleted`.
-
-## 8. Consuming integration events
-
-One class per policy under `Application\IntegrationListeners\` (eager-booted
-by `register_hooks`, DI-constructed):
-
-```php
-final class DoThingOnFact extends IntegrationListener {
-    protected function get_event_class(): string { return Fact::class; }
-    public function get_command(IIntegrationEvent $event): ?ICommand {
-        \assert($event instanceof Fact);
-        return new DoThingCommand(id: $event->get_id()); // null = not my business
-    }
-}
-```
-
-Fn-form escape hatch: `\TangibleDDD\WordPress\integration_listener(Fact::class, fn (Fact $e) => ...)`.
-Plain `add_action` subscribers receive the **wrapped associative payload as a
-single argument** (contract keys + `__correlation_id`/`__event_id` transport
-keys) — read by key, tolerate extras. Positional closures over payload
-values are a 0.1.x idiom and break on named payloads.
-
-## 9. Tests
-
-Port the container smoke test (see `plugins/quiz/tests/Integration/Container/`
-in lms-monorepo): compile the container from yaml, sweep-resolve every
-plugin-namespace service, **and explicitly resolve the hand-wired framework
-spine** — `OutboxProcessor`, `ProcessRunner`, `IOutboxRepository`,
-`IIntegrationEventBus`, `EventRouter`, `IDomainEventDispatcher`. Namespace
-sweeps never touch these ids; stale FQCNs and ctor drift hide there.
-
-For a consumer that dumps its production container, add one `PhpDumper`
-regression: compile a scalar-constructor `LongProcess`, load the generated
-runtime container, assert its public `LongProcessCatalog` contains the class,
-and assert the process constructor was never called. Run hook registration
-against that runtime container so `#[Awaits]` and `#[StartsOn]` parity is part
-of the test rather than inferred from the development builder.
-
-If a test bootstrap doesn't load WordPress, stub `get_option`/`update_option`
-backed by a global array (`OutboxConfig::from_options` and pause holds read
-options at construction/runtime). Reset that state per test — under
-WorDBless, options persist for the whole process.
-
-## 10. Deploy
-
-0.6.1 rolls out after the framework tag exists, in this order:
-
-1. Publish Tangible DDD `v0.6.1`.
-2. Update Cred and Datastream compile setup plus dependency metadata.
-3. Update LMS/Quiz development and `bin/build-php` compile setup.
-4. Update LMS/Quiz constraints and lockfiles against the published tag.
-5. Build both release containers and verify their process catalogs under
-   `WP_DEBUG=false`.
-
-- Framework major upgrades: **drain or pause the outbox** across the cutover
-  (wire shapes change), and move every consumer on the install in one
-  lockstep unit (single shared `TangibleDDD\` namespace).
-- The relay pause lane is the tool: `set_pause('deploy', '*')` → deploy →
-  `clear_pause('deploy')`. Held rows accumulate durably and drain on release.
+See the [documentation map](README.md) for historical design records and the
+[release ledger](migration-0.2-to-0.3.md) for version-specific migration work.
