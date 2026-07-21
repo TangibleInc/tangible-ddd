@@ -165,6 +165,7 @@ class DDD_Command {
       'ddd-src/Application/QueryHandlers',
       'ddd-src/Application/EventHandlers',
       'ddd-src/Application/IntegrationListeners',
+      'ddd-src/Application/Process',
       'ddd-src/Application/Services',
       'ddd-src/Infra/Persistence',
       'ddd-src/Infra/Services',
@@ -269,6 +270,7 @@ PHP;
       'ddd-src/Application/QueryHandlers/.gitkeep' => '',
       'ddd-src/Application/EventHandlers/.gitkeep' => '',
       'ddd-src/Application/IntegrationListeners/.gitkeep' => '',
+      'ddd-src/Application/Process/.gitkeep' => '',
       'ddd-src/Application/Services/.gitkeep' => '',
       'ddd-src/Infra/Persistence/.gitkeep' => '',
       'ddd-src/Infra/Services/.gitkeep' => '',
@@ -298,6 +300,7 @@ namespace {$namespace}\\WordPress\\DI;
 use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
 use Symfony\\Component\\Config\\FileLocator;
 use Symfony\\Component\\DependencyInjection\\Loader\\YamlFileLoader;
+use TangibleDDD\\Infra\\DependencyInjection\\DDDCompilerPasses;
 
 \$container_builder = new ContainerBuilder();
 
@@ -311,6 +314,7 @@ use Symfony\\Component\\DependencyInjection\\Loader\\YamlFileLoader;
 \$loader = new YamlFileLoader( \$container_builder, new FileLocator( __DIR__ ) );
 \$loader->load( 'tactician.yaml' );
 \$loader->load( 'services.yaml' );
+DDDCompilerPasses::register( \$container_builder );
 
 /**
  * Get the DI container.
@@ -371,9 +375,9 @@ services:
     autoconfigure: true
     public: true
 
-  # Every LongProcess subclass is auto-tagged; boot() discovers the tag at
-  # init:2 and registers each process (plus the resume hooks for its
-  # #[Awaits] events) with the ProcessRunner. No per-saga wiring needed.
+  # Every registered LongProcess subclass is auto-tagged. The DDD compiler
+  # pass materializes these process types into a runtime catalog before the
+  # container is dumped; discovery definitions are never resolved as objects.
   _instanceof:
     TangibleDDD\\Application\\Process\\LongProcess:
       tags: ['ddd.long_process']
@@ -443,6 +447,12 @@ services:
   # Autowired — hand-listed args drifted from the real constructor once
   # already and shipped to every consumer; don't reintroduce them.
   TangibleDDD\\Application\\Process\\ProcessRunner: ~
+
+  {$namespace}\\Application\\Process\\:
+    resource: '../../ddd-src/Application/Process'
+    autowire: false
+    shared: false
+    public: false
 
   # Command Audit (optional - configure Redactor separately)
   TangibleDDD\\Application\\Logging\\Redactor: ~

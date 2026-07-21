@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Cli;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 use TangibleDDD\WordPress\CLI\DDD_Command;
 
 /**
@@ -207,5 +208,36 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
 
     $this->assertStringContainsString( 'TangibleDDD\Application\CQRS\HandlerClassNameInflector', $yaml );
     $this->assertStringNotContainsString( 'AcmeOrders\WordPress\DI\HandlerClassNameInflector', $yaml );
+  }
+
+  public function test_long_processes_are_compiled_into_the_generated_consumer_catalog(): void {
+    $this->assertArrayHasKey( 'ddd-src/Application/Process/.gitkeep', self::$templates );
+
+    $services = Yaml::parse( self::$templates['ddd-wordpress/di/services.yaml'] )['services'];
+    $process_resource_key = 'AcmeOrders\Application\Process' . '\\';
+    $this->assertArrayHasKey( $process_resource_key, $services );
+    $this->assertSame( '../../ddd-src/Application/Process', $services[ $process_resource_key ]['resource'] );
+    $this->assertFalse( $services[ $process_resource_key ]['autowire'] );
+    $this->assertFalse( $services[ $process_resource_key ]['shared'] );
+    $this->assertFalse( $services[ $process_resource_key ]['public'] );
+    $this->assertSame(
+      [ 'ddd.long_process' ],
+      $services['_instanceof']['TangibleDDD\Application\Process\LongProcess']['tags'],
+    );
+
+    $index = self::$templates['ddd-wordpress/di/index.php'];
+    $this->assertStringContainsString(
+      'use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;',
+      $index,
+    );
+    $this->assertStringContainsString(
+      'DDDCompilerPasses::register( $container_builder );',
+      $index,
+    );
+    $this->assertLessThan(
+      strpos( $index, '$container->compile();' ),
+      strpos( $index, 'DDDCompilerPasses::register( $container_builder );' ),
+      'the compiler pass must be registered before the generated container compiles',
+    );
   }
 }
