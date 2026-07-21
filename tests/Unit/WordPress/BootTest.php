@@ -2,13 +2,17 @@
 
 namespace TangibleDDD\Tests\Unit\WordPress;
 
+require_once __DIR__ . '/../../../ddd-src/Application/Process/LongProcessCatalog.php';
+
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeGatherProcess;
 use TangibleDDD\Tests\Fakes\FakeProcessRepository;
 use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
+use TangibleDDD\Tests\Fakes\FakeThreeStepProcess;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 
 use function TangibleDDD\WordPress\boot;
@@ -111,6 +115,106 @@ class BootTest extends TestCase {
     });
 
     $this->assertSame([], consumers());
+  }
+
+  public function test_register_hooks_prefers_the_catalog_in_an_opaque_container(): void {
+    global $_test_actions;
+
+    $config = new class implements IDDDConfig {
+      public function prefix(): string { return 'catalog'; }
+      public function table(string $name): string { return 'wp_catalog_' . $name; }
+      public function hook(string $name): string { return 'catalog_' . $name; }
+      public function as_group(string $name): string { return 'catalog-' . $name; }
+      public function option(string $name): string { return 'catalog_' . $name; }
+      public function domain_action(string $event_name): string { return 'catalog_domain_' . $event_name; }
+      public function integration_action(string $event_name): string { return 'catalog_integration_' . $event_name; }
+      public function version(): string { return 'catalog'; }
+    };
+
+    $GLOBALS['wpdb'] = new class extends \wpdb {
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 'wp_catalog_long_processes';
+      }
+    };
+
+    $runner = new ProcessRunner($config, new FakeProcessRepository());
+    $catalog = new LongProcessCatalog([
+      FakeGatherProcess::class => [[]],
+      \TangibleDDD\Tests\Fakes\FakeStartsOnProcess::class => [[]],
+    ]);
+    $container = new class($runner, $catalog) {
+      public function __construct(
+        private readonly ProcessRunner $runner,
+        private readonly LongProcessCatalog $catalog,
+      ) {}
+      public function getServiceIds(): array {
+        return [LongProcessCatalog::class, ProcessRunner::class];
+      }
+      public function has(string $id): bool {
+        return in_array($id, $this->getServiceIds(), true);
+      }
+      public function get(string $id): object {
+        return LongProcessCatalog::class === $id ? $this->catalog : $this->runner;
+      }
+    };
+
+    $this->assertFalse(method_exists($container, 'findTaggedServiceIds'));
+
+    \TangibleDDD\WordPress\register_hooks($config, static fn () => $container);
+
+    $this->assertCount(
+      2,
+      $_test_actions[FakeResolvedEvent::integration_action()] ?? [],
+      'catalog entries must register both #[Awaits] resume and #[StartsOn] ignition hooks',
+    );
+  }
+
+  public function test_register_hooks_preserves_catalog_legacy_awaits_metadata(): void {
+    global $_test_actions;
+
+    $config = new class implements IDDDConfig {
+      public function prefix(): string { return 'legacy'; }
+      public function table(string $name): string { return 'wp_legacy_' . $name; }
+      public function hook(string $name): string { return 'legacy_' . $name; }
+      public function as_group(string $name): string { return 'legacy-' . $name; }
+      public function option(string $name): string { return 'legacy_' . $name; }
+      public function domain_action(string $event_name): string { return 'legacy_domain_' . $event_name; }
+      public function integration_action(string $event_name): string { return 'legacy_integration_' . $event_name; }
+      public function version(): string { return 'legacy'; }
+    };
+
+    $GLOBALS['wpdb'] = new class extends \wpdb {
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 'wp_legacy_long_processes';
+      }
+    };
+
+    $runner = new ProcessRunner($config, new FakeProcessRepository());
+    $catalog = new LongProcessCatalog([
+      FakeThreeStepProcess::class => [[
+        'awaits' => [FakeResolvedEvent::class],
+      ]],
+    ]);
+    $container = new class($runner, $catalog) {
+      public function __construct(
+        private readonly ProcessRunner $runner,
+        private readonly LongProcessCatalog $catalog,
+      ) {}
+      public function getServiceIds(): array { return []; }
+      public function has(string $id): bool {
+        return LongProcessCatalog::class === $id;
+      }
+      public function get(string $id): object {
+        return LongProcessCatalog::class === $id ? $this->catalog : $this->runner;
+      }
+    };
+
+    \TangibleDDD\WordPress\register_hooks($config, static fn () => $container);
+
+    $this->assertNotEmpty(
+      $_test_actions[FakeResolvedEvent::integration_action()] ?? [],
+      'catalog tag metadata must retain legacy awaits event registration',
+    );
   }
 
   public function test_register_hooks_discovers_tagged_long_processes(): void {

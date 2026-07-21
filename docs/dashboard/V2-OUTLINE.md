@@ -1,6 +1,7 @@
 # DDDash v2 — Working Product Scope
 
-**Recorded:** 2026-07-20  
+**Recorded:** 2026-07-20
+
 **Status:** agreed direction; no implementation commitment yet
 
 V2 preserves the complete v1 operational dashboard and adds two product
@@ -88,4 +89,3 @@ refactors, not additional user-facing features.
 - Story-intersection persistence or a `process_arrivals` ledger. The encounter
   concept is shelved separately in `docs/0.3-trace-context.md`; it can be added
   later if a concrete forensic or product need justifies recording wake links.
-

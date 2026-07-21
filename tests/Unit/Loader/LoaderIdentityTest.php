@@ -101,4 +101,20 @@ class LoaderIdentityTest extends TestCase
             );
         }
     }
+
+    public function test_the_0_6_2_winner_loads_the_module_facade_after_the_host_hooks(): void
+    {
+        $this->assertSame('0.6.2', $this->header_version());
+
+        $hooks = strpos($this->source, "'ddd-wordpress/hooks.php'");
+        $modules = strpos($this->source, "'ddd-wordpress/modules.php'");
+
+        $this->assertNotFalse($hooks, 'The winner must load the host hook facade.');
+        $this->assertNotFalse($modules, 'The winner must load the consumer-module facade.');
+        $this->assertGreaterThan(
+            $hooks,
+            $modules,
+            'modules.php depends on the process and listener helpers from hooks.php.',
+        );
+    }
 }

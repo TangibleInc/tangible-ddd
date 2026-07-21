@@ -58,6 +58,10 @@ class IntegrationConformanceTest extends TestCase {
     $this->assertViolation('IdlessTouchEvent', 'state_license_id', param: 'state_license_id');
   }
 
+  public function test_touches_only_event_files_are_scanned(): void {
+    $this->assertViolation('TouchesOnlyEvent', 'missing', param: 'missing');
+  }
+
   public function test_entity_param_is_flagged(): void {
     $this->assertViolation('EntityLadenEvent', 'entity', param: 'entity');
   }

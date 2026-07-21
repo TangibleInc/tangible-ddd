@@ -24,16 +24,27 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  *
  * ## DI Registration
  *
- * Register your process in services.yaml with the 'ddd.long_process' tag.
- * If your process uses AwaitEvent, declare the awaited event classes:
+ * Register the consumer's process namespace as private, discovery-only
+ * definitions and auto-tag every subclass:
  *
  * ```yaml
- * App\Process\OrderFulfillmentProcess:
- *   tags:
- *     - name: 'ddd.long_process'
- *       awaits:
- *         - App\Events\PaymentReceived
+ * services:
+ *   _instanceof:
+ *     TangibleDDD\Application\Process\LongProcess:
+ *       tags: ['ddd.long_process']
+ *
+ *   App\Application\Process\:
+ *     resource: '../../ddd-src/Application/Process'
+ *     autowire: false
+ *     shared: false
+ *     public: false
  * ```
+ *
+ * After loading YAML, call `DDDCompilerPasses::register($container)` before
+ * `compile()`. The pass records process class names and legacy tag metadata in
+ * `LongProcessCatalog`, so retained and dumped containers expose the same
+ * runtime hooks without constructing process objects. Prefer `#[Awaits]` and
+ * `#[StartsOn]`; existing `awaits:` tag attributes remain supported.
  *
  * ## Example
  *

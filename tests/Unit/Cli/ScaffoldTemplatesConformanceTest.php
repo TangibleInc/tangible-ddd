@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Cli;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 use TangibleDDD\WordPress\CLI\DDD_Command;
 
 /**
@@ -27,6 +28,8 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
   /** @var array<string, string> file => rendered content */
   private static array $templates;
 
+  private static string $main_plugin_snippet;
+
   public static function setUpBeforeClass(): void {
     require_once dirname( __DIR__, 3 ) . '/ddd-wordpress/cli/class-ddd-command.php';
 
@@ -35,6 +38,15 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
     $method->setAccessible( true );
 
     self::$templates = $method->invoke( $command, 'acme_orders', 'AcmeOrders', 'ACME_ORDERS_VERSION' );
+
+    $snippet = new \ReflectionMethod( DDD_Command::class, 'template_main_plugin_snippet' );
+    $snippet->setAccessible( true );
+    self::$main_plugin_snippet = $snippet->invoke(
+      $command,
+      'acme_orders',
+      'AcmeOrders',
+      'ACME_ORDERS_VERSION',
+    );
   }
 
   public function test_every_framework_reference_in_the_templates_resolves(): void {
@@ -207,5 +219,194 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
 
     $this->assertStringContainsString( 'TangibleDDD\Application\CQRS\HandlerClassNameInflector', $yaml );
     $this->assertStringNotContainsString( 'AcmeOrders\WordPress\DI\HandlerClassNameInflector', $yaml );
+  }
+
+  public function test_long_processes_are_compiled_into_the_generated_consumer_catalog(): void {
+    $this->assertArrayHasKey( 'ddd-src/Application/Process/.gitkeep', self::$templates );
+
+    $services = Yaml::parse( self::$templates['ddd-wordpress/di/services.yaml'] )['services'];
+    $process_resource_key = 'AcmeOrders\Application\Process' . '\\';
+    $this->assertArrayHasKey( $process_resource_key, $services );
+    $this->assertSame( '../../ddd-src/Application/Process', $services[ $process_resource_key ]['resource'] );
+    $this->assertFalse( $services[ $process_resource_key ]['autowire'] );
+    $this->assertFalse( $services[ $process_resource_key ]['shared'] );
+    $this->assertFalse( $services[ $process_resource_key ]['public'] );
+    $this->assertSame(
+      [ 'ddd.long_process' ],
+      $services['_instanceof']['TangibleDDD\Application\Process\LongProcess']['tags'],
+    );
+
+    $index = self::$templates['ddd-wordpress/di/index.php'];
+    $this->assertStringContainsString(
+      'use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;',
+      $index,
+    );
+    $this->assertStringContainsString(
+      'DDDCompilerPasses::register( $container_builder );',
+      $index,
+    );
+    $this->assertLessThan(
+      strpos( $index, '$container->compile();' ),
+      strpos( $index, 'DDDCompilerPasses::register( $container_builder );' ),
+      'the compiler pass must be registered before the generated container compiles',
+    );
+  }
+
+  public function test_scaffold_includes_a_thin_canonical_skill_handoff(): void {
+    $path = '.claude/skills/tangible-ddd/SKILL.md';
+
+    $this->assertArrayHasKey( $path, self::$templates );
+    $skill = self::$templates[ $path ];
+
+    $this->assertStringContainsString(
+      'vendor/tangible/ddd/.claude/skills/tangible-ddd/SKILL.md',
+      $skill,
+    );
+
+    foreach ( [
+      'CorrelationContext::',
+      'extends AsyncWordPressActionHandler',
+      'extends AsyncWordpressActionHandler',
+      'new CommandAuditMiddleware',
+      "'@TangibleDDD\\Application\\Logging\\CommandAuditMiddleware'",
+      'TransportEnvelope::',
+      'composer require tangible/ddd:^0.2',
+    ] as $removed ) {
+      $this->assertStringNotContainsString( $removed, $skill );
+    }
+  }
+
+  public function test_scaffold_creates_the_agent_skill_directory(): void {
+    $command = ( new \ReflectionClass( DDD_Command::class ) )->newInstanceWithoutConstructor();
+    $method = new \ReflectionMethod( DDD_Command::class, 'get_directories' );
+    $method->setAccessible( true );
+
+    $this->assertContains(
+      '.claude/skills/tangible-ddd',
+      $method->invoke( $command ),
+    );
+  }
+
+  public function test_main_plugin_snippet_waits_for_the_framework_loader(): void {
+    $framework = dirname( __DIR__, 3 );
+    $temp = sys_get_temp_dir() . '/ddd-scaffold-load-order-' . bin2hex( random_bytes( 8 ) );
+    $di_dir = $temp . '/ddd-wordpress/di';
+    $stubs_file = $temp . '/stubs.php';
+    $plugin_file = $temp . '/plugin.php';
+    $index_file = $di_dir . '/index.php';
+
+    $this->assertTrue( mkdir( $di_dir, 0777, true ) );
+
+    $stubs = <<<'PHP'
+<?php
+
+namespace Symfony\Component\DependencyInjection\Compiler {
+  interface CompilerPassInterface {
+    public function process(\Symfony\Component\DependencyInjection\ContainerBuilder $container): void;
+  }
+
+  final class PassConfig {
+    public const TYPE_BEFORE_REMOVING = 'beforeRemoving';
+  }
+}
+
+namespace Symfony\Component\DependencyInjection {
+  final class ContainerBuilder {
+    public function setParameter(string $name, mixed $value): void {}
+    public function addCompilerPass(Compiler\CompilerPassInterface $pass): void {}
+    public function compile(): void {}
+  }
+}
+
+namespace Symfony\Component\Config {
+  final class FileLocator {
+    public function __construct(string $path) {}
+  }
+}
+
+namespace Symfony\Component\DependencyInjection\Loader {
+  final class YamlFileLoader {
+    public function __construct(mixed $container, mixed $locator) {}
+    public function load(string $file): void {}
+  }
+}
+
+namespace {
+  class wpdb {
+    public string $prefix = 'wp_';
+  }
+
+  $GLOBALS['wpdb'] = new wpdb();
+  $GLOBALS['_load_order_actions'] = [];
+  $GLOBALS['_load_order_did'] = [];
+  $GLOBALS['_load_order_current'] = null;
+
+  function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): void {
+    $GLOBALS['_load_order_actions'][$hook][$priority][] = $callback;
+  }
+
+  function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): void {
+    add_action($hook, $callback, $priority, $accepted_args);
+  }
+
+  function do_action(string $hook, mixed ...$args): void {
+    $GLOBALS['_load_order_current'] = $hook;
+    $GLOBALS['_load_order_did'][$hook] = ($GLOBALS['_load_order_did'][$hook] ?? 0) + 1;
+    $priorities = $GLOBALS['_load_order_actions'][$hook] ?? [];
+    ksort($priorities);
+    foreach ($priorities as $callbacks) {
+      foreach ($callbacks as $callback) {
+        $callback(...$args);
+      }
+    }
+    $GLOBALS['_load_order_current'] = null;
+  }
+
+  function did_action(string $hook): int {
+    return $GLOBALS['_load_order_did'][$hook] ?? 0;
+  }
+
+  function doing_action(?string $hook = null): bool {
+    return $hook === null
+      ? $GLOBALS['_load_order_current'] !== null
+      : $GLOBALS['_load_order_current'] === $hook;
+  }
+}
+PHP;
+
+    $plugin = "<?php\n\n"
+      . 'require_once ' . var_export( $stubs_file, true ) . ";\n"
+      . 'require_once ' . var_export( $framework . '/tangible-ddd.php', true ) . ";\n\n"
+      . self::$main_plugin_snippet . "\n\n"
+      . "do_action('plugins_loaded');\n"
+      . "echo function_exists('TangibleDDD\\\\WordPress\\\\boot') ? 'BOOT_READY' : 'BOOT_MISSING';\n";
+
+    try {
+      $this->assertNotFalse( file_put_contents( $stubs_file, $stubs ) );
+      $this->assertNotFalse( file_put_contents( $index_file, self::$templates['ddd-wordpress/di/index.php'] ) );
+      $this->assertNotFalse( file_put_contents( $plugin_file, $plugin ) );
+
+      $output = [];
+      $exit_code = 0;
+      exec(
+        escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( $plugin_file ) . ' 2>&1',
+        $output,
+        $exit_code,
+      );
+
+      $this->assertSame( 0, $exit_code, implode( "\n", $output ) );
+      $this->assertContains( 'BOOT_READY', $output );
+    } finally {
+      foreach ( [ $plugin_file, $stubs_file, $index_file ] as $file ) {
+        if ( file_exists( $file ) ) {
+          unlink( $file );
+        }
+      }
+      foreach ( [ $di_dir, dirname( $di_dir ), $temp ] as $directory ) {
+        if ( is_dir( $directory ) ) {
+          rmdir( $directory );
+        }
+      }
+    }
   }
 }
