@@ -13,7 +13,7 @@ is urgent until the 0.3 section.
 
 ---
 
-## Unreleased fix — seal keys on IAnnouncesIntegration (version TBD)
+## 0.6.1 correctness rider — seal keys on IAnnouncesIntegration
 
 **Mandatory for consumers: NOTHING** — a correctness fix, fully additive.
 
@@ -36,8 +36,8 @@ the seal ⟹ routed to the bus.** It vindicates the twin pattern — a fat
 `IAnnouncesIntegration` domain event with a scalar twin is now first-class
 raisable in a sealed drain, no self-publisher conversion required.
 
-Version-less on purpose: codex is cutting 0.6.1/0.6.2 in parallel; the release
-coordinator folds this into whichever train and assigns the version.
+This correction ships in 0.6.1 alongside compiled `LongProcess` catalog
+support. It is independent of the 0.6.2 consumer-module capability.
 
 ---
 
