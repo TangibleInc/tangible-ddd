@@ -53,6 +53,8 @@ The runtime enforces these boundaries:
    hook, or second dashboard consumer.
 8. Module process types are registered on the host's exact `ProcessRunner`.
 9. No module API mutates a retained, compiled, or dumped host container.
+10. A later top-level registration cannot tie, outrank, or partition an
+    attached module's namespace route.
 
 The top-level host handle becomes stable after its first module attaches. An
 exact repeated host registration is idempotent; a different config, getter,
@@ -81,6 +83,12 @@ the module attaches and is therefore incompatible.
 `boot_module()` declares a minimum framework requirement of `0.6.2` under the
 diagnostic key `ddd-module:<normalized namespace root>`. This makes a loader
 mismatch visible without inventing another consumer prefix.
+
+Registration must finish before WordPress begins `init`. Calling
+`boot_module()` from `init` or any later phase throws: installing a namespace
+route after the module-wiring priority has passed would otherwise leave
+commands routable through a container whose listeners and processes never
+booted.
 
 ## Host bootstrap
 
@@ -138,6 +146,12 @@ module.
 Repeated `boot_module()` calls for the same host/root may replace the container
 getter before `init:3`; only one runtime callback is installed. A different
 host for the same root, or any replacement after wiring, throws.
+
+At `init:3`, the framework validates that the runtime container exposes
+`has()`/`get()`, resolves the host's exact `IDDDConfig` object, and contains an
+actual `League\Tactician\CommandBus`. Listener construction is fail-fast for
+modules: a missing bridged dependency aborts boot and the module is not marked
+wired.
 
 ## Separate container
 
@@ -431,7 +445,9 @@ Before releasing a host/module pair:
 8. Assert `consumers()` contains the host once and `modules_for()` contains the
    declared module root.
 9. Test missing hosts, cross-root attachment, private host services, and
-   conflicting process metadata as boot failures.
+   conflicting process metadata as boot failures. Also prove late registration,
+   missing mandatory container services, listener-construction failure, and a
+   later top-level namespace partition are rejected.
 10. Define and rehearse the process-row drain/migration procedure before
     supporting module deactivation.
 

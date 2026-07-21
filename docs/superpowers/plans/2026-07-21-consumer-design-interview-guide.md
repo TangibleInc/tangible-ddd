@@ -43,7 +43,7 @@ documentation conformance tests, `quick_validate.py` skill validation.
   assertions.
 - Produces: CI coverage for `docs/consumer-design-interview.md`.
 
-- [ ] **Step 1: Add the missing guide to `OPERATIONAL`**
+- [x] **Step 1: Add the missing guide to `OPERATIONAL`**
 
 Insert it between the consumer wiring and module guides:
 
@@ -59,7 +59,7 @@ private const OPERATIONAL = [
 ];
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -71,7 +71,7 @@ php -d auto_prepend_file=/tmp/tangible-ddd-docs-preload.php \
 Expected: failure naming `docs/consumer-design-interview.md` as absent; no
 unrelated runtime failure.
 
-- [ ] **Step 3: Commit the red contract**
+- [x] **Step 3: Commit the red contract**
 
 ```bash
 git add tests/Unit/Documentation/DocumentationCurrentnessTest.php
@@ -93,7 +93,7 @@ git commit -m "test: require the consumer ddd interview guide"
 - Produces: a linked `docs/consumer-design-interview.md` current guide and the
   skill behavior that invokes it.
 
-- [ ] **Step 1: Create the guide with an explicit current-status banner**
+- [x] **Step 1: Create the guide with an explicit current-status banner**
 
 The document begins:
 
@@ -178,7 +178,7 @@ Biography, trace, and operational visibility
 Tests, migration, and unresolved risks
 ```
 
-- [ ] **Step 2: Add the design-dialogue trigger to the canonical skill**
+- [x] **Step 2: Add the design-dialogue trigger to the canonical skill**
 
 Insert after `Hard invariants` and before `Choose the construct`:
 
@@ -203,7 +203,7 @@ for the question funnel, adversarial review, and handoff format.
 
 Add the same link to the skill's initial installed-contract reading list.
 
-- [ ] **Step 3: Link the guide from both documentation indexes**
+- [x] **Step 3: Link the guide from both documentation indexes**
 
 Add this root README list item:
 
@@ -217,7 +217,7 @@ Add this row to `docs/README.md` under **Current**:
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |
 ```
 
-- [ ] **Step 4: Run focused currentness/link tests and verify GREEN**
+- [x] **Step 4: Run focused currentness/link tests and verify GREEN**
 
 Run:
 
@@ -229,7 +229,7 @@ php -d auto_prepend_file=/tmp/tangible-ddd-docs-preload.php \
 Expected: all `DocumentationCurrentnessTest` cases pass with only the existing
 PHPUnit deprecation count.
 
-- [ ] **Step 5: Validate the skill**
+- [x] **Step 5: Validate the skill**
 
 Run:
 
@@ -241,7 +241,7 @@ wc -l .claude/skills/tangible-ddd/SKILL.md
 
 Expected: validator success and fewer than 500 skill lines.
 
-- [ ] **Step 6: Commit the guide and wiring**
+- [x] **Step 6: Commit the guide and wiring**
 
 ```bash
 git add docs/consumer-design-interview.md .claude/skills/tangible-ddd/SKILL.md \
@@ -261,7 +261,7 @@ git commit -m "docs: teach agents to interview ddd consumers"
 - Produces: evidence that an unfamiliar agent asks before prescribing and that
   the branch remains executable.
 
-- [ ] **Step 1: Run a fresh-agent pressure scenario**
+- [x] **Step 1: Run a fresh-agent pressure scenario**
 
 Give a fresh agent only the installed canonical skill and current linked docs,
 then ask:
@@ -296,7 +296,7 @@ Expected: PHPUnit green; diff check green; removed-surface scan prints nothing.
 If the 0.6.2 base advances during review, replace `49cca0f` with the final base
 commit before running the diff check.
 
-- [ ] **Step 3: Review pressure-test findings**
+- [x] **Step 3: Review pressure-test findings**
 
 Fix only an Important failure: prescribing before questioning, contradicting a
 hard invariant, using a removed API, or omitting transaction/plugin ownership.
