@@ -25,18 +25,37 @@ final class ConsumerCatalogTest extends TestCase
         $catalog = new ConsumerCatalog(
             $db,
             static fn (): array => ['test' => $handle],
-            static fn (): Config => new Config('wp_x_')
+            static fn (): Config => new Config('wp_x_'),
+            static fn (string $key): ?string => $key === 'test' ? '#123456' : null,
         );
 
         $all = $catalog->all();
 
         self::assertSame(['test', 'tangible_ddd', 'orphan'], array_keys($all));
         self::assertFalse($all['test']->ghost);
+        self::assertSame('#123456', $all['test']->accent);
         self::assertSame('test', $all['test']->config()?->prefix());
         self::assertSame('tangible_ddd', $all['tangible_ddd']->config()?->prefix());
         self::assertTrue($all['orphan']->ghost);
         self::assertSame('wp_x_orphan_command_audit', $all['orphan']->config()?->table('command_audit'));
         self::assertSame('orphan', $catalog->prefix('orphan'));
         self::assertNull($catalog->get('missing'));
+    }
+
+    public function test_consumer_accent_fallback_is_stable_and_rejects_unsafe_overrides(): void
+    {
+        $resolver = static fn (): FakeDDDConfig => new FakeDDDConfig();
+        $first = new \TangibleDDD\WordPress\Admin\Dashboard\ConsumerDefinition('stable', 'Stable', $resolver);
+        $again = new \TangibleDDD\WordPress\Admin\Dashboard\ConsumerDefinition('stable', 'Stable', $resolver);
+        $unsafe = new \TangibleDDD\WordPress\Admin\Dashboard\ConsumerDefinition(
+            'stable',
+            'Stable',
+            $resolver,
+            false,
+            'red; background:url(evil)',
+        );
+
+        self::assertSame($first->accent, $again->accent);
+        self::assertSame($first->accent, $unsafe->accent);
     }
 }

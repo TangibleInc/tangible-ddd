@@ -13,6 +13,7 @@ final class ConsumerCatalog
 {
     private readonly Closure $registeredConsumers;
     private readonly Closure $selfConfig;
+    private readonly Closure $accentResolver;
 
     /** @var array<string, ConsumerDefinition>|null */
     private ?array $cache = null;
@@ -21,6 +22,7 @@ final class ConsumerCatalog
         private readonly Database $db,
         ?callable $registeredConsumers = null,
         ?callable $selfConfig = null,
+        ?callable $accentResolver = null,
     ) {
         $this->registeredConsumers = $registeredConsumers !== null
             ? Closure::fromCallable($registeredConsumers)
@@ -30,6 +32,11 @@ final class ConsumerCatalog
         $this->selfConfig = $selfConfig !== null
             ? Closure::fromCallable($selfConfig)
             : static fn (): IDDDConfig => Config::for_wordpress();
+        $this->accentResolver = $accentResolver !== null
+            ? Closure::fromCallable($accentResolver)
+            : static fn (string $key, string $label, bool $ghost): mixed => function_exists('apply_filters')
+                ? apply_filters('tangible_ddd_dashboard_consumer_accent', null, $key, $label, $ghost)
+                : null;
     }
 
     /** @return array<string, ConsumerDefinition> */
@@ -47,8 +54,10 @@ final class ConsumerCatalog
             $key = (string) $prefix;
             $out[$key] = new ConsumerDefinition(
                 $key,
-                $handle->prefix(),
+                $handle->label(),
                 static fn (): IDDDConfig => $handle->config(),
+                false,
+                $this->accent($key, $handle->label(), false),
             );
         }
 
@@ -60,6 +69,8 @@ final class ConsumerCatalog
             'tangible_ddd',
             'tangible_ddd',
             $this->selfConfig,
+            false,
+            $this->accent('tangible_ddd', 'tangible_ddd', false),
         );
 
         foreach ($this->ghostPrefixes(array_keys($out)) as $prefix) {
@@ -68,6 +79,7 @@ final class ConsumerCatalog
                 $prefix,
                 fn (): IDDDConfig => new PrefixOnlyConfig($prefix, $this->db->prefix()),
                 true,
+                $this->accent($prefix, $prefix, true),
             );
         }
 
@@ -110,6 +122,8 @@ final class ConsumerCatalog
                     $class = '\\Tangible\\Datastream\\Infra\\DatastreamConfig';
                     return class_exists($class) ? new $class($this->db->prefix()) : null;
                 },
+                false,
+                $this->accent('tangible_datastream', 'tangible_datastream', false),
             ),
             'tgbl_cred' => new ConsumerDefinition(
                 'tgbl_cred',
@@ -118,6 +132,8 @@ final class ConsumerCatalog
                     $class = '\\Tangible\\Cred\\Infra\\Config';
                     return class_exists($class) ? new $class() : null;
                 },
+                false,
+                $this->accent('tgbl_cred', 'tgbl_cred', false),
             ),
         ];
     }
@@ -145,5 +161,11 @@ final class ConsumerCatalog
             }
         }
         return $ghosts;
+    }
+
+    private function accent(string $key, string $label, bool $ghost): ?string
+    {
+        $accent = ($this->accentResolver)($key, $label, $ghost);
+        return is_string($accent) ? $accent : null;
     }
 }

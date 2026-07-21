@@ -9,8 +9,8 @@ use TangibleDDD\WordPress\Admin\Dashboard\Query\DeadLetterQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\MetricsQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\OutboxQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\ProcessQuery;
-use TangibleDDD\WordPress\Admin\Dashboard\Query\TraceQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\TracesQuery;
+use TangibleDDD\WordPress\Admin\Dashboard\Query\UnifiedTraceQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\WorkflowQuery;
 
 final class RestController
@@ -64,7 +64,9 @@ final class RestController
         if ($config === null) {
             return $this->consumerError($consumer);
         }
-        return rest_ensure_response((new TraceQuery($config, $this->db))->assemble((string) $request['corr']));
+        return rest_ensure_response(
+            (new UnifiedTraceQuery($this->consumers, $this->db))->assemble((string) $request['corr'])
+        );
     }
 
     public function traces(\WP_REST_Request $request): mixed

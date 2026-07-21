@@ -80,6 +80,43 @@ final class WordPressBoundaryTest extends TestCase
         self::assertSame(3, $response['rows'][0]['duration_ms']);
     }
 
+    public function test_trace_route_fans_one_correlation_out_across_consumers(): void
+    {
+        [$catalog, $db] = $this->catalog();
+        $db->resultSets = [
+            [[
+                'command_id' => 'cmd-root', 'correlation_id' => 'corr', 'command_name' => 'Test\\Start',
+                'status' => 'success', 'source' => 'system', 'source_id' => null, 'causation_id' => null,
+                'causation_type' => null, 'duration_ms' => '3', 'peak_memory_bytes' => '1',
+                'started_at' => '2026-07-22 10:00:00', 'parameters' => '{}', 'events' => '[]', 'error' => null,
+            ]],
+            [[
+                'event_id' => 'evt-1', 'event_type' => 'Test\\Started', 'status' => 'completed',
+                'command_id' => 'cmd-root', 'sequence' => '1', 'attempts' => '1',
+                'created_at' => '2026-07-22 10:00:00',
+            ]],
+            [],
+            [],
+            [[
+                'command_id' => 'cmd-self', 'correlation_id' => 'corr', 'command_name' => 'Framework\\React',
+                'status' => 'success', 'source' => 'system', 'source_id' => null, 'causation_id' => 'evt-1',
+                'causation_type' => 'integration_event', 'duration_ms' => '2', 'peak_memory_bytes' => '1',
+                'started_at' => '2026-07-22 10:00:01', 'parameters' => '{}', 'events' => '[]', 'error' => null,
+            ]],
+            [],
+            [],
+            [],
+        ];
+        $controller = new RestController($catalog, $db, new ActionDispatcher(static fn (): null => null));
+
+        $response = $controller->trace(new \WP_REST_Request(['consumer' => 'test', 'corr' => 'corr']));
+
+        self::assertSame(2, $response['span_count']);
+        self::assertSame('test:e:evt-1', $response['nodes'][2]['parent']);
+        self::assertTrue($response['nodes'][2]['cross_consumer']);
+        self::assertSame(['test', 'tangible_ddd'], array_keys($response['participants']));
+    }
+
     public function test_heartbeat_controller_owns_the_final_live_payload(): void
     {
         [$catalog, $db] = $this->catalog();

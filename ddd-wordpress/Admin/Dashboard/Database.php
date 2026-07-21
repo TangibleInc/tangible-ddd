@@ -9,6 +9,8 @@ interface Database
 {
     public function prefix(): string;
 
+    public function tableExists(string $table): bool;
+
     public function escapeLike(string $value): string;
 
     /** @param array<mixed> $args */

@@ -694,11 +694,21 @@
           inProgressNow = !!(d.workflows && d.workflows.some(function(w){ return !w.is_complete && !w.is_failed; }));
         }
         var liveBadge=inProgressNow?'<span class="trace-live-badge">live</span>':'';
+        var participantMap=d.participants||{};
+        var participantKeys=Object.keys(participantMap);
+        var participants=participantKeys.map(function(key){
+          var p=participantMap[key]||{};
+          return '<span class="trace-participant"><i style="background:'+esc(p.accent||'#646970')+'"></i>'
+            +'<b>'+esc(p.label||key)+'</b>'+(p.ghost?'<small>ghost</small>':'')+'</span>';
+        }).join('');
+        var warningCount=(d.warnings||[]).length;
         traceHead.innerHTML='<div class="corr">'+esc(d.correlation_id)+liveBadge+'</div>'
           +'<div class="meta">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
-          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>';
+          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>'
+          +(participants?'<div class="trace-participants">'+participants+'</div>':'')
+          +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
         ruler.innerHTML='<div class="rt-note">durations to scale &middot; async waits shown as &#8942; gap markers</div>';
@@ -712,7 +722,11 @@
             var depth=Math.min(n.depth||0,5);
             var statusCls=(n.status==='error'||n.status==='dlq')?(' s-'+n.status):'';
             var dot=typeColor[kind]||'#6359D6';
-            var from=n.parent_label?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b></div>':'';
+            var handoff=n.cross_consumer
+              ? '<span class="cross-handoff" title="handoff from '+esc(n.parent_consumer_label||n.parent_consumer)+' to '+esc(n.consumer_label||n.consumer)+'"><i style="background:'+esc(n.parent_accent||'#646970')+'"></i><b>&rarr;</b><i style="background:'+esc(n.accent||'#646970')+'"></i></span>'
+              : '';
+            var from=n.parent_label?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b>'+handoff+'</div>':'';
+            if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
             var barTxt=''; var latBar='';
             if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
               var ms=n.raw.duration_ms;
@@ -725,8 +739,8 @@
             // Async clock-gap marker: a vertical line at the post-gap span's start, labelled with elapsed.
             if(n.gap_before){ gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span>'+fmtAge(n.gap_before)+'</span></div>'; }
             var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
-            return '<div class="srow d'+depth+(n.kind==='command'?' is-cmd':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
-              +'<div class="slabel"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'
+            return '<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
+              +'<div class="slabel" style="--owner-accent:'+esc(n.accent||'#646970')+'"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'
               +'<span class="sname" title="'+esc(n.name)+'">'+shortName(n.name)+'</span><span class="stype">'+esc(kind)+'</span></div>'+from+latBar+'</div>'
               +'<div class="slane"><div class="sbar k-'+esc(kind)+statusCls+'" style="left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%">'+esc(barTxt)+'</div></div></div>';
           }).join('')
@@ -751,9 +765,10 @@
             return '<div class="wft-step '+s+'"><div class="wsn">'+esc(nm)+'</div><div class="wss">phase '+(i+1)+'</div></div>';
           }).join('');
           var isFork=w.root_workflow_id?(' &middot; fork of #'+w.root_workflow_id):'';
-          return '<div class="wf-in-trace">'
+          return '<div class="wf-in-trace" style="--owner-accent:'+esc(w.accent||'#646970')+'">'
             +'<div class="wft-head">'
             +'<span class="wft-label">workflow in trace</span>'
+            +'<span class="trace-participant"><i style="background:'+esc(w.accent||'#646970')+'"></i><b>'+esc(w.consumer_label||w.consumer)+'</b></span>'
             +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
             +'<span class="wft-badge '+badgeCls+'">'+statusTxt+'</span>'
             +'<span class="wft-meta">wf id #'+w.id+' &middot; idx '+w.current_idx+'/'+configs.length+'</span>'
@@ -771,7 +786,25 @@
             +'</div>';
         }).join('');
       }
-      traceRows.addEventListener('click', function(e){ var row=e.target.closest('.srow.is-cmd'); if(!row)return; var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(n&&n.raw) openDrawer(n.raw); });
+      function openTraceNode(n){
+        var parent=n.parent_label
+          ? esc(n.parent_label)+' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer||'unknown')+')</span>'
+          : '&mdash;';
+        dbody.innerHTML='<h3>'+esc(n.name)+'</h3>'
+          +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.consumer)+'</span></div>'
+          +'<dl class="kv">'
+          +'<dt>kind</dt><dd>'+esc(n.kind)+'</dd>'
+          +'<dt>local id</dt><dd>'+esc(n.id)+'</dd>'
+          +'<dt>status</dt><dd>'+esc(n.status||'&mdash;')+'</dd>'
+          +'<dt>parent</dt><dd>'+parent+'</dd>'
+          +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
+          +'</dl>'
+          +'<div class="jlbl">recorded data</div>'+j(n.raw);
+        drawer.hidden=false;
+        var cl=dbody.querySelector('.corr-link');
+        if(cl) cl.addEventListener('click', function(){ showTrace(this.dataset.corr); });
+      }
+      traceRows.addEventListener('click', function(e){ var row=e.target.closest('.srow.is-node'); if(!row)return; var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(n) openTraceNode(n); });
 
       // ── processes (sagas / workflows) ──
       var procSub='sagas';

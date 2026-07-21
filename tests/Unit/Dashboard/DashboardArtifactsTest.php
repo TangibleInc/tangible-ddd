@@ -65,5 +65,9 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('.tddd-root{', $styles);
         self::assertStringContainsString('var R = window.TDDD;', $script);
         self::assertStringContainsString("location.hash='trace/'", $script);
+        self::assertStringContainsString('trace-participant', $script);
+        self::assertStringContainsString('cross-handoff', $script);
+        self::assertStringContainsString('openTraceNode', $script);
+        self::assertStringContainsString('--owner-accent', $styles);
     }
 }
