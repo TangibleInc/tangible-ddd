@@ -249,8 +249,9 @@ add_action('plugins_loaded', static function (): void {
 The sidecar must load its own compatible `tangible/ddd:^0.6.2` Composer copy
 from its main plugin file before registering this callback. That copy must
 participate in the loader's `plugins_loaded:0` version registration. The
-newest winner initializes at priority 1, host consumers boot at priority 20,
-and the sidecar calls `boot_module()` at priority 30. The sidecar must not
+newest winner initializes at priority 1, host consumers boot after that and
+before priority 30 (priority 10 is the current fleet convention), and the
+sidecar calls `boot_module()` at priority 30. The sidecar must not
 autoload `TangibleDDD\...` runtime classes before winner initialization;
 otherwise an older first-autoloaded class can defeat the newest-winner class
 loader even though version registration succeeded.
@@ -271,7 +272,9 @@ The supported WordPress order is exact:
    `plugins_loaded` priority 0. The sidecar requires at least 0.6.2.
 2. The winning Tangible DDD copy initializes at `plugins_loaded` priority 1 and
    installs its class/procedural runtime.
-3. The host plugin calls `boot()` at `plugins_loaded` priority 20. `boot()`
+3. The host plugin calls `boot()` after winner initialization and before
+   priority 30. Priority 10 is the current LMS, Quiz, and Cred convention;
+   generated wiring must follow the convention finalized by 0.6.1. `boot()`
    immediately inserts the host in `ConsumerRegistry`.
 4. The sidecar calls `boot_module()` at `plugins_loaded` priority 30.
    `boot_module()` resolves the named host and calls
@@ -600,8 +603,9 @@ After rebasing this branch onto the completed 0.6.1 branch:
 8. Add lifecycle tests for missing host, duplicate module boot, catalog
    conflicts, and registration order.
 9. Add a loader-order test in which a sidecar's 0.6.2 copy participates at
-   `plugins_loaded:0`, the winner initializes at priority 1, the host boots at
-   priority 20, and `boot_module()` runs at priority 30.
+   `plugins_loaded:0`, the winner initializes at priority 1, the host boots
+   after the winner and before the module (priority 10 in the current fleet),
+   and `boot_module()` runs at priority 30.
 
 Expected intersection with 0.6.1 is limited to the WordPress hook/loader files
 and the new catalog API. No compiler-pass file should need a semantic change.
