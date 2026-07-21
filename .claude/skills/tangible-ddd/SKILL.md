@@ -20,6 +20,7 @@ Before changing a consumer:
    active version and path.
 3. Read that copy's source and tests. Then read its
    [wiring guide](../../../docs/wiring-a-consumer.md),
+   [consumer design interview](../../../docs/consumer-design-interview.md),
    [module guide](../../../docs/consumer-modules.md), and
    [release ledger](../../../docs/migration-0.2-to-0.3.md).
 4. Finally inspect the consumer's DI YAML, container build path, architecture
@@ -44,6 +45,23 @@ Before changing a consumer:
   another process or publish integration events directly.
 - Consumer identity comes from an explicit prefix and namespace root. Never
   infer ownership from a broad namespace, plugin activation, or table names.
+
+## Design dialogue before code
+
+When a requested behavior leaves authority, invariants, transaction scope,
+time boundaries, retry, orchestration, or consumer ownership unclear, do not
+silently choose. Ask the developer one high-information question at a time and
+maintain a provisional decision ledger.
+
+- Explain why a question matters when its consequence is not obvious.
+- Revise the provisional model when answers conflict; surface the conflict.
+- Stop when the material boundaries are known, summarize the proposed model,
+  and obtain approval before implementation.
+- Do not force an interview onto a narrow change whose intent and boundaries
+  are already exact.
+
+Use the [consumer design interview](../../../docs/consumer-design-interview.md)
+for the question funnel, adversarial review, and handoff format.
 
 ## Choose the construct
 

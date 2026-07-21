@@ -95,6 +95,7 @@ live view uses WordPress Heartbeat to reveal new trace pieces as workers finish.
 
 - [Documentation map](docs/README.md)
 - [Wiring a consumer](docs/wiring-a-consumer.md)
+- [Consumer design interview](docs/consumer-design-interview.md)
 - [Consumer modules](docs/consumer-modules.md)
 - [Release and migration ledger](docs/migration-0.2-to-0.3.md)
 - [Canonical agent skill](.claude/skills/tangible-ddd/SKILL.md)
