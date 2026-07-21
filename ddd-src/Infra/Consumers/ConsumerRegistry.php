@@ -7,11 +7,14 @@ use TangibleDDD\Infra\IDDDConfig;
 /**
  * The framework's memory of its consumers.
  *
+ * Top-level consumers own persistence, hooks, workers, CLI, and dashboard
+ * identity. Module handles are namespace-routing overlays only and never
+ * appear in all().
+ *
  * Populated implicitly: register_hooks() (and therefore boot()) announces
- * the calling plugin, so every correctly-wired consumer appears here with
- * zero extra code — and a plugin missing from the registry is a plugin
- * whose framework wiring is broken. Keyed by prefix; re-registration
- * replaces (idempotent across boot() + register_hooks() both announcing).
+ * the calling plugin. Top-level registration is replaceable until a module
+ * attaches; after that, an exact repeat is idempotent and a conflicting
+ * replacement fails so module config and bridged host services cannot split.
  *
  * Read through consumers() (ddd-wordpress/hooks.php), which applies the
  * `tangible_ddd_consumers` filter — relabel, hide, or inject there, not here.
@@ -25,6 +28,17 @@ final class ConsumerRegistry {
   private static array $modules = [];
 
   public static function add(IDDDConfig $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): ConsumerHandle {
+    $existing = self::$consumers[$config->prefix()] ?? null;
+    if ($existing !== null && self::has_modules_for($config->prefix())) {
+      if (!$existing->matches_registration($config, $di_getter, $label, $namespace_root)) {
+        throw new \LogicException(
+          "DDD consumer \"{$config->prefix()}\" cannot be replaced after modules are registered",
+        );
+      }
+
+      return $existing;
+    }
+
     $handle = new ConsumerHandle($config, $di_getter, $label, $namespace_root);
     self::$consumers[$config->prefix()] = $handle;
 
@@ -63,8 +77,11 @@ final class ConsumerRegistry {
   }
 
   /**
-   * Add a module route below an existing consumer without adding a second
-   * persistence/dashboard consumer.
+   * Add or replace a pre-runtime module route below an existing host.
+   *
+   * The returned handle shares the host's exact config object and label, but
+   * resolves the module container. It participates in owner_of() only: all()
+   * remains the top-level persistence/dashboard consumer list.
    */
   public static function add_module(
     string $host_prefix,
@@ -137,7 +154,12 @@ final class ConsumerRegistry {
     return $best;
   }
 
-  /** @return array<string, ConsumerHandle> namespace root => module route */
+  /**
+   * Enumerate routing modules attached to one top-level host, in registration
+   * order. Modules remain absent from all().
+   *
+   * @return array<string, ConsumerHandle> namespace root => module route
+   */
   public static function modules_for(string $host_prefix): array {
     self::consumer($host_prefix);
 
@@ -183,5 +205,15 @@ final class ConsumerRegistry {
     }
 
     return $best;
+  }
+
+  private static function has_modules_for(string $host_prefix): bool {
+    foreach (self::$modules as $module) {
+      if ($module['host_prefix'] === $host_prefix) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

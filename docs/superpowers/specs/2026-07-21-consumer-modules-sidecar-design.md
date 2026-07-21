@@ -1,6 +1,6 @@
 # Consumer Modules and Sidecar Design
 
-**Status:** Approved for architectural spike
+**Status:** Approved 0.6.2 production contract
 **Target release:** Tangible DDD 0.6.2
 **Depends on:** Tangible DDD 0.6.1 compiled `LongProcessCatalog`
 **Date:** 2026-07-21
@@ -206,6 +206,12 @@ final class ConsumerRegistry
 The handle is stored only in a private module overlay with its host prefix.
 This preserves the existing `owner_of(): ConsumerHandle` return contract.
 
+After the first module attaches, the top-level host handle is stable. An exact
+repeat of the host registration is idempotent; a different config, getter,
+label, or namespace root throws. This prevents module handles from retaining
+one host config while `service_for()` begins resolving a replacement host
+container.
+
 `config_for()` is both a convenience and a Symfony factory seam. A runtime
 module container can receive the object directly. A separately dumped module
 container can define its `IDDDConfig` service with a runtime factory that calls
@@ -257,11 +263,14 @@ otherwise an older first-autoloaded class can defeat the newest-winner class
 loader even though version registration succeeded.
 
 `boot_module()` registers the module overlay after the host has booted and
-wires module runtime services after host hooks have registered. Calls are
-idempotent per module root. A second call for the same root and host replaces
-the getter before runtime wiring; a conflicting host fails. The sidecar also
-calls `Tangible_DDD_Versions::instance()->require_version()` with minimum
-`0.6.2` so an unmet winner is visible to diagnostics.
+wires module runtime services after host hooks have registered. Calls install
+one `init:3` callback per normalized module root. A second call for the same
+root and host replaces the getter before runtime wiring; a conflicting host
+or a replacement after runtime wiring fails. Successful registration calls
+`Tangible_DDD_Versions::instance()->require_version()` with minimum `0.6.2`
+under the stable identifier `ddd-module:<normalized namespace root>`, so an
+unmet winner is visible to diagnostics without inventing a second consumer
+prefix.
 
 ## Lifecycle and Ordering
 
@@ -471,6 +480,17 @@ If the same class appears in the host base and a module catalog, registration
 must either prove the entry metadata identical and de-duplicate it or fail. A
 module may not replace host process metadata.
 
+The same comparison applies against modules already wired for that host.
+Metadata equality is strict catalog-data equality; 0.6.2 does not reinterpret
+or reorder tag attributes. Validation of the complete current module catalog
+happens before its listener constructors or process callbacks run.
+
+A module container with no `LongProcessCatalog`, or with an empty catalog, is
+valid for command/query/listener-only modules. That path does not resolve a
+`ProcessRunner`. A non-empty catalog resolves the host's exact public runner
+through `ConsumerRegistry::service_for()` and passes only non-duplicate entries
+to the existing `register_process_entries()` function.
+
 The module container may be dumped too. It uses the same 0.6.1 compiler pass to
 materialize its own catalog; only the small catalog value crosses into runtime
 module wiring.
@@ -556,7 +576,8 @@ test for the exact IDs consumed by its sidecars.
 
 The WordPress facade guards module runtime wiring once per module root.
 Registry replacement alone is not enough because constructing listeners twice
-would add duplicate WordPress callbacks.
+would add duplicate WordPress callbacks. Getter replacement is supported only
+before the guarded `init:3` callback runs; a late replacement throws.
 
 ### Sidecar deactivation with live process rows
 
@@ -689,10 +710,10 @@ The release patch is incomplete until all of these surfaces agree:
    or should each sidecar declare a versioned host-service manifest? The
    transaction ID already differs: LMS and Quiz use their host Doctrine
    middleware, while Cred and Datastream use the framework middleware.
-3. Should module process conflicts be rejected by a dedicated runtime catalog
-   object or directly by `boot_module()` before calling
-   `register_process_entries()`? The answer should follow the final 0.6.1 API,
-   not precede it.
+3. Resolved for 0.6.2: `boot_module()` keeps a host-scoped runtime metadata
+   ledger, validates the current catalog against the host and previously wired
+   modules, and passes only new entries to 0.6.1's
+   `register_process_entries()`.
 4. Should the dashboard eventually show module grouping metadata, or is the
    module FQCN within the host trace sufficient? This is a dashboard product
    decision, not a persistence requirement.
