@@ -11,6 +11,7 @@ final class DocumentationCurrentnessTest extends TestCase {
     'README.md',
     'docs/README.md',
     'docs/wiring-a-consumer.md',
+    'docs/consumer-design-interview.md',
     'docs/consumer-modules.md',
     'docs/migration-0.2-to-0.3.md',
     '.claude/skills/tangible-ddd/SKILL.md',
