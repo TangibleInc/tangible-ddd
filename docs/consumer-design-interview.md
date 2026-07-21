@@ -117,6 +117,8 @@ Write down every state change and its physical storage connection. Then ask:
 
 - Which writes must either all commit or all roll back?
 - Are those writes actually on the same Doctrine/PDO/wpdb connection?
+- Does the command implement `ITransactionalCommand`, or satisfy the explicit
+  opt-in contract of the consumer's custom transaction middleware?
 - Which consequences can occur after commit without falsifying the original
   outcome?
 - What remains correct if the process dies before the handler, during a write,
@@ -126,11 +128,16 @@ Write down every state change and its physical storage connection. Then ask:
 - What is the recovery story when an external effect succeeds but its local
   acknowledgement fails?
 
-In Tangible DDD, the command middleware transaction wraps aggregate persistence,
+The stock Tangible DDD transaction middleware opens a database transaction only
+for `ITransactionalCommand`. Being on the command bus or appearing inside the
+middleware chain is not enough. Consumer-specific Doctrine/PDO middleware may
+have its own gate, which must be inspected and tested.
+
+When the command opts in, the transaction wraps aggregate persistence,
 domain-event drain, and transactional outbox publication. That atomicity is
 real only when aggregate writes and the outbox use the same transaction
-connection. Domain events run synchronously inside it. Integration events are
-committed records whose consumers run later.
+connection. Domain events run synchronously during command execution;
+integration events are committed records whose consumers run later.
 
 Remote APIs, email delivery, and a second independent connection are not made
 atomic by calling them from the handler. Either make their availability a
@@ -314,13 +321,17 @@ Ask what a future operator must be able to answer:
 
 Correlation and causation connect work across consumer tables and plugins; do
 not manually copy IDs through normal handlers. The outbox and framework
-boundaries propagate trace context. Cross-plugin traces do not require a shared
-audit table.
+boundaries propagate trace context. The current dashboard trace is scoped to
+the selected consumer; the v2 unified-trace direction can stitch those records
+without a shared audit table.
 
 Biography is a read model over declared `#[Touches]` projections. It is useful
 for reconstructing aggregate change history, but it is not an event store or a
-write-side authority. Annotate the lifecycle-declaring event, preserve an
-at-rest canonical name across aggregate renames, and run conformance checks.
+write-side authority. Annotate the integration record that is actually
+published. When a rich domain event announces a separate scalar twin, put the
+declaration on that twin; source annotations are not copied by `EventRouter`.
+Preserve an at-rest canonical name across aggregate renames and run conformance
+checks.
 
 **Why this changes the design:** observability that is not declared while the
 model is built becomes forensic guesswork later. Retention should determine
@@ -333,7 +344,8 @@ Turn each decision into evidence:
 - invariant tests cover accepted, rejected, and concurrent decisions;
 - transaction tests prove aggregate and outbox writes commit or roll back
   together on the real connection;
-- event conformance tests pin codec round trips, action names, and payload keys;
+- explicit event contract tests pin codec round trips, action names, and
+  payload keys;
 - retry tests deliver the same fact/effect more than once;
 - routine tests prove deterministic item generation, batching, retry, waiting,
   and fork semantics used by the consumer;

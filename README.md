@@ -35,6 +35,9 @@ bootstrap, migration, and deployment contract.
 
 - Commands enter the command bus. Its middleware owns correlation, audit,
   transaction, domain-event publication, and terminal handler execution.
+- The stock wpdb transaction middleware opens a database transaction only for
+  commands implementing `ITransactionalCommand`. Being on the command bus is
+  not itself a transaction opt-in.
 - Queries use a read-only bus without the command transaction and audit
   bracket.
 - Domain events are synchronous and remain inside the originating unit of
@@ -48,8 +51,9 @@ bootstrap, migration, and deployment contract.
 - Long-process definitions are compiled into `LongProcessCatalog`, so dumped
   production containers have the same process discovery as development
   containers.
-- Correlation and causation metadata connect commands, integration events,
-  process wakes, and workflow work into a trace across consumer plugins.
+- Correlation and causation metadata survive cross-plugin handoffs. The current
+  trace lens reads one selected consumer; the v2 scope uses those records to
+  stitch a unified trace without a shared write table.
 - Declared aggregate touches create a rebuildable Biography read model without
   making the touches table a write-side authority.
 
@@ -81,8 +85,8 @@ WordPress tables:
 - `acme_orders_behaviour_workflow_items`
 
 The real table names also include the site's WordPress table prefix. Retention
-and export policy can be chosen per consumer; cross-plugin traces are assembled
-from propagated correlation metadata rather than a shared write table.
+and export policy can be chosen per consumer. Propagated correlation metadata
+allows the v2 unified trace to be assembled without a shared write table.
 
 ## Dashboard
 

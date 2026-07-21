@@ -37,7 +37,9 @@ Before changing a consumer:
   an integration event for a later unit of work.
 - Queries do not mutate state. Their bus deliberately has no correlation/audit,
   transaction, or domain-event publication middleware.
-- Domain events are synchronous and transactional. Integration events cross a
+- Domain events are synchronous. They share a database transaction only when
+  the originating command and configured middleware open one; the stock wpdb
+  middleware requires `ITransactionalCommand`. Integration events cross a
   consistency or time boundary through the outbox.
 - Integration listeners translate an integration event into a command or
   return `null`. They contain no domain work.
@@ -117,6 +119,11 @@ CorrelationMiddleware
   -> CommandHandlerMiddleware
 ```
 
+The stock `TransactionMiddleware` opens a wpdb transaction only for a command
+implementing `ITransactionalCommand`. A plain or self-handling command must add
+that marker when its aggregate and outbox writes need atomic commit. For custom
+Doctrine/PDO middleware, inspect and test the consumer's actual opt-in rule.
+
 The query chain contains only the self-executing terminal followed by the
 normal query-handler terminal.
 
@@ -180,9 +187,10 @@ value containing the correlation ID, current cause, and story sequence.
   ordinary handlers. Preserve the integration envelope instead.
 
 Commands, integration publications, process starts/wakes, and workflow work
-write causation edges into consumer-scoped records. The dashboard assembles a
-trace across plugins because the correlation travels with integration events;
-it does not require one shared audit table.
+write causation edges into consumer-scoped records. The current dashboard trace
+is scoped to one selected consumer. The v2 unified-trace direction can stitch
+participants because correlation travels with integration events; it does not
+require one shared audit table.
 
 ## Behaviour workflow routines
 
@@ -231,11 +239,15 @@ container.
 
 ## Touches and Biography
 
-Annotate a lifecycle-declaring event with repeatable
+Annotate the integration record that is actually published with repeatable
 `#[Touches(Op::Created|Updated|Deleted, AggregateClass::class, id: '...')]`.
 The outbox/event bookkeeping projects these declarations into the consumer's
 touches table. The dashboard Biography is a read model over those rows, not an
 event store or write authority.
+
+For a rich domain event that announces a separate scalar integration twin,
+place `#[Touches]` on the twin. `EventRouter` publishes `to_integration()` and
+does not copy attributes from the source event.
 
 Use class references in code. If an aggregate with recorded touches is renamed,
 override `canonical_name()` to preserve its historical at-rest name. Run
@@ -293,6 +305,8 @@ examples unless the current release ledger explicitly says so.
 
 - Installed version and winning runtime copy verified.
 - State-changing entry points use the command bus; query paths stay read-only.
+- Commands that require the stock database transaction implement
+  `ITransactionalCommand`; custom transaction gates are explicitly tested.
 - Command, event, routine, and long-process boundaries match their lifecycles.
 - Container YAML and every build path register the current middleware/catalog
   contracts.

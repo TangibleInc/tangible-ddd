@@ -267,7 +267,9 @@ default). No consumer ever shipped against the pinned state; nothing to do.
   `protected function handle(...$deps)`; `SelfExecutingCommandMiddleware`
   slotted into the command onion immediately before
   `tactician.middleware.command_handler` (so self-handling commands still get
-  the act bracket, transaction, and domain-event publishing).
+  the act bracket, transaction middleware, and domain-event publishing; the
+  stock middleware opens a database transaction only when the command also
+  implements `ITransactionalCommand`).
 - `SelfHandlingQuery` (additive, opt-in) — the read-side twin. The SAME
   middleware (explicit union check, no new marker interface) is slotted into
   the QUERY bus immediately before `tactician.middleware.query_handler`, and

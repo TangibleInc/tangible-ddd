@@ -4,7 +4,7 @@
 > `ddd-wordpress/Admin/Dashboard`. This document preserves the plan that led to
 > it; its old middleware and API names are not current integration guidance.
 >
-> **See also (older / partially superseded):** `docs/dashboard/ddd-drill-inspector-dashboard-plan.md`,
+> **See also (older / partially superseded):** `docs/ddd-drill-inspector-dashboard-plan.md`,
 > `docs/outbox-transport-payload-strategies.md`.
 
 **Legend:** ✅ exists in tangible-ddd today · 🔨 build now · 🔮 proposed / needs new infra.

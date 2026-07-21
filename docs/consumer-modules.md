@@ -327,6 +327,12 @@ Use the same mapping/inflector definitions as a normal 0.6.2 consumer. The
 query bus remains read-shaped; do not import the command correlation,
 transaction, or event-publication middleware into it.
 
+Reusing the host transaction middleware also reuses its opt-in rule. With the
+stock wpdb middleware, a module command whose writes must be atomic implements
+`ITransactionalCommand`; merely traversing the module command bus does not open
+a transaction. A host-specific Doctrine/PDO middleware may use a different
+gate, which is part of the host/module contract and must be tested.
+
 Register module-owned resources under the declared module root:
 
 ```yaml
@@ -366,8 +372,8 @@ For a module command or query, the message's bus-aware trait asks
 `ConsumerRegistry::owner_of(static::class)` for a container. The longer module
 root wins over the host root, so the module bus resolves its handler or
 self-handling dependencies. The imported host middleware then performs the
-same correlation, transaction, and publication work as a host-declared
-command.
+same correlation and publication work as a host-declared command. Whether it
+opens a database transaction follows the host middleware's command opt-in.
 
 For a module event, `Event::prefix()` resolves the same module handle, whose
 config is the host object. Domain and integration action names therefore use

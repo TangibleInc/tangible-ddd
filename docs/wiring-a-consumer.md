@@ -112,7 +112,7 @@ arguments have repeatedly drifted as framework constructors evolved.
 | --- | --- |
 | `TangibleDDD\Infra\IDDDConfig` | Alias to this consumer's config |
 | `CorrelationMiddleware` | Outermost command scope, nesting guard, correlation, audit |
-| `TransactionMiddleware` | Framework wpdb transaction, or a consumer-specific transaction middleware |
+| `TransactionMiddleware` | Framework wpdb transaction for `ITransactionalCommand`, or a consumer-specific transaction middleware with an explicitly verified gate |
 | `EventsUnitOfWork` | Collects aggregate domain events |
 | `IDomainEventDispatcher` | `WordPressEventDispatcher` |
 | `DomainEventsPublishMiddleware` | Drains domain events before transaction commit |
@@ -146,10 +146,17 @@ CorrelationMiddleware
   -> CommandHandlerMiddleware
 ```
 
-The transaction wraps event publication, so aggregate writes and outbox rows
-commit atomically. `SelfExecutingCommandMiddleware` is terminal only for a
+The stock `TransactionMiddleware` starts a database transaction only when the
+message implements `ITransactionalCommand`. For such a command, the transaction
+wraps event publication so aggregate writes and outbox rows can commit
+atomically when they use the same connection. An unmarked command still passes
+through the middleware chain but no wpdb transaction is opened. Inspect and
+test the equivalent gate when the consumer supplies Doctrine/PDO middleware.
+
+`SelfExecutingCommandMiddleware` is terminal only for a
 `SelfHandlingCommand`; otherwise execution continues to the normal
-naming-convention handler.
+naming-convention handler. Either handler shape implements
+`ITransactionalCommand` when its writes require the stock transaction.
 
 The query bus is deliberately read-shaped:
 
@@ -207,7 +214,9 @@ namespaces and resolves them. Do not duplicate that scan in consumer code.
 ## Event boundary
 
 - A `DomainEvent` is recorded by an aggregate, collected by its repository,
-  and published synchronously inside the command transaction.
+  and published synchronously during command execution. It shares a database
+  transaction only when the command and configured middleware actually open
+  one.
 - Once the handler returns, the event unit of work is sealed while synchronous
   handlers drain. Newly recorded events must implement
   `IAnnouncesIntegration`; this admits scalar self-publishers and rich events
@@ -310,15 +319,19 @@ Before shipping a consumer or framework-version bump:
 2. Build the actual `PhpDumper` production container with the same compiler
    passes. Assert it exposes `LongProcessCatalog` when processes exist and that
    process routes register with `WP_DEBUG=false`.
-3. Run `IntegrationConformance` for event codec round trips, touches, process
-   attributes, and integration-listener contracts.
-4. Verify `ConsumerRegistry::owner_of()` resolves representative command,
+3. Run `IntegrationConformance::event_violations()` for reflected integration
+   wire types and `#[Touches]` declarations, and `listener_violations()` for
+   integration-listener constructor policy.
+4. Separately execute representative codec round trips, pin action names and
+   payload keys, and test process attributes through the compiled catalog.
+5. Verify `ConsumerRegistry::owner_of()` resolves representative command,
    query, event, aggregate, and process classes to the intended prefix.
-5. Exercise one command transaction that writes aggregate state plus an outbox
-   row, then drain it through Action Scheduler.
-6. Verify all seven tables and the consumer schema-version option on a fresh
+6. Exercise one `ITransactionalCommand` that writes aggregate state plus an
+   outbox row, prove commit and rollback on the real connection, then drain it
+   through Action Scheduler.
+7. Verify all seven tables and the consumer schema-version option on a fresh
    database and an upgraded database.
-7. Confirm the consumer appears once in dddash and its trace joins command,
+8. Confirm the consumer appears once in dddash and its trace joins command,
    outbox, process, workflow, and touches data as expected.
 
 When an integration wire shape changes, deploy publisher and subscribers

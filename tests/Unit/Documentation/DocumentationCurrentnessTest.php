@@ -25,6 +25,14 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/integration-event-evolution.md',
   ];
 
+  private const TRANSACTION_GUIDES = [
+    'README.md',
+    'docs/wiring-a-consumer.md',
+    'docs/consumer-design-interview.md',
+    'docs/consumer-modules.md',
+    '.claude/skills/tangible-ddd/SKILL.md',
+  ];
+
   private const REMOVED_PATTERNS = [
     'CorrelationContext::',
     'extends AsyncWordPressActionHandler',
@@ -55,6 +63,13 @@ final class DocumentationCurrentnessTest extends TestCase {
     }
   }
 
+  /** @return iterable<string, array{string}> */
+  public static function transaction_guides(): iterable {
+    foreach ( self::TRANSACTION_GUIDES as $file ) {
+      yield $file => [ $file ];
+    }
+  }
+
   #[DataProvider( 'operational_files' )]
   public function test_operational_document_exists( string $file ): void {
     $this->assertFileExists( self::$root . '/' . $file );
@@ -75,6 +90,17 @@ final class DocumentationCurrentnessTest extends TestCase {
         "$file presents removed API '$pattern' as current guidance"
       );
     }
+  }
+
+  #[DataProvider( 'transaction_guides' )]
+  public function test_transaction_guidance_names_the_opt_in_marker( string $file ): void {
+    $contents = (string) file_get_contents( self::$root . '/' . $file );
+
+    $this->assertStringContainsString(
+      'ITransactionalCommand',
+      $contents,
+      "$file must not imply that every command automatically opens a transaction"
+    );
   }
 
   #[DataProvider( 'historical_files' )]
