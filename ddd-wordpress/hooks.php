@@ -110,8 +110,9 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
  * service IDs matching either pattern and instantiates them.
  *
  * @param callable $di_getter Function that returns the DI container
+ * @param bool $fail_fast Re-throw construction errors for module boot
  */
-function register_event_handlers(callable $di_getter): void {
+function register_event_handlers(callable $di_getter, bool $fail_fast = false): void {
   $container = $di_getter();
 
   if (!method_exists($container, 'getServiceIds')) {
@@ -127,6 +128,10 @@ function register_event_handlers(callable $di_getter): void {
     try {
       $container->get($id);
     } catch (\Throwable $e) {
+      if ($fail_fast) {
+        throw $e;
+      }
+
       error_log(sprintf(
         '[ddd-event-handlers] Failed to boot handler %s: %s',
         $id,

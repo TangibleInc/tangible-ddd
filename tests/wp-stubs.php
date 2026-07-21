@@ -101,11 +101,23 @@ if (!function_exists('add_action')) {
 }
 
 if (!function_exists('do_action')) {
+  /** @var array<string, int> */
+  global $_test_did_actions;
+  $_test_did_actions = [];
+
   function do_action(string $hook, ...$args): void {
-    global $_test_actions;
+    global $_test_actions, $_test_did_actions;
+    $_test_did_actions[$hook] = ($_test_did_actions[$hook] ?? 0) + 1;
     foreach ($_test_actions[$hook] ?? [] as $callback) {
       $callback(...$args);
     }
+  }
+}
+
+if (!function_exists('did_action')) {
+  function did_action(string $hook): int {
+    global $_test_did_actions;
+    return $_test_did_actions[$hook] ?? 0;
   }
 }
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace TangibleDDD\Tests\Unit\WordPress;
 
 use Closure;
+use League\Tactician\CommandBus;
+use League\Tactician\Middleware;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -16,6 +18,7 @@ use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DDDConfig;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeThreeStepProcess;
 use TangibleDDD\Tests\Fakes\FakeProcessRepository;
 
@@ -43,13 +46,15 @@ final class ConsumerModuleBootTest extends TestCase
     private DDDConfig $hostConfig;
     private ProcessRunner $hostRunner;
     private ModuleLifecycleContainer $hostContainer;
+    private CommandBus $moduleBus;
 
     protected function setUp(): void
     {
-        global $_test_actions, $_test_action_registrations, $_test_filters;
+        global $_test_actions, $_test_action_registrations, $_test_did_actions, $_test_filters;
 
         $_test_actions = [];
         $_test_action_registrations = [];
+        $_test_did_actions = [];
         $_test_filters = [];
         $GLOBALS['wpdb'] = new \wpdb();
         ConsumerRegistry::reset();
@@ -60,6 +65,7 @@ final class ConsumerModuleBootTest extends TestCase
         $this->hostPrefix = 'module_boot_' . ++self::$prefixSequence;
         $this->hostConfig = new DDDConfig($this->hostPrefix, self::HOST_ROOT, 'test');
         $this->hostRunner = new ProcessRunner($this->hostConfig, new FakeProcessRepository());
+        $this->moduleBus = new CommandBus(new ModuleNoopMiddleware());
         $this->hostContainer = new ModuleLifecycleContainer([
             LongProcessCatalog::class => new LongProcessCatalog(),
             ProcessRunner::class => $this->hostRunner,
@@ -127,6 +133,35 @@ final class ConsumerModuleBootTest extends TestCase
         }
     }
 
+    public function test_boot_module_rejects_registration_after_init_before_installing_a_route(): void
+    {
+        $caught = null;
+        $callbackCounts = [];
+        add_action('init', function () use (&$caught, &$callbackCounts): void {
+            $callbackCounts[] = count($this->callbacksAt('init', 3));
+            try {
+                boot_module(
+                    $this->hostPrefix,
+                    self::MODULE_ROOT,
+                    fn (): ModuleLifecycleContainer => $this->moduleContainer(),
+                );
+            } catch (\LogicException $error) {
+                $caught = $error;
+            } finally {
+                $callbackCounts[] = count($this->callbacksAt('init', 3));
+            }
+        }, 1);
+        $this->registerHost();
+
+        do_action('init');
+
+        self::assertInstanceOf(\LogicException::class, $caught);
+        self::assertStringContainsString('before WordPress init begins', $caught->getMessage());
+        self::assertSame([], ConsumerRegistry::modules_for($this->hostPrefix));
+        self::assertCount(2, $callbackCounts);
+        self::assertSame($callbackCounts[0], $callbackCounts[1]);
+    }
+
     public function test_boot_module_declares_its_0_6_2_loader_requirement(): void
     {
         $versions = \Tangible_DDD_Versions::instance();
@@ -153,16 +188,16 @@ final class ConsumerModuleBootTest extends TestCase
     public function test_same_root_cannot_be_attached_to_a_conflicting_host(): void
     {
         $this->registerHost();
-        boot_module(
-            $this->hostPrefix,
-            self::MODULE_ROOT,
-            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
-        );
         ConsumerRegistry::add(
             new DDDConfig('other_lms', self::HOST_ROOT, 'test'),
             static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
             'Other LMS',
             self::HOST_ROOT,
+        );
+        boot_module(
+            $this->hostPrefix,
+            self::MODULE_ROOT,
+            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
         );
 
         $this->expectException(\InvalidArgumentException::class);
@@ -181,7 +216,7 @@ final class ConsumerModuleBootTest extends TestCase
 
         $this->registerHost();
         $first = new ModuleLifecycleContainer();
-        $second = new ModuleLifecycleContainer([
+        $second = $this->moduleContainer([
             RecordTraceWhenTraceRecorded::class => static fn (): RecordTraceWhenTraceRecorded => new RecordTraceWhenTraceRecorded(),
         ]);
 
@@ -208,7 +243,7 @@ final class ConsumerModuleBootTest extends TestCase
         boot_module(
             $this->hostPrefix,
             self::MODULE_ROOT,
-            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+            fn (): ModuleLifecycleContainer => $this->moduleContainer(),
         );
         $this->run_callbacks_at('init', 3);
 
@@ -222,10 +257,80 @@ final class ConsumerModuleBootTest extends TestCase
         );
     }
 
-    #[DataProvider('cataloglessModules')]
-    public function test_absent_or_empty_catalog_is_valid_for_listener_only_modules(
-        ModuleLifecycleContainer $moduleContainer,
+    public function test_module_listener_construction_errors_propagate_and_leave_the_module_unwired(): void
+    {
+        $this->registerHost();
+        $failure = new \RuntimeException('module listener construction failed');
+        $module = $this->moduleContainer([
+            RecordTraceWhenTraceRecorded::class => static function () use ($failure): never {
+                throw $failure;
+            },
+        ]);
+        boot_module($this->hostPrefix, self::MODULE_ROOT, static fn (): ModuleLifecycleContainer => $module);
+
+        $caught = null;
+        try {
+            $this->run_callbacks_at('init', 3);
+        } catch (\RuntimeException $error) {
+            $caught = $error;
+        }
+
+        self::assertSame($failure, $caught);
+        self::assertFalse(
+            \TangibleDDD\WordPress\module_runtime_state()['boots'][self::MODULE_ROOT]['wired'],
+        );
+    }
+
+    #[DataProvider('invalidModuleContracts')]
+    public function test_invalid_module_contract_fails_before_listener_side_effects(
+        string $violation,
+        string $expectedMessage,
     ): void {
+        $this->registerHost();
+        $services = [
+            IDDDConfig::class => $this->hostConfig,
+            CommandBus::class => $this->moduleBus,
+            RecordTraceWhenTraceRecorded::class => static fn (): RecordTraceWhenTraceRecorded => new RecordTraceWhenTraceRecorded(),
+        ];
+
+        if ($violation === 'missing-config') {
+            unset($services[IDDDConfig::class]);
+        } elseif ($violation === 'foreign-config') {
+            $services[IDDDConfig::class] = new DDDConfig('foreign', self::HOST_ROOT, 'test');
+        } elseif ($violation === 'missing-command-bus') {
+            unset($services[CommandBus::class]);
+        } else {
+            $services[CommandBus::class] = new \stdClass();
+        }
+
+        $module = new ModuleLifecycleContainer($services);
+        boot_module($this->hostPrefix, self::MODULE_ROOT, static fn (): ModuleLifecycleContainer => $module);
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage($expectedMessage);
+
+        try {
+            $this->run_callbacks_at('init', 3);
+        } finally {
+            self::assertNotContains(RecordTraceWhenTraceRecorded::class, $module->getCalls);
+        }
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function invalidModuleContracts(): iterable
+    {
+        yield 'missing host config' => ['missing-config', IDDDConfig::class];
+        yield 'different host config object' => ['foreign-config', 'exact config object'];
+        yield 'missing command bus' => ['missing-command-bus', CommandBus::class];
+        yield 'invalid command bus' => ['invalid-command-bus', 'not a CommandBus'];
+    }
+
+    #[DataProvider('cataloglessModules')]
+    /** @param array<string, mixed> $moduleServices */
+    public function test_absent_or_empty_catalog_is_valid_for_listener_only_modules(
+        array $moduleServices,
+    ): void {
+        $moduleContainer = $this->moduleContainer($moduleServices);
         $this->registerHost();
         boot_module(
             $this->hostPrefix,
@@ -240,25 +345,25 @@ final class ConsumerModuleBootTest extends TestCase
         self::assertSame([LongProcessCatalog::class], $this->hostContainer->getCalls);
     }
 
-    /** @return iterable<string, array{ModuleLifecycleContainer}> */
+    /** @return iterable<string, array{array<string, mixed>}> */
     public static function cataloglessModules(): iterable
     {
         $listener = static fn (): RecordTraceWhenTraceRecorded => new RecordTraceWhenTraceRecorded();
 
-        yield 'catalog absent' => [new ModuleLifecycleContainer([
+        yield 'catalog absent' => [[
             RecordTraceWhenTraceRecorded::class => $listener,
-        ])];
-        yield 'catalog empty' => [new ModuleLifecycleContainer([
+        ]];
+        yield 'catalog empty' => [[
             LongProcessCatalog::class => new LongProcessCatalog(),
             RecordTraceWhenTraceRecorded::class => $listener,
-        ])];
+        ]];
     }
 
     public function test_module_process_entries_use_the_hosts_exact_runner(): void
     {
         $this->registerHost();
         $metadata = [['awaits' => [TraceRecorded::class]]];
-        $module = new ModuleLifecycleContainer([
+        $module = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => $metadata,
             ]),
@@ -292,7 +397,7 @@ final class ConsumerModuleBootTest extends TestCase
         boot_module(
             $this->hostPrefix,
             self::MODULE_ROOT,
-            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer([
+            fn (): ModuleLifecycleContainer => $this->moduleContainer([
                 LongProcessCatalog::class => new LongProcessCatalog([
                     SuperTraceProcess::class => $metadata,
                 ]),
@@ -322,7 +427,7 @@ final class ConsumerModuleBootTest extends TestCase
             ProcessRunner::class => $this->hostRunner,
         ]);
         $this->registerHost();
-        $module = new ModuleLifecycleContainer([
+        $module = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => [[]],
             ]),
@@ -345,12 +450,12 @@ final class ConsumerModuleBootTest extends TestCase
     {
         $this->registerHost();
         $firstRoot = 'Tangible\\LMS\\Extension';
-        $first = new ModuleLifecycleContainer([
+        $first = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => [['awaits' => [TraceRecorded::class]]],
             ]),
         ]);
-        $second = new ModuleLifecycleContainer([
+        $second = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => [[]],
             ]),
@@ -378,12 +483,12 @@ final class ConsumerModuleBootTest extends TestCase
         $this->registerHost();
         $firstRoot = 'Tangible\\LMS\\Extension';
         $metadata = [['awaits' => [TraceRecorded::class]]];
-        $first = new ModuleLifecycleContainer([
+        $first = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => $metadata,
             ]),
         ]);
-        $second = new ModuleLifecycleContainer([
+        $second = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 SuperTraceProcess::class => $metadata,
             ]),
@@ -399,7 +504,7 @@ final class ConsumerModuleBootTest extends TestCase
     public function test_module_catalog_rejects_a_process_outside_its_namespace_before_listeners_boot(): void
     {
         $this->registerHost();
-        $module = new ModuleLifecycleContainer([
+        $module = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 FakeThreeStepProcess::class => [[]],
             ]),
@@ -420,7 +525,7 @@ final class ConsumerModuleBootTest extends TestCase
     public function test_module_catalog_rejects_a_non_process_before_listeners_boot(): void
     {
         $this->registerHost();
-        $module = new ModuleLifecycleContainer([
+        $module = $this->moduleContainer([
             LongProcessCatalog::class => new LongProcessCatalog([
                 \Tangible\LMS\Extension\SuperTrace\Application\Commands\RecordTrace::class => [[]],
             ]),
@@ -438,7 +543,7 @@ final class ConsumerModuleBootTest extends TestCase
         }
     }
 
-    public function test_catalog_service_requires_a_runtime_get_api(): void
+    public function test_module_container_requires_a_runtime_get_api(): void
     {
         $this->registerHost();
         $module = new class {
@@ -447,6 +552,7 @@ final class ConsumerModuleBootTest extends TestCase
                 return $id === LongProcessCatalog::class;
             }
 
+            /** @return list<string> */
             public function getServiceIds(): array
             {
                 return [];
@@ -455,7 +561,7 @@ final class ConsumerModuleBootTest extends TestCase
         boot_module($this->hostPrefix, self::MODULE_ROOT, static fn (): object => $module);
 
         $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('cannot resolve its process catalog');
+        $this->expectExceptionMessage('must expose has() and get()');
 
         $this->run_callbacks_at('init', 3);
     }
@@ -466,7 +572,7 @@ final class ConsumerModuleBootTest extends TestCase
         boot_module(
             $this->hostPrefix,
             self::MODULE_ROOT,
-            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+            fn (): ModuleLifecycleContainer => $this->moduleContainer(),
         );
 
         $moduleCallbacks = $this->callbacksAt('init', 3);
@@ -500,6 +606,94 @@ final class ConsumerModuleBootTest extends TestCase
         );
     }
 
+    #[DataProvider('topLevelRootsThatWouldInvalidateModuleOwnership')]
+    public function test_later_top_level_consumer_cannot_invalidate_or_partition_module_ownership(
+        string $namespaceRoot,
+    ): void {
+        $this->registerHost();
+        boot_module(
+            $this->hostPrefix,
+            self::MODULE_ROOT,
+            fn (): ModuleLifecycleContainer => $this->moduleContainer(),
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('would invalidate or partition module');
+
+        try {
+            ConsumerRegistry::add(
+                new DDDConfig('competing_' . self::$prefixSequence, $namespaceRoot, 'test'),
+                static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+                'Competing Consumer',
+                $namespaceRoot,
+            );
+        } finally {
+            self::assertSame([$this->hostPrefix], array_keys(ConsumerRegistry::all()));
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function topLevelRootsThatWouldInvalidateModuleOwnership(): iterable
+    {
+        yield 'equal host root ambiguity' => [self::HOST_ROOT];
+        yield 'more-specific owner at module root' => [self::HOST_ROOT . '\\Extension'];
+        yield 'equal module root ambiguity' => [self::MODULE_ROOT];
+        yield 'partition below module root' => [self::MODULE_ROOT . '\\Feature'];
+    }
+
+    public function test_later_broader_top_level_consumer_does_not_invalidate_module_ownership(): void
+    {
+        $this->registerHost();
+        boot_module(
+            $this->hostPrefix,
+            self::MODULE_ROOT,
+            fn (): ModuleLifecycleContainer => $this->moduleContainer(),
+        );
+
+        ConsumerRegistry::add(
+            new DDDConfig('broader_' . self::$prefixSequence, 'Tangible', 'test'),
+            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+            'Broader Consumer',
+            'Tangible',
+        );
+
+        self::assertSame(
+            self::MODULE_ROOT,
+            ConsumerRegistry::owner_of(SuperTraceProcess::class)->namespace_root(),
+        );
+    }
+
+    public function test_replacing_an_unrelated_consumer_cannot_partition_module_ownership(): void
+    {
+        $this->registerHost();
+        $competingPrefix = 'replacement_' . self::$prefixSequence;
+        $original = ConsumerRegistry::add(
+            new DDDConfig($competingPrefix, 'Tangible\\Other', 'test'),
+            static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+            'Unrelated Consumer',
+            'Tangible\\Other',
+        );
+        boot_module(
+            $this->hostPrefix,
+            self::MODULE_ROOT,
+            fn (): ModuleLifecycleContainer => $this->moduleContainer(),
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('would invalidate or partition module');
+
+        try {
+            ConsumerRegistry::add(
+                new DDDConfig($competingPrefix, self::MODULE_ROOT . '\\Feature', 'test'),
+                static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
+                'Replacement Consumer',
+                self::MODULE_ROOT . '\\Feature',
+            );
+        } finally {
+            self::assertSame($original, ConsumerRegistry::consumer($competingPrefix));
+        }
+    }
+
     private function registerHost(): \TangibleDDD\Infra\Consumers\ConsumerHandle
     {
         boot(
@@ -510,6 +704,15 @@ final class ConsumerModuleBootTest extends TestCase
         );
 
         return ConsumerRegistry::consumer($this->hostPrefix);
+    }
+
+    /** @param array<string, mixed> $services */
+    private function moduleContainer(array $services = []): ModuleLifecycleContainer
+    {
+        return new ModuleLifecycleContainer(array_replace([
+            IDDDConfig::class => $this->hostConfig,
+            CommandBus::class => $this->moduleBus,
+        ], $services));
     }
 
     /** @return list<callable> */
@@ -546,6 +749,14 @@ final class ConsumerModuleBootTest extends TestCase
         foreach ($registrations as $registration) {
             $registration['callback']();
         }
+    }
+}
+
+final class ModuleNoopMiddleware implements Middleware
+{
+    public function execute(mixed $command, callable $next): mixed
+    {
+        return null;
     }
 }
 

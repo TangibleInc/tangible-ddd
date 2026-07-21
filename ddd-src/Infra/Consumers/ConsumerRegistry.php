@@ -40,6 +40,7 @@ final class ConsumerRegistry {
     }
 
     $handle = new ConsumerHandle($config, $di_getter, $label, $namespace_root);
+    self::assert_preserves_module_ownership($handle);
     self::$consumers[$config->prefix()] = $handle;
 
     return $handle;
@@ -81,7 +82,9 @@ final class ConsumerRegistry {
    *
    * The returned handle shares the host's exact config object and label, but
    * resolves the module container. It participates in owner_of() only: all()
-   * remains the top-level persistence/dashboard consumer list.
+   * remains the top-level persistence/dashboard consumer list. WordPress
+   * callers must use boot_module(), whose lifecycle guard prevents a direct
+   * route replacement after listeners and process hooks have been installed.
    */
   public static function add_module(
     string $host_prefix,
@@ -215,5 +218,34 @@ final class ConsumerRegistry {
     }
 
     return false;
+  }
+
+  /** Reject a top-level route that would steal all or part of a module route. */
+  private static function assert_preserves_module_ownership(ConsumerHandle $candidate): void {
+    $candidate_root = trim($candidate->namespace_root(), '\\');
+    if ($candidate_root === '') {
+      return;
+    }
+
+    foreach (self::$modules as $module_root => $module) {
+      $host = self::$consumers[$module['host_prefix']];
+      $host_root = trim($host->namespace_root(), '\\');
+      $module_root = trim($module_root, '\\');
+
+      $ties_or_outranks_host = self::namespace_contains($candidate_root, $module_root)
+        && strlen($candidate_root) >= strlen($host_root);
+      $partitions_module = self::namespace_contains($module_root, $candidate_root);
+
+      if ($ties_or_outranks_host || $partitions_module) {
+        throw new \LogicException(
+          "DDD consumer \"{$candidate->prefix()}\" namespace \"$candidate_root\" "
+          . "would invalidate or partition module \"$module_root\" owned by consumer \"{$module['host_prefix']}\"",
+        );
+      }
+    }
+  }
+
+  private static function namespace_contains(string $root, string $subject): bool {
+    return $root !== '' && ($subject === $root || str_starts_with($subject, $root . '\\'));
   }
 }

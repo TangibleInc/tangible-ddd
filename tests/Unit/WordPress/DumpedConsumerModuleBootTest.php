@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Tests\Unit\WordPress;
 
+use League\Tactician\CommandBus;
+use League\Tactician\Middleware;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
@@ -40,10 +42,11 @@ final class DumpedConsumerModuleBootTest extends TestCase
 
     protected function setUp(): void
     {
-        global $_test_actions, $_test_action_registrations, $_test_filters;
+        global $_test_actions, $_test_action_registrations, $_test_did_actions, $_test_filters;
 
         $_test_actions = [];
         $_test_action_registrations = [];
+        $_test_did_actions = [];
         $_test_filters = [];
         $GLOBALS['wpdb'] = new \wpdb();
         ConsumerRegistry::reset();
@@ -86,6 +89,15 @@ final class DumpedConsumerModuleBootTest extends TestCase
         $host = $this->dump($hostBuilder, 'DDDModuleHost');
 
         $moduleBuilder = new ContainerBuilder();
+        $moduleBuilder->register(IDDDConfig::class, DDDConfig::class)
+            ->setFactory([ConsumerRegistry::class, 'config_for'])
+            ->setArguments(['dumped_lms'])
+            ->setPublic(true);
+        $moduleBuilder->register(DumpedModuleBootMiddleware::class, DumpedModuleBootMiddleware::class)
+            ->setPublic(true);
+        $moduleBuilder->register(CommandBus::class, CommandBus::class)
+            ->setArguments([new Reference(DumpedModuleBootMiddleware::class)])
+            ->setPublic(true);
         $moduleBuilder->register(SuperTraceProcess::class, SuperTraceProcess::class)
             ->setArguments(['not-instantiated'])
             ->addTag('ddd.long_process', [
@@ -125,6 +137,8 @@ final class DumpedConsumerModuleBootTest extends TestCase
         self::assertFalse(method_exists($module, 'findTaggedServiceIds'));
         self::assertTrue($host->has(LongProcessCatalog::class));
         self::assertTrue($module->has(LongProcessCatalog::class));
+        self::assertSame($hostConfig, $module->get(IDDDConfig::class));
+        self::assertInstanceOf(CommandBus::class, $module->get(CommandBus::class));
         self::assertSame($hostHandle, ConsumerRegistry::consumer('dumped_lms'));
         self::assertSame($hostRunner, $host->get(ProcessRunner::class));
 
@@ -156,5 +170,13 @@ final class DumpedConsumerModuleBootTest extends TestCase
         require $file;
 
         return new $class();
+    }
+}
+
+final class DumpedModuleBootMiddleware implements Middleware
+{
+    public function execute(mixed $command, callable $next): mixed
+    {
+        return null;
     }
 }

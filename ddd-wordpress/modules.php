@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace TangibleDDD\WordPress;
 
+use League\Tactician\CommandBus;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
+use TangibleDDD\Infra\IDDDConfig;
 
 /**
  * Attach a separately built module container to an existing DDD consumer.
@@ -37,6 +39,12 @@ function boot_module(
   string $namespace_root,
   callable $di_getter,
 ): void {
+  if (\did_action('init') > 0) {
+    throw new \LogicException(
+      'DDD modules must be registered before WordPress init begins',
+    );
+  }
+
   $root = trim($namespace_root, '\\');
   $state =& module_runtime_state();
   $existing = $state['boots'][$root] ?? null;
@@ -97,6 +105,7 @@ function wire_module(string $host_prefix, string $namespace_root): void {
   }
 
   $container = $module->container();
+  validate_module_container_contract($host_prefix, $container);
   $entries = process_entries_from_module_container($container);
   $remaining = validate_module_process_entries(
     $host_prefix,
@@ -115,13 +124,49 @@ function wire_module(string $host_prefix, string $namespace_root): void {
     $runner = $service;
   }
 
-  register_event_handlers(static fn (): object => $container);
+  register_event_handlers(static fn (): object => $container, true);
 
   if ($runner !== null) {
     register_process_entries($module->config(), $runner, $remaining);
   }
 
   $state['boots'][$namespace_root]['wired'] = true;
+}
+
+/** Validate services required by every module before listener constructors run. */
+function validate_module_container_contract(string $host_prefix, object $container): void {
+  if (!method_exists($container, 'has') || !method_exists($container, 'get')) {
+    throw new \UnexpectedValueException(
+      'DDD module container must expose has() and get() runtime APIs',
+    );
+  }
+
+  foreach ([IDDDConfig::class, CommandBus::class] as $service_id) {
+    if (!$container->has($service_id)) {
+      throw new \UnexpectedValueException(
+        "DDD module container is missing mandatory service \"$service_id\"",
+      );
+    }
+  }
+
+  $config = $container->get(IDDDConfig::class);
+  if (!$config instanceof IDDDConfig) {
+    throw new \UnexpectedValueException(
+      'DDD module service "' . IDDDConfig::class . '" is not an IDDDConfig',
+    );
+  }
+  if ($config !== ConsumerRegistry::config_for($host_prefix)) {
+    throw new \UnexpectedValueException(
+      "DDD module must resolve consumer \"$host_prefix\" exact config object",
+    );
+  }
+
+  $command_bus = $container->get(CommandBus::class);
+  if (!$command_bus instanceof CommandBus) {
+    throw new \UnexpectedValueException(
+      'DDD module service "' . CommandBus::class . '" is not a CommandBus',
+    );
+  }
 }
 
 /**

@@ -169,6 +169,8 @@ Cost:
 10. Module process entries are installed on the host `ProcessRunner`, never a
     parallel runner.
 11. No API mutates the host container.
+12. Once a module is attached, later top-level consumer registrations cannot
+    tie or outrank its original host or partition the module namespace.
 
 ## Registry API
 
@@ -210,7 +212,17 @@ After the first module attaches, the top-level host handle is stable. An exact
 repeat of the host registration is idempotent; a different config, getter,
 label, or namespace root throws. This prevents module handles from retaining
 one host config while `service_for()` begins resolving a replacement host
-container.
+container. A later top-level consumer also fails if its namespace root would
+tie or outrank the module's original host at the module root, or if it would
+claim a subtree below the module root. Broader ancestors and disjoint roots do
+not change module ownership and remain valid.
+
+`add_module()` is a low-level pre-runtime API. Its same-host replacement is
+needed by the facade's documented pre-`init` getter replacement. The registry
+does not know WordPress lifecycle state, so callers must use `boot_module()` in
+WordPress. A direct post-wiring `add_module()` call is unsupported; preventing
+that call would require a new public bypass/token or cross-layer lifecycle
+coupling and is explicitly deferred from 0.6.2.
 
 `config_for()` is both a convenience and a Symfony factory seam. A runtime
 module container can receive the object directly. A separately dumped module
@@ -265,8 +277,10 @@ loader even though version registration succeeded.
 `boot_module()` registers the module overlay after the host has booted and
 wires module runtime services after host hooks have registered. Calls install
 one `init:3` callback per normalized module root. A second call for the same
-root and host replaces the getter before runtime wiring; a conflicting host
-or a replacement after runtime wiring fails. Successful registration calls
+root and host replaces the getter only before WordPress `init` begins; a
+conflicting host fails. Any call after WordPress `init` has begun fails before
+installing a registry route or callback, even if priority 3 has not run yet.
+Successful registration calls
 `Tangible_DDD_Versions::instance()->require_version()` with minimum `0.6.2`
 under the stable identifier `ddd-module:<normalized namespace root>`, so an
 unmet winner is visible to diagnostics without inventing a second consumer
@@ -296,9 +310,12 @@ The supported WordPress order is exact:
 6. Host `register_hooks()` runs on `init` priority 2. On 0.6.1 it registers the
    host compiled `LongProcessCatalog`, or the retained-builder fallback.
 7. Module runtime wiring runs on `init` priority 3:
+   - validate that module `IDDDConfig` is the host's exact object and that the
+     module exposes a real `League\Tactician\CommandBus`;
+   - read and validate the module container's `LongProcessCatalog`, when
+     present;
    - eagerly instantiate module event handlers and integration listeners from
-     the module container;
-   - read the module container's `LongProcessCatalog`, when present; and
+     the module container, propagating construction failures; and
    - register those entries on the host container's `ProcessRunner` through
      the shared 0.6.1 entry-registration function.
 8. REST, admin, CLI, Action Scheduler, and domain work run after module routing
@@ -331,6 +348,13 @@ instances through `ConsumerRegistry::service_for()`:
 - `DomainEventsPublishMiddleware` and its `EventsUnitOfWork`;
 - `IIntegrationEventBus` and `IOutboxRepository`; and
 - `ProcessRunner`.
+
+At `init:3`, the facade resolves and validates the mandatory `IDDDConfig` and
+`League\Tactician\CommandBus` services before constructing any listener. A
+missing service, a different config object, or a non-`CommandBus` value fails
+module boot. Listener construction failures propagate and leave the module
+unwired; the top-level consumer helper retains its historical log-and-continue
+behavior.
 
 The current LMS, Quiz, Cred, and Datastream service YAMLs set
 `_defaults.public: true`. The six non-transaction IDs above are common across
@@ -577,7 +601,9 @@ test for the exact IDs consumed by its sidecars.
 The WordPress facade guards module runtime wiring once per module root.
 Registry replacement alone is not enough because constructing listeners twice
 would add duplicate WordPress callbacks. Getter replacement is supported only
-before the guarded `init:3` callback runs; a late replacement throws.
+before WordPress `init` begins; a late facade call throws before changing the
+route. The low-level `add_module()` pre-runtime constraint remains caller-owned
+as documented under Registry API.
 
 ### Sidecar deactivation with live process rows
 
