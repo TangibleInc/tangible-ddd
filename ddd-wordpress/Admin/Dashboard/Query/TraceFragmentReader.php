@@ -45,7 +45,7 @@ final class TraceFragmentReader
             'commands' => [
                 'table' => 'command_audit',
                 'sql' => 'SELECT command_id,correlation_id,command_name,status,source,source_id,causation_id,'
-                    . 'causation_type,duration_ms,peak_memory_bytes,started_at,parameters,events,error '
+                    . 'causation_type,duration_ms,peak_memory_bytes,started_at,ended_at,parameters,events,error '
                     . 'FROM `%s` WHERE correlation_id=%%s ORDER BY started_at ASC',
             ],
             'events' => [
