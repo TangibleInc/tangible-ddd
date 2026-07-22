@@ -308,7 +308,10 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .srow:hover{background:var(--softer)}
 .tddd-root .srow.is-node{cursor:pointer}
 .tddd-root .slabel{padding:6px 10px 6px 15px;border-right:1px solid var(--line);overflow:hidden}
-.tddd-root .slabel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--owner-accent,#646970)}
+/* Owner spine: chunky identity strip — solid accent edge fading inward. */
+.tddd-root .slabel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:7px;
+  background:linear-gradient(90deg,var(--owner-accent,#646970) 0 2px,
+    color-mix(in srgb,var(--owner-accent,#646970) 55%,var(--panel)) 2px 100%)}
 .tddd-root .snrow{display:flex;align-items:center;gap:6px}
 .tddd-root .sdot{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
 .tddd-root .sname{font-family:var(--fm);font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -351,8 +354,9 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .sport.p-dlq{border-color:var(--crit);background:var(--crit)}
 .tddd-root .sportlbl{font-family:var(--fm);font-size:.58rem;color:var(--owner-accent,#646970);white-space:nowrap}
 .tddd-root .sportlbl.dlq{color:var(--crit);font-weight:700}
-/* Cross-consumer seam: two accents meeting where the story changes hands. */
-.tddd-root .trc-seam{height:3px;background:linear-gradient(90deg,var(--sa,#646970) 0 50%,var(--sb,#646970) 50% 100%);opacity:.5}
+/* Cross-consumer seam: two accents meeting where the story changes hands.
+   Thin — the chunky owner spines carry identity; the seam only marks the cut. */
+.tddd-root .trc-seam{height:1.5px;background:linear-gradient(90deg,var(--sa,#646970) 0 50%,var(--sb,#646970) 50% 100%);opacity:.65}
 /* The moments chip — ordinal interior, detail in the drawer. */
 .tddd-root .mchip{font-family:var(--fm);font-size:.56rem;color:var(--muted);border:1px dotted var(--line);border-radius:3px;background:none;padding:0 5px;cursor:pointer;white-space:nowrap;line-height:1.6}
 .tddd-root .mchip:hover{border-color:var(--accent);color:var(--accent)}
