@@ -278,6 +278,10 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .trace-legend{display:flex;gap:14px;padding:0 16px 12px;font-family:var(--fm);font-size:.6rem;color:var(--muted)}
 .tddd-root .trace-legend .lg{display:flex;align-items:center;gap:5px}
 .tddd-root .trace-legend .sw{width:10px;height:10px;border-radius:2px}
+.tddd-root .trace-legend .sw-solid{background:var(--muted)}
+.tddd-root .trace-legend .sw-notched{background:repeating-linear-gradient(90deg,var(--muted) 0 3px,transparent 3px 5px)}
+.tddd-root .trace-legend .sw-hatched{background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 5px)}
+.tddd-root .trace-legend .sw-port{width:8px;height:8px;transform:rotate(45deg);border:2px solid var(--muted);background:var(--panel);border-radius:0}
 .tddd-root .trace-panel{margin:0 16px 16px}
 .tddd-root .ruler{display:grid;grid-template-columns:320px 1fr;border-bottom:1px solid var(--line);background:var(--panel2)}
 .tddd-root .ruler .rl{padding:6px 12px;border-right:1px solid var(--line)}
