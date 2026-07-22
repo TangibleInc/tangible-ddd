@@ -150,6 +150,14 @@
       // recent-traces state
       var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={};
       function fmtDur(ms){ ms=Math.round(ms); if(ms<1000)return ms+'ms'; return (ms/1000).toFixed(1)+'s'; }
+      function fmtTraceSpan(s){
+        s=Math.max(0,Math.floor(Number(s)||0));
+        if(s===0) return '0s';
+        var units=[['d',86400],['h',3600],['m',60],['s',1]], parts=[];
+        units.forEach(function(u){ var n=Math.floor(s/u[1]); if(n>0&&parts.length<2){ parts.push(n+u[0]); s-=n*u[1]; } });
+        return parts.join(' ');
+      }
+      function fmtTraceTime(s){ return '+'+fmtTraceSpan(s); }
       function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 
       // ── trace recent-list helpers ──
@@ -726,7 +734,7 @@
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
-        ruler.innerHTML='<div class="rt-note">durations to scale &middot; async waits shown as &#8942; gap markers</div>';
+        ruler.innerHTML='<div class="rt-note">durations to scale &middot; sparse gap markers show cumulative elapsed time</div>';
         if(!d.nodes||!d.nodes.length){ traceRows.innerHTML='<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>'; ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
           var maxDur = d.max_dur_ms || 1;
@@ -751,8 +759,11 @@
               var latCls=ms>=1000?'slow':(ms>=300?'hot':'');
               latBar='<div class="lat-wrap"><span class="lat-track"><i class="'+latCls+'" style="width:'+pct+'%"></i></span><span class="lat-ms">'+ms+'ms</span></div>';
             }
-            // Async clock-gap marker: a vertical line at the post-gap span's start, labelled with elapsed.
-            if(n.gap_before){ gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span>'+fmtAge(n.gap_before)+'</span></div>'; }
+            // One marker per recorded post-gap node; no empty wall-clock ticks are synthesized.
+            if(n.gap_before){
+              var hiatus=n.gap_before>=300?'<i class="tl-hiatus">'+esc(fmtTraceSpan(n.gap_before))+' gap</i>':'';
+              gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span class="tl-gap-label"><b>'+esc(fmtTraceTime(n.elapsed_s))+'</b>'+hiatus+'</span></div>';
+            }
             var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
             return '<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
               +'<div class="slabel" style="--owner-accent:'+esc(n.accent||'#646970')+'"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'

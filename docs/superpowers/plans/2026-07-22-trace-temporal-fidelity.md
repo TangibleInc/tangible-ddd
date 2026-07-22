@@ -118,17 +118,17 @@ git commit -m "feat(devtools): add measured mega trace workloads"
 - Produces: numeric `elapsed_s` on every presented node, measured from the earliest resolved node.
 - Produces: `fmtTraceTime(seconds)` returning cumulative labels such as `+1m` and `+2d 3m`.
 
-- [ ] **Step 1: Write failing presenter and artifact tests**
+- [x] **Step 1: Write failing presenter and artifact tests**
 
 Build one causal chain at `+1m`, `+2m`, `+3m`, and `+2d 3m`. Assert command-node `elapsed_s` values `[60, 120, 180, 172980]`, the final local `gap_before` is `172800`, and only that waking node represents the two-day gap. Add artifact assertions for `fmtTraceTime`, `elapsed_s`, the 300-second hiatus condition, and separate `tl-gap-label`/`tl-hiatus` classes.
 
-- [ ] **Step 2: Run focused dashboard tests and verify red**
+- [x] **Step 2: Run focused dashboard tests and verify red**
 
 Run: `vendor/bin/phpunit tests/Unit/Dashboard/TraceTimelinePresenterTest.php tests/Unit/Dashboard/DashboardArtifactsTest.php`
 
 Expected: FAIL because the presenter omits `elapsed_s` and the asset lacks cumulative formatting.
 
-- [ ] **Step 3: Add numeric elapsed time in the presenter**
+- [x] **Step 3: Add numeric elapsed time in the presenter**
 
 Calculate the existing earliest resolved timestamp before mapping output nodes. Add:
 
@@ -140,11 +140,11 @@ $node['elapsed_s'] = $minTimestamp > 0
 
 Keep `gap_before`, `start_pct`, `width_pct`, and fixed compressed gap units unchanged.
 
-- [ ] **Step 4: Render cumulative and exceptional-gap labels**
+- [x] **Step 4: Render cumulative and exceptional-gap labels**
 
 Add a compact two-unit JavaScript formatter that skips zero-value units, so `172980` becomes `+2d 3m`. For each existing gap marker, render the node's cumulative `elapsed_s`; when `gap_before >= 300`, append a secondary local label such as `2d gap`. Do not create an interval loop or synthesized tick collection.
 
-- [ ] **Step 5: Run focused tests and JavaScript syntax verification**
+- [x] **Step 5: Run focused tests and JavaScript syntax verification**
 
 Run:
 
@@ -166,15 +166,15 @@ Expected: focused tests PASS and Node exits 0.
 - Consumes: `.tl-gaps` at `z-index: 4` and the existing 320px/250px label-column geometry.
 - Produces: sticky `.ruler .rl` and `.slabel` layers above timeline marks; responsive `.tl-gaps` geometry aligned at 250px below 800px.
 
-- [ ] **Step 1: Extend the artifact test and verify red**
+- [x] **Step 1: Extend the artifact test and verify red**
 
 Assert sticky labels use `z-index: 5`, the gap overlay remains below them, and the existing `@media(max-width:800px)` block sets `.tl-gaps{grid-template-columns:250px 1fr}`.
 
-- [ ] **Step 2: Implement the minimal stacking and geometry fix**
+- [x] **Step 2: Implement the minimal stacking and geometry fix**
 
 Raise the sticky label selector from 3 to 5, retain opaque label backgrounds, and add the responsive overlay grid track. Do not add clipping or hide the timeline lane itself.
 
-- [ ] **Step 3: Run all automated verification**
+- [x] **Step 3: Run all automated verification**
 
 Run:
 
@@ -184,9 +184,9 @@ node --check ddd-wordpress/Admin/Dashboard/assets/dashboard.js
 git diff --check
 ```
 
-Expected: 563 existing tests plus the new tests PASS, JavaScript parses, and no whitespace errors are reported.
+Expected: all 568 tests PASS, JavaScript parses, and no whitespace errors are reported.
 
-- [ ] **Step 4: Prove the runtime in DDEV**
+- [x] **Step 4: Prove the runtime in DDEV**
 
 Start a new scenario from `https://anything.ddev.site/wp-admin/tools.php?page=tddd-mega-trace`. Verify its newly persisted audit rows include the six selected workload bands. Open its trace, confirm cumulative `+1m`, `+2m`, and later labels update through Heartbeat, then horizontally scroll at desktop and narrow widths to confirm bars and gap marks disappear beneath the sticky label column.
 

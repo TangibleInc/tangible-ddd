@@ -57,6 +57,45 @@ final class TraceTimelinePresenterTest extends TestCase
         self::assertSame(['lms', 'quiz'], array_keys($trace['participants']));
     }
 
+    public function test_elapsed_time_is_cumulative_and_a_two_day_hiatus_is_one_gap(): void
+    {
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'lms', 'label' => 'LMS', 'accent' => '#2271b1', 'ghost' => false],
+            'commands' => [
+                $this->command('root', 'Lms\\Start', null, null, '2026-07-22 10:00:00', 20),
+                $this->command('minute-1', 'Lms\\MinuteOne', 'evt-1', 'integration_event', '2026-07-22 10:01:00', 20),
+                $this->command('minute-2', 'Lms\\MinuteTwo', 'evt-2', 'integration_event', '2026-07-22 10:02:00', 20),
+                $this->command('minute-3', 'Lms\\MinuteThree', 'evt-3', 'integration_event', '2026-07-22 10:03:00', 20),
+                $this->command('wake', 'Lms\\Wake', 'evt-4', 'integration_event', '2026-07-24 10:03:00', 20),
+            ],
+            'events' => [
+                $this->event('evt-1', 'root', '2026-07-22 10:00:00'),
+                $this->event('evt-2', 'minute-1', '2026-07-22 10:01:00'),
+                $this->event('evt-3', 'minute-2', '2026-07-22 10:02:00'),
+                $this->event('evt-4', 'minute-3', '2026-07-22 10:03:00'),
+            ],
+            'processes' => [],
+            'workflows' => [],
+        ]]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+        $commands = array_values(array_filter(
+            $trace['nodes'],
+            static fn (array $node): bool => $node['kind'] === 'command',
+        ));
+
+        self::assertSame(
+            ['root', 'minute-1', 'minute-2', 'minute-3', 'wake'],
+            array_column(array_column($commands, 'raw'), 'command_id'),
+        );
+        self::assertSame([0, 60, 120, 180, 172_980], array_column($commands, 'elapsed_s'));
+        self::assertSame([null, 60, 60, 60, 172_800], array_column($commands, 'gap_before'));
+        self::assertCount(4, array_filter(
+            $commands,
+            static fn (array $node): bool => $node['gap_before'] !== null,
+        ));
+    }
+
     /** @return array<string, mixed> */
     private function command(
         string $id,
@@ -72,6 +111,20 @@ final class TraceTimelinePresenterTest extends TestCase
             'causation_id' => $causeId, 'causation_type' => $causeType,
             'duration_ms' => (string) $duration, 'peak_memory_bytes' => '1000',
             'started_at' => $startedAt, 'parameters' => '{}', 'events' => '[]', 'error' => null,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function event(string $id, string $commandId, string $createdAt): array
+    {
+        return [
+            'event_id' => $id,
+            'event_type' => 'Lms\\Advanced',
+            'status' => 'completed',
+            'command_id' => $commandId,
+            'sequence' => '1',
+            'attempts' => '1',
+            'created_at' => $createdAt,
         ];
     }
 }

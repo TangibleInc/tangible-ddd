@@ -275,7 +275,7 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 /* horizontal scroll + sticky label column when the timeline is long */
 .tddd-root .trace-scroll{overflow-x:auto;overflow-y:hidden}
 .tddd-root .trace-scroll .ruler,.tddd-root .trace-scroll .trows{min-width:100%}
-.tddd-root .ruler .rl,.tddd-root .slabel{position:sticky;left:0;z-index:3}
+.tddd-root .ruler .rl,.tddd-root .slabel{position:sticky;left:0;z-index:5}
 .tddd-root .slabel{background:var(--panel)}
 .tddd-root .ruler .rl{background:var(--panel2)}
 .tddd-root .trows{position:relative}
@@ -283,7 +283,9 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .tl-gaps{position:absolute;inset:0;display:grid;grid-template-columns:320px 1fr;pointer-events:none;z-index:4}
 .tddd-root .tl-glane{position:relative}
 .tddd-root .tl-gap{position:absolute;top:0;bottom:0;border-left:1.5px dashed rgba(147,108,33,.55)}
-.tddd-root .tl-gap span{position:absolute;top:3px;left:4px;font-family:var(--fm);font-size:.52rem;font-weight:700;color:var(--warn);background:var(--paper);padding:1px 3px;border-radius:2px;white-space:nowrap}
+.tddd-root .tl-gap-label{position:absolute;top:3px;left:4px;display:flex;flex-direction:column;align-items:flex-start;font-family:var(--fm);color:var(--warn);background:var(--paper);padding:1px 3px;border-radius:2px;white-space:nowrap}
+.tddd-root .tl-gap-label b{font-size:.52rem;font-weight:700}
+.tddd-root .tl-hiatus{font-size:.48rem;font-style:normal;font-weight:600;color:var(--faint)}
 .tddd-root .srow{display:grid;grid-template-columns:320px 1fr;border-bottom:1px solid var(--linesoft);min-height:40px}
 .tddd-root .srow:hover{background:var(--softer)}
 .tddd-root .srow.is-node{cursor:pointer}
@@ -437,6 +439,7 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
   .tddd-root .trace-panel{margin-left:8px;margin-right:8px}
   .tddd-root .ruler{grid-template-columns:250px 1fr}
   .tddd-root .srow{grid-template-columns:250px 1fr}
+  .tddd-root .tl-gaps{grid-template-columns:250px 1fr}
   .tddd-root .wf-in-trace{margin-left:8px;margin-right:8px}
   .tddd-root .wf-in-trace .wft-head{flex-wrap:wrap}
   .tddd-root .wf-in-trace .wft-meta{flex-basis:100%;margin-left:0}

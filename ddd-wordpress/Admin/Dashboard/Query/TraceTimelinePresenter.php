@@ -78,26 +78,6 @@ final class TraceTimelinePresenter
             }
         }
 
-        $totalUnits = 1;
-        foreach ($ordered as $node) {
-            $totalUnits = max($totalUnits, $node['cend']);
-        }
-        $totalUnits += 110;
-        $outputNodes = array_map(static function (array $node) use ($totalUnits): array {
-            $node['start_pct'] = round($node['cstart'] / $totalUnits * 100, 2);
-            $node['width_pct'] = round(max(($node['cend'] - $node['cstart']) / $totalUnits * 100, 0.6), 2);
-            unset(
-                $node['ts'],
-                $node['cstart'],
-                $node['cend'],
-                $node['raised_by'],
-                $node['ignited_by'],
-                $node['causation_id'],
-                $node['causation_type'],
-            );
-            return $node;
-        }, $ordered);
-
         $minTimestamp = PHP_INT_MAX;
         $maxTimestamp = 0;
         $maxDuration = 0;
@@ -129,6 +109,29 @@ final class TraceTimelinePresenter
         if ($minTimestamp === PHP_INT_MAX) {
             $minTimestamp = 0;
         }
+
+        $totalUnits = 1;
+        foreach ($ordered as $node) {
+            $totalUnits = max($totalUnits, $node['cend']);
+        }
+        $totalUnits += 110;
+        $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp): array {
+            $node['start_pct'] = round($node['cstart'] / $totalUnits * 100, 2);
+            $node['width_pct'] = round(max(($node['cend'] - $node['cstart']) / $totalUnits * 100, 0.6), 2);
+            $node['elapsed_s'] = $minTimestamp > 0
+                ? max(0, (int) $node['ts'] - $minTimestamp)
+                : 0;
+            unset(
+                $node['ts'],
+                $node['cstart'],
+                $node['cend'],
+                $node['raised_by'],
+                $node['ignited_by'],
+                $node['causation_id'],
+                $node['causation_type'],
+            );
+            return $node;
+        }, $ordered);
 
         $workflows = array_map([$this, 'workflow'], $graph['workflows']);
 

@@ -88,6 +88,21 @@ final class DashboardArtifactsTest extends TestCase
         self::assertMatchesRegularExpression('/function showTraceRecent\(\)\{\s*startLive\(60\);/', $script);
         self::assertMatchesRegularExpression('/function showTrace\(corr\)\{.*?startLive\(60\);/s', $script);
         self::assertStringContainsString("else if(name==='flow'){ loadFlow(); startLive('fast'); }", $script);
+        self::assertStringContainsString('function fmtTraceTime(s)', $script);
+        self::assertStringContainsString('n.elapsed_s', $script);
+        self::assertStringContainsString('n.gap_before>=300', $script);
+        self::assertStringContainsString('tl-gap-label', $script);
+        self::assertStringContainsString('tl-hiatus', $script);
+        self::assertStringContainsString('.tddd-root .tl-gap-label', $styles);
+        self::assertStringContainsString(
+            '.tddd-root .ruler .rl,.tddd-root .slabel{position:sticky;left:0;z-index:5}',
+            $styles,
+        );
+        self::assertMatchesRegularExpression('/\.tddd-root \.tl-gaps\{[^}]*z-index:4/', $styles);
+        self::assertStringContainsString(
+            '.tddd-root .tl-gaps{grid-template-columns:250px 1fr}',
+            $styles,
+        );
         self::assertStringContainsString('biography-entry', $styles);
         self::assertStringContainsString('tabindex="0"', $script);
         self::assertStringContainsString("e.key!=='Enter'&&e.key!==' '", $script);
