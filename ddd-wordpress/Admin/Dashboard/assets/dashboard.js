@@ -905,27 +905,28 @@
         biographyPager.innerHTML=biographyPagerHtml(d.page,d.pages);
       }
 
-      function showBiography(aggregate,aggregateId,ownerConsumer){
+      function showBiography(aggregate,aggregateId,ownerConsumer,page){
         if(!aggregate||!aggregateId) return;
+        page=Math.max(+page||1,1);
         if(ownerConsumer && keys.indexOf(ownerConsumer)!==-1 && ownerConsumer!==state.consumer){
           state.consumer=ownerConsumer;
           try{ localStorage.setItem('tddd_consumer',ownerConsumer); }catch(e){}
           syncConsumers();
         }
-        if(currentBiography && currentBiography.consumer===state.consumer && currentBiography.aggregate===aggregate && currentBiography.aggregate_id===aggregateId && !views.biography.hidden) return;
+        if(currentBiography && currentBiography.consumer===state.consumer && currentBiography.aggregate===aggregate && currentBiography.aggregate_id===aggregateId && currentBiography.page===page && !views.biography.hidden) return;
         var biographyConsumer=state.consumer;
-        currentBiography={consumer:biographyConsumer,aggregate:aggregate,aggregate_id:aggregateId};
+        currentBiography={consumer:biographyConsumer,aggregate:aggregate,aggregate_id:aggregateId,page:page};
         closeDrawer(); only('biography');
         biographyList.hidden=true; biographyDetail.hidden=false;
         var hash=biographyHash(biographyConsumer,aggregate,aggregateId);
         if(location.hash!=='#'+hash) location.hash=hash;
         biographyHead.innerHTML='<div class="bio-name">'+esc(aggregate)+'</div><div class="bio-id">'+esc(aggregateId)+'</div>';
         biographyTimeline.innerHTML='<div class="empty2">Loading&hellip;</div>';
-        var qs=new URLSearchParams({consumer:state.consumer,aggregate:aggregate,aggregate_id:aggregateId});
+        var qs=new URLSearchParams({consumer:state.consumer,aggregate:aggregate,aggregate_id:aggregateId,page:page});
         fetch(R.rest+'/biography?'+qs.toString(),{headers:{'X-WP-Nonce':R.nonce}})
           .then(function(r){ return r.json(); })
           .then(function(d){
-            if(!currentBiography || currentBiography.consumer!==biographyConsumer || currentBiography.aggregate!==aggregate || currentBiography.aggregate_id!==aggregateId) return;
+            if(!currentBiography || currentBiography.consumer!==biographyConsumer || currentBiography.aggregate!==aggregate || currentBiography.aggregate_id!==aggregateId || currentBiography.page!==page) return;
             renderBiography(d);
           })
           .catch(function(e){ biographyTimeline.innerHTML='<div class="empty2">Error: '+esc(e.message)+'</div>'; });
@@ -941,7 +942,16 @@
         biographyTimeline._entries=entries;
         if(d.available===false){ biographyTimeline.innerHTML='<div class="empty2">Biography data is not available for this consumer.</div>'; return; }
         if(!entries.length){ biographyTimeline.innerHTML='<div class="empty2">No retained touches for this aggregate.</div>'; return; }
-        biographyTimeline.innerHTML=entries.map(function(e,i){
+        // Ledger pager — server pages the touch history in version order.
+        var pager='';
+        if((d.pages||0)>1){
+          var pg=d.page||1, fromE=(pg-1)*(d.per_page||entries.length)+1, toE=fromE+entries.length-1;
+          pager='<div class="bio-ledger-pager"><span class="blp-range">touches '+fromE+'&ndash;'+toE+' of '+(s.touch_count||0)+'</span>'
+            +'<button '+(pg<=1?'disabled':'')+' data-bdp="'+(pg-1)+'">&lsaquo;</button>';
+          for(var p=Math.max(1,pg-1);p<=Math.min(d.pages,pg+1);p++) pager+='<button '+(p===pg?'aria-current="true"':'')+' data-bdp="'+p+'">'+p+'</button>';
+          pager+='<button '+(pg>=d.pages?'disabled':'')+' data-bdp="'+(pg+1)+'">&rsaquo;</button></div>';
+        }
+        biographyTimeline.innerHTML=pager+entries.map(function(e,i){
           var fact=e.event_type||e.event_name;
           var command=e.command_name||'command record unavailable';
           var trace=e.correlation_id?'<button class="bio-link" data-bio-trace="'+esc(e.correlation_id)+'">Trace</button>':'';
@@ -952,7 +962,7 @@
             +'<span title="'+esc(e.command_id||'')+'">command '+shortName(command)+' &middot; '+shortId(e.command_id)+'</span></div></div>'
             +'<div class="bio-entry-meta"><span class="bio-op op-'+esc(e.op)+'">'+esc(e.op)+'</span><time>'+esc(e.occurred_at||'')+'</time>'+trace+'</div>'
             +'</div>';
-        }).join('');
+        }).join('')+pager;
       }
 
       function openBiographyEntry(entry){
@@ -994,6 +1004,8 @@
       });
       $('#tddd-biography-back').addEventListener('click',function(){ currentBiography=null; location.hash='biography'; });
       biographyTimeline.addEventListener('click',function(e){
+        var pageBtn=e.target.closest('button[data-bdp]');
+        if(pageBtn){ if(!pageBtn.disabled && currentBiography){ showBiography(currentBiography.aggregate,currentBiography.aggregate_id,currentBiography.consumer,+pageBtn.dataset.bdp); } return; }
         var trace=e.target.closest('[data-bio-trace]');
         if(trace){ e.stopPropagation(); location.hash='trace/'+encodeURIComponent(trace.dataset.bioTrace); return; }
         var row=e.target.closest('.biography-entry[data-be]'); if(!row) return;

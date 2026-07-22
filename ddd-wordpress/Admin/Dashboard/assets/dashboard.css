@@ -432,6 +432,11 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .trace-biography-link span{font-size:.63rem;font-weight:700;overflow-wrap:anywhere}
 .tddd-root .trace-biography-link b{font-size:.58rem;color:var(--accent2);overflow-wrap:anywhere}
 .tddd-root .trace-biography-link i{grid-column:1/-1;font-size:.52rem;font-style:normal;color:var(--faint)}
+.tddd-root .bio-ledger-pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:8px 10px;border-bottom:1px solid var(--linesoft);font-family:var(--fm);font-size:.66rem;color:var(--faint)}
+.tddd-root .bio-ledger-pager .blp-range{margin-right:auto}
+.tddd-root .bio-ledger-pager button{border:1px solid var(--line);border-radius:3px;background:var(--panel);padding:3px 10px;cursor:pointer;color:var(--ink);font-family:var(--fm);font-size:.72rem}
+.tddd-root .bio-ledger-pager button[disabled]{color:var(--faint);cursor:default}
+.tddd-root .bio-ledger-pager button[aria-current="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
 @media(max-width:800px){
   .tddd-root .tnav{overflow-x:auto;white-space:nowrap}
   .tddd-root .trace-legend{flex-wrap:wrap;gap:7px 10px}

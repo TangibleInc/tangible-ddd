@@ -150,6 +150,9 @@ final class WordPressBoundaryTest extends TestCase
         global $_test_rest_routes;
         [$catalog, $db] = $this->catalog();
         $db->resultSets = [[[
+            'touch_count' => '1', 'first_version' => '1', 'last_version' => '1',
+            'first_at' => '2026-07-22 10:00:00', 'last_at' => '2026-07-22 10:00:00',
+        ]], [[
             'id' => '1', 'aggregate' => 'acme.license', 'aggregate_id' => '42', 'op' => 'created',
             'version' => '1', 'event_name' => 'license_issued', 'event_id' => 'evt-1',
             'command_id' => 'cmd-1', 'correlation_id' => 'corr-1', 'occurred_at' => '2026-07-22 10:00:00',
