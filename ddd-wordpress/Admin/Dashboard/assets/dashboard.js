@@ -145,7 +145,7 @@
       var traceRecent=$('#tddd-trace-recent'), traceOpen=$('#tddd-trace-open');
       var trcList=$('#tddd-trc-list'), trcNewbar=$('#tddd-trc-newbar');
       var typeColor={command:'#6359D6',workflow:'#7C4DE0',event:'#2E7D8A',process:'#507F06'};
-      var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0;
+      var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0, heartbeatSpeed=60;
       var biographyState={search:'',page:1,per_page:25}, biographyRows=[], currentBiography=null;
       // recent-traces state
       var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={};
@@ -317,9 +317,9 @@
 
       function showView(name){
         only(name);
-        if(name!=='flow' && window.wp && wp.heartbeat){ wp.heartbeat.interval('standard'); }
+        if(name!=='flow' && window.wp && wp.heartbeat){ wp.heartbeat.interval(60); }
         if(name==='audit'){ if(!auditLoaded){ auditLoaded=true; load(); } }
-        else if(name==='flow'){ loadFlow(); startLive(); }
+        else if(name==='flow'){ loadFlow(); startLive('fast'); }
         else if(name==='proc'){ loadProc(); }
         else if(name==='biography'){ currentBiography=null; showBiographyRecent(); }
         else if(name==='dlq'){ tablesSub='dlq'; tablesPage=1; loadTables(); }
@@ -575,6 +575,7 @@
 
       // ── recent-traces list ──
       function showTraceRecent(){
+        startLive(60);
         traceRecent.hidden=false; traceOpen.hidden=true;
         _pendingNewCorrs=[];
         if(trcNewbar){ trcNewbar.classList.remove('visible'); trcNewbar.textContent=''; }
@@ -692,7 +693,7 @@
         currentCorr=corr; closeDrawer(); only('trace');
         traceRecent.hidden=true; traceOpen.hidden=false;
         _prevTraceNodes={};
-        if(window.wp && wp.heartbeat){ wp.heartbeat.interval('standard'); }
+        startLive(60);
         if(location.hash!=='#trace/'+corr) location.hash='trace/'+corr;
         traceHead.innerHTML='<div class="corr">'+esc(corr)+'</div><div class="meta">loading&hellip;</div>';
         traceRows.innerHTML=''; ruler.innerHTML=''; traceWf.innerHTML='';
@@ -1129,12 +1130,13 @@
             .catch(function(){}); // silent
         }
       }
-      function startLive(){
+      function startLive(speed){
+        if(speed!==undefined) heartbeatSpeed=speed;
         var badge=$('#tddd-live-badge');
         if(!(window.jQuery && window.wp && wp.heartbeat)){
           // Heartbeat enqueues in the footer; on first paint it may not be ready yet — retry briefly.
           startLive._t = (startLive._t || 0) + 1;
-          if(startLive._t < 25){ setTimeout(startLive, 300); return; }
+          if(startLive._t < 25){ setTimeout(function(){ startLive(); }, 300); return; }
           badge.textContent='(heartbeat unavailable)'; return;
         }
         startLive._t = 0;
@@ -1147,7 +1149,7 @@
           jQuery(document).on('heartbeat-tick', function(e,data){ if(data.tangible_ddd) onTick(data.tangible_ddd); });
         }
         liveCursor=0; $('#tddd-live-lines').innerHTML='';
-        wp.heartbeat.interval('fast');
+        wp.heartbeat.interval(heartbeatSpeed);
         wp.heartbeat.connectNow();
       }
       $('#tddd-live-lines').addEventListener('click', function(e){ var c=e.target.closest('.co[data-corr]'); if(c && c.dataset.corr) location.hash='trace/'+encodeURIComponent(c.dataset.corr); });
@@ -1155,7 +1157,7 @@
       // consumer switch → reset + re-render current view + refresh vitals
       cz.addEventListener('click', function(e){ if(!e.target.closest('button')) return; auditLoaded=false; liveCursor=0; var ll=$('#tddd-live-lines'); if(ll) ll.innerHTML=''; loadVitals(); setTimeout(function(){
         if(!views.audit.hidden){ auditLoaded=true; load(); }
-        else if(!views.flow.hidden){ loadFlow(); startLive(); }
+        else if(!views.flow.hidden){ loadFlow(); startLive('fast'); }
         else if(!views.proc.hidden){ loadProc(); }
         else if(!tablesEl.hidden){ loadTables(); }
         else if(!views.biography.hidden){ currentBiography=null; biographyState.page=1; location.hash='biography'; showBiographyRecent(); }

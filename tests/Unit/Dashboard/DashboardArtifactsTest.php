@@ -85,6 +85,9 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString("R.rest+'/biographies?", $script);
         self::assertStringContainsString("R.rest+'/biography?", $script);
         self::assertStringContainsString("return 'biography/", $script);
+        self::assertMatchesRegularExpression('/function showTraceRecent\(\)\{\s*startLive\(60\);/', $script);
+        self::assertMatchesRegularExpression('/function showTrace\(corr\)\{.*?startLive\(60\);/s', $script);
+        self::assertStringContainsString("else if(name==='flow'){ loadFlow(); startLive('fast'); }", $script);
         self::assertStringContainsString('biography-entry', $styles);
         self::assertStringContainsString('tabindex="0"', $script);
         self::assertStringContainsString("e.key!=='Enter'&&e.key!==' '", $script);
