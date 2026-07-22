@@ -112,9 +112,9 @@
 - Modify: `docs/dashboard/V2-OUTLINE.md`
 - Modify: `tools/mega-trace/README.md`
 
-- [ ] Run all dashboard, tracing, and mega-trace unit tests.
-- [ ] Run the complete PHPUnit suite and PHP/JS syntax checks.
-- [ ] Query the live Biography endpoints against the completed mega-trace correlation and verify every scenario aggregate/version.
-- [ ] Open DDDash in Playwright at desktop and mobile widths; verify Biography finder/detail, trace-to-Biography navigation, Biography-to-trace navigation, accents, overflow, and non-overlap.
-- [ ] Update docs with implemented behavior and the reproducible local LMS/Quiz installation path.
-- [ ] Review the diff, commit coherent checkpoints, push the branch, and open the V2 PR.
+- [x] Run all dashboard, tracing, and mega-trace unit tests.
+- [x] Run the complete PHPUnit suite and PHP/JS syntax checks.
+- [x] Query the live Biography endpoints against the completed mega-trace correlation and verify every scenario aggregate/version.
+- [x] Open DDDash in Playwright at desktop and mobile widths; verify Biography finder/detail, trace-to-Biography navigation, Biography-to-trace navigation, accents, overflow, and non-overlap.
+- [x] Update docs with implemented behavior and the reproducible local LMS/Quiz installation path.
+- [x] Review the diff, commit coherent checkpoints, push the branch, and open the V2 PR.
