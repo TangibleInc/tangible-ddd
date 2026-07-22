@@ -56,11 +56,15 @@ most 1.2s is acceptable. No framework consumer acquires this behavior.
 ### Sparse cumulative time
 
 `TraceTimelinePresenter` adds `elapsed_s` to each presented node, measured from
-the earliest resolved node in the trace. Existing `gap_before` remains the
-local causal-edge wait and continues to decide where compressed breaks appear.
+the earliest resolved node in the trace. Causal traversal determines row order
+and depth only. Horizontal positions come from one sparse global clock ordered
+by the actual activity timestamps across every participating branch.
 
-The browser renders a time marker only when a recorded node already has a
-compressed gap before it. Its primary label is cumulative elapsed time:
+The presenter emits one time marker per distinct activity moment that follows a
+wall-clock gap of at least two seconds. Nodes recorded at the same moment share
+that marker, so parallel branches cannot overwrite one another or make elapsed
+time move backwards from left to right. Its primary label is cumulative elapsed
+time:
 
 - `+1m`
 - `+2m`
@@ -71,10 +75,10 @@ The formatter uses compact compound units for longer spans and never generates
 regular wall-clock ticks. A trace with a two-day dormant period therefore has
 one break followed by the waking node, not 2,880 empty minute positions.
 
-For an exceptional local gap of at least five minutes, the same marker also
+For an exceptional global gap of at least five minutes, the same marker also
 names the compressed hiatus, for example `2d gap`. This is evidence language:
-it says that the retained trace contains no activity on that causal edge, not
-that the application or machine was idle.
+it says that the retained trace contains no recorded activity between those
+moments, not that the application or machine was idle.
 
 All gaps continue to occupy a bounded visual width independent of their real
 duration. Command bars remain proportional to measured execution duration.
@@ -101,7 +105,8 @@ DDDash, or the Mega Trace sidecar.
 - A Mega Trace workload test pins the selected command durations, the routine
   item range, and the 1.2s ceiling without sleeping for the full profile.
 - Presenter tests cover successive minute gaps as cumulative `+1m`, `+2m`,
-  `+3m` offsets and a single two-day compressed gap followed by `+2d 3m`.
+  `+3m` offsets, a single two-day compressed gap followed by `+2d 3m`, and
+  parallel branches whose causal depth order differs from timestamp order.
 - Dashboard artifact tests pin cumulative formatting, exceptional-gap labeling,
   sticky-column stacking order, and responsive overlay-column alignment.
 - The full PHPUnit suite and JavaScript syntax check remain required.

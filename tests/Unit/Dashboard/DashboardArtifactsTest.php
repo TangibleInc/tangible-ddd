@@ -89,8 +89,10 @@ final class DashboardArtifactsTest extends TestCase
         self::assertMatchesRegularExpression('/function showTrace\(corr\)\{.*?startLive\(60\);/s', $script);
         self::assertStringContainsString("else if(name==='flow'){ loadFlow(); startLive('fast'); }", $script);
         self::assertStringContainsString('function fmtTraceTime(s)', $script);
-        self::assertStringContainsString('n.elapsed_s', $script);
-        self::assertStringContainsString('n.gap_before>=300', $script);
+        self::assertStringContainsString('d.time_markers', $script);
+        self::assertStringContainsString('marker.elapsed_s', $script);
+        self::assertStringContainsString('marker.gap_s>=300', $script);
+        self::assertStringNotContainsString('if(n.gap_before){', $script);
         self::assertStringContainsString('tl-gap-label', $script);
         self::assertStringContainsString('tl-hiatus', $script);
         self::assertStringContainsString('.tddd-root .tl-gap-label', $styles);
