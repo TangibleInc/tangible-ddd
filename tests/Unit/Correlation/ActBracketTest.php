@@ -7,6 +7,7 @@ use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
+use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
@@ -24,8 +25,11 @@ class ActBracketTest extends TestCase {
   /** @var array<int, array> */
   private array $updates = [];
 
+  private EventsUnitOfWork $uow;
+
   protected function setUp(): void {
     Correlation::reset();
+    Reactions::reset();
     $this->inserts = [];
     $this->updates = [];
   }
@@ -63,7 +67,8 @@ class ActBracketTest extends TestCase {
     });
     $GLOBALS['wpdb'] = $wpdb;
 
-    return new CorrelationMiddleware($config, new EventsUnitOfWork(), new Redactor());
+    $this->uow = new EventsUnitOfWork();
+    return new CorrelationMiddleware($config, $this->uow, new Redactor());
   }
 
   public function test_dispatch_opens_an_act_scope(): void {
@@ -169,5 +174,41 @@ class ActBracketTest extends TestCase {
       'sensitive properties are redacted in the audit row'
     );
     $this->assertArrayHasKey('events', $this->updates[0]);
+  }
+
+  public function test_events_entries_carry_their_reactions(): void {
+    // The finalise write shapes each published moment as {name, reactions}:
+    // reactions recorded during dispatch land on the SAME instances that
+    // published() holds, so the WeakMap lookup at finalise time hits. A
+    // moment nobody reacted to still carries reactions: [] — additive shape,
+    // old rows without the key stay valid.
+    $bracket = $this->make_bracket('actb9');
+
+    $bracket->execute(new \stdClass(), function () {
+      $reacted = new \TangibleDDD\Tests\Fakes\FakeDomainEvent(1, 'created');
+      $ignored = new \TangibleDDD\Tests\Fakes\FakeDomainEvent(2, 'updated');
+      $this->uow->record($reacted);
+      $this->uow->record($ignored);
+      $this->uow->drain();
+
+      // Model the dispatcher's bracket around the reacted-to moment.
+      Reactions::open($reacted);
+      Reactions::record('Acme\\Handlers\\SendWelcome', 7);
+      Reactions::close();
+
+      return 'ok';
+    });
+
+    $events = json_decode($this->updates[0]['events'], true);
+    $this->assertSame([
+      [
+        'name' => 'fake_domain_event',
+        'reactions' => [['handler' => 'Acme\\Handlers\\SendWelcome', 'duration_ms' => 7]],
+      ],
+      [
+        'name' => 'fake_domain_event',
+        'reactions' => [],
+      ],
+    ], $events);
   }
 }

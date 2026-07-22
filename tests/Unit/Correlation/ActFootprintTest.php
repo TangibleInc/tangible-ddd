@@ -75,7 +75,11 @@ class ActFootprintTest extends TestCase {
     });
 
     $events = json_decode($this->updates[0]['events'], true);
-    $this->assertSame([['name' => LicenseIssued::name()]], $events, 'names only — touches are a JOIN away, not a copy');
+    $this->assertSame(
+      [['name' => LicenseIssued::name(), 'reactions' => []]],
+      $events,
+      'names + reactions only — touches are a JOIN away, not a copy'
+    );
   }
 
   public function test_the_bracket_writes_no_touch_rows(): void {

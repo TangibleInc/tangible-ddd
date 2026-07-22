@@ -3,6 +3,7 @@
 namespace TangibleDDD\Infra\Services;
 
 use TangibleDDD\Application\Events\IDomainEventDispatcher;
+use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Domain\Events\IDomainEvent;
 
 /**
@@ -19,6 +20,15 @@ class WordPressEventDispatcher implements IDomainEventDispatcher {
     // skips that preamble and hands WP_Hook the same array — string keys
     // still dispatch as NAMED arguments to callbacks, so the ctor-as-schema
     // named-payload contract is unchanged (0.2.5 rider).
-    do_action_ref_array($event::action(), $event->payload());
+    //
+    // Reactions frame: handlers reconstruct their own instance from the
+    // args, so they record into the frame this PUBLISHED instance opens —
+    // try/finally so a throwing listener still pops it.
+    Reactions::open($event);
+    try {
+      do_action_ref_array($event::action(), $event->payload());
+    } finally {
+      Reactions::close();
+    }
   }
 }
