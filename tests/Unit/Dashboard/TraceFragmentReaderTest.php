@@ -20,7 +20,8 @@ final class TraceFragmentReaderTest extends TestCase
                 'command_id' => 'cmd-1', 'correlation_id' => 'corr', 'command_name' => 'Lms\\CompleteCourse',
                 'status' => 'success', 'source' => 'user', 'source_id' => '4', 'causation_id' => null,
                 'causation_type' => null, 'duration_ms' => '20', 'peak_memory_bytes' => '1000',
-                'started_at' => '2026-07-22 10:00:00', 'parameters' => '{}', 'events' => '[]', 'error' => null,
+                'started_at' => '2026-07-22 10:00:00', 'ended_at' => '2026-07-22 10:00:01',
+                'parameters' => '{}', 'events' => '[]', 'error' => null,
             ]],
             [[
                 'event_id' => 'evt-1', 'event_type' => 'Lms\\CourseCompleted', 'status' => 'completed',
@@ -57,9 +58,11 @@ final class TraceFragmentReaderTest extends TestCase
             'ghost' => false,
         ], $fragment['consumer']);
         self::assertSame('evt-1', $fragment['processes'][0]['ignited_by_event_id']);
+        self::assertSame('2026-07-22 10:00:01', $fragment['commands'][0]['ended_at']);
         self::assertSame('lms.learning_journey', $fragment['touches'][0]['aggregate']);
         self::assertSame('evt-1', $fragment['touches'][0]['event_id']);
         self::assertCount(5, $db->prepared);
+        self::assertStringContainsString('started_at,ended_at', $db->prepared[0]['sql']);
         self::assertStringContainsString('wp_test_long_processes', $db->prepared[2]['sql']);
         self::assertStringContainsString('wp_test_touches', $db->prepared[4]['sql']);
         self::assertSame(['corr'], $db->prepared[4]['args']);

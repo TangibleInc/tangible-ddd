@@ -13,6 +13,12 @@ final class TraceTimelinePresenter
     public function present(string $correlationId, array $graph): array
     {
         $nodes = $graph['nodes'];
+        foreach ($nodes as $uid => &$node) {
+            $node['end_ts'] = $this->nodeEndTimestamp($node);
+            $node['bracket'] = $this->bracketId($uid, $node, $nodes);
+        }
+        unset($node);
+
         $children = [];
         $roots = [];
         $order = array_flip(array_keys($nodes));
@@ -32,7 +38,12 @@ final class TraceTimelinePresenter
 
         $ordered = [];
         $visited = [];
-        $walk = function (string $uid, int $depth, ?int $parentTimestamp) use (
+        $walk = function (
+            string $uid,
+            int $depth,
+            ?int $parentEndTimestamp,
+            ?string $parentBracket,
+        ) use (
             &$walk,
             &$ordered,
             &$visited,
@@ -45,8 +56,11 @@ final class TraceTimelinePresenter
             }
             $visited[$uid] = true;
             $node = $nodes[$uid];
-            $wallGap = $parentTimestamp !== null ? max(0, $node['ts'] - $parentTimestamp) : 0;
-            $node['gap_before'] = $parentTimestamp !== null && $wallGap >= 2 ? $wallGap : null;
+            $wallGap = $parentEndTimestamp !== null ? max(0, $node['ts'] - $parentEndTimestamp) : 0;
+            $sameBracket = $parentBracket !== null && $node['bracket'] === $parentBracket;
+            $node['gap_before'] = ! $sameBracket && $parentEndTimestamp !== null && $wallGap >= 2
+                ? $wallGap
+                : null;
             $node['depth'] = $depth;
             $ordered[] = $node;
 
@@ -54,15 +68,15 @@ final class TraceTimelinePresenter
             usort($descendants, $byTimestamp);
             foreach ($descendants as $child) {
                 $childDepth = $nodes[$child]['kind'] === 'event' ? $depth : $depth + 1;
-                $walk($child, $childDepth, $node['ts']);
+                $walk($child, $childDepth, $node['end_ts'], $node['bracket']);
             }
         };
         foreach ($roots as $root) {
-            $walk($root, 0, null);
+            $walk($root, 0, null, null);
         }
         foreach (array_keys($nodes) as $uid) {
             if (! isset($visited[$uid])) {
-                $walk($uid, 0, null);
+                $walk($uid, 0, null, null);
             }
         }
 
@@ -118,6 +132,8 @@ final class TraceTimelinePresenter
                 : 0;
             unset(
                 $node['ts'],
+                $node['end_ts'],
+                $node['bracket'],
                 $node['cstart'],
                 $node['cend'],
                 $node['raised_by'],
@@ -164,18 +180,29 @@ final class TraceTimelinePresenter
             $groups[(int) $ordered[$index]['ts']][] = $index;
         }
 
-        $previousTimestamp = null;
+        $previousActivityEnd = null;
         $cursorEnd = 0;
         $positioned = [];
         $markers = [];
+        $seenBrackets = [];
         foreach ($groups as $timestamp => $groupIndexes) {
-            $gap = $previousTimestamp !== null ? max(0, $timestamp - $previousTimestamp) : 0;
-            $groupStart = $previousTimestamp === null
+            $continuesBracket = false;
+            foreach ($groupIndexes as $index) {
+                if (isset($seenBrackets[$ordered[$index]['bracket']])) {
+                    $continuesBracket = true;
+                    break;
+                }
+            }
+
+            $gap = $previousActivityEnd !== null && ! $continuesBracket
+                ? max(0, $timestamp - $previousActivityEnd)
+                : 0;
+            $groupStart = $previousActivityEnd === null
                 ? 0
                 : $cursorEnd + ($gap >= 2 ? 130 : 10);
             $groupEnd = $groupStart;
 
-            if ($previousTimestamp !== null && $gap >= 2) {
+            if ($previousActivityEnd !== null && $gap >= 2) {
                 $markers[] = [
                     'cstart' => $groupStart,
                     'elapsed_s' => max(0, $timestamp - $minTimestamp),
@@ -183,6 +210,7 @@ final class TraceTimelinePresenter
                 ];
             }
 
+            $groupActivityEnd = $timestamp;
             foreach ($groupIndexes as $index) {
                 $node = $ordered[$index];
                 $start = $groupStart;
@@ -198,10 +226,14 @@ final class TraceTimelinePresenter
                 $ordered[$index]['cend'] = $end;
                 $positioned[$node['uid']] = ['ts' => $timestamp, 'end' => $end];
                 $groupEnd = max($groupEnd, $end);
+                $groupActivityEnd = max($groupActivityEnd, $node['end_ts']);
+                $seenBrackets[$node['bracket']] = true;
             }
 
             $cursorEnd = $groupEnd;
-            $previousTimestamp = $timestamp;
+            $previousActivityEnd = $previousActivityEnd === null
+                ? $groupActivityEnd
+                : max($previousActivityEnd, $groupActivityEnd);
         }
 
         return [$ordered, $markers];
@@ -231,5 +263,33 @@ final class TraceTimelinePresenter
             'process' => $node['raw']['created_at'] ?? null,
             default => null,
         };
+    }
+
+    /** @param array<string, mixed> $node */
+    private function nodeEndTimestamp(array $node): int
+    {
+        if ($node['kind'] !== 'command') {
+            return (int) $node['ts'];
+        }
+
+        $endedAt = $node['raw']['ended_at'] ?? null;
+        $endedTimestamp = $endedAt ? (int) strtotime((string) $endedAt . ' UTC') : 0;
+
+        return max((int) $node['ts'], $endedTimestamp);
+    }
+
+    /** @param array<string, mixed> $node @param array<string, array<string, mixed>> $nodes */
+    private function bracketId(string $uid, array $node, array $nodes): string
+    {
+        $parent = $node['parent'] ?? null;
+        if ($node['kind'] === 'event'
+            && is_string($parent)
+            && isset($nodes[$parent])
+            && $nodes[$parent]['kind'] === 'command'
+        ) {
+            return $parent;
+        }
+
+        return $uid;
     }
 }

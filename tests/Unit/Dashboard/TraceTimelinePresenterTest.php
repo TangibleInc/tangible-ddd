@@ -60,6 +60,73 @@ final class TraceTimelinePresenterTest extends TestCase
         self::assertSame(['lms', 'quiz'], array_keys($trace['participants']));
     }
 
+    public function test_fact_raised_at_command_end_does_not_create_a_gap_inside_the_act_bracket(): void
+    {
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#187c65', 'ghost' => false],
+            'commands' => [
+                $this->command(
+                    'verify-evidence',
+                    'Cred\\VerifyCredentialEvidence',
+                    null,
+                    null,
+                    '2026-07-22 11:21:02',
+                    1_153,
+                    '2026-07-22 11:21:04',
+                ),
+            ],
+            'events' => [
+                $this->event('evidence-verified', 'verify-evidence', '2026-07-22 11:21:04'),
+            ],
+            'processes' => [],
+            'workflows' => [],
+        ]]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+
+        self::assertSame([], $trace['time_markers']);
+        self::assertNull($trace['nodes'][1]['gap_before']);
+        self::assertSame(2, $trace['nodes'][1]['elapsed_s']);
+    }
+
+    public function test_command_caused_by_the_fact_starts_a_new_bracket_after_the_transport_wait(): void
+    {
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#187c65', 'ghost' => false],
+            'commands' => [
+                $this->command(
+                    'verify-evidence',
+                    'Cred\\VerifyCredentialEvidence',
+                    null,
+                    null,
+                    '2026-07-22 11:21:02',
+                    1_153,
+                    '2026-07-22 11:21:04',
+                ),
+                $this->command(
+                    'react-to-evidence',
+                    'Cred\\ReactToVerifiedEvidence',
+                    'evidence-verified',
+                    'integration_event',
+                    '2026-07-22 11:21:34',
+                    4,
+                    '2026-07-22 11:21:34',
+                ),
+            ],
+            'events' => [
+                $this->event('evidence-verified', 'verify-evidence', '2026-07-22 11:21:04'),
+            ],
+            'processes' => [],
+            'workflows' => [],
+        ]]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+
+        self::assertSame([32], array_column($trace['time_markers'], 'elapsed_s'));
+        self::assertSame([30], array_column($trace['time_markers'], 'gap_s'));
+        self::assertSame(30, $trace['nodes'][2]['gap_before']);
+    }
+
     public function test_elapsed_time_is_cumulative_and_a_two_day_hiatus_is_one_gap(): void
     {
         $graph = (new TraceStitcher())->stitch([[
@@ -150,13 +217,15 @@ final class TraceTimelinePresenterTest extends TestCase
         ?string $causeType,
         string $startedAt,
         int $duration,
+        ?string $endedAt = null,
     ): array {
         return [
             'command_id' => $id, 'correlation_id' => 'corr-mega', 'command_name' => $name,
             'status' => 'success', 'source' => 'system', 'source_id' => null,
             'causation_id' => $causeId, 'causation_type' => $causeType,
             'duration_ms' => (string) $duration, 'peak_memory_bytes' => '1000',
-            'started_at' => $startedAt, 'parameters' => '{}', 'events' => '[]', 'error' => null,
+            'started_at' => $startedAt, 'ended_at' => $endedAt ?? $startedAt,
+            'parameters' => '{}', 'events' => '[]', 'error' => null,
         ];
     }
 
