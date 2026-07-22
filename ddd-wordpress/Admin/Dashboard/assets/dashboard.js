@@ -144,7 +144,9 @@
       var traceRows=$('#tddd-trace-rows'), traceHead=$('#tddd-trace-head'), ruler=$('#tddd-ruler'), traceWf=$('#tddd-trace-workflows');
       var traceRecent=$('#tddd-trace-recent'), traceOpen=$('#tddd-trace-open');
       var trcList=$('#tddd-trc-list'), trcNewbar=$('#tddd-trc-newbar');
-      var typeColor={command:'#6359D6',workflow:'#7C4DE0',event:'#2E7D8A',process:'#507F06'};
+      // kind = form, consumer = color (2026-07-22 ruling): bars/ports wear the
+      // owner's accent; kind reads from shape (solid/notched/hatched/diamond)
+      // and the badge text. The old per-kind palette is gone.
       var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0, heartbeatSpeed=60;
       var biographyState={search:'',page:1,per_page:25}, biographyRows=[], currentBiography=null;
       // recent-traces state
@@ -744,16 +746,26 @@
             return '<div class="tl-gap" style="left:'+marker.start_pct+'%"><span class="tl-gap-label"><b>'
               +esc(fmtTraceTime(marker.elapsed_s))+'</b>'+hiatus+'</span></div>';
           }).join('');
-          traceRows.innerHTML=d.nodes.map(function(n){
+          traceRows.innerHTML=d.nodes.map(function(n,idx){
             var kind = n.is_workflow ? 'workflow' : n.kind;   // workflow supersedes command
             var depth=Math.min(n.depth||0,5);
             var statusCls=(n.status==='error'||n.status==='dlq')?(' s-'+n.status):'';
-            var dot=typeColor[kind]||'#6359D6';
+            var accent=esc(n.accent||'#646970');
+            var prev=idx>0?d.nodes[idx-1]:null;
+            // kind = form, consumer = color: a handoff paints a seam between rows.
+            var seam=prev && prev.consumer!==n.consumer && !n.unresolved && !prev.unresolved
+              ? '<div class="trc-seam" style="--sa:'+esc(prev.accent||'#646970')+';--sb:'+accent+'"></div>' : '';
             var handoff=n.cross_consumer
-              ? '<span class="cross-handoff" title="handoff from '+esc(n.parent_consumer_label||n.parent_consumer)+' to '+esc(n.consumer_label||n.consumer)+'"><i style="background:'+esc(n.parent_accent||'#646970')+'"></i><b>&rarr;</b><i style="background:'+esc(n.accent||'#646970')+'"></i></span>'
+              ? '<span class="cross-handoff" title="handoff from '+esc(n.parent_consumer_label||n.parent_consumer)+' to '+esc(n.consumer_label||n.consumer)+'"><i style="background:'+esc(n.parent_accent||'#646970')+'"></i><b>&rarr;</b><i style="background:'+accent+'"></i></span>'
               : '';
-            var from=n.parent_label?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b>'+handoff+'</div>':'';
+            // Adjacency implies parentage: the from-line earns its ink only on
+            // a handoff or when the parent is not the row directly above.
+            var showFrom=n.parent_label && (n.cross_consumer || !prev || prev.uid!==n.parent);
+            var from=showFrom?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b>'+handoff+'</div>':'';
             if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
+            var moments=n.moments||[], reactionCount=0;
+            moments.forEach(function(m){ reactionCount+=((m&&m.reactions)||[]).length; });
+            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
             var barTxt=''; var latBar='';
             if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
               var ms=n.raw.duration_ms;
@@ -763,11 +775,20 @@
               var latCls=ms>=1000?'slow':(ms>=300?'hot':'');
               latBar='<div class="lat-wrap"><span class="lat-track"><i class="'+latCls+'" style="width:'+pct+'%"></i></span><span class="lat-ms">'+ms+'ms</span></div>';
             }
+            // Ports: emitted facts docked after the bar — glyphs, never durations.
+            var portGlyphs=(n.ports||[]).map(function(p){
+              var st=p.status==='dlq'?'p-dlq':(p.status==='failed'?'p-failed':(p.status==='completed'?'p-completed':'p-pending'));
+              return '<span class="sport '+st+'" title="'+esc(p.name)+' &middot; '+esc(p.status)+'"></span>';
+            }).join('');
+            var portLbl='';
+            if((n.ports||[]).some(function(p){return p.status==='dlq';})){ portLbl='<span class="sportlbl dlq">dlq!</span>'; }
+            else if((n.ports||[]).length===1){ portLbl='<span class="sportlbl">'+shortName(n.ports[0].name)+'</span>'; }
+            var sports=portGlyphs?'<span class="sports" style="left:calc('+(n.start_pct+Math.max(n.width_pct,1))+'% + 9px)">'+portGlyphs+portLbl+'</span>':'';
             var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
-            return '<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
-              +'<div class="slabel" style="--owner-accent:'+esc(n.accent||'#646970')+'"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'
-              +'<span class="sname" title="'+esc(n.name)+'">'+shortName(n.name)+'</span><span class="stype">'+esc(kind)+'</span></div>'+from+latBar+'</div>'
-              +'<div class="slane"><div class="sbar k-'+esc(kind)+statusCls+'" style="left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%">'+esc(barTxt)+'</div></div></div>';
+            return seam+'<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'" style="--owner-accent:'+accent+'">'
+              +'<div class="slabel" style="--owner-accent:'+accent+'"><div class="snrow"><span class="sdot" style="background:'+accent+'"></span>'
+              +'<span class="sname" title="'+esc(n.name)+'">'+shortName(n.name)+'</span><span class="stype">'+esc(kind)+'</span>'+mchip+'</div>'+from+latBar+'</div>'
+              +'<div class="slane"><div class="sbar f-'+esc(kind)+statusCls+'" style="left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%">'+esc(barTxt)+'</div>'+sports+'</div></div>';
           }).join('')
             + '<div class="tl-gaps"><div class="tl-gsp"></div><div class="tl-glane">'+gaps+'</div></div>';
           traceRows._nodes={}; d.nodes.forEach(function(n){ traceRows._nodes[n.uid]=n; });
@@ -811,34 +832,116 @@
             +'</div>';
         }).join('');
       }
-      function openTraceNode(n){
-        var parent=n.parent_label
-          ? esc(n.parent_label)+' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer||'unknown')+')</span>'
-          : '&mdash;';
-        var touchLinks=(n.touches||[]).map(function(t){
-          return '<button class="trace-biography-link" style="--owner-accent:'+esc(t.accent||n.accent||'#646970')+'" data-aggregate="'+esc(t.aggregate)+'" data-aggregate-id="'+esc(t.aggregate_id)+'" data-consumer="'+esc(t.consumer||n.consumer)+'">'
+      function biographyLinks(touches, fallbackAccent, fallbackConsumer){
+        return (touches||[]).map(function(t){
+          return '<button class="trace-biography-link" style="--owner-accent:'+esc(t.accent||fallbackAccent||'#646970')+'" data-aggregate="'+esc(t.aggregate)+'" data-aggregate-id="'+esc(t.aggregate_id)+'" data-consumer="'+esc(t.consumer||fallbackConsumer)+'">'
             +'<span>'+esc(t.aggregate)+'</span><b>'+esc(t.aggregate_id)+'</b><i>v'+t.version+' &middot; '+esc(t.op)+'</i></button>';
         }).join('');
-        setDrawerLabel(n.kind);
-        dbody.innerHTML='<h3>'+esc(n.name)+'</h3>'
-          +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.consumer)+'</span></div>'
-          +'<dl class="kv">'
-          +'<dt>kind</dt><dd>'+esc(n.kind)+'</dd>'
-          +'<dt>local id</dt><dd>'+esc(n.id)+'</dd>'
-          +'<dt>status</dt><dd>'+esc(n.status||'&mdash;')+'</dd>'
-          +'<dt>parent</dt><dd>'+parent+'</dd>'
-          +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
-          +'</dl>'
-          +(touchLinks?'<div class="jlbl">aggregate biography</div><div class="trace-biography-links">'+touchLinks+'</div>':'')
-          +'<div class="jlbl">recorded data</div>'+j(n.raw);
-        drawer.hidden=false;
+      }
+      function wireDrawerBody(){
         var cl=dbody.querySelector('.corr-link');
         if(cl) cl.addEventListener('click', function(){ showTrace(this.dataset.corr); });
         dbody.querySelectorAll('.trace-biography-link').forEach(function(link){
           link.addEventListener('click',function(){ showBiography(this.dataset.aggregate,this.dataset.aggregateId,this.dataset.consumer); });
         });
+        dbody.querySelectorAll('.dtabs button').forEach(function(b){
+          b.addEventListener('click',function(){
+            dbody.querySelectorAll('.dtabs button').forEach(function(x){ x.removeAttribute('aria-current'); });
+            b.setAttribute('aria-current','true');
+            dbody.querySelectorAll('.dpane').forEach(function(p){ p.hidden = p.dataset.dp!==b.dataset.dt; });
+          });
+        });
       }
-      traceRows.addEventListener('click', function(e){ var row=e.target.closest('.srow.is-node'); if(!row)return; var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(n) openTraceNode(n); });
+      function openTraceNode(n, initialTab){
+        setDrawerLabel(n.kind);
+        if(n.kind!=='command'){
+          // process / orphan fact: the flat record view.
+          var parent=n.parent_label
+            ? esc(n.parent_label)+' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer||'unknown')+')</span>'
+            : '&mdash;';
+          var flatTouches=biographyLinks(n.touches, n.accent, n.consumer);
+          dbody.innerHTML='<h3>'+esc(n.name)+'</h3>'
+            +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.consumer)+'</span></div>'
+            +'<dl class="kv">'
+            +'<dt>kind</dt><dd>'+esc(n.kind)+'</dd>'
+            +'<dt>local id</dt><dd>'+esc(n.id)+'</dd>'
+            +'<dt>status</dt><dd>'+esc(n.status||'&mdash;')+'</dd>'
+            +'<dt>parent</dt><dd>'+parent+'</dd>'
+            +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
+            +'</dl>'
+            +(flatTouches?'<div class="jlbl">aggregate biography</div><div class="trace-biography-links">'+flatTouches+'</div>':'')
+            +'<div class="jlbl">recorded data</div>'+j(n.raw);
+          drawer.hidden=false;
+          wireDrawerBody();
+          return;
+        }
+        // Command: the restocked pantry — sticky identity + tabbed sections.
+        // Identity the row already shows never repeats here.
+        var raw=n.raw||{}, ports=n.ports||[], moments=n.moments||[];
+        var touches=(n.touches||[]).slice();
+        ports.forEach(function(p){ (p.touches||[]).forEach(function(t){ touches.push(t); }); });
+        var dur=raw.duration_ms!=null?raw.duration_ms:0;
+        var head='<h3>'+esc(n.name)+'</h3>'
+          +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.status||'')+' &middot; '+dur+'ms</span></div>';
+        var tab=initialTab||'story';
+        var tabs='<div class="dtabs">'+[['story','Story'],['inside','Inside the act'],['touches','Touches'],['payload','Payload']].map(function(t){
+          return '<button data-dt="'+t[0]+'"'+(t[0]===tab?' aria-current="true"':'')+'>'+t[1]+'</button>';
+        }).join('')+'</div>';
+        var caused=n.parent_label
+          ? esc(n.parent_label)
+            +(n.cross_consumer?' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer)+' &rarr; '+esc(n.consumer_label||n.consumer)+')</span>':'')
+            +(n.gap_before?' <span class="idm">&middot; after '+esc(fmtTraceSpan(n.gap_before))+' wait</span>':'')
+          : '&mdash;';
+        var factRows=ports.length?ports.map(function(p){
+          var st=p.status==='dlq'?'p-dlq':(p.status==='failed'?'p-failed':(p.status==='completed'?'p-completed':'p-pending'));
+          return '<div class="dfact"><span class="sport '+st+'" style="--owner-accent:'+esc(p.accent||n.accent||'#646970')+'"></span><b'+(p.status==='dlq'?' style="color:var(--crit)"':'')+'>'+esc(p.name)+'</b><span class="idm">'+esc(p.status)+' &middot; '+shortId(p.id)+'</span></div>';
+        }).join(''):'<div class="idm">no facts emitted</div>';
+        var story='<div class="dpane" data-dp="story"'+(tab!=='story'?' hidden':'')+'><dl class="kv">'
+          +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
+          +'<dt>caused by</dt><dd>'+caused+'</dd>'
+          +'<dt>source</dt><dd>'+esc(raw.source||'&mdash;')+(raw.source_id?('#'+esc(raw.source_id)):'')+'</dd>'
+          +'<dt>started</dt><dd>'+esc(raw.started_at||'&mdash;')+(raw.ended_at?(' &middot; ended '+esc(raw.ended_at)):'')+'</dd>'
+          +'<dt>memory</dt><dd>'+(raw.peak_memory_bytes?(Math.round(raw.peak_memory_bytes/1048576*10)/10+' MB peak'):'&mdash;')+'</dd>'
+          +'</dl><div class="jlbl">emitted facts</div>'+factRows+'</div>';
+        var reactionSum=0;
+        var portNames={};
+        ports.forEach(function(p){ portNames[p.name]=p; });
+        var insideRows=moments.map(function(m){
+          var rows=((m&&m.reactions)||[]).map(function(r){
+            reactionSum+=r.duration_ms||0;
+            // Width is MEASURED (share of the act); vertical order is record order.
+            var w=dur>0?Math.max(Math.round((r.duration_ms||0)/dur*100),2):2;
+            return '<div class="drx"><span class="drn">'+esc(r.handler)+(r.error?' <b style="color:var(--crit)" title="'+esc(r.error)+'">!</b>':'')+'</span><span class="drb"><i style="width:'+w+'%"></i></span><span class="drms">'+(r.duration_ms||0)+'ms</span></div>';
+          }).join('');
+          // ○ = interior moment. A moment sharing a port's name IS that fact
+          // (self-publisher): merge the glyphs and show its outbox status.
+          var pub=portNames[m.name];
+          var head=pub
+            ? '<div class="dmoment">&#9674; '+esc(m.name)+' <span class="idm">&rarr; published fact &middot; '+esc(pub.status)+'</span></div>'
+            : '<div class="dmoment">&#9675; '+esc(m.name)+'</div>';
+          return head+rows;
+        }).join('');
+        var inside='<div class="dpane" data-dp="inside"'+(tab!=='inside'?' hidden':'')+'>'
+          +(moments.length
+            ? insideRows+(reactionSum>0&&dur>=reactionSum?'<div class="drx dim"><span class="drn">unaccounted (handler body &amp; framework)</span><span class="drb"></span><span class="drms">'+(dur-reactionSum)+'ms</span></div>':'')
+            : '<div class="idm">no domain moments recorded in this act</div>')
+          +'</div>';
+        var touchLinks=biographyLinks(touches, n.accent, n.consumer);
+        var touchesPane='<div class="dpane" data-dp="touches"'+(tab!=='touches'?' hidden':'')+'>'
+          +(touchLinks?'<div class="trace-biography-links">'+touchLinks+'</div>':'<div class="idm">no touches recorded</div>')+'</div>';
+        var payload='<div class="dpane" data-dp="payload"'+(tab!=='payload'?' hidden':'')+'>'
+          +(raw.parameters?('<div class="jlbl">parameters</div>'+j(raw.parameters)):'')
+          +(raw.error?('<div class="jlbl">error</div>'+j(raw.error)):'')
+          +'<div class="jlbl">audit row</div>'+j(raw)+'</div>';
+        dbody.innerHTML=head+tabs+story+inside+touchesPane+payload;
+        drawer.hidden=false;
+        wireDrawerBody();
+      }
+      traceRows.addEventListener('click', function(e){
+        var row=e.target.closest('.srow.is-node'); if(!row)return;
+        var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(!n)return;
+        openTraceNode(n, e.target.closest('.mchip')?'inside':(e.target.closest('.sport,.sports')?'story':undefined));
+      });
 
       // ── aggregate biography ──
       var biographyList=$('#tddd-biography-list'), biographyDetail=$('#tddd-biography-detail');

@@ -19,6 +19,47 @@ final class TraceTimelinePresenter
         }
         unset($node);
 
+        // ── Ledger-dense geometry: facts become PORTS ─────────────────────
+        // An event whose parent resolved to a command leaves the row flow and
+        // docks on that act; anything the fact caused (subscriber commands,
+        // ignited processes) re-points to the act for the tree walk, while
+        // parent_label keeps the fact's name as the "via" label. Facts with
+        // no resolved raiser (flat announces, ghosts) remain rows.
+        $portsByAct = [];
+        $rehomed = [];
+        foreach ($nodes as $uid => $node) {
+            $parent = $node['parent'];
+            if ($node['kind'] !== 'event'
+                || ! is_string($parent)
+                || ! isset($nodes[$parent])
+                || $nodes[$parent]['kind'] !== 'command'
+            ) {
+                continue;
+            }
+            $portsByAct[$parent][] = [
+                'uid' => $uid,
+                'id' => $node['id'],
+                'name' => $node['name'],
+                'status' => $node['status'],
+                'accent' => $node['accent'],
+                'consumer' => $node['consumer'],
+                'consumer_label' => $node['consumer_label'],
+                'ts' => $node['ts'],
+                'touches' => $node['touches'] ?? [],
+                'raw' => $node['raw'],
+            ];
+            $rehomed[$uid] = $parent;
+        }
+        foreach ($nodes as $uid => &$node) {
+            if (is_string($node['parent'] ?? null) && isset($rehomed[$node['parent']])) {
+                $node['parent'] = $rehomed[$node['parent']];
+            }
+        }
+        unset($node);
+        foreach (array_keys($rehomed) as $uid) {
+            unset($nodes[$uid]);
+        }
+
         $children = [];
         $roots = [];
         $order = array_flip(array_keys($nodes));
@@ -108,6 +149,15 @@ final class TraceTimelinePresenter
             }
             $maxTimestamp = max($maxTimestamp, $end);
         }
+        // Ports are still facts: they count, and their at-rest timestamps can
+        // stretch the story's clock (a fact rides its act's bracket but its
+        // row may round to the next whole second).
+        foreach ($portsByAct as $ports) {
+            foreach ($ports as $port) {
+                $counts['event']++;
+                $maxTimestamp = max($maxTimestamp, (int) $port['ts']);
+            }
+        }
         if ($minTimestamp === PHP_INT_MAX) {
             $minTimestamp = 0;
         }
@@ -124,12 +174,23 @@ final class TraceTimelinePresenter
             unset($marker['cstart']);
             return $marker;
         }, $timeMarkers);
-        $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp): array {
+        $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp, $portsByAct): array {
             $node['start_pct'] = round($node['cstart'] / $totalUnits * 100, 2);
             $node['width_pct'] = round(max(($node['cend'] - $node['cstart']) / $totalUnits * 100, 0.6), 2);
             $node['elapsed_s'] = $minTimestamp > 0
                 ? max(0, (int) $node['ts'] - $minTimestamp)
                 : 0;
+            if ($node['kind'] === 'command') {
+                // The act's anatomy: docked facts (ports, no fabricated
+                // duration) and the ordered domain moments from the audit's
+                // events JSON — including PR #39 reactions when recorded.
+                $node['ports'] = array_map(static function (array $port): array {
+                    unset($port['ts']);
+                    return $port;
+                }, $portsByAct[$node['uid']] ?? []);
+                $moments = $node['raw']['events'] ?? null;
+                $node['moments'] = is_array($moments) ? $moments : [];
+            }
             unset(
                 $node['ts'],
                 $node['end_ts'],

@@ -116,8 +116,11 @@ final class WordPressBoundaryTest extends TestCase
         $response = $controller->trace(new \WP_REST_Request(['consumer' => 'test', 'corr' => 'corr']));
 
         self::assertSame(2, $response['span_count']);
-        self::assertSame('test:e:evt-1', $response['nodes'][2]['parent']);
-        self::assertTrue($response['nodes'][2]['cross_consumer']);
+        // Ledger-dense: the fact docks on its raiser as a port; the
+        // cross-consumer subscriber re-points to the raising act.
+        self::assertSame('test:e:evt-1', $response['nodes'][0]['ports'][0]['uid']);
+        self::assertSame('test:c:cmd-root', $response['nodes'][1]['parent']);
+        self::assertTrue($response['nodes'][1]['cross_consumer']);
         self::assertSame(['test', 'tangible_ddd'], array_keys($response['participants']));
     }
 

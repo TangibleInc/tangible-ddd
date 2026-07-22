@@ -49,10 +49,18 @@ final class TraceTimelinePresenterTest extends TestCase
         self::assertSame(1, $trace['event_count']);
         self::assertSame(1, $trace['workflow_count']);
         self::assertSame(61000, $trace['total_ms']);
-        self::assertSame(['lms:c:root-a', 'lms:e:evt-1', 'lms:c:after-wait', 'quiz:c:root-b'], array_column($trace['nodes'], 'uid'));
-        self::assertSame(60, $trace['nodes'][2]['gap_before']);
-        self::assertGreaterThan(0.0, $trace['nodes'][3]['start_pct']);
-        self::assertLessThan($trace['nodes'][2]['start_pct'], $trace['nodes'][3]['start_pct']);
+        // Ledger-dense geometry: the fact leaves the row flow and docks on its
+        // raising act as a PORT; the subscriber re-points to that act.
+        self::assertSame(['lms:c:root-a', 'lms:c:after-wait', 'quiz:c:root-b'], array_column($trace['nodes'], 'uid'));
+        self::assertCount(1, $trace['nodes'][0]['ports']);
+        self::assertSame('lms:e:evt-1', $trace['nodes'][0]['ports'][0]['uid']);
+        self::assertSame('Lms\\Started', $trace['nodes'][0]['ports'][0]['name']);
+        self::assertSame('completed', $trace['nodes'][0]['ports'][0]['status']);
+        self::assertSame('lms:c:root-a', $trace['nodes'][1]['parent']);
+        self::assertSame('Lms\\Started', $trace['nodes'][1]['parent_label'], 'The via-fact stays the label');
+        self::assertSame(60, $trace['nodes'][1]['gap_before']);
+        self::assertGreaterThan(0.0, $trace['nodes'][2]['start_pct']);
+        self::assertLessThan($trace['nodes'][1]['start_pct'], $trace['nodes'][2]['start_pct']);
         self::assertSame([2, 60], array_column($trace['time_markers'], 'elapsed_s'));
         self::assertSame([2, 58], array_column($trace['time_markers'], 'gap_s'));
         self::assertSame(['name' => 'mail'], $trace['workflows'][0]['behaviour_configs'][0]);
@@ -85,8 +93,9 @@ final class TraceTimelinePresenterTest extends TestCase
         $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
 
         self::assertSame([], $trace['time_markers']);
-        self::assertNull($trace['nodes'][1]['gap_before']);
-        self::assertSame(2, $trace['nodes'][1]['elapsed_s']);
+        self::assertCount(1, $trace['nodes'], 'The directly raised fact is a port, not a row');
+        self::assertSame('Lms\\Advanced', $trace['nodes'][0]['ports'][0]['name']);
+        self::assertSame(1, $trace['event_count'], 'Ports still count as facts');
     }
 
     public function test_command_caused_by_the_fact_starts_a_new_bracket_after_the_transport_wait(): void
@@ -124,7 +133,39 @@ final class TraceTimelinePresenterTest extends TestCase
 
         self::assertSame([32], array_column($trace['time_markers'], 'elapsed_s'));
         self::assertSame([30], array_column($trace['time_markers'], 'gap_s'));
-        self::assertSame(30, $trace['nodes'][2]['gap_before']);
+        // Subscriber re-points to the raising act; the transport wait survives.
+        self::assertSame(30, $trace['nodes'][1]['gap_before']);
+        self::assertSame('cred:c:verify-evidence', $trace['nodes'][1]['parent']);
+        self::assertSame('Lms\\Advanced', $trace['nodes'][1]['parent_label']);
+    }
+
+    public function test_command_moments_pass_through_and_an_orphan_fact_stays_a_row(): void
+    {
+        $command = $this->command('acted', 'Lms\\Act', null, null, '2026-07-22 10:00:00', 5);
+        $command['events'] = '[{"name":"thing_done","reactions":[{"handler":"NotifyHandler","duration_ms":3}]}]';
+
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'lms', 'label' => 'LMS', 'accent' => '#2271b1', 'ghost' => false],
+            'commands' => [$command],
+            'events' => [[
+                // A flat announce: no raiser recorded, so no command parent —
+                // this fact cannot dock and must stay a row.
+                'event_id' => 'evt-flat', 'event_type' => 'Lms\\Announced', 'status' => 'pending',
+                'command_id' => null, 'sequence' => '1', 'attempts' => '0',
+                'created_at' => '2026-07-22 10:00:00',
+            ]],
+            'processes' => [],
+            'workflows' => [],
+        ]]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+
+        $kinds = array_column($trace['nodes'], 'kind');
+        self::assertContains('event', $kinds, 'Orphan facts remain rows');
+        $commandNode = $trace['nodes'][array_search('command', $kinds, true)];
+        self::assertSame('thing_done', $commandNode['moments'][0]['name']);
+        self::assertSame('NotifyHandler', $commandNode['moments'][0]['reactions'][0]['handler']);
+        self::assertSame([], $commandNode['ports']);
     }
 
     public function test_elapsed_time_is_cumulative_and_a_two_day_hiatus_is_one_gap(): void

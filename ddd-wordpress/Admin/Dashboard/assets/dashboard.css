@@ -97,10 +97,24 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .pager button[aria-current="true"]{background:var(--accent);color:#fff}
 .tddd-drawer{position:fixed;inset:0;z-index:99999}
 .tddd-drawer .dback{position:absolute;inset:0;background:rgba(16,19,16,.28)}
-.tddd-drawer .dpanel{position:absolute;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:var(--panel);border-left:1.5px solid var(--ink);box-shadow:-8px 0 24px rgba(0,0,0,.12);overflow:auto;font-family:var(--fb)}
+.tddd-drawer .dpanel{position:absolute;top:0;right:0;bottom:0;width:560px;max-width:94vw;background:var(--panel);border-left:1.5px solid var(--ink);box-shadow:-8px 0 24px rgba(0,0,0,.12);overflow:auto;font-family:var(--fb)}
 .tddd-drawer .dh{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1.5px solid var(--ink);background:var(--panel2);position:sticky;top:0}
 .tddd-drawer .dx{border:0;background:transparent;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
 .tddd-drawer .dbody{padding:14px 15px}
+/* The restocked pantry: tabbed sections for command nodes. */
+.tddd-drawer .dtabs{display:flex;border-bottom:1px solid var(--line);margin:0 -15px 12px;padding:0 15px;position:sticky;top:47px;background:var(--panel);z-index:2}
+.tddd-drawer .dtabs button{flex:1;border:0;background:none;font-family:var(--fm);font-size:.62rem;letter-spacing:.04em;padding:8px 2px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.tddd-drawer .dtabs button[aria-current="true"]{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.tddd-drawer .dfact{display:flex;align-items:center;gap:9px;padding:5px 0;font-family:var(--fm);font-size:.68rem;border-bottom:1px solid var(--linesoft)}
+.tddd-drawer .dfact b{overflow-wrap:anywhere}
+.tddd-drawer .dfact .idm{margin-left:auto;white-space:nowrap}
+.tddd-drawer .dmoment{font-family:var(--fm);font-size:.7rem;font-weight:700;margin:10px 0 4px;color:var(--ink)}
+.tddd-drawer .drx{display:grid;grid-template-columns:minmax(0,1fr) 90px 56px;align-items:center;gap:8px;padding:3px 0 3px 14px;font-family:var(--fm);font-size:.64rem}
+.tddd-drawer .drx .drn{color:var(--muted);overflow-wrap:anywhere}
+.tddd-drawer .drx .drb{height:5px;border-radius:2px;background:var(--linesoft);overflow:hidden}
+.tddd-drawer .drx .drb i{display:block;height:100%;background:var(--accent);opacity:.7}
+.tddd-drawer .drx .drms{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.tddd-drawer .drx.dim .drn{color:var(--faint);font-style:italic}
 .tddd-drawer h3{font-family:var(--fm);font-size:.86rem;font-weight:700;margin:0 0 10px;word-break:break-all;color:var(--ink)}
 .tddd-drawer .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:.76rem;margin-bottom:14px}
 .tddd-drawer .kv dt{color:var(--muted);font-family:var(--fm);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em}
@@ -264,6 +278,11 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .trace-legend{display:flex;gap:14px;padding:0 16px 12px;font-family:var(--fm);font-size:.6rem;color:var(--muted)}
 .tddd-root .trace-legend .lg{display:flex;align-items:center;gap:5px}
 .tddd-root .trace-legend .sw{width:10px;height:10px;border-radius:2px}
+.tddd-root .trace-legend .sw-solid{background:var(--muted)}
+.tddd-root .trace-legend .sw-notched{background:repeating-linear-gradient(90deg,var(--muted) 0 3px,transparent 3px 5px)}
+.tddd-root .trace-legend .sw-hatched{background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 5px)}
+.tddd-root .trace-legend .sw-port{width:8px;height:8px;transform:rotate(45deg);border:2px solid var(--muted);background:var(--panel);border-radius:0}
+.tddd-root .trace-legend .sw-moment{width:8px;height:8px;border-radius:50%;border:2px solid var(--muted);background:var(--panel)}
 .tddd-root .trace-panel{margin:0 16px 16px}
 .tddd-root .ruler{display:grid;grid-template-columns:320px 1fr;border-bottom:1px solid var(--line);background:var(--panel2)}
 .tddd-root .ruler .rl{padding:6px 12px;border-right:1px solid var(--line)}
@@ -290,7 +309,10 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .srow:hover{background:var(--softer)}
 .tddd-root .srow.is-node{cursor:pointer}
 .tddd-root .slabel{padding:6px 10px 6px 15px;border-right:1px solid var(--line);overflow:hidden}
-.tddd-root .slabel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--owner-accent,#646970)}
+/* Owner spine: chunky identity strip — solid accent edge fading inward. */
+.tddd-root .slabel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:7px;
+  background:linear-gradient(90deg,var(--owner-accent,#646970) 0 2px,
+    color-mix(in srgb,var(--owner-accent,#646970) 55%,var(--panel)) 2px 100%)}
 .tddd-root .snrow{display:flex;align-items:center;gap:6px}
 .tddd-root .sdot{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
 .tddd-root .sname{font-family:var(--fm);font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -309,12 +331,38 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .d4 .slabel{padding-left:68px}.tddd-root .d5 .slabel{padding-left:82px}
 .tddd-root .slane{position:relative}
 .tddd-root .sbar{position:absolute;top:50%;transform:translateY(-50%);height:16px;border-radius:2px;border:1px solid;display:flex;align-items:center;padding:0 5px;font-family:var(--fm);font-size:.56rem;font-weight:600;white-space:nowrap;overflow:hidden;min-width:8px}
-.tddd-root .sbar.k-command{background:var(--soft);border-color:#c8bff5;color:var(--accent2)}
-.tddd-root .sbar.k-workflow{background:#EDE7FB;border-color:#c3b1f2;color:#5B3BC4}
-.tddd-root .sbar.k-event{background:#E1EFF0;border-color:#aed3d6;color:#2E7D8A}
-.tddd-root .sbar.k-process{background:var(--okbg);border-color:#cde0a3;color:var(--ok)}
+/* kind = form, consumer = color: every bar wears its OWNER's accent; kind reads
+   from shape — command solid, workflow notched, process hatched. */
+.tddd-root .sbar.f-command,.tddd-root .sbar.f-event,.tddd-root .sbar.f-workflow,.tddd-root .sbar.f-process{
+  background:color-mix(in srgb,var(--owner-accent,#646970) 15%,var(--panel));
+  border-color:color-mix(in srgb,var(--owner-accent,#646970) 55%,var(--panel));
+  color:var(--owner-accent,#646970)}
+.tddd-root .sbar.f-workflow{background:repeating-linear-gradient(90deg,
+  color-mix(in srgb,var(--owner-accent,#646970) 26%,var(--panel)) 0 8px,
+  color-mix(in srgb,var(--owner-accent,#646970) 7%,var(--panel)) 8px 12px)}
+.tddd-root .sbar.f-process{background:repeating-linear-gradient(45deg,
+  color-mix(in srgb,var(--owner-accent,#646970) 22%,var(--panel)) 0 5px,
+  color-mix(in srgb,var(--owner-accent,#646970) 6%,var(--panel)) 5px 10px)}
 .tddd-root .sbar.s-error{background:var(--critbg);border-color:#eecace;color:var(--crit)}
 .tddd-root .sbar.s-dlq{background:var(--critbg);border-color:#eecace;color:var(--crit)}
+/* Ports: emitted facts docked after the bar. Fill = outbox status; outline =
+   the raiser's accent. Glyphs only — a fact has no measured duration. */
+.tddd-root .sports{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:6px;pointer-events:auto}
+.tddd-root .sport{width:7px;height:7px;transform:rotate(45deg);border:1.5px solid var(--owner-accent,#646970);background:var(--panel);flex:0 0 auto;cursor:pointer}
+.tddd-root .sport.p-completed{background:var(--owner-accent,#646970)}
+.tddd-root .sport.p-pending{background:var(--panel)}
+.tddd-root .sport.p-failed{border-color:var(--crit);background:var(--critbg)}
+.tddd-root .sport.p-dlq{border-color:var(--crit);background:var(--crit)}
+.tddd-root .sportlbl{font-family:var(--fm);font-size:.58rem;color:var(--owner-accent,#646970);white-space:nowrap}
+.tddd-root .sportlbl.dlq{color:var(--crit);font-weight:700}
+/* Cross-consumer seam: two accents meeting where the story changes hands.
+   Thin — the chunky owner spines carry identity; the seam only marks the cut. */
+.tddd-root .trc-seam{height:1.5px;background:linear-gradient(90deg,var(--sa,#646970) 0 50%,var(--sb,#646970) 50% 100%);opacity:.65}
+/* The moments chip — ordinal interior, detail in the drawer. The ring is
+   DRAWN (not a text glyph) so it centers on the row regardless of font. */
+.tddd-root .mchip{display:inline-flex;align-items:center;gap:3px;font-family:var(--fm);font-size:.56rem;color:var(--muted);border:1px dotted var(--line);border-radius:3px;background:none;padding:1px 6px;cursor:pointer;white-space:nowrap;line-height:1.5}
+.tddd-root .mchip::before{content:'';width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;flex:none}
+.tddd-root .mchip:hover{border-color:var(--accent);color:var(--accent)}
 /* ── latency bar (per-command, in the label column) ── */
 .tddd-root .lat-wrap{display:flex;align-items:center;gap:5px;margin-top:4px}
 .tddd-root .lat-track{height:5px;border-radius:1px;background:var(--linesoft);flex:0 0 72px;overflow:hidden}

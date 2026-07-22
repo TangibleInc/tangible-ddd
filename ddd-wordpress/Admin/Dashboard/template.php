@@ -118,13 +118,15 @@
           <!-- Open-trace view (shown when a trace is selected) -->
           <div id="tddd-trace-open" hidden>
           <div class="trace-head" id="tddd-trace-head"></div>
+          <?php // kind = form, consumer = color: shapes name the kind, hue names the owner. ?>
           <div class="trace-legend">
-            <span class="lg"><span class="sw" style="background:#6359D6"></span>command</span>
-            <span class="lg"><span class="sw" style="background:#7C4DE0"></span>workflow</span>
-            <span class="lg"><span class="sw" style="background:#2E7D8A"></span>event</span>
-            <span class="lg"><span class="sw" style="background:#507F06"></span>process</span>
-            <span class="lg"><span class="sw" style="background:#C22F32"></span>failed</span>
-            <span class="lg lg-note">&#9474; real duration &middot; &#8942; async gap (elapsed shown)</span>
+            <span class="lg"><span class="sw sw-solid"></span>command</span>
+            <span class="lg"><span class="sw sw-notched"></span>workflow</span>
+            <span class="lg"><span class="sw sw-hatched"></span>process</span>
+            <span class="lg"><span class="sw sw-moment"></span>domain moment (inside act)</span>
+            <span class="lg"><span class="sw sw-port"></span>emitted fact</span>
+            <span class="lg"><span class="sw" style="background:#C22F32"></span>failed / dlq</span>
+            <span class="lg lg-note">color = owning consumer &middot; &#9474; real duration &middot; &#8942; async gap (elapsed shown)</span>
           </div>
           <div class="panel trace-panel">
             <div class="trace-scroll">

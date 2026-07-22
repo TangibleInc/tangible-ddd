@@ -51,8 +51,11 @@ final class UnifiedTraceQueryTest extends TestCase
         $trace = (new UnifiedTraceQuery($catalog, $db))->assemble('corr-mega');
 
         self::assertSame(2, $trace['span_count']);
-        self::assertSame('lms:e:evt-completed', $trace['nodes'][2]['parent']);
-        self::assertTrue($trace['nodes'][2]['cross_consumer']);
+        // The fact docks on its raising act as a port; the cross-consumer
+        // subscriber re-points to that act and keeps the handoff flag.
+        self::assertSame('lms:e:evt-completed', $trace['nodes'][0]['ports'][0]['uid']);
+        self::assertSame('lms:c:cmd-lms', $trace['nodes'][1]['parent']);
+        self::assertTrue($trace['nodes'][1]['cross_consumer']);
         self::assertSame(['lms', 'cred'], array_keys($trace['participants']));
         self::assertSame('Learning', $trace['participants']['lms']['label']);
         self::assertCount(16, $db->prepared);
