@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tangible\Cred\MegaTrace\Application\Commands;
 
-use Tangible\Cred\MegaTrace\Application\BehaviourWorkflows\IssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Events\CompliancePortfolioOpened;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialEvidenceVerified;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialIssued;
@@ -12,8 +11,9 @@ use Tangible\Cred\MegaTrace\Domain\Events\CredentialNotificationQueued;
 use Tangible\Cred\MegaTrace\Domain\Events\PortfolioExported;
 use Tangible\Cred\MegaTrace\Domain\Events\ProvisionalCompetencyRecorded;
 use Tangible\Cred\MegaTrace\Domain\Events\SupervisorAttestationReceived;
+use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Commands\ITransactionalCommand;
-use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\CQRS\CommandBusAware;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\MegaTrace\Command\PublishFactCommand;
 
@@ -63,19 +63,22 @@ final class VerifyCredentialEvidence extends PublishFactCommand
     }
 }
 
-final class RunIssuanceRoutine extends SelfHandlingCommand implements ITransactionalCommand
+/**
+ * Plain command in the canonical two-class shape: the module container maps
+ * it to its paired IssuanceRoutine WorkflowHandler through the command bus
+ * terminal (never a self-handling command wrapping a handler — the
+ * framework's SelfHandlingCommandWrapsHandler guard forbids that chimera).
+ */
+final class RunIssuanceRoutine implements ICommand, ITransactionalCommand
 {
+    use CommandBusAware;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly int $learner_id,
         public readonly string $portfolio_id,
         public readonly ?int $workflow_id = null,
     ) {
-    }
-
-    protected function handle(IssuanceRoutine $routine): void
-    {
-        $routine->handle($this);
     }
 }
 

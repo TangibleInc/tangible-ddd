@@ -7,7 +7,10 @@ use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandHasNoHandler;
+use TangibleDDD\Application\Exceptions\SelfHandlingCommandWrapsHandler;
 use TangibleDDD\Application\Exceptions\UnresolvableHandleDependency;
 
 /**
@@ -167,6 +170,47 @@ class SelfExecutingCommandMiddlewareTest extends TestCase {
     $middleware->execute($command, $this->fail_next());
   }
 
+  public function test_handle_param_that_is_a_command_handler_throws_the_conformance_guard(): void {
+    // The chimera shape: a self-handling command method-injecting an
+    // ICommandHandler and delegating to it wraps one blessed CQRS shape in
+    // the other. The guard fires BEFORE the container is consulted — even a
+    // container that could resolve the handler must not.
+    $handler = new WrappedHandler();
+    $middleware = new SelfExecutingCommandMiddleware($this->make_container([
+      WrappedHandler::class => $handler,
+    ]));
+
+    $command = new class extends SelfHandlingCommand {
+      protected function handle(WrappedHandler $handler): void {
+        $handler->handle($this);
+      }
+    };
+
+    $this->expectException(SelfHandlingCommandWrapsHandler::class);
+    $this->expectExceptionMessage('pick one shape');
+
+    try {
+      $middleware->execute($command, $this->fail_next());
+    } finally {
+      $this->assertFalse($handler->handled, 'the wrapped handler never runs');
+    }
+  }
+
+  public function test_handle_param_typed_as_a_handler_subinterface_also_throws(): void {
+    // is_a semantics: anything that IMPLEMENTS ICommandHandler (directly or
+    // transitively — e.g. a WorkflowHandler subclass) is caught, not only
+    // params typed as the interface itself.
+    $middleware = new SelfExecutingCommandMiddleware($this->make_container());
+
+    $command = new class extends SelfHandlingCommand {
+      protected function handle(ICommandHandler $handler): void {}
+    };
+
+    $this->expectException(SelfHandlingCommandWrapsHandler::class);
+
+    $middleware->execute($command, $this->fail_next());
+  }
+
   public function test_handle_param_with_a_default_uses_the_default(): void {
     // A builtin-typed param with a default is not injected — the default stands.
     $middleware = new SelfExecutingCommandMiddleware($this->make_container());
@@ -185,6 +229,13 @@ class SelfExecutingCommandMiddlewareTest extends TestCase {
 
 class HandleDepA {}
 class HandleDepB {}
+
+class WrappedHandler implements ICommandHandler {
+  public bool $handled = false;
+  public function handle(ICommand $command): void {
+    $this->handled = true;
+  }
+}
 
 class PlainCommandWithHandle {
   public bool $handle_was_called = false;

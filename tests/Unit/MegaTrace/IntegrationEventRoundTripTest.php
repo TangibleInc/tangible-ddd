@@ -49,6 +49,6 @@ final class IntegrationEventRoundTripTest extends TestCase
             }
         }
 
-        self::assertSame(29, $count);
+        self::assertSame(30, $count);
     }
 }

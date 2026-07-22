@@ -63,10 +63,6 @@ final class ScenarioCoordinatorTest extends TestCase
             [ScenarioPlan::RECORD_ATTESTATION, ScenarioCoordinator::GROUP],
             [ScenarioPlan::ACKNOWLEDGE_REGISTRY, ScenarioCoordinator::GROUP],
         ], $queue->cancelled);
-        self::assertNotContains(
-            ['tgbl_cred_mega_trace_workflow_continue', ScenarioCoordinator::GROUP],
-            $queue->cancelled,
-        );
     }
 
     public function test_enable_schedules_one_recurring_spawn_without_duplication(): void

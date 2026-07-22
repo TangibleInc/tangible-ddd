@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Tangible\Cred\MegaTrace\Application\BehaviourWorkflows\IssuanceRoutine;
 use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineItemCompleted;
+use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\IIntegrationEventBus;
@@ -23,7 +24,6 @@ final class IssuanceRoutineTest extends TestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['_test_scheduled_actions'] = [];
         Correlation::reset();
     }
 
@@ -50,14 +50,21 @@ final class IssuanceRoutineTest extends TestCase
             [WorkItemStatus::done, WorkItemStatus::pending, WorkItemStatus::pending],
             array_map(static fn ($item) => $item->status, array_values($items->store)),
         );
-        self::assertCount(1, $events->published);
+        self::assertCount(2, $events->published);
         self::assertInstanceOf(IssuanceRoutineItemCompleted::class, $events->published[0]);
         self::assertSame('identity', $events->published[0]->item_key);
-        self::assertSame('test-behaviours', $GLOBALS['_test_scheduled_actions'][0]['group']);
-        self::assertSame(
-            'correlation-main',
-            $GLOBALS['_test_scheduled_actions'][0]['args']['correlation_id'],
-        );
+
+        // The continuation rides the fact lane, not a raw AS alarm: the
+        // reschedule fact carries the workflow id and the delay the outbox
+        // honors, and FleetPolicies translates it into the next pass.
+        $reschedule = $events->published[1];
+        self::assertInstanceOf(IssuanceRoutineRescheduled::class, $reschedule);
+        self::assertSame('journey-1', $reschedule->journey_id);
+        self::assertSame(42, $reschedule->learner_id);
+        self::assertSame('portfolio-1', $reschedule->portfolio_id);
+        self::assertNotNull($reschedule->workflow_id);
+        self::assertSame(IssuanceRoutine::$reschedule_interval, $reschedule->delay_seconds);
+        self::assertSame($reschedule->delay_seconds, $reschedule->delay());
     }
 }
 

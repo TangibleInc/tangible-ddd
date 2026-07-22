@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace TangibleDDD\MegaTrace\Scenario;
 
 use Tangible\Cred\MegaTrace\Application\Commands\RecordSupervisorAttestation;
-use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Datastream\MegaTrace\Application\Commands\AcknowledgeRegistryReceipt;
 use Tangible\LMS\MegaTrace\Application\Commands\LaunchCertificationJourney;
 use Tangible\Quiz\MegaTrace\Application\Commands\SubmitCapstoneAttempt;
@@ -63,24 +62,6 @@ final class ScenarioRuntime implements ScenarioLauncher
             ScenarioIds::delivery($journey_id),
             ScenarioIds::receipt($journey_id),
         ));
-    }
-
-    public function continue_workflow(
-        int $workflow_id,
-        string $journey_id,
-        int $learner_id,
-        string $portfolio_id,
-        string $correlation_id,
-    ): void {
-        $this->dispatch(
-            new RunIssuanceRoutine(
-                $journey_id,
-                $learner_id,
-                $portfolio_id,
-                $workflow_id,
-            ),
-            $correlation_id,
-        );
     }
 
     private function dispatch(ICommand $command, ?string $correlation_id = null): void
