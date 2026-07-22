@@ -72,9 +72,6 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('var R = window.TDDD;', $script);
         self::assertStringContainsString("location.hash='trace/'", $script);
         self::assertStringContainsString('trace-participant', $script);
-        self::assertStringContainsString('cross-handoff', $script);
-        self::assertStringContainsString('openTraceNode', $script);
-        self::assertStringContainsString('trace-biography-link', $script);
         self::assertStringContainsString("setDrawerLabel(n.kind)", $script);
         self::assertStringContainsString("setDrawerLabel('biography entry')", $script);
         self::assertStringContainsString('style="--owner-accent:', $script);
@@ -88,13 +85,7 @@ final class DashboardArtifactsTest extends TestCase
         self::assertMatchesRegularExpression('/function showTraceRecent\(\)\{\s*startLive\(60\);/', $script);
         self::assertMatchesRegularExpression('/function showTrace\(corr\)\{.*?startLive\(60\);/s', $script);
         self::assertStringContainsString("else if(name==='flow'){ loadFlow(); startLive('fast'); }", $script);
-        self::assertStringContainsString('function fmtTraceTime(s)', $script);
-        self::assertStringContainsString('d.time_markers', $script);
-        self::assertStringContainsString('marker.elapsed_s', $script);
-        self::assertStringContainsString('marker.gap_s>=300', $script);
         self::assertStringNotContainsString('if(n.gap_before){', $script);
-        self::assertStringContainsString('tl-gap-label', $script);
-        self::assertStringContainsString('tl-hiatus', $script);
         self::assertStringContainsString('.tddd-root .tl-gap-label', $styles);
         self::assertStringContainsString(
             '.tddd-root .ruler .rl,.tddd-root .slabel{position:sticky;left:0;z-index:5}',
@@ -115,5 +106,89 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('.tddd-root .trace-legend{flex-wrap:wrap;gap:7px 10px}', $styles);
         self::assertStringContainsString('.tddd-root .ruler{grid-template-columns:250px 1fr}', $styles);
         self::assertStringContainsString('.tddd-root .wf-in-trace .wft-head{flex-wrap:wrap}', $styles);
+    }
+
+    public function test_trace_island_owns_rows_and_drawer_on_vendored_preact(): void
+    {
+        $root = dirname(__DIR__, 3) . '/ddd-wordpress/Admin/Dashboard';
+        $script = file_get_contents($root . '/assets/dashboard.js');
+        $island = file_get_contents($root . '/assets/trace-island.js');
+        $styles = file_get_contents($root . '/assets/dashboard.css');
+        $adminPage = file_get_contents($root . '/AdminPage.php');
+
+        // Vendored runtimes: committed, non-trivial, real JS (not an error page).
+        $preact = file_get_contents($root . '/assets/vendor/preact.min.js');
+        $hooks = file_get_contents($root . '/assets/vendor/preact-hooks.umd.js');
+        $htm = file_get_contents($root . '/assets/vendor/htm.js');
+        self::assertGreaterThan(5 * 1024, strlen($preact));
+        self::assertGreaterThan(1 * 1024, strlen($hooks));
+        self::assertGreaterThan(1 * 1024, strlen($htm));
+        self::assertStringContainsString('self.preact=', $preact);
+        self::assertStringContainsString('preactHooks', $hooks);
+        self::assertStringContainsString('self.htm=', $htm);
+        self::assertStringNotContainsString('<html', $preact);
+        self::assertStringNotContainsString('<html', $htm);
+
+        // The island exposes the vanilla-facing contract.
+        self::assertStringContainsString('window.TDDDTrace', $island);
+        self::assertStringContainsString('renderRows', $island);
+        self::assertStringContainsString('openDrawer', $island);
+        self::assertStringContainsString('unmountDrawer', $island);
+        self::assertStringContainsString('htm.bind(preact.h)', $island);
+        // ...and keeps emitting the CSS contract the stylesheet depends on.
+        foreach ([
+            'srow is-node', 'slabel', 'snrow', 'sdot', 'sname', 'stype', 'mchip',
+            'sfrom', 'cross-handoff', 'trace-unresolved', 'lat-wrap', 'lat-track',
+            'lat-ms', 'slane', 'sbar f-', 'sports', 'sportlbl', 'trc-seam',
+            'tl-gaps', 'tl-gsp', 'tl-glane', 'tl-gap-label', 'tl-hiatus',
+            'dtabs', 'dpane', 'dfact', 'dmoment', 'drx', 'drn', 'drb', 'drms',
+            'trace-owner', 'trace-biography-link', 'corr-link', '--owner-accent',
+        ] as $needle) {
+            self::assertStringContainsString($needle, $island, "island must emit: $needle");
+        }
+        // Gap markers moved into the island wholesale.
+        self::assertStringContainsString('time_markers', $island);
+        self::assertStringContainsString('elapsed_s', $island);
+        self::assertStringContainsString('gap_s>=300', $island);
+        self::assertStringContainsString('function fmtTraceTime(', $island);
+
+        // Process bands: measured overlay, accent-hatched, open/closed bottom cap.
+        self::assertStringContainsString('proc-band', $island);
+        self::assertStringContainsString('useLayoutEffect', $island);
+        self::assertStringContainsString("kind==='process'", $island);
+        self::assertStringContainsString('--band-accent', $island);
+        self::assertStringContainsString('.tddd-root .proc-band', $styles);
+        self::assertStringContainsString('repeating-linear-gradient(45deg,color-mix(in srgb,var(--band-accent', $styles);
+        self::assertStringContainsString('.tddd-root .proc-band.is-closed', $styles);
+        self::assertStringContainsString('.tddd-root .proc-band.is-open', $styles);
+
+        // dashboard.js delegated the string-concat rendering to the island.
+        self::assertStringNotContainsString('traceRows.innerHTML=d.nodes.map', $script);
+        self::assertStringNotContainsString('function openTraceNode', $script);
+        self::assertStringNotContainsString('function wireDrawerBody', $script);
+        self::assertStringNotContainsString('function biographyLinks', $script);
+        self::assertStringNotContainsString('traceRows._nodes', $script);
+        self::assertStringContainsString('TDDDTrace.renderRows(traceRows', $script);
+        self::assertStringContainsString('TDDDTrace.openDrawer(dbody', $script);
+        // Vanilla drawer writers unmount the island before touching innerHTML.
+        self::assertGreaterThanOrEqual(2, substr_count($script, 'TDDDTrace.unmountDrawer(dbody)'));
+
+        // Load order: preact → hooks → htm → island → dashboard.
+        $posPreact = strpos($adminPage, 'vendor/preact.min.js');
+        $posHooks = strpos($adminPage, 'vendor/preact-hooks.umd.js');
+        $posHtm = strpos($adminPage, 'vendor/htm.js');
+        $posIsland = strpos($adminPage, "'trace-island.js'");
+        $posDashboard = strpos($adminPage, "'dashboard.js'");
+        self::assertNotFalse($posPreact);
+        self::assertNotFalse($posHooks);
+        self::assertNotFalse($posHtm);
+        self::assertNotFalse($posIsland);
+        self::assertNotFalse($posDashboard);
+        self::assertLessThan($posHooks, $posPreact);
+        self::assertLessThan($posHtm, $posHooks);
+        self::assertLessThan($posIsland, $posHtm);
+        self::assertLessThan($posDashboard, $posIsland);
+        // The island script is a dependency of the dashboard script (guaranteed order).
+        self::assertStringContainsString("'tangible-dddash-trace'", $adminPage);
     }
 }

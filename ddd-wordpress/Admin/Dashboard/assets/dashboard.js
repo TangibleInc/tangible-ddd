@@ -117,6 +117,7 @@
       function setDrawerLabel(label){ drawerLabel.textContent=label; }
       function openDrawer(r){
         setDrawerLabel('command');
+        TDDDTrace.unmountDrawer(dbody); // the trace island may own this element
         dbody.innerHTML='<h3>'+esc(r.command_name)+'</h3>'
           +'<dl class="kv">'
           +'<dt>command_id</dt><dd>'+esc(r.command_id)+'</dd>'
@@ -152,14 +153,7 @@
       // recent-traces state
       var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={};
       function fmtDur(ms){ ms=Math.round(ms); if(ms<1000)return ms+'ms'; return (ms/1000).toFixed(1)+'s'; }
-      function fmtTraceSpan(s){
-        s=Math.max(0,Math.floor(Number(s)||0));
-        if(s===0) return '0s';
-        var units=[['d',86400],['h',3600],['m',60],['s',1]], parts=[];
-        units.forEach(function(u){ var n=Math.floor(s/u[1]); if(n>0&&parts.length<2){ parts.push(n+u[0]); s-=n*u[1]; } });
-        return parts.join(' ');
-      }
-      function fmtTraceTime(s){ return '+'+fmtTraceSpan(s); }
+      // fmtTraceSpan/fmtTraceTime live in the trace island now (gap markers + drawer).
       function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 
       // ── trace recent-list helpers ──
@@ -706,7 +700,7 @@
         startLive(60);
         if(location.hash!=='#trace/'+corr) location.hash='trace/'+corr;
         traceHead.innerHTML='<div class="corr">'+esc(corr)+'</div><div class="meta">loading&hellip;</div>';
-        traceRows.innerHTML=''; ruler.innerHTML=''; traceWf.innerHTML='';
+        TDDDTrace.renderRows(traceRows, null, traceIslandHandlers()); ruler.innerHTML=''; traceWf.innerHTML='';
         fetch(R.rest+'/trace/'+encodeURIComponent(corr)+'?consumer='+encodeURIComponent(state.consumer),{headers:{'X-WP-Nonce':R.nonce}})
           .then(function(r){ return r.json(); }).then(function(d){ _prevTraceNodes={}; renderTrace(d); })
           .catch(function(e){ traceHead.innerHTML='<div class="meta">Error: '+esc(e.message)+'</div>'; });
@@ -737,61 +731,12 @@
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
         ruler.innerHTML='<div class="rt-note">durations to scale &middot; sparse gap markers show cumulative elapsed time</div>';
-        if(!d.nodes||!d.nodes.length){ traceRows.innerHTML='<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>'; ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
+        if(!d.nodes||!d.nodes.length){ TDDDTrace.renderRows(traceRows, d, traceIslandHandlers()); ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
-          var maxDur = d.max_dur_ms || 1;
           var newUids={}; d.nodes.forEach(function(n){ newUids[n.uid]=true; });
-          var gaps=(d.time_markers||[]).map(function(marker){
-            var hiatus=marker.gap_s>=300?'<i class="tl-hiatus">'+esc(fmtTraceSpan(marker.gap_s))+' gap</i>':'';
-            return '<div class="tl-gap" style="left:'+marker.start_pct+'%"><span class="tl-gap-label"><b>'
-              +esc(fmtTraceTime(marker.elapsed_s))+'</b>'+hiatus+'</span></div>';
-          }).join('');
-          traceRows.innerHTML=d.nodes.map(function(n,idx){
-            var kind = n.is_workflow ? 'workflow' : n.kind;   // workflow supersedes command
-            var depth=Math.min(n.depth||0,5);
-            var statusCls=(n.status==='error'||n.status==='dlq')?(' s-'+n.status):'';
-            var accent=esc(n.accent||'#646970');
-            var prev=idx>0?d.nodes[idx-1]:null;
-            // kind = form, consumer = color: a handoff paints a seam between rows.
-            var seam=prev && prev.consumer!==n.consumer && !n.unresolved && !prev.unresolved
-              ? '<div class="trc-seam" style="--sa:'+esc(prev.accent||'#646970')+';--sb:'+accent+'"></div>' : '';
-            var handoff=n.cross_consumer
-              ? '<span class="cross-handoff" title="handoff from '+esc(n.parent_consumer_label||n.parent_consumer)+' to '+esc(n.consumer_label||n.consumer)+'"><i style="background:'+esc(n.parent_accent||'#646970')+'"></i><b>&rarr;</b><i style="background:'+accent+'"></i></span>'
-              : '';
-            // Adjacency implies parentage: the from-line earns its ink only on
-            // a handoff or when the parent is not the row directly above.
-            var showFrom=n.parent_label && (n.cross_consumer || !prev || prev.uid!==n.parent);
-            var from=showFrom?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b>'+handoff+'</div>':'';
-            if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
-            var moments=n.moments||[], reactionCount=0;
-            moments.forEach(function(m){ reactionCount+=((m&&m.reactions)||[]).length; });
-            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
-            var barTxt=''; var latBar='';
-            if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
-              var ms=n.raw.duration_ms;
-              barTxt=ms+'ms';
-              var pct=Math.max(Math.round(ms/maxDur*100),ms>0?3:0);
-              // Severity is ABSOLUTE (ms) — the slowest span in an all-fast trace must not read as failure.
-              var latCls=ms>=1000?'slow':(ms>=300?'hot':'');
-              latBar='<div class="lat-wrap"><span class="lat-track"><i class="'+latCls+'" style="width:'+pct+'%"></i></span><span class="lat-ms">'+ms+'ms</span></div>';
-            }
-            // Ports: emitted facts docked after the bar — glyphs, never durations.
-            var portGlyphs=(n.ports||[]).map(function(p){
-              var st=p.status==='dlq'?'p-dlq':(p.status==='failed'?'p-failed':(p.status==='completed'?'p-completed':'p-pending'));
-              return '<span class="sport '+st+'" title="'+esc(p.name)+' &middot; '+esc(p.status)+'"></span>';
-            }).join('');
-            var portLbl='';
-            if((n.ports||[]).some(function(p){return p.status==='dlq';})){ portLbl='<span class="sportlbl dlq">dlq!</span>'; }
-            else if((n.ports||[]).length===1){ portLbl='<span class="sportlbl">'+shortName(n.ports[0].name)+'</span>'; }
-            var sports=portGlyphs?'<span class="sports" style="left:calc('+(n.start_pct+Math.max(n.width_pct,1))+'% + 9px)">'+portGlyphs+portLbl+'</span>':'';
-            var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
-            return seam+'<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'" style="--owner-accent:'+accent+'">'
-              +'<div class="slabel" style="--owner-accent:'+accent+'"><div class="snrow"><span class="sdot" style="background:'+accent+'"></span>'
-              +'<span class="sname" title="'+esc(n.name)+'">'+shortName(n.name)+'</span><span class="stype">'+esc(kind)+'</span>'+mchip+'</div>'+from+latBar+'</div>'
-              +'<div class="slane"><div class="sbar f-'+esc(kind)+statusCls+'" style="left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%">'+esc(barTxt)+'</div>'+sports+'</div></div>';
-          }).join('')
-            + '<div class="tl-gaps"><div class="tl-gsp"></div><div class="tl-glane">'+gaps+'</div></div>';
-          traceRows._nodes={}; d.nodes.forEach(function(n){ traceRows._nodes[n.uid]=n; });
+          // Rows, seams, ports, gap markers and process bands render in the
+          // Preact island; the vanilla shell only supplies data + handlers.
+          TDDDTrace.renderRows(traceRows, d, traceIslandHandlers());
           _prevTraceNodes=newUids;
           // Widen the lane when there are many spans so bars stay legible → horizontal scroll.
           var tlW = d.nodes.length*44 + 360;
@@ -832,116 +777,23 @@
             +'</div>';
         }).join('');
       }
-      function biographyLinks(touches, fallbackAccent, fallbackConsumer){
-        return (touches||[]).map(function(t){
-          return '<button class="trace-biography-link" style="--owner-accent:'+esc(t.accent||fallbackAccent||'#646970')+'" data-aggregate="'+esc(t.aggregate)+'" data-aggregate-id="'+esc(t.aggregate_id)+'" data-consumer="'+esc(t.consumer||fallbackConsumer)+'">'
-            +'<span>'+esc(t.aggregate)+'</span><b>'+esc(t.aggregate_id)+'</b><i>v'+t.version+' &middot; '+esc(t.op)+'</i></button>';
-        }).join('');
+      // The trace island (trace-island.js, Preact + htm) owns the rows region and
+      // the trace drawer. The shell hands it data + these handlers, and keeps the
+      // drawer chrome (label + visibility) on its side of the boundary.
+      function traceIslandHandlers(){
+        return {
+          prevUids:_prevTraceNodes,
+          onOpenNode:function(n, initialTab){
+            setDrawerLabel(n.kind);
+            TDDDTrace.openDrawer(dbody, n, initialTab, {
+              correlation: currentCorr,
+              onShowTrace: showTrace,
+              onShowBiography: showBiography,
+            });
+            drawer.hidden=false;
+          },
+        };
       }
-      function wireDrawerBody(){
-        var cl=dbody.querySelector('.corr-link');
-        if(cl) cl.addEventListener('click', function(){ showTrace(this.dataset.corr); });
-        dbody.querySelectorAll('.trace-biography-link').forEach(function(link){
-          link.addEventListener('click',function(){ showBiography(this.dataset.aggregate,this.dataset.aggregateId,this.dataset.consumer); });
-        });
-        dbody.querySelectorAll('.dtabs button').forEach(function(b){
-          b.addEventListener('click',function(){
-            dbody.querySelectorAll('.dtabs button').forEach(function(x){ x.removeAttribute('aria-current'); });
-            b.setAttribute('aria-current','true');
-            dbody.querySelectorAll('.dpane').forEach(function(p){ p.hidden = p.dataset.dp!==b.dataset.dt; });
-          });
-        });
-      }
-      function openTraceNode(n, initialTab){
-        setDrawerLabel(n.kind);
-        if(n.kind!=='command'){
-          // process / orphan fact: the flat record view.
-          var parent=n.parent_label
-            ? esc(n.parent_label)+' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer||'unknown')+')</span>'
-            : '&mdash;';
-          var flatTouches=biographyLinks(n.touches, n.accent, n.consumer);
-          dbody.innerHTML='<h3>'+esc(n.name)+'</h3>'
-            +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.consumer)+'</span></div>'
-            +'<dl class="kv">'
-            +'<dt>kind</dt><dd>'+esc(n.kind)+'</dd>'
-            +'<dt>local id</dt><dd>'+esc(n.id)+'</dd>'
-            +'<dt>status</dt><dd>'+esc(n.status||'&mdash;')+'</dd>'
-            +'<dt>parent</dt><dd>'+parent+'</dd>'
-            +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
-            +'</dl>'
-            +(flatTouches?'<div class="jlbl">aggregate biography</div><div class="trace-biography-links">'+flatTouches+'</div>':'')
-            +'<div class="jlbl">recorded data</div>'+j(n.raw);
-          drawer.hidden=false;
-          wireDrawerBody();
-          return;
-        }
-        // Command: the restocked pantry — sticky identity + tabbed sections.
-        // Identity the row already shows never repeats here.
-        var raw=n.raw||{}, ports=n.ports||[], moments=n.moments||[];
-        var touches=(n.touches||[]).slice();
-        ports.forEach(function(p){ (p.touches||[]).forEach(function(t){ touches.push(t); }); });
-        var dur=raw.duration_ms!=null?raw.duration_ms:0;
-        var head='<h3>'+esc(n.name)+'</h3>'
-          +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.status||'')+' &middot; '+dur+'ms</span></div>';
-        var tab=initialTab||'story';
-        var tabs='<div class="dtabs">'+[['story','Story'],['inside','Inside the act'],['touches','Touches'],['payload','Payload']].map(function(t){
-          return '<button data-dt="'+t[0]+'"'+(t[0]===tab?' aria-current="true"':'')+'>'+t[1]+'</button>';
-        }).join('')+'</div>';
-        var caused=n.parent_label
-          ? esc(n.parent_label)
-            +(n.cross_consumer?' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer)+' &rarr; '+esc(n.consumer_label||n.consumer)+')</span>':'')
-            +(n.gap_before?' <span class="idm">&middot; after '+esc(fmtTraceSpan(n.gap_before))+' wait</span>':'')
-          : '&mdash;';
-        var factRows=ports.length?ports.map(function(p){
-          var st=p.status==='dlq'?'p-dlq':(p.status==='failed'?'p-failed':(p.status==='completed'?'p-completed':'p-pending'));
-          return '<div class="dfact"><span class="sport '+st+'" style="--owner-accent:'+esc(p.accent||n.accent||'#646970')+'"></span><b'+(p.status==='dlq'?' style="color:var(--crit)"':'')+'>'+esc(p.name)+'</b><span class="idm">'+esc(p.status)+' &middot; '+shortId(p.id)+'</span></div>';
-        }).join(''):'<div class="idm">no facts emitted</div>';
-        var story='<div class="dpane" data-dp="story"'+(tab!=='story'?' hidden':'')+'><dl class="kv">'
-          +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
-          +'<dt>caused by</dt><dd>'+caused+'</dd>'
-          +'<dt>source</dt><dd>'+esc(raw.source||'&mdash;')+(raw.source_id?('#'+esc(raw.source_id)):'')+'</dd>'
-          +'<dt>started</dt><dd>'+esc(raw.started_at||'&mdash;')+(raw.ended_at?(' &middot; ended '+esc(raw.ended_at)):'')+'</dd>'
-          +'<dt>memory</dt><dd>'+(raw.peak_memory_bytes?(Math.round(raw.peak_memory_bytes/1048576*10)/10+' MB peak'):'&mdash;')+'</dd>'
-          +'</dl><div class="jlbl">emitted facts</div>'+factRows+'</div>';
-        var reactionSum=0;
-        var portNames={};
-        ports.forEach(function(p){ portNames[p.name]=p; });
-        var insideRows=moments.map(function(m){
-          var rows=((m&&m.reactions)||[]).map(function(r){
-            reactionSum+=r.duration_ms||0;
-            // Width is MEASURED (share of the act); vertical order is record order.
-            var w=dur>0?Math.max(Math.round((r.duration_ms||0)/dur*100),2):2;
-            return '<div class="drx"><span class="drn">'+esc(r.handler)+(r.error?' <b style="color:var(--crit)" title="'+esc(r.error)+'">!</b>':'')+'</span><span class="drb"><i style="width:'+w+'%"></i></span><span class="drms">'+(r.duration_ms||0)+'ms</span></div>';
-          }).join('');
-          // ○ = interior moment. A moment sharing a port's name IS that fact
-          // (self-publisher): merge the glyphs and show its outbox status.
-          var pub=portNames[m.name];
-          var head=pub
-            ? '<div class="dmoment">&#9674; '+esc(m.name)+' <span class="idm">&rarr; published fact &middot; '+esc(pub.status)+'</span></div>'
-            : '<div class="dmoment">&#9675; '+esc(m.name)+'</div>';
-          return head+rows;
-        }).join('');
-        var inside='<div class="dpane" data-dp="inside"'+(tab!=='inside'?' hidden':'')+'>'
-          +(moments.length
-            ? insideRows+(reactionSum>0&&dur>=reactionSum?'<div class="drx dim"><span class="drn">unaccounted (handler body &amp; framework)</span><span class="drb"></span><span class="drms">'+(dur-reactionSum)+'ms</span></div>':'')
-            : '<div class="idm">no domain moments recorded in this act</div>')
-          +'</div>';
-        var touchLinks=biographyLinks(touches, n.accent, n.consumer);
-        var touchesPane='<div class="dpane" data-dp="touches"'+(tab!=='touches'?' hidden':'')+'>'
-          +(touchLinks?'<div class="trace-biography-links">'+touchLinks+'</div>':'<div class="idm">no touches recorded</div>')+'</div>';
-        var payload='<div class="dpane" data-dp="payload"'+(tab!=='payload'?' hidden':'')+'>'
-          +(raw.parameters?('<div class="jlbl">parameters</div>'+j(raw.parameters)):'')
-          +(raw.error?('<div class="jlbl">error</div>'+j(raw.error)):'')
-          +'<div class="jlbl">audit row</div>'+j(raw)+'</div>';
-        dbody.innerHTML=head+tabs+story+inside+touchesPane+payload;
-        drawer.hidden=false;
-        wireDrawerBody();
-      }
-      traceRows.addEventListener('click', function(e){
-        var row=e.target.closest('.srow.is-node'); if(!row)return;
-        var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(!n)return;
-        openTraceNode(n, e.target.closest('.mchip')?'inside':(e.target.closest('.sport,.sports')?'story':undefined));
-      });
 
       // ── aggregate biography ──
       var biographyList=$('#tddd-biography-list'), biographyDetail=$('#tddd-biography-detail');
@@ -1071,6 +923,7 @@
       function openBiographyEntry(entry){
         var fact=entry.event_type||entry.event_name;
         setDrawerLabel('biography entry');
+        TDDDTrace.unmountDrawer(dbody); // the trace island may own this element
         dbody.innerHTML='<h3>'+esc(fact)+'</h3><dl class="kv">'
           +'<dt>version</dt><dd>v'+entry.version+' &middot; '+esc(entry.op)+'</dd>'
           +'<dt>fact</dt><dd>'+esc(fact)+'<br><span class="idm">'+esc(entry.event_id||'record unavailable')+'</span></dd>'
