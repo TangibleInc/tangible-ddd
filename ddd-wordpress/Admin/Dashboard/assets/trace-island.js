@@ -90,10 +90,18 @@
         (nodes||[]).forEach(function(n, idx){
           if(!(n.kind==='process' && !n.is_workflow)) return;
           var el=rowEls[n.uid]; if(!el) return;
-          var last=el;
+          // The trellis covers the trajectory's OWN STEPS — rows whose parent
+          // is this process (the commands it sequenced) — NOT every downstream
+          // consequence in the subtree. Subscribers to facts the steps raised
+          // read via ports and from-lines; wrapping them overstated the span.
+          // Each step gets an elbow off the rail (the espalier).
+          var last=el, elbows=[];
           for(var j=idx+1;j<nodes.length;j++){
             if((nodes[j].depth||0)<=(n.depth||0)) break;
-            var childEl=rowEls[nodes[j].uid]; if(childEl) last=childEl;
+            if(nodes[j].parent!==n.uid) continue;
+            var stepEl=rowEls[nodes[j].uid]; if(!stepEl) continue;
+            last=stepEl;
+            elbows.push(stepEl.offsetTop+15);   // ~the step's name line
           }
           var top=el.offsetTop;
           var height=last.offsetTop+last.offsetHeight-top;
@@ -103,6 +111,7 @@
             top:top,
             left:8+depth*14,   // aligns with the d<depth> label indent, just past the owner spine
             height:height,
+            elbows:elbows,
             accent:n.accent||'#646970',
             open:!!BAND_OPEN_STATUSES[String(n.status||'').toLowerCase()],
             title:shortName(n.name)+' · '+(n.status||'unknown'),
@@ -158,6 +167,9 @@
             title=${b.title}
             onClick=${function(){ if(handlers.onOpenNode && byUid[b.uid]) handlers.onOpenNode(byUid[b.uid], undefined); }}
           ></div>`);
+          (b.elbows||[]).forEach(function(top){
+            out.push(html`<div class="proc-elbow" style=${'--band-accent:'+b.accent+';top:'+top+'px;left:'+(b.left+5)+'px'}></div>`);
+          });
         });
         return out;
       }
