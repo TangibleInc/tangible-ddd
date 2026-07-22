@@ -42,15 +42,18 @@ final class CommandAuditQuery
             $where[] = '(command_name LIKE %s OR command_id LIKE %s OR correlation_id LIKE %s)';
             array_push($params, $like, $like, $like);
         }
+        // Parse filter dates explicitly as UTC: started_at is stored in UTC, and
+        // strtotime() otherwise reads the ambient process timezone — identical
+        // under WP (which pins PHP to UTC), but skewed in any non-UTC process.
         if (! empty($filters['from']) && preg_match('/^\d{4}-\d{2}-\d{2}/', (string) $filters['from'])) {
-            $timestamp = strtotime((string) $filters['from']);
+            $timestamp = strtotime((string) $filters['from'] . ' UTC');
             if ($timestamp !== false) {
                 $where[] = 'started_at >= %s';
                 $params[] = gmdate('Y-m-d H:i:s', $timestamp);
             }
         }
         if (! empty($filters['to']) && preg_match('/^\d{4}-\d{2}-\d{2}/', (string) $filters['to'])) {
-            $timestamp = strtotime((string) $filters['to'] . ' 23:59:59');
+            $timestamp = strtotime((string) $filters['to'] . ' 23:59:59 UTC');
             if ($timestamp !== false) {
                 $where[] = 'started_at <= %s';
                 $params[] = gmdate('Y-m-d H:i:s', $timestamp);
