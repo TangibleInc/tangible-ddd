@@ -344,7 +344,7 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 /* Ports: emitted facts docked after the bar. Fill = outbox status; outline =
    the raiser's accent. Glyphs only — a fact has no measured duration. */
 .tddd-root .sports{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:6px;pointer-events:auto}
-.tddd-root .sport{width:9px;height:9px;transform:rotate(45deg);border:2px solid var(--owner-accent,#646970);background:var(--panel);flex:0 0 auto;cursor:pointer}
+.tddd-root .sport{width:7px;height:7px;transform:rotate(45deg);border:1.5px solid var(--owner-accent,#646970);background:var(--panel);flex:0 0 auto;cursor:pointer}
 .tddd-root .sport.p-completed{background:var(--owner-accent,#646970)}
 .tddd-root .sport.p-pending{background:var(--panel)}
 .tddd-root .sport.p-failed{border-color:var(--crit);background:var(--critbg)}
