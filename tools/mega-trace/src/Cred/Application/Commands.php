@@ -49,6 +49,8 @@ final class RecordProvisionalCompetency extends PublishFactCommand
 
 final class VerifyCredentialEvidence extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 1_150;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly string $portfolio_id,
@@ -119,6 +121,8 @@ final class IssueCredential extends PublishFactCommand
 
 final class QueueCredentialNotification extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 140;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly string $credential_id,

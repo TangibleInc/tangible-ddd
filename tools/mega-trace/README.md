@@ -35,6 +35,9 @@ rewrites those correlations into one synthetic super-correlation.
   seconds.
 - The Cred routine handles one work item per pass and requests another pass
   after 18 seconds.
+- Selected synthetic acts perform fixed measured work between 140ms and 1.15s;
+  Cred routine items use a fixed 120-650ms profile. Only newly started runs
+  contain these persisted command-audit durations.
 - Automatic mode starts a new scenario every 10 minutes, with the first spawn
   scheduled five seconds after enabling it.
 

@@ -60,6 +60,8 @@ final class PrepareCredentialExport extends PublishFactCommand
 
 final class PackageCredentialEvidence extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 820;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly string $stream_id,
@@ -96,6 +98,8 @@ final class AcknowledgeRegistryReceipt extends PublishFactCommand
 
 final class CommitRegistryDelivery extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 360;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly string $portfolio_id,

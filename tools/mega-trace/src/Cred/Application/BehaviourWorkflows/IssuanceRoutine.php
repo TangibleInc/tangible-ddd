@@ -21,6 +21,7 @@ use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionStatus;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItem;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemList;
 use TangibleDDD\Infra\IDDDConfig;
+use TangibleDDD\MegaTrace\Command\SyntheticWorkload;
 use TangibleDDD\MegaTrace\Scenario\ScenarioIds;
 
 final class IssuanceRoutine extends WorkflowHandler
@@ -68,6 +69,8 @@ final class IssuanceRoutine extends WorkflowHandler
         WorkItem $item,
         ?BehaviourExecutionResult $previous,
     ): BehaviourExecutionResult {
+        SyntheticWorkload::spend(SyntheticWorkload::routine_item_ms($item->item_key));
+
         $this->events->publish(new IssuanceRoutineItemCompleted(
             (string) $this->current_workflow->get_meta('journey_id'),
             (string) $this->current_workflow->get_meta('portfolio_id'),

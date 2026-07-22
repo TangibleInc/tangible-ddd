@@ -45,6 +45,8 @@ final class RecordJourneyPlan extends PublishFactCommand
 
 final class PersonalizeLearningPath extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 180;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly int $learner_id,

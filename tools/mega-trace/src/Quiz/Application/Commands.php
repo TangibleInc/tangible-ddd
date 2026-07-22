@@ -82,6 +82,8 @@ final class GradeDiagnosticAssessment extends PublishFactCommand
 
 final class AnalyzeDiagnosticSignals extends PublishFactCommand
 {
+    protected const SYNTHETIC_WORK_MS = 460;
+
     public function __construct(
         public readonly string $journey_id,
         public readonly string $attempt_id,
