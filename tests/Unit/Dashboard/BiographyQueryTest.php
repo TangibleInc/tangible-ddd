@@ -50,6 +50,12 @@ final class BiographyQueryTest extends TestCase
     {
         $db = new ScriptedDatabase();
         $db->resultSets = [[[
+            'touch_count' => '1',
+            'first_version' => '7',
+            'last_version' => '7',
+            'first_at' => '2026-07-22 00:08:03',
+            'last_at' => '2026-07-22 00:08:03',
+        ]], [[
             'id' => '9',
             'aggregate' => 'tangible_lms.learning_journey',
             'aggregate_id' => 'journey-42',
@@ -85,15 +91,51 @@ final class BiographyQueryTest extends TestCase
             'first_at' => '2026-07-22 00:08:03',
             'last_at' => '2026-07-22 00:08:03',
         ], $result['summary']);
+        self::assertSame(1, $result['page']);
+        self::assertSame(200, $result['per_page']);
+        self::assertSame(1, $result['pages']);
         self::assertSame(9, $result['entries'][0]['id']);
         self::assertSame(7, $result['entries'][0]['version']);
         self::assertSame(12, $result['entries'][0]['duration_ms']);
         self::assertSame('event-7', $result['entries'][0]['event_id']);
         self::assertSame('command-7', $result['entries'][0]['command_id']);
         self::assertSame('corr-7', $result['entries'][0]['correlation_id']);
-        self::assertStringContainsString('LEFT JOIN `wp_test_command_audit`', $db->prepared[0]['sql']);
-        self::assertStringContainsString('LEFT JOIN `wp_test_integration_outbox`', $db->prepared[0]['sql']);
+        // Query 0 = exact summary aggregation; query 1 = the paged ledger.
+        self::assertStringContainsString('COUNT(*) touch_count', $db->prepared[0]['sql']);
         self::assertSame(['tangible_lms.learning_journey', 'journey-42'], $db->prepared[0]['args']);
+        self::assertStringContainsString('LEFT JOIN `wp_test_command_audit`', $db->prepared[1]['sql']);
+        self::assertStringContainsString('LEFT JOIN `wp_test_integration_outbox`', $db->prepared[1]['sql']);
+        self::assertStringContainsString('LIMIT %d OFFSET %d', $db->prepared[1]['sql']);
+        self::assertSame(['tangible_lms.learning_journey', 'journey-42', 200, 0], $db->prepared[1]['args']);
+    }
+
+    public function test_read_pages_the_ledger_while_the_summary_stays_exact(): void
+    {
+        $db = new ScriptedDatabase();
+        $db->resultSets = [[[
+            'touch_count' => '450',
+            'first_version' => '1',
+            'last_version' => '450',
+            'first_at' => '2026-07-01 00:00:00',
+            'last_at' => '2026-07-22 00:08:03',
+        ]], [[
+            'id' => '201', 'aggregate' => 'acme.license', 'aggregate_id' => '42',
+            'op' => 'updated', 'version' => '201', 'event_name' => 'license_updated',
+            'event_id' => 'event-201', 'command_id' => 'command-201',
+            'correlation_id' => 'corr-201', 'occurred_at' => '2026-07-10 00:00:00',
+        ]]];
+
+        $result = (new BiographyQuery(new FakeDDDConfig(), $db))->read('acme.license', '42', [
+            'page' => 2,
+            'per_page' => 200,
+        ]);
+
+        self::assertSame(450, $result['summary']['touch_count']);
+        self::assertSame(2, $result['page']);
+        self::assertSame(200, $result['per_page']);
+        self::assertSame(3, $result['pages']);
+        self::assertSame(201, $result['entries'][0]['version']);
+        self::assertSame(['acme.license', '42', 200, 200], $db->prepared[1]['args']);
     }
 
     public function test_missing_touches_table_is_an_empty_unavailable_read_model(): void

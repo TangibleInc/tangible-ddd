@@ -9,6 +9,15 @@ use TangibleDDD\WordPress\Admin\Dashboard\Database;
 
 final class BiographyQuery
 {
+    /**
+     * Ledger page size for read(): touches grow monotonically, so an
+     * unbounded SELECT would eventually ship a hot aggregate's whole history
+     * to the browser. The summary stays exact (computed by aggregation);
+     * the entry list pages through the ledger in version order.
+     */
+    private const ENTRIES_PER_PAGE = 200;
+    private const ENTRIES_PER_PAGE_MAX = 500;
+
     public function __construct(
         private readonly IDDDConfig $config,
         private readonly Database $db,
@@ -65,13 +74,24 @@ final class BiographyQuery
         ];
     }
 
-    /** @return array<string, mixed> */
-    public function read(string $aggregate, string $aggregateId): array
+    /** @param array<string, mixed> $filters @return array<string, mixed> */
+    public function read(string $aggregate, string $aggregateId, array $filters = []): array
     {
+        $perPage = min(max((int) ($filters['per_page'] ?? self::ENTRIES_PER_PAGE), 1), self::ENTRIES_PER_PAGE_MAX);
+        $page = max((int) ($filters['page'] ?? 1), 1);
         $touches = $this->config->table('touches');
         if (! $this->db->tableExists($touches)) {
-            return $this->emptyBiography($aggregate, $aggregateId);
+            return $this->emptyBiography($aggregate, $aggregateId, $page, $perPage);
         }
+
+        // Summary from aggregation, so it stays exact even when the entry
+        // list below is capped.
+        $summarySql = "SELECT COUNT(*) touch_count,MIN(version) first_version,MAX(version) last_version,"
+            . "MIN(occurred_at) first_at,MAX(occurred_at) last_at FROM `{$touches}` "
+            . 'WHERE aggregate=%s AND aggregate_id=%s';
+        $summaryRows = $this->db->results($this->db->prepare($summarySql, [$aggregate, $aggregateId]));
+        $summary = $summaryRows[0] ?? [];
+        $touchCount = (int) ($summary['touch_count'] ?? 0);
 
         $audit = $this->config->table('command_audit');
         $outbox = $this->config->table('integration_outbox');
@@ -83,8 +103,9 @@ final class BiographyQuery
             . "LEFT JOIN `{$audit}` a ON a.command_id=t.command_id AND a.blog_id=t.blog_id "
             . "LEFT JOIN `{$outbox}` o ON o.event_id=t.event_id AND o.blog_id=t.blog_id "
             . 'WHERE t.aggregate=%s AND t.aggregate_id=%s '
-            . 'ORDER BY t.version ASC,t.occurred_at ASC,t.id ASC';
-        $entries = $this->db->results($this->db->prepare($sql, [$aggregate, $aggregateId]));
+            . 'ORDER BY t.version ASC,t.occurred_at ASC,t.id ASC LIMIT %d OFFSET %d';
+        $offset = ($page - 1) * $perPage;
+        $entries = $this->db->results($this->db->prepare($sql, [$aggregate, $aggregateId, $perPage, $offset]));
         foreach ($entries as &$entry) {
             $entry['id'] = (int) ($entry['id'] ?? 0);
             $entry['version'] = (int) ($entry['version'] ?? 0);
@@ -92,18 +113,20 @@ final class BiographyQuery
         }
         unset($entry);
 
-        $versions = array_column($entries, 'version');
         return [
             'available' => true,
             'aggregate' => $aggregate,
             'aggregate_id' => $aggregateId,
             'summary' => [
-                'touch_count' => count($entries),
-                'first_version' => $versions !== [] ? min($versions) : null,
-                'last_version' => $versions !== [] ? max($versions) : null,
-                'first_at' => $entries[0]['occurred_at'] ?? null,
-                'last_at' => $entries !== [] ? $entries[array_key_last($entries)]['occurred_at'] : null,
+                'touch_count' => $touchCount,
+                'first_version' => isset($summary['first_version']) ? (int) $summary['first_version'] : null,
+                'last_version' => isset($summary['last_version']) ? (int) $summary['last_version'] : null,
+                'first_at' => $summary['first_at'] ?? null,
+                'last_at' => $summary['last_at'] ?? null,
             ],
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => (int) ceil($touchCount / $perPage),
             'entries' => $entries,
         ];
     }
@@ -122,7 +145,7 @@ final class BiographyQuery
     }
 
     /** @return array<string, mixed> */
-    private function emptyBiography(string $aggregate, string $aggregateId): array
+    private function emptyBiography(string $aggregate, string $aggregateId, int $page, int $perPage): array
     {
         return [
             'available' => false,
@@ -135,6 +158,9 @@ final class BiographyQuery
                 'first_at' => null,
                 'last_at' => null,
             ],
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => 0,
             'entries' => [],
         ];
     }

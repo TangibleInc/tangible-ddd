@@ -62,11 +62,8 @@ final class RestController
 
     public function trace(\WP_REST_Request $request): mixed
     {
-        $consumer = $this->consumer($request);
-        $config = $this->consumers->config($consumer);
-        if ($config === null) {
-            return $this->consumerError($consumer);
-        }
+        // Unified: the trace stitches ALL consumers' fragments for the
+        // correlation, so no consumer parameter is consulted or validated.
         return rest_ensure_response(
             (new UnifiedTraceQuery($this->consumers, $this->db))->assemble((string) $request['corr'])
         );
@@ -112,7 +109,10 @@ final class RestController
                 ['status' => 400],
             );
         }
-        return rest_ensure_response((new BiographyQuery($config, $this->db))->read($aggregate, $aggregateId));
+        return rest_ensure_response((new BiographyQuery($config, $this->db))->read($aggregate, $aggregateId, [
+            'page' => $request->get_param('page'),
+            'per_page' => $request->get_param('per_page'),
+        ]));
     }
 
     public function overview(\WP_REST_Request $request): mixed
