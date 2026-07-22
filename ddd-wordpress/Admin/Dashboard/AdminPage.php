@@ -54,10 +54,39 @@ final class AdminPage
             [],
             $version,
         );
+        // Vendored UMD runtimes for the trace island (classic scripts, no build).
+        wp_enqueue_script(
+            'tangible-dddash-preact',
+            plugins_url($base . 'vendor/preact.min.js', $pluginFile),
+            [],
+            $version,
+            true,
+        );
+        wp_enqueue_script(
+            'tangible-dddash-preact-hooks',
+            plugins_url($base . 'vendor/preact-hooks.umd.js', $pluginFile),
+            ['tangible-dddash-preact'],
+            $version,
+            true,
+        );
+        wp_enqueue_script(
+            'tangible-dddash-htm',
+            plugins_url($base . 'vendor/htm.js', $pluginFile),
+            [],
+            $version,
+            true,
+        );
+        wp_enqueue_script(
+            'tangible-dddash-trace',
+            plugins_url($base . 'trace-island.js', $pluginFile),
+            ['tangible-dddash-preact', 'tangible-dddash-preact-hooks', 'tangible-dddash-htm'],
+            $version,
+            true,
+        );
         wp_enqueue_script(
             'tangible-dddash',
             plugins_url($base . 'dashboard.js', $pluginFile),
-            ['jquery', 'heartbeat'],
+            ['jquery', 'heartbeat', 'tangible-dddash-trace'],
             $version,
             true,
         );
