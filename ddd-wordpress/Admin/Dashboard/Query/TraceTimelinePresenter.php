@@ -32,7 +32,7 @@ final class TraceTimelinePresenter
 
         $ordered = [];
         $visited = [];
-        $walk = function (string $uid, int $depth, int $parentEnd, ?int $parentTimestamp) use (
+        $walk = function (string $uid, int $depth, ?int $parentTimestamp) use (
             &$walk,
             &$ordered,
             &$visited,
@@ -46,19 +46,7 @@ final class TraceTimelinePresenter
             $visited[$uid] = true;
             $node = $nodes[$uid];
             $wallGap = $parentTimestamp !== null ? max(0, $node['ts'] - $parentTimestamp) : 0;
-            $gapBefore = null;
-            if ($parentTimestamp === null) {
-                $compressedStart = 0;
-            } elseif ($wallGap >= 2) {
-                $compressedStart = $parentEnd + 130;
-                $gapBefore = $wallGap;
-            } else {
-                $compressedStart = $parentEnd + 10;
-            }
-            $compressedWidth = max($node['dur_ms'], 16);
-            $node['cstart'] = $compressedStart;
-            $node['cend'] = $compressedStart + $compressedWidth;
-            $node['gap_before'] = $gapBefore;
+            $node['gap_before'] = $parentTimestamp !== null && $wallGap >= 2 ? $wallGap : null;
             $node['depth'] = $depth;
             $ordered[] = $node;
 
@@ -66,15 +54,15 @@ final class TraceTimelinePresenter
             usort($descendants, $byTimestamp);
             foreach ($descendants as $child) {
                 $childDepth = $nodes[$child]['kind'] === 'event' ? $depth : $depth + 1;
-                $walk($child, $childDepth, $node['cend'], $node['ts']);
+                $walk($child, $childDepth, $node['ts']);
             }
         };
         foreach ($roots as $root) {
-            $walk($root, 0, 0, null);
+            $walk($root, 0, null);
         }
         foreach (array_keys($nodes) as $uid) {
             if (! isset($visited[$uid])) {
-                $walk($uid, 0, 0, null);
+                $walk($uid, 0, null);
             }
         }
 
@@ -110,11 +98,18 @@ final class TraceTimelinePresenter
             $minTimestamp = 0;
         }
 
+        [$ordered, $timeMarkers] = $this->layoutByActivity($ordered, $minTimestamp);
+
         $totalUnits = 1;
         foreach ($ordered as $node) {
             $totalUnits = max($totalUnits, $node['cend']);
         }
         $totalUnits += 110;
+        $timeMarkers = array_map(static function (array $marker) use ($totalUnits): array {
+            $marker['start_pct'] = round($marker['cstart'] / $totalUnits * 100, 2);
+            unset($marker['cstart']);
+            return $marker;
+        }, $timeMarkers);
         $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp): array {
             $node['start_pct'] = round($node['cstart'] / $totalUnits * 100, 2);
             $node['width_pct'] = round(max(($node['cend'] - $node['cstart']) / $totalUnits * 100, 0.6), 2);
@@ -146,10 +141,70 @@ final class TraceTimelinePresenter
             'started_at' => $startedAt,
             'has_error' => $hasError,
             'nodes' => $outputNodes,
+            'time_markers' => $timeMarkers,
             'workflows' => $workflows,
             'participants' => $graph['participants'],
             'warnings' => $graph['warnings'],
         ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $ordered
+     * @return array{list<array<string, mixed>>, list<array<string, int>>}
+     */
+    private function layoutByActivity(array $ordered, int $minTimestamp): array
+    {
+        $indexes = array_keys($ordered);
+        usort($indexes, static function (int $left, int $right) use ($ordered): int {
+            return ($ordered[$left]['ts'] <=> $ordered[$right]['ts']) ?: ($left <=> $right);
+        });
+
+        $groups = [];
+        foreach ($indexes as $index) {
+            $groups[(int) $ordered[$index]['ts']][] = $index;
+        }
+
+        $previousTimestamp = null;
+        $cursorEnd = 0;
+        $positioned = [];
+        $markers = [];
+        foreach ($groups as $timestamp => $groupIndexes) {
+            $gap = $previousTimestamp !== null ? max(0, $timestamp - $previousTimestamp) : 0;
+            $groupStart = $previousTimestamp === null
+                ? 0
+                : $cursorEnd + ($gap >= 2 ? 130 : 10);
+            $groupEnd = $groupStart;
+
+            if ($previousTimestamp !== null && $gap >= 2) {
+                $markers[] = [
+                    'cstart' => $groupStart,
+                    'elapsed_s' => max(0, $timestamp - $minTimestamp),
+                    'gap_s' => $gap,
+                ];
+            }
+
+            foreach ($groupIndexes as $index) {
+                $node = $ordered[$index];
+                $start = $groupStart;
+                $parent = $node['parent'] ?? null;
+                if (is_string($parent)
+                    && isset($positioned[$parent])
+                    && $positioned[$parent]['ts'] === $timestamp
+                ) {
+                    $start = max($start, $positioned[$parent]['end'] + 10);
+                }
+                $end = $start + max((int) $node['dur_ms'], 16);
+                $ordered[$index]['cstart'] = $start;
+                $ordered[$index]['cend'] = $end;
+                $positioned[$node['uid']] = ['ts' => $timestamp, 'end' => $end];
+                $groupEnd = max($groupEnd, $end);
+            }
+
+            $cursorEnd = $groupEnd;
+            $previousTimestamp = $timestamp;
+        }
+
+        return [$ordered, $markers];
     }
 
     /** @param array<string, mixed> $workflow @return array<string, mixed> */

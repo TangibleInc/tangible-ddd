@@ -4,9 +4,11 @@
 
 **Goal:** Give new Mega Trace runs truthful, deterministic execution-time variation and make DDDash show sparse cumulative elapsed time across short waits and multi-day hiatuses without leaking timeline marks through the sticky label column.
 
-**Architecture:** The development sidecar declares fixed workloads on selected commands and sleeps inside their real command invocation, so existing correlation audit measures the delay. The read-side presenter adds numeric elapsed seconds while retaining local edge gaps; dashboard JavaScript formats cumulative labels and optional hiatus labels without generating empty ticks. CSS keeps the sticky label column above all timeline marks at both existing responsive widths.
+**Architecture:** The development sidecar declares fixed workloads on selected commands and sleeps inside their real command invocation, so existing correlation audit measures the delay. The read-side presenter adds numeric elapsed seconds and a monotonic global activity clock while retaining local edge gaps as node evidence; dashboard JavaScript formats cumulative labels and optional hiatus labels without generating empty ticks. CSS keeps the sticky label column above all timeline marks at both existing responsive widths.
 
 **Tech Stack:** PHP 8.1+, PHPUnit 10/11, WordPress Heartbeat/REST dashboard, vanilla JavaScript, CSS, DDEV, Playwright CLI.
+
+> **Post-implementation correction (2026-07-22):** The original per-node marker rule failed on parallel branches because causal-depth X positions are not globally chronological. The final presenter emits one `time_markers` entry per distinct activity moment and lays bars out on that sparse monotonic clock. Task 2 below records the original execution sequence; the design spec contains the corrected contract.
 
 ## Global Constraints
 
@@ -14,7 +16,7 @@
 - Routine items are fixed: identity 120ms, assessment 260ms, completion 390ms, certificate 520ms, transcript 650ms, and badge 180ms.
 - No production consumer, audit row, query result, or rendered duration may be fabricated.
 - No gap expands in proportion to wall-clock duration and no empty periodic tick is generated.
-- Gaps of at least 300 seconds receive a secondary local-gap label.
+- Global activity gaps of at least 300 seconds receive a secondary hiatus label.
 - Prime Radiant branding must not enter tracked product files.
 - Use test-first red-green cycles and keep the implementation on `feature/dddash-v2-unified-trace`.
 

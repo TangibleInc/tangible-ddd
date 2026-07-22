@@ -51,7 +51,10 @@ final class TraceTimelinePresenterTest extends TestCase
         self::assertSame(61000, $trace['total_ms']);
         self::assertSame(['lms:c:root-a', 'lms:e:evt-1', 'lms:c:after-wait', 'quiz:c:root-b'], array_column($trace['nodes'], 'uid'));
         self::assertSame(60, $trace['nodes'][2]['gap_before']);
-        self::assertSame(0.0, $trace['nodes'][3]['start_pct']);
+        self::assertGreaterThan(0.0, $trace['nodes'][3]['start_pct']);
+        self::assertLessThan($trace['nodes'][2]['start_pct'], $trace['nodes'][3]['start_pct']);
+        self::assertSame([2, 60], array_column($trace['time_markers'], 'elapsed_s'));
+        self::assertSame([2, 58], array_column($trace['time_markers'], 'gap_s'));
         self::assertSame(['name' => 'mail'], $trace['workflows'][0]['behaviour_configs'][0]);
         self::assertSame(8, $trace['workflows'][0]['id']);
         self::assertSame(['lms', 'quiz'], array_keys($trace['participants']));
@@ -90,10 +93,53 @@ final class TraceTimelinePresenterTest extends TestCase
         );
         self::assertSame([0, 60, 120, 180, 172_980], array_column($commands, 'elapsed_s'));
         self::assertSame([null, 60, 60, 60, 172_800], array_column($commands, 'gap_before'));
-        self::assertCount(4, array_filter(
-            $commands,
-            static fn (array $node): bool => $node['gap_before'] !== null,
-        ));
+        self::assertSame([60, 120, 180, 172_980], array_column($trace['time_markers'], 'elapsed_s'));
+        self::assertSame([60, 60, 60, 172_800], array_column($trace['time_markers'], 'gap_s'));
+        self::assertCount(4, $trace['time_markers']);
+    }
+
+    public function test_sparse_clock_is_monotonic_across_parallel_branches(): void
+    {
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'lms', 'label' => 'LMS', 'accent' => '#2271b1', 'ghost' => false],
+            'commands' => [
+                $this->command('root', 'Lms\\Start', null, null, '2026-07-22 10:00:00', 20),
+                $this->command('later-shallow', 'Lms\\LaterShallow', 'evt-shallow', 'integration_event', '2026-07-22 10:05:02', 20),
+                $this->command('early-branch', 'Lms\\EarlyBranch', 'evt-early', 'integration_event', '2026-07-22 10:01:00', 20),
+                $this->command('earlier-deep', 'Lms\\EarlierDeep', 'evt-deep', 'integration_event', '2026-07-22 10:03:49', 20),
+            ],
+            'events' => [
+                $this->event('evt-shallow', 'root', '2026-07-22 10:00:00'),
+                $this->event('evt-early', 'root', '2026-07-22 10:00:00'),
+                $this->event('evt-deep', 'early-branch', '2026-07-22 10:01:00'),
+            ],
+            'processes' => [],
+            'workflows' => [],
+        ]]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+
+        self::assertArrayHasKey('time_markers', $trace);
+        self::assertSame([60, 229, 302], array_column($trace['time_markers'], 'elapsed_s'));
+        self::assertSame([60, 169, 73], array_column($trace['time_markers'], 'gap_s'));
+        self::assertSame(
+            count($trace['time_markers']),
+            count(array_unique(array_column($trace['time_markers'], 'start_pct'))),
+        );
+
+        $commands = [];
+        foreach ($trace['nodes'] as $node) {
+            if ($node['kind'] === 'command') {
+                $commands[$node['raw']['command_id']] = $node;
+            }
+        }
+        self::assertTrue(
+            $commands['early-branch']['start_pct']
+                < $commands['earlier-deep']['start_pct']
+                && $commands['earlier-deep']['start_pct']
+                < $commands['later-shallow']['start_pct'],
+            'Horizontal position must follow wall-clock activity across parallel causal branches.',
+        );
     }
 
     /** @return array<string, mixed> */

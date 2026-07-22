@@ -739,7 +739,11 @@
         else {
           var maxDur = d.max_dur_ms || 1;
           var newUids={}; d.nodes.forEach(function(n){ newUids[n.uid]=true; });
-          var gaps='';
+          var gaps=(d.time_markers||[]).map(function(marker){
+            var hiatus=marker.gap_s>=300?'<i class="tl-hiatus">'+esc(fmtTraceSpan(marker.gap_s))+' gap</i>':'';
+            return '<div class="tl-gap" style="left:'+marker.start_pct+'%"><span class="tl-gap-label"><b>'
+              +esc(fmtTraceTime(marker.elapsed_s))+'</b>'+hiatus+'</span></div>';
+          }).join('');
           traceRows.innerHTML=d.nodes.map(function(n){
             var kind = n.is_workflow ? 'workflow' : n.kind;   // workflow supersedes command
             var depth=Math.min(n.depth||0,5);
@@ -758,11 +762,6 @@
               // Severity is ABSOLUTE (ms) — the slowest span in an all-fast trace must not read as failure.
               var latCls=ms>=1000?'slow':(ms>=300?'hot':'');
               latBar='<div class="lat-wrap"><span class="lat-track"><i class="'+latCls+'" style="width:'+pct+'%"></i></span><span class="lat-ms">'+ms+'ms</span></div>';
-            }
-            // One marker per recorded post-gap node; no empty wall-clock ticks are synthesized.
-            if(n.gap_before){
-              var hiatus=n.gap_before>=300?'<i class="tl-hiatus">'+esc(fmtTraceSpan(n.gap_before))+' gap</i>':'';
-              gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span class="tl-gap-label"><b>'+esc(fmtTraceTime(n.elapsed_s))+'</b>'+hiatus+'</span></div>';
             }
             var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
             return '<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
