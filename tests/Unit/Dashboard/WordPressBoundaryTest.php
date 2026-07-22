@@ -41,11 +41,13 @@ final class WordPressBoundaryTest extends TestCase
 
         $controller->registerRoutes();
 
-        self::assertCount(9, $_test_rest_routes);
+        self::assertCount(11, $_test_rest_routes);
         self::assertSame([
             'tangible-ddd/v1/audit',
             'tangible-ddd/v1/trace/(?P<corr>[A-Za-z0-9\-]+)',
             'tangible-ddd/v1/traces',
+            'tangible-ddd/v1/biographies',
+            'tangible-ddd/v1/biography',
             'tangible-ddd/v1/overview',
             'tangible-ddd/v1/processes',
             'tangible-ddd/v1/workflows',
@@ -78,6 +80,97 @@ final class WordPressBoundaryTest extends TestCase
         self::assertSame(1, $response['total']);
         self::assertSame('cmd', $response['rows'][0]['command_id']);
         self::assertSame(3, $response['rows'][0]['duration_ms']);
+    }
+
+    public function test_trace_route_fans_one_correlation_out_across_consumers(): void
+    {
+        [$catalog, $db] = $this->catalog();
+        $db->resultSets = [
+            [[
+                'command_id' => 'cmd-root', 'correlation_id' => 'corr', 'command_name' => 'Test\\Start',
+                'status' => 'success', 'source' => 'system', 'source_id' => null, 'causation_id' => null,
+                'causation_type' => null, 'duration_ms' => '3', 'peak_memory_bytes' => '1',
+                'started_at' => '2026-07-22 10:00:00', 'parameters' => '{}', 'events' => '[]', 'error' => null,
+            ]],
+            [[
+                'event_id' => 'evt-1', 'event_type' => 'Test\\Started', 'status' => 'completed',
+                'command_id' => 'cmd-root', 'sequence' => '1', 'attempts' => '1',
+                'created_at' => '2026-07-22 10:00:00',
+            ]],
+            [],
+            [],
+            [],
+            [[
+                'command_id' => 'cmd-self', 'correlation_id' => 'corr', 'command_name' => 'Framework\\React',
+                'status' => 'success', 'source' => 'system', 'source_id' => null, 'causation_id' => 'evt-1',
+                'causation_type' => 'integration_event', 'duration_ms' => '2', 'peak_memory_bytes' => '1',
+                'started_at' => '2026-07-22 10:00:01', 'parameters' => '{}', 'events' => '[]', 'error' => null,
+            ]],
+            [],
+            [],
+            [],
+            [],
+        ];
+        $controller = new RestController($catalog, $db, new ActionDispatcher(static fn (): null => null));
+
+        $response = $controller->trace(new \WP_REST_Request(['consumer' => 'test', 'corr' => 'corr']));
+
+        self::assertSame(2, $response['span_count']);
+        self::assertSame('test:e:evt-1', $response['nodes'][2]['parent']);
+        self::assertTrue($response['nodes'][2]['cross_consumer']);
+        self::assertSame(['test', 'tangible_ddd'], array_keys($response['participants']));
+    }
+
+    public function test_biographies_route_adapts_finder_filters_to_the_consumer_query(): void
+    {
+        global $_test_rest_routes;
+        [$catalog, $db] = $this->catalog();
+        $db->values = [1];
+        $db->resultSets = [[[
+            'aggregate' => 'acme.license', 'aggregate_id' => '42', 'touch_count' => '3',
+            'first_version' => '1', 'last_version' => '3', 'first_at' => '2026-07-20 10:00:00',
+            'last_at' => '2026-07-22 10:00:00', 'last_op' => 'updated',
+        ]]];
+        (new RestController($catalog, $db, new ActionDispatcher(static fn (): null => null)))->registerRoutes();
+
+        $callback = $_test_rest_routes['tangible-ddd/v1/biographies']['args']['callback'];
+        $response = $callback(new \WP_REST_Request([
+            'consumer' => 'test', 'search' => 'license', 'page' => 1, 'per_page' => 12,
+        ]));
+
+        self::assertTrue($response['available']);
+        self::assertSame(1, $response['total']);
+        self::assertSame('acme.license', $response['rows'][0]['aggregate']);
+        self::assertSame(['%license%', '%license%'], $db->prepared[1]['args']);
+        self::assertSame(12, $response['per_page']);
+    }
+
+    public function test_biography_route_requires_and_reads_exact_aggregate_identity(): void
+    {
+        global $_test_rest_routes;
+        [$catalog, $db] = $this->catalog();
+        $db->resultSets = [[[
+            'id' => '1', 'aggregate' => 'acme.license', 'aggregate_id' => '42', 'op' => 'created',
+            'version' => '1', 'event_name' => 'license_issued', 'event_id' => 'evt-1',
+            'command_id' => 'cmd-1', 'correlation_id' => 'corr-1', 'occurred_at' => '2026-07-22 10:00:00',
+            'command_name' => 'Acme\\IssueLicense', 'command_status' => 'success', 'source' => 'user',
+            'duration_ms' => '4', 'started_at' => '2026-07-22 10:00:00',
+            'event_type' => 'Acme\\LicenseIssued', 'event_status' => 'completed',
+            'processed_at' => '2026-07-22 10:00:01',
+        ]]];
+        (new RestController($catalog, $db, new ActionDispatcher(static fn (): null => null)))->registerRoutes();
+
+        $callback = $_test_rest_routes['tangible-ddd/v1/biography']['args']['callback'];
+        $missing = $callback(new \WP_REST_Request(['consumer' => 'test']));
+        $response = $callback(new \WP_REST_Request([
+            'consumer' => 'test', 'aggregate' => 'acme.license', 'aggregate_id' => '42',
+        ]));
+
+        self::assertInstanceOf(\WP_Error::class, $missing);
+        self::assertSame('tddd_bad_biography', $missing->get_error_code());
+        self::assertSame('acme.license', $response['aggregate']);
+        self::assertSame('42', $response['aggregate_id']);
+        self::assertSame('corr-1', $response['entries'][0]['correlation_id']);
     }
 
     public function test_heartbeat_controller_owns_the_final_live_payload(): void
