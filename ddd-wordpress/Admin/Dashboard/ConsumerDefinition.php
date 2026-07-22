@@ -36,14 +36,22 @@ final class ConsumerDefinition
         $palette = [
             '#2271b1',
             '#7a3e9d',
-            '#13795b',
-            '#b54708',
             '#005f73',
-            '#8f3f71',
             '#6b5b00',
             '#4f46a5',
+            '#2f6f3e',
+            '#9a5b13',
+            '#006d77',
+            '#13795b',
+            '#8f3f71',
+            '#287271',
+            '#b54708',
+            '#3d5a80',
+            '#6c5b7b',
+            '#4b6b2a',
+            '#8a4f14',
         ];
-        $hash = (int) sprintf('%u', crc32($key));
+        $hash = (int) hexdec(substr(hash('sha256', $key), 0, 8));
         return $palette[$hash % count($palette)];
     }
 }

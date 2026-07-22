@@ -21,6 +21,7 @@ first; then the current documents below.
 | [Wiring a consumer](wiring-a-consumer.md) | Complete top-level consumer, DI, middleware, table, and deployment contract |
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |
 | [Consumer modules](consumer-modules.md) | Host/module lifecycle, separate-container bridge, routing, and process overlay |
+| [DDDash v2 scope](dashboard/V2-OUTLINE.md) | Implemented unified trace, Aggregate Biography, consumer provenance, and explicit non-goals |
 | [Release and migration ledger](migration-0.2-to-0.3.md) | Version-by-version consumer changes; the old filename is retained for inbound links |
 | [Canonical agent skill](../.claude/skills/tangible-ddd/SKILL.md) | Current modeling decisions and source navigation for coding agents |
 
@@ -41,7 +42,6 @@ first; then the current documents below.
 
 | Document | Scope |
 | --- | --- |
-| [DDDash v2 working scope](dashboard/V2-OUTLINE.md) | Agreed unified trace, Biography, and consumer-provenance direction; not yet an implementation commitment |
 | [Outbox transport payload strategies](outbox-transport-payload-strategies.md) | Possible transport optimization; explicitly not a current change |
 | [Multi-item behaviour topology](topology/multi-item-behaviour-topology.md) | Topology exploration rather than a shipped contract |
 

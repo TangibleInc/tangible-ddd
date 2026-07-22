@@ -29,11 +29,11 @@
 - Produces: `BiographyQuery::recent(array $filters): array`
 - Produces: `BiographyQuery::read(string $aggregate, string $aggregateId): array`
 
-- [ ] Write a failing test proving finder pagination/search and detail joins use the configured consumer tables.
-- [ ] Run `vendor/bin/phpunit tests/Unit/Dashboard/BiographyQueryTest.php` and verify the class-missing failure.
-- [ ] Implement grouped recent aggregates ordered by last touch and a version-ordered detail query with left joins to `command_audit` and `integration_outbox`.
-- [ ] Normalize numeric fields and return stable empty results when no rows exist.
-- [ ] Re-run the focused test and verify it passes.
+- [x] Write a failing test proving finder pagination/search and detail joins use the configured consumer tables.
+- [x] Run `vendor/bin/phpunit tests/Unit/Dashboard/BiographyQueryTest.php` and verify the class-missing failure.
+- [x] Implement grouped recent aggregates ordered by last touch and a version-ordered detail query with left joins to `command_audit` and `integration_outbox`.
+- [x] Normalize numeric fields and return stable empty results when no rows exist.
+- [x] Re-run the focused test and verify it passes.
 
 ### Task 2: REST Boundary
 
@@ -45,10 +45,10 @@
 - Produces: `GET /tangible-ddd/v1/biographies`
 - Produces: `GET /tangible-ddd/v1/biography?aggregate=...&aggregate_id=...`
 
-- [ ] Write failing boundary tests for consumer validation, finder filters, and required aggregate identity.
-- [ ] Run the focused boundary tests and verify the routes are absent.
-- [ ] Add thin route callbacks that delegate to `BiographyQuery`.
-- [ ] Re-run the boundary tests and verify they pass.
+- [x] Write failing boundary tests for consumer validation, finder filters, and required aggregate identity.
+- [x] Run the focused boundary tests and verify the routes are absent.
+- [x] Add thin route callbacks that delegate to `BiographyQuery`.
+- [x] Re-run the boundary tests and verify they pass.
 
 ### Task 3: Biography Dashboard Lens
 
@@ -60,14 +60,16 @@
 
 **Interfaces:**
 - Consumes: the two Biography REST endpoints.
-- Produces: hash routes `#biography` and `#biography/<aggregate>/<aggregate_id>`.
+- Produces: hash routes `#biography` and
+  `#biography/<consumer>/<aggregate>/<aggregate_id>`; the original owner-less
+  detail route remains a compatibility fallback.
 
-- [ ] Add failing artifact assertions for the Biography nav, finder, timeline, and deep-link route.
-- [ ] Run the artifact test and verify the missing-markup failure.
-- [ ] Add a compact finder with search, pagination, canonical name, ID, touch count, latest version, last operation, and last-touch time.
-- [ ] Add a timeline detail with version, operation, fact, command, and trace controls; keep the aggregate name and ID visible while scrolling.
-- [ ] Make consumer changes refresh the current Biography view without leaking another consumer's identity.
-- [ ] Re-run artifact tests and `node --check`.
+- [x] Add failing artifact assertions for the Biography nav, finder, timeline, and deep-link route.
+- [x] Run the artifact test and verify the missing-markup failure.
+- [x] Add a compact finder with search, pagination, canonical name, ID, touch count, latest version, last operation, and last-touch time.
+- [x] Add a timeline detail with version, operation, fact, command, and trace controls; keep the aggregate name and ID visible while scrolling.
+- [x] Make consumer changes refresh the current Biography view without leaking another consumer's identity.
+- [x] Re-run artifact tests and `node --check`.
 
 ### Task 4: Trace-to-Biography Joint
 
@@ -82,12 +84,12 @@
 - Extends each consumer fragment with `touches` rows for the correlation.
 - Adds recorded touch links to matching event-node detail without changing graph topology.
 
-- [ ] Write failing tests proving touches attach by recorded `event_id` and retain consumer provenance.
-- [ ] Run focused tests and verify the missing-fragment behavior.
-- [ ] Read the consumer's `touches` table as a fifth optional fragment surface.
-- [ ] Attach touch metadata to matching recorded fact nodes; do not derive it from event payloads.
-- [ ] Render aggregate links in trace node detail and route them to the owning consumer before opening Biography.
-- [ ] Re-run focused PHP and JS checks.
+- [x] Write failing tests proving touches attach by recorded `event_id` and retain consumer provenance.
+- [x] Run focused tests and verify the missing-fragment behavior.
+- [x] Read the consumer's `touches` table as a fifth optional fragment surface.
+- [x] Attach touch metadata to matching recorded fact nodes; do not derive it from event payloads.
+- [x] Render aggregate links in trace node detail and route them to the owning consumer before opening Biography.
+- [x] Re-run focused PHP and JS checks.
 
 ### Task 5: Distinct Stable Consumer Accents
 
@@ -99,10 +101,10 @@
 - Preserves explicit `#RRGGBB` overrides.
 - Produces a stable curated fallback from the consumer key.
 
-- [ ] Write a failing test proving the four live Tangible consumer keys receive distinct fallback accents.
-- [ ] Run the test and verify the current LMS/Datastream collision.
-- [ ] Replace the low-bit CRC palette selection with a stable SHA-256-derived selection over an expanded curated palette.
-- [ ] Re-run the test and verify explicit overrides remain unchanged.
+- [x] Write a failing test proving the four live Tangible consumer keys receive distinct fallback accents.
+- [x] Run the test and verify the current LMS/Datastream collision.
+- [x] Replace the low-bit CRC palette selection with a stable SHA-256-derived selection over an expanded curated palette.
+- [x] Re-run the test and verify explicit overrides remain unchanged.
 
 ### Task 6: End-to-End Verification
 

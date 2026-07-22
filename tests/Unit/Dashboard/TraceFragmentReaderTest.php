@@ -33,6 +33,12 @@ final class TraceFragmentReaderTest extends TestCase
                 'created_at' => '2026-07-22 10:00:01', 'updated_at' => '2026-07-22 10:00:01',
             ]],
             [],
+            [[
+                'id' => '12', 'aggregate' => 'lms.learning_journey', 'aggregate_id' => 'journey-7',
+                'op' => 'updated', 'version' => '4', 'event_name' => 'course_completed',
+                'event_id' => 'evt-1', 'command_id' => 'cmd-1', 'correlation_id' => 'corr',
+                'occurred_at' => '2026-07-22 10:00:01',
+            ]],
         ];
         $consumer = new ConsumerDefinition(
             'lms',
@@ -51,16 +57,19 @@ final class TraceFragmentReaderTest extends TestCase
             'ghost' => false,
         ], $fragment['consumer']);
         self::assertSame('evt-1', $fragment['processes'][0]['ignited_by_event_id']);
-        self::assertCount(4, $db->prepared);
+        self::assertSame('lms.learning_journey', $fragment['touches'][0]['aggregate']);
+        self::assertSame('evt-1', $fragment['touches'][0]['event_id']);
+        self::assertCount(5, $db->prepared);
         self::assertStringContainsString('wp_test_long_processes', $db->prepared[2]['sql']);
-        self::assertSame(['corr'], $db->prepared[3]['args']);
+        self::assertStringContainsString('wp_test_touches', $db->prepared[4]['sql']);
+        self::assertSame(['corr'], $db->prepared[4]['args']);
     }
 
     public function test_it_reports_and_skips_a_missing_consumer_table(): void
     {
         $db = new ScriptedDatabase();
         $db->missingTables = ['wp_test_behaviour_workflows'];
-        $db->resultSets = [[], [], []];
+        $db->resultSets = [[], [], [], []];
         $consumer = new ConsumerDefinition(
             'lms',
             'Learning',
@@ -72,6 +81,6 @@ final class TraceFragmentReaderTest extends TestCase
         self::assertSame([], $fragment['workflows']);
         self::assertSame('missing_table', $fragment['warnings'][0]['code']);
         self::assertSame('behaviour_workflows', $fragment['warnings'][0]['table']);
-        self::assertCount(3, $db->prepared);
+        self::assertCount(4, $db->prepared);
     }
 }

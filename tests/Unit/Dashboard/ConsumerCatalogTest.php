@@ -58,4 +58,20 @@ final class ConsumerCatalogTest extends TestCase
         self::assertSame($first->accent, $again->accent);
         self::assertSame($first->accent, $unsafe->accent);
     }
+
+    public function test_live_tangible_consumers_receive_distinct_stable_fallback_accents(): void
+    {
+        $resolver = static fn (): FakeDDDConfig => new FakeDDDConfig();
+        $keys = ['tangible_lms', 'tangible_quiz', 'tgbl_cred', 'tangible_datastream'];
+        $accents = array_map(
+            static fn (string $key): string => (new \TangibleDDD\WordPress\Admin\Dashboard\ConsumerDefinition(
+                $key,
+                $key,
+                $resolver,
+            ))->accent,
+            $keys,
+        );
+
+        self::assertCount(count($keys), array_unique($accents), implode(', ', $accents));
+    }
 }

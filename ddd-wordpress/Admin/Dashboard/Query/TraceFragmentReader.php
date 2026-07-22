@@ -29,6 +29,7 @@ final class TraceFragmentReader
             'events' => [],
             'processes' => [],
             'workflows' => [],
+            'touches' => [],
             'warnings' => [],
         ];
         $config = $this->consumer->config();
@@ -62,6 +63,12 @@ final class TraceFragmentReader
                 'sql' => 'SELECT id,ref_id,ref_type,root_workflow_id,behaviour_configs,behaviour_results,'
                     . 'current_idx,current_phase,is_complete,is_failed,created_at '
                     . 'FROM `%s` WHERE correlation_id=%%s ORDER BY id ASC',
+            ],
+            'touches' => [
+                'table' => 'touches',
+                'sql' => 'SELECT id,aggregate,aggregate_id,op,version,event_name,event_id,command_id,'
+                    . 'correlation_id,occurred_at FROM `%s` WHERE correlation_id=%%s '
+                    . 'ORDER BY occurred_at ASC,version ASC,id ASC',
             ],
         ];
 

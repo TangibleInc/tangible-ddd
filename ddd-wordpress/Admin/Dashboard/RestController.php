@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\WordPress\Admin\Dashboard;
 
+use TangibleDDD\WordPress\Admin\Dashboard\Query\BiographyQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\CommandAuditQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\DeadLetterQuery;
 use TangibleDDD\WordPress\Admin\Dashboard\Query\MetricsQuery;
@@ -29,6 +30,8 @@ final class RestController
         $this->register('/audit', 'GET', [$this, 'audit']);
         $this->register('/trace/(?P<corr>[A-Za-z0-9\-]+)', 'GET', [$this, 'trace']);
         $this->register('/traces', 'GET', [$this, 'traces']);
+        $this->register('/biographies', 'GET', [$this, 'biographies']);
+        $this->register('/biography', 'GET', [$this, 'biography']);
         $this->register('/overview', 'GET', [$this, 'overview']);
         $this->register('/processes', 'GET', [$this, 'processes']);
         $this->register('/workflows', 'GET', [$this, 'workflows']);
@@ -77,6 +80,39 @@ final class RestController
             return $this->consumerError($consumer);
         }
         return rest_ensure_response((new TracesQuery($config, $this->db))->recent());
+    }
+
+    public function biographies(\WP_REST_Request $request): mixed
+    {
+        $consumer = $this->consumer($request);
+        $config = $this->consumers->config($consumer);
+        if ($config === null) {
+            return $this->consumerError($consumer);
+        }
+        return rest_ensure_response((new BiographyQuery($config, $this->db))->recent([
+            'search' => $request->get_param('search'),
+            'page' => $request->get_param('page'),
+            'per_page' => $request->get_param('per_page'),
+        ]));
+    }
+
+    public function biography(\WP_REST_Request $request): mixed
+    {
+        $consumer = $this->consumer($request);
+        $config = $this->consumers->config($consumer);
+        if ($config === null) {
+            return $this->consumerError($consumer);
+        }
+        $aggregate = trim((string) $request->get_param('aggregate'));
+        $aggregateId = trim((string) $request->get_param('aggregate_id'));
+        if ($aggregate === '' || $aggregateId === '') {
+            return new \WP_Error(
+                'tddd_bad_biography',
+                'aggregate and aggregate_id are required',
+                ['status' => 400],
+            );
+        }
+        return rest_ensure_response((new BiographyQuery($config, $this->db))->read($aggregate, $aggregateId));
     }
 
     public function overview(\WP_REST_Request $request): mixed

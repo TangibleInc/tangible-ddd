@@ -51,9 +51,10 @@ bootstrap, migration, and deployment contract.
 - Long-process definitions are compiled into `LongProcessCatalog`, so dumped
   production containers have the same process discovery as development
   containers.
-- Correlation and causation metadata survive cross-plugin handoffs. The current
-  trace lens reads one selected consumer; the v2 scope uses those records to
-  stitch a unified trace without a shared write table.
+- Correlation and causation metadata survive cross-plugin handoffs. Trace
+  discovery remains consumer-scoped, but opening an exact correlation gathers
+  every registered consumer and stitches their recorded fragments without a
+  shared write table.
 - Declared aggregate touches create a rebuildable Biography read model without
   making the touches table a write-side authority.
 
@@ -92,8 +93,11 @@ allows the v2 unified trace to be assembled without a shared write table.
 
 The winning framework copy registers **Tangible DDD** at the
 `tangible-dddash` admin page. The dashboard discovers top-level consumers and
-reads each consumer's own audit, outbox, process, workflow, and trace data. Its
-live view uses WordPress Heartbeat to reveal new trace pieces as workers finish.
+reads each consumer's own audit, outbox, process, workflow, touch, and trace
+data. Exact traces are unified across participating consumers and retain
+consumer provenance; Biography remains scoped to the selected aggregate owner.
+Its live view uses WordPress Heartbeat to reveal new trace pieces as workers
+finish.
 
 ## Documentation
 

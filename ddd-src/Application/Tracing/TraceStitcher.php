@@ -73,6 +73,24 @@ final class TraceStitcher
                 $workflows[] = $workflow;
             }
 
+            foreach (($fragment['touches'] ?? []) as $touch) {
+                $eventId = $this->nullableString($touch['event_id'] ?? null);
+                $commandId = $this->nullableString($touch['command_id'] ?? null);
+                $target = $eventId !== null ? $this->uid($key, 'e', $eventId) : null;
+                if ($target === null || ! isset($nodes[$target])) {
+                    $target = $commandId !== null ? ($commands[$key][$commandId] ?? null) : null;
+                }
+                if ($target === null || ! isset($nodes[$target])) {
+                    continue;
+                }
+                $touch['id'] = (int) ($touch['id'] ?? 0);
+                $touch['version'] = (int) ($touch['version'] ?? 0);
+                $touch['consumer'] = $key;
+                $touch['consumer_label'] = $consumer['label'];
+                $touch['accent'] = $consumer['accent'];
+                $nodes[$target]['touches'][] = $touch;
+            }
+
             if ($hasEvidence) {
                 $participants[$key] = $consumer;
             }
@@ -98,12 +116,16 @@ final class TraceStitcher
             } elseif ($node['kind'] === 'command' && $node['causation_id'] !== null) {
                 $causeType = $node['causation_type'];
                 $causeId = $node['causation_id'];
-                $candidates = match ($causeType) {
-                    'integration_event' => $events[$causeId] ?? [],
-                    'long_process' => $processes['*'][$causeId] ?? [],
-                    'command' => $commands['*'][$causeId] ?? [],
-                    default => [],
-                };
+                if ($causeType === 'long_process') {
+                    $local = $processes[$node['consumer']][$causeId] ?? null;
+                    $candidates = $local !== null ? [$local] : ($processes['*'][$causeId] ?? []);
+                } else {
+                    $candidates = match ($causeType) {
+                        'integration_event' => $events[$causeId] ?? [],
+                        'command' => $commands['*'][$causeId] ?? [],
+                        default => [],
+                    };
+                }
             }
 
             if ($causeId === null) {

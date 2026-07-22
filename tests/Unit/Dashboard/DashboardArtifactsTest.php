@@ -60,6 +60,12 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('id="tddd-view-flow"', $template);
         self::assertStringContainsString('id="tddd-view-audit"', $template);
         self::assertStringContainsString('id="tddd-view-trace"', $template);
+        self::assertStringContainsString('data-view="biography"', $template);
+        self::assertStringContainsString('id="tddd-view-biography"', $template);
+        self::assertStringContainsString('id="tddd-biography-list"', $template);
+        self::assertStringContainsString('id="tddd-biography-detail"', $template);
+        self::assertStringContainsString('id="tddd-biography-search"', $template);
+        self::assertStringContainsString('id="tddd-drawer-label"', $template);
         self::assertStringContainsString('id="tddd-view-proc"', $template);
         self::assertStringContainsString('id="tddd-view-tables"', $template);
         self::assertStringContainsString('.tddd-root{', $styles);
@@ -68,6 +74,26 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('trace-participant', $script);
         self::assertStringContainsString('cross-handoff', $script);
         self::assertStringContainsString('openTraceNode', $script);
+        self::assertStringContainsString('trace-biography-link', $script);
+        self::assertStringContainsString("setDrawerLabel(n.kind)", $script);
+        self::assertStringContainsString("setDrawerLabel('biography entry')", $script);
+        self::assertStringContainsString('style="--owner-accent:', $script);
+        self::assertStringContainsString('function showBiography', $script);
+        self::assertStringContainsString('function biographyHash(consumer,aggregate,aggregateId)', $script);
+        self::assertStringContainsString('biographyOwnedMatch', $script);
+        self::assertStringContainsString('biographyHash(biographyConsumer,aggregate,aggregateId)', $script);
+        self::assertStringContainsString("R.rest+'/biographies?", $script);
+        self::assertStringContainsString("R.rest+'/biography?", $script);
+        self::assertStringContainsString("return 'biography/", $script);
+        self::assertStringContainsString('biography-entry', $styles);
+        self::assertStringContainsString('tabindex="0"', $script);
+        self::assertStringContainsString("e.key!=='Enter'&&e.key!==' '", $script);
+        self::assertStringContainsString("requested.get('consumer')", $script);
+        self::assertStringContainsString("requested.get('correlation')", $script);
         self::assertStringContainsString('--owner-accent', $styles);
+        self::assertStringContainsString('.tddd-root .cz{display:flex;min-width:0;flex:1;overflow-x:auto}', $styles);
+        self::assertStringContainsString('.tddd-root .trace-legend{flex-wrap:wrap;gap:7px 10px}', $styles);
+        self::assertStringContainsString('.tddd-root .ruler{grid-template-columns:250px 1fr}', $styles);
+        self::assertStringContainsString('.tddd-root .wf-in-trace .wft-head{flex-wrap:wrap}', $styles);
     }
 }

@@ -91,6 +91,30 @@ final class TraceStitcherTest extends TestCase
         self::assertSame(['lms:p:7', 'quiz:p:7'], $trace['warnings'][0]['candidates']);
     }
 
+    public function test_same_consumer_process_wins_over_a_foreign_id_collision(): void
+    {
+        $trace = (new TraceStitcher())->stitch([
+            $this->fragment('lms', [
+                $this->command(
+                    'cmd-lms',
+                    'Lms\\ContinueJourney',
+                    '7',
+                    'long_process',
+                    '2026-07-22 10:00:01',
+                ),
+            ], [], [
+                $this->process(7, 'Lms\\CompletionProcess', '2026-07-22 10:00:00'),
+            ]),
+            $this->fragment('quiz', [], [], [
+                $this->process(7, 'Quiz\\AttemptProcess', '2026-07-22 10:00:00'),
+            ]),
+        ]);
+
+        self::assertSame('lms:p:7', $trace['nodes']['lms:c:cmd-lms']['parent']);
+        self::assertFalse($trace['nodes']['lms:c:cmd-lms']['cross_consumer']);
+        self::assertSame([], $trace['warnings']);
+    }
+
     public function test_it_resolves_a_unique_process_to_command_handoff_across_consumers(): void
     {
         $trace = (new TraceStitcher())->stitch([
@@ -113,10 +137,33 @@ final class TraceStitcherTest extends TestCase
         self::assertSame([], $trace['warnings']);
     }
 
+    public function test_it_attaches_recorded_aggregate_touches_to_the_matching_fact_node(): void
+    {
+        $trace = (new TraceStitcher())->stitch([
+            $this->fragment('lms', [
+                $this->command('cmd-lms', 'Lms\\CompleteCourse', null, null, '2026-07-22 10:00:00'),
+            ], [
+                $this->event('evt-completed', 'Lms\\CourseCompleted', 'cmd-lms', '2026-07-22 10:00:01'),
+            ], [], [
+                $this->touch('evt-completed', 'cmd-lms'),
+            ]),
+        ]);
+
+        $touches = $trace['nodes']['lms:e:evt-completed']['touches'];
+        self::assertCount(1, $touches);
+        self::assertSame('lms.learning_journey', $touches[0]['aggregate']);
+        self::assertSame('journey-42', $touches[0]['aggregate_id']);
+        self::assertSame(4, $touches[0]['version']);
+        self::assertSame('lms', $touches[0]['consumer']);
+        self::assertSame('#2271b1', $touches[0]['accent']);
+        self::assertArrayNotHasKey('touches', $trace['nodes']['lms:c:cmd-lms']);
+    }
+
     /**
      * @param list<array<string, mixed>> $commands
      * @param list<array<string, mixed>> $events
      * @param list<array<string, mixed>> $processes
+     * @param list<array<string, mixed>> $touches
      * @return array<string, mixed>
      */
     private function fragment(
@@ -124,6 +171,7 @@ final class TraceStitcherTest extends TestCase
         array $commands = [],
         array $events = [],
         array $processes = [],
+        array $touches = [],
     ): array {
         return [
             'consumer' => [
@@ -136,6 +184,7 @@ final class TraceStitcherTest extends TestCase
             'events' => $events,
             'processes' => $processes,
             'workflows' => [],
+            'touches' => $touches,
         ];
     }
 
@@ -191,6 +240,23 @@ final class TraceStitcherTest extends TestCase
             'ignited_by_event_id' => $ignitedBy,
             'created_at' => $createdAt,
             'updated_at' => $createdAt,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function touch(string $eventId, string $commandId): array
+    {
+        return [
+            'id' => '12',
+            'aggregate' => 'lms.learning_journey',
+            'aggregate_id' => 'journey-42',
+            'op' => 'updated',
+            'version' => '4',
+            'event_name' => 'course_completed',
+            'event_id' => $eventId,
+            'command_id' => $commandId,
+            'correlation_id' => 'corr-mega',
+            'occurred_at' => '2026-07-22 10:00:01',
         ];
     }
 }

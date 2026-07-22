@@ -35,7 +35,10 @@ final class UnifiedTraceQueryTest extends TestCase
             [$this->event('evt-completed', 'Lms\\CourseCompleted', 'cmd-lms', '2026-07-22 10:00:01')],
             [],
             [],
+            [],
             [$this->command('cmd-cred', 'Cred\\IssueCredential', 'evt-completed', 'integration_event', '2026-07-22 10:00:02')],
+            [],
+            [],
             [],
             [],
             [],
@@ -52,7 +55,7 @@ final class UnifiedTraceQueryTest extends TestCase
         self::assertTrue($trace['nodes'][2]['cross_consumer']);
         self::assertSame(['lms', 'cred'], array_keys($trace['participants']));
         self::assertSame('Learning', $trace['participants']['lms']['label']);
-        self::assertCount(13, $db->prepared);
+        self::assertCount(16, $db->prepared);
     }
 
     /** @return array<string, mixed> */
