@@ -66,6 +66,15 @@ require_once $_datastream_ref . '/src/Infra/Rules/RuleNodeRegistrar.php';
 // Boot the DI container (defines \Tangible\Datastream\WordPress\DI\di()).
 require_once $_datastream_ref . '/includes/di/index.php';
 
+// Announce datastream to the ConsumerRegistry, exactly as the plugin's real
+// boot() does first thing. Since the self-handling conversion, consumer
+// commands route via ConsumerRegistry::owner_of() — without this, any
+// dispatch throws NoConsumerOwnsClass ("Known namespace roots: (none)").
+\TangibleDDD\Infra\Consumers\ConsumerRegistry::add(
+    \Tangible\Datastream\WordPress\DI\di()->get(\Tangible\Datastream\Infra\DatastreamConfig::class),
+    static fn() => \Tangible\Datastream\WordPress\DI\di()
+);
+
 unset($_datastream_ref);
 
 // ── Autoload integration test base classes ───────────────────────────────────

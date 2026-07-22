@@ -40,7 +40,7 @@
         }
     },
     "scripts": {
-        "ref:datastream": "test -d .reference/tangible-datastream || git clone --branch v3-ddd git@github.com:TangibleInc/tangible-datastream.git .reference/tangible-datastream || echo '[ddd] datastream v3 reference clone skipped (no git/SSH access)'",
+        "ref:datastream": "test -d .reference/tangible-datastream || git clone --branch master git@github.com:TangibleInc/tangible-datastream.git .reference/tangible-datastream || echo '[ddd] datastream v3 reference clone skipped (no git/SSH access)'",
         "post-install-cmd": [
             "@ref:datastream"
         ],
