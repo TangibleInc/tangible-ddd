@@ -250,6 +250,58 @@ final class TraceTimelinePresenterTest extends TestCase
         );
     }
 
+    public function test_a_causation_cycle_does_not_orphan_the_branch_or_scramble_row_order(): void
+    {
+        // The mega-trace bug shape: the process claims it caused Prepare, but
+        // the process was ignited by the fact Prepare raised — a cycle. The
+        // branch is unreachable from any real root; the presenter must still
+        // render it as ONE coherent subtree (children below parents), not as
+        // insertion-ordered fake roots.
+        $graph = (new TraceStitcher())->stitch([
+            [
+                // Cred fragment loads FIRST — its subscriber must NOT render
+                // above the quiz branch that raised its cause.
+                'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#187c65', 'ghost' => false],
+                'commands' => [
+                    $this->command('record-competency', 'Cred\\RecordProvisionalCompetency', 'evt-graded', 'integration_event', '2026-07-22 10:03:50', 5),
+                ],
+                'events' => [], 'processes' => [], 'workflows' => [],
+            ],
+            [
+                'consumer' => ['key' => 'quiz', 'label' => 'Quiz', 'accent' => '#7a3e9d', 'ghost' => false],
+                'commands' => [
+                    $this->command('prepare', 'Quiz\\PrepareDiagnosticAssessment', '12', 'long_process', '2026-07-22 10:01:03', 20),
+                    $this->command('grade', 'Quiz\\GradeDiagnosticAssessment', '12', 'long_process', '2026-07-22 10:02:48', 30),
+                ],
+                'events' => [
+                    $this->event('evt-prepared', 'prepare', '2026-07-22 10:01:03'),
+                    $this->event('evt-graded', 'grade', '2026-07-22 10:02:48'),
+                ],
+                'processes' => [[
+                    'id' => '12', 'process_class' => 'Quiz\\AdaptiveAssessmentProcess',
+                    'status' => 'running', 'step_name' => 'grade', 'waiting_for' => null,
+                    'ignited_by_event_id' => 'evt-prepared',
+                    'created_at' => '2026-07-22 10:01:33', 'updated_at' => '2026-07-22 10:02:48',
+                ]],
+                'workflows' => [],
+            ],
+        ]);
+
+        $trace = (new TraceTimelinePresenter())->present('corr-cycle', $graph);
+
+        // One coherent, ts-anchored subtree: the earliest member tops the
+        // component (the cycle's back-edge is the one unavoidable inversion),
+        // and the cross-consumer subscriber renders BELOW the act that raised
+        // its cause — never as an insertion-ordered fake root.
+        self::assertSame(
+            ['quiz:c:prepare', 'quiz:p:12', 'quiz:c:grade', 'cred:c:record-competency'],
+            array_column($trace['nodes'], 'uid'),
+        );
+        self::assertSame([0, 1, 2, 3], array_column($trace['nodes'], 'depth'));
+        $subscriber = $trace['nodes'][3];
+        self::assertSame('quiz:c:grade', $subscriber['parent']);
+    }
+
     /** @return array<string, mixed> */
     private function command(
         string $id,

@@ -115,10 +115,38 @@ final class TraceTimelinePresenter
         foreach ($roots as $root) {
             $walk($root, 0, null, null);
         }
-        foreach (array_keys($nodes) as $uid) {
-            if (! isset($visited[$uid])) {
-                $walk($uid, 0, null, null);
+        // Unreachable components: a causation CYCLE (e.g. a process "causing"
+        // the command whose fact ignited it) leaves a whole branch with no
+        // path from any root. Walking leftovers in insertion order would emit
+        // children before their parents and steal them from the branch. So:
+        // take leftovers in timestamp order, CLIMB each one's parent chain to
+        // the top of its component (stopping at a missing, visited, or
+        // cycle-repeating parent), and walk the component from there — one
+        // coherent subtree, parents above children.
+        $leftovers = array_filter(array_keys($nodes), static fn (string $uid): bool => ! isset($visited[$uid]));
+        usort($leftovers, $byTimestamp);
+        foreach ($leftovers as $uid) {
+            if (isset($visited[$uid])) {
+                continue;
             }
+            $top = $uid;
+            $climbed = [$top => true];
+            while (true) {
+                $parent = $nodes[$top]['parent'] ?? null;
+                if (! is_string($parent) || ! isset($nodes[$parent]) || isset($visited[$parent])) {
+                    break;
+                }
+                if (isset($climbed[$parent])) {
+                    // Cycle closed: no true top exists. The ts-earliest member
+                    // wins — that's the starting node, because leftovers are
+                    // walked in timestamp order.
+                    $top = $uid;
+                    break;
+                }
+                $top = $parent;
+                $climbed[$top] = true;
+            }
+            $walk($top, 0, null, null);
         }
 
         $minTimestamp = PHP_INT_MAX;
