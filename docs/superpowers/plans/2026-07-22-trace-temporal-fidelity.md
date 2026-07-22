@@ -190,7 +190,7 @@ Expected: all 568 tests PASS, JavaScript parses, and no whitespace errors are re
 
 Start a new scenario from `https://anything.ddev.site/wp-admin/tools.php?page=tddd-mega-trace`. Verify its newly persisted audit rows include the six selected workload bands. Open its trace, confirm cumulative `+1m`, `+2m`, and later labels update through Heartbeat, then horizontally scroll at desktop and narrow widths to confirm bars and gap marks disappear beneath the sticky label column.
 
-- [ ] **Step 5: Commit, push, and verify CI**
+- [x] **Step 5: Commit, push, and verify CI**
 
 ```bash
 git add ddd-wordpress tests/Unit/Dashboard docs/superpowers/plans/2026-07-22-trace-temporal-fidelity.md
