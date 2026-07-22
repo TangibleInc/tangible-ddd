@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Application\EventHandlers;
 
+use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Domain\Events\IDomainEvent;
 use TangibleDDD\Domain\Events\IEventFromArgs;
 
@@ -35,7 +36,19 @@ abstract class WordPressActionHandler implements IEventHandler {
 
     add_action( $domain_action, function ( ...$params ) {
       $event = $this->create_domain_event( $params );
-      $this->handle( $event );
+
+      // Reactions ledger: time the run and record against the frame the
+      // dispatcher opened — $event here is a RECONSTRUCTION, not the
+      // published instance, so attribution goes through the stack. A
+      // throwing handler is recorded with its error and RETHROWN.
+      $start = microtime( true );
+      try {
+        $this->handle( $event );
+      } catch ( \Throwable $error ) {
+        Reactions::record( static::class, (int) round( ( microtime( true ) - $start ) * 1000 ), $error );
+        throw $error;
+      }
+      Reactions::record( static::class, (int) round( ( microtime( true ) - $start ) * 1000 ) );
     }, 10, $this->get_number_of_args() );
   }
 }

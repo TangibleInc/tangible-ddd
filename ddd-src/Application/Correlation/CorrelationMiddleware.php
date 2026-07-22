@@ -4,6 +4,7 @@ namespace TangibleDDD\Application\Correlation;
 
 use League\Tactician\Middleware;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
+use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
@@ -96,7 +97,7 @@ final class CorrelationMiddleware implements Middleware {
           'status' => $status,
           'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
           'peak_memory_bytes' => memory_get_peak_usage(true),
-          'events' => array_map(static fn ($e) => ['name' => $e::name()], $this->events->published()),
+          'events' => array_map(static fn ($e) => ['name' => $e::name(), 'reactions' => Reactions::of($e)], $this->events->published()),
           'error' => $error,
         ]);
       }
