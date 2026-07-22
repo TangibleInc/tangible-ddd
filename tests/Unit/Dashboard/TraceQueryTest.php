@@ -39,6 +39,7 @@ final class TraceQueryTest extends TestCase
                 'current_idx' => '1', 'current_phase' => '2', 'is_complete' => '0', 'is_failed' => '0',
                 'created_at' => '2026-07-19 10:00:00',
             ]],
+            [],
         ];
 
         $trace = (new TraceQuery(new FakeDDDConfig(), $db))->assemble('corr');
@@ -50,12 +51,13 @@ final class TraceQueryTest extends TestCase
         // V1 rounds each command's non-zero duration up to a wall-clock second.
         self::assertSame(6000, $trace['total_ms']);
         self::assertSame(['command', 'event', 'command'], array_column($trace['nodes'], 'kind'));
-        self::assertSame('c:cmd-root', $trace['nodes'][1]['parent']);
-        self::assertSame('e:evt-1', $trace['nodes'][2]['parent']);
+        self::assertSame('test:c:cmd-root', $trace['nodes'][1]['parent']);
+        self::assertSame('test:e:evt-1', $trace['nodes'][2]['parent']);
         self::assertSame(5, $trace['nodes'][2]['gap_before']);
         self::assertSame(['name' => 'mail'], $trace['workflows'][0]['behaviour_configs'][0]);
         self::assertSame(8, $trace['workflows'][0]['id']);
-        self::assertCount(4, $db->prepared);
+        self::assertSame(['test'], array_keys($trace['participants']));
+        self::assertCount(5, $db->prepared);
         self::assertSame(['corr'], $db->prepared[0]['args']);
     }
 }

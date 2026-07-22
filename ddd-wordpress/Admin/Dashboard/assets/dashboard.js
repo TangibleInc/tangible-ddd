@@ -5,9 +5,14 @@
       var SPAN_STEPS = ['1h','3h','6h','12h','1d','2d','3d','5d','7d','10d','14d','21d','30d'];
       var BACK_STEPS = ['now','1h','6h','1d','3d','1w','2w','1mo','3mo'];
       var keys = Object.keys(R.consumers);
+      var requested = new URLSearchParams(window.location.search);
+      var requestedConsumer = requested.get('consumer');
+      var requestedCorrelation = requested.get('correlation');
       // Persist the selected consumer across reloads (it used to reset to keys[0]).
       var savedConsumer = (function(){ try { return localStorage.getItem('tddd_consumer'); } catch(e){ return null; } })();
-      var initialConsumer = (savedConsumer && keys.indexOf(savedConsumer) !== -1) ? savedConsumer : (keys[0] || 'datastream');
+      var initialConsumer = (requestedConsumer && keys.indexOf(requestedConsumer) !== -1)
+        ? requestedConsumer
+        : ((savedConsumer && keys.indexOf(savedConsumer) !== -1) ? savedConsumer : (keys[0] || 'datastream'));
       var state = { consumer: initialConsumer, status:'', source:'', search:'', from:'', to:'', orderby:'started_at', order:'desc', page:1 };
       var tablesState = { status:'', from:'', to:'' };
       var $ = function(s){ return document.querySelector(s); };
@@ -101,7 +106,7 @@
       var st=$('#tddd-search'), t;
       st.addEventListener('input', function(){ clearTimeout(t); t=setTimeout(function(){ state.search=st.value.trim(); state.page=1; load(); }, 280); });
 
-      var drawer=$('#tddd-drawer'), dbody=$('#tddd-drawer-body');
+      var drawer=$('#tddd-drawer'), dbody=$('#tddd-drawer-body'), drawerLabel=$('#tddd-drawer-label');
       rowsEl.addEventListener('click', function(e){
         var cc=e.target.closest('.corrcell'); if(cc){ e.stopPropagation(); showTrace(cc.dataset.corr); return; }
         var tr=e.target.closest('tr[data-i]'); if(!tr)return; openDrawer(lastRows[+tr.dataset.i]);
@@ -109,7 +114,9 @@
       drawer.addEventListener('click', function(e){ if(e.target.hasAttribute('data-close')) closeDrawer(); });
       document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeDrawer(); });
       function j(o){ return o==null ? '<span class="idm">&mdash;</span>' : '<pre>'+esc(JSON.stringify(o,null,2))+'</pre>'; }
+      function setDrawerLabel(label){ drawerLabel.textContent=label; }
       function openDrawer(r){
+        setDrawerLabel('command');
         dbody.innerHTML='<h3>'+esc(r.command_name)+'</h3>'
           +'<dl class="kv">'
           +'<dt>command_id</dt><dd>'+esc(r.command_id)+'</dd>'
@@ -132,16 +139,25 @@
 
       // ── views / nav ──
       var tablesEl=$('#tddd-view-tables');
-      var views={ flow:$('#tddd-view-flow'), audit:$('#tddd-view-audit'), trace:$('#tddd-view-trace'), proc:$('#tddd-view-proc'), dlq:tablesEl, outbox:tablesEl };
+      var views={ flow:$('#tddd-view-flow'), audit:$('#tddd-view-audit'), trace:$('#tddd-view-trace'), biography:$('#tddd-view-biography'), proc:$('#tddd-view-proc'), dlq:tablesEl, outbox:tablesEl };
       var navBtns=document.querySelectorAll('#tddd-nav button');
       var traceRows=$('#tddd-trace-rows'), traceHead=$('#tddd-trace-head'), ruler=$('#tddd-ruler'), traceWf=$('#tddd-trace-workflows');
       var traceRecent=$('#tddd-trace-recent'), traceOpen=$('#tddd-trace-open');
       var trcList=$('#tddd-trc-list'), trcNewbar=$('#tddd-trc-newbar');
       var typeColor={command:'#6359D6',workflow:'#7C4DE0',event:'#2E7D8A',process:'#507F06'};
-      var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0;
+      var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0, heartbeatSpeed=60;
+      var biographyState={search:'',page:1,per_page:25}, biographyRows=[], currentBiography=null;
       // recent-traces state
       var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={};
       function fmtDur(ms){ ms=Math.round(ms); if(ms<1000)return ms+'ms'; return (ms/1000).toFixed(1)+'s'; }
+      function fmtTraceSpan(s){
+        s=Math.max(0,Math.floor(Number(s)||0));
+        if(s===0) return '0s';
+        var units=[['d',86400],['h',3600],['m',60],['s',1]], parts=[];
+        units.forEach(function(u){ var n=Math.floor(s/u[1]); if(n>0&&parts.length<2){ parts.push(n+u[0]); s-=n*u[1]; } });
+        return parts.join(' ');
+      }
+      function fmtTraceTime(s){ return '+'+fmtTraceSpan(s); }
       function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 
       // ── trace recent-list helpers ──
@@ -309,10 +325,11 @@
 
       function showView(name){
         only(name);
-        if(name!=='flow' && window.wp && wp.heartbeat){ wp.heartbeat.interval('standard'); }
+        if(name!=='flow' && window.wp && wp.heartbeat){ wp.heartbeat.interval(60); }
         if(name==='audit'){ if(!auditLoaded){ auditLoaded=true; load(); } }
-        else if(name==='flow'){ loadFlow(); startLive(); }
+        else if(name==='flow'){ loadFlow(); startLive('fast'); }
         else if(name==='proc'){ loadProc(); }
+        else if(name==='biography'){ currentBiography=null; showBiographyRecent(); }
         else if(name==='dlq'){ tablesSub='dlq'; tablesPage=1; loadTables(); }
         else if(name==='outbox'){ tablesSub='outbox'; tablesPage=1; loadTables(); }
         else if(name==='trace' && !currentCorr){ showTraceRecent(); }
@@ -410,7 +427,12 @@
           })
           .catch(function(e){ showToast('Action failed: '+esc(e.message), true); });
       }
-      function refreshActive(){ if(!views.flow.hidden){ loadFlow(); } else if(!tablesEl.hidden){ loadTables(); } else if(!views.audit.hidden){ load(); } }
+      function refreshActive(){
+        if(!views.flow.hidden){ loadFlow(); }
+        else if(!tablesEl.hidden){ loadTables(); }
+        else if(!views.audit.hidden){ load(); }
+        else if(!views.biography.hidden){ currentBiography=null; showBiographyRecent(); }
+      }
 
       // ── tables (DLQ / Outbox browser) ──
       var tablesSub='dlq', tablesPage=1;
@@ -561,6 +583,7 @@
 
       // ── recent-traces list ──
       function showTraceRecent(){
+        startLive(60);
         traceRecent.hidden=false; traceOpen.hidden=true;
         _pendingNewCorrs=[];
         if(trcNewbar){ trcNewbar.classList.remove('visible'); trcNewbar.textContent=''; }
@@ -678,7 +701,7 @@
         currentCorr=corr; closeDrawer(); only('trace');
         traceRecent.hidden=true; traceOpen.hidden=false;
         _prevTraceNodes={};
-        if(window.wp && wp.heartbeat){ wp.heartbeat.interval('standard'); }
+        startLive(60);
         if(location.hash!=='#trace/'+corr) location.hash='trace/'+corr;
         traceHead.innerHTML='<div class="corr">'+esc(corr)+'</div><div class="meta">loading&hellip;</div>';
         traceRows.innerHTML=''; ruler.innerHTML=''; traceWf.innerHTML='';
@@ -694,14 +717,24 @@
           inProgressNow = !!(d.workflows && d.workflows.some(function(w){ return !w.is_complete && !w.is_failed; }));
         }
         var liveBadge=inProgressNow?'<span class="trace-live-badge">live</span>':'';
+        var participantMap=d.participants||{};
+        var participantKeys=Object.keys(participantMap);
+        var participants=participantKeys.map(function(key){
+          var p=participantMap[key]||{};
+          return '<span class="trace-participant"><i style="background:'+esc(p.accent||'#646970')+'"></i>'
+            +'<b>'+esc(p.label||key)+'</b>'+(p.ghost?'<small>ghost</small>':'')+'</span>';
+        }).join('');
+        var warningCount=(d.warnings||[]).length;
         traceHead.innerHTML='<div class="corr">'+esc(d.correlation_id)+liveBadge+'</div>'
           +'<div class="meta">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
-          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>';
+          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>'
+          +(participants?'<div class="trace-participants">'+participants+'</div>':'')
+          +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
-        ruler.innerHTML='<div class="rt-note">durations to scale &middot; async waits shown as &#8942; gap markers</div>';
+        ruler.innerHTML='<div class="rt-note">durations to scale &middot; sparse gap markers show cumulative elapsed time</div>';
         if(!d.nodes||!d.nodes.length){ traceRows.innerHTML='<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>'; ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
           var maxDur = d.max_dur_ms || 1;
@@ -712,7 +745,11 @@
             var depth=Math.min(n.depth||0,5);
             var statusCls=(n.status==='error'||n.status==='dlq')?(' s-'+n.status):'';
             var dot=typeColor[kind]||'#6359D6';
-            var from=n.parent_label?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b></div>':'';
+            var handoff=n.cross_consumer
+              ? '<span class="cross-handoff" title="handoff from '+esc(n.parent_consumer_label||n.parent_consumer)+' to '+esc(n.consumer_label||n.consumer)+'"><i style="background:'+esc(n.parent_accent||'#646970')+'"></i><b>&rarr;</b><i style="background:'+esc(n.accent||'#646970')+'"></i></span>'
+              : '';
+            var from=n.parent_label?'<div class="sfrom">&#8627; from <b>'+esc(n.parent_label)+'</b>'+handoff+'</div>':'';
+            if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
             var barTxt=''; var latBar='';
             if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
               var ms=n.raw.duration_ms;
@@ -722,11 +759,14 @@
               var latCls=ms>=1000?'slow':(ms>=300?'hot':'');
               latBar='<div class="lat-wrap"><span class="lat-track"><i class="'+latCls+'" style="width:'+pct+'%"></i></span><span class="lat-ms">'+ms+'ms</span></div>';
             }
-            // Async clock-gap marker: a vertical line at the post-gap span's start, labelled with elapsed.
-            if(n.gap_before){ gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span>'+fmtAge(n.gap_before)+'</span></div>'; }
+            // One marker per recorded post-gap node; no empty wall-clock ticks are synthesized.
+            if(n.gap_before){
+              var hiatus=n.gap_before>=300?'<i class="tl-hiatus">'+esc(fmtTraceSpan(n.gap_before))+' gap</i>':'';
+              gaps+='<div class="tl-gap" style="left:'+n.start_pct+'%"><span class="tl-gap-label"><b>'+esc(fmtTraceTime(n.elapsed_s))+'</b>'+hiatus+'</span></div>';
+            }
             var isNew=Object.keys(_prevTraceNodes).length>0 && !_prevTraceNodes[n.uid];
-            return '<div class="srow d'+depth+(n.kind==='command'?' is-cmd':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
-              +'<div class="slabel"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'
+            return '<div class="srow is-node d'+depth+(n.unresolved?' is-unresolved':'')+(isNew?' tddd-new':'')+'" data-uid="'+esc(n.uid)+'">'
+              +'<div class="slabel" style="--owner-accent:'+esc(n.accent||'#646970')+'"><div class="snrow"><span class="sdot" style="background:'+dot+'"></span>'
               +'<span class="sname" title="'+esc(n.name)+'">'+shortName(n.name)+'</span><span class="stype">'+esc(kind)+'</span></div>'+from+latBar+'</div>'
               +'<div class="slane"><div class="sbar k-'+esc(kind)+statusCls+'" style="left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%">'+esc(barTxt)+'</div></div></div>';
           }).join('')
@@ -751,9 +791,10 @@
             return '<div class="wft-step '+s+'"><div class="wsn">'+esc(nm)+'</div><div class="wss">phase '+(i+1)+'</div></div>';
           }).join('');
           var isFork=w.root_workflow_id?(' &middot; fork of #'+w.root_workflow_id):'';
-          return '<div class="wf-in-trace">'
+          return '<div class="wf-in-trace" style="--owner-accent:'+esc(w.accent||'#646970')+'">'
             +'<div class="wft-head">'
             +'<span class="wft-label">workflow in trace</span>'
+            +'<span class="trace-participant"><i style="background:'+esc(w.accent||'#646970')+'"></i><b>'+esc(w.consumer_label||w.consumer)+'</b></span>'
             +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
             +'<span class="wft-badge '+badgeCls+'">'+statusTxt+'</span>'
             +'<span class="wft-meta">wf id #'+w.id+' &middot; idx '+w.current_idx+'/'+configs.length+'</span>'
@@ -771,7 +812,201 @@
             +'</div>';
         }).join('');
       }
-      traceRows.addEventListener('click', function(e){ var row=e.target.closest('.srow.is-cmd'); if(!row)return; var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(n&&n.raw) openDrawer(n.raw); });
+      function openTraceNode(n){
+        var parent=n.parent_label
+          ? esc(n.parent_label)+' <span class="idm">('+esc(n.parent_consumer_label||n.parent_consumer||'unknown')+')</span>'
+          : '&mdash;';
+        var touchLinks=(n.touches||[]).map(function(t){
+          return '<button class="trace-biography-link" style="--owner-accent:'+esc(t.accent||n.accent||'#646970')+'" data-aggregate="'+esc(t.aggregate)+'" data-aggregate-id="'+esc(t.aggregate_id)+'" data-consumer="'+esc(t.consumer||n.consumer)+'">'
+            +'<span>'+esc(t.aggregate)+'</span><b>'+esc(t.aggregate_id)+'</b><i>v'+t.version+' &middot; '+esc(t.op)+'</i></button>';
+        }).join('');
+        setDrawerLabel(n.kind);
+        dbody.innerHTML='<h3>'+esc(n.name)+'</h3>'
+          +'<div class="trace-owner" style="--owner-accent:'+esc(n.accent||'#646970')+'"><i></i><b>'+esc(n.consumer_label||n.consumer)+'</b><span>'+esc(n.consumer)+'</span></div>'
+          +'<dl class="kv">'
+          +'<dt>kind</dt><dd>'+esc(n.kind)+'</dd>'
+          +'<dt>local id</dt><dd>'+esc(n.id)+'</dd>'
+          +'<dt>status</dt><dd>'+esc(n.status||'&mdash;')+'</dd>'
+          +'<dt>parent</dt><dd>'+parent+'</dd>'
+          +'<dt>correlation</dt><dd><span class="corr-link" data-corr="'+esc(currentCorr||'')+'">'+esc(currentCorr||'&mdash;')+'</span></dd>'
+          +'</dl>'
+          +(touchLinks?'<div class="jlbl">aggregate biography</div><div class="trace-biography-links">'+touchLinks+'</div>':'')
+          +'<div class="jlbl">recorded data</div>'+j(n.raw);
+        drawer.hidden=false;
+        var cl=dbody.querySelector('.corr-link');
+        if(cl) cl.addEventListener('click', function(){ showTrace(this.dataset.corr); });
+        dbody.querySelectorAll('.trace-biography-link').forEach(function(link){
+          link.addEventListener('click',function(){ showBiography(this.dataset.aggregate,this.dataset.aggregateId,this.dataset.consumer); });
+        });
+      }
+      traceRows.addEventListener('click', function(e){ var row=e.target.closest('.srow.is-node'); if(!row)return; var n=traceRows._nodes&&traceRows._nodes[row.dataset.uid]; if(n) openTraceNode(n); });
+
+      // ── aggregate biography ──
+      var biographyList=$('#tddd-biography-list'), biographyDetail=$('#tddd-biography-detail');
+      var biographyRowsEl=$('#tddd-biography-rows'), biographyHead=$('#tddd-biography-head');
+      var biographyTimeline=$('#tddd-biography-timeline'), biographyPager=$('#tddd-biography-pager');
+      var biographyCount=$('#tddd-biography-count'), biographyRange=$('#tddd-biography-range');
+
+      function biographyPagerHtml(page,pages){
+        if(pages<=1) return '';
+        var html='<button '+(page<=1?'disabled':'')+' data-bp="'+(page-1)+'">&lsaquo;</button>';
+        for(var p=Math.max(1,page-1);p<=Math.min(pages,page+1);p++){
+          html+='<button '+(p===page?'aria-current="true"':'')+' data-bp="'+p+'">'+p+'</button>';
+        }
+        return html+'<button '+(page>=pages?'disabled':'')+' data-bp="'+(page+1)+'">&rsaquo;</button>';
+      }
+
+      function biographyHash(consumer,aggregate,aggregateId){
+        return 'biography/'+encodeURIComponent(consumer)+'/'+encodeURIComponent(aggregate)+'/'+encodeURIComponent(aggregateId);
+      }
+
+      function showBiographyRecent(){
+        currentBiography=null;
+        only('biography');
+        biographyList.hidden=false;
+        biographyDetail.hidden=true;
+        loadBiographies();
+      }
+
+      function loadBiographies(){
+        biographyRowsEl.innerHTML='<tr><td colspan="6" class="empty">Loading&hellip;</td></tr>';
+        var qs=new URLSearchParams({
+          consumer:state.consumer,
+          search:biographyState.search,
+          page:biographyState.page,
+          per_page:biographyState.per_page
+        });
+        fetch(R.rest+'/biographies?'+qs.toString(),{headers:{'X-WP-Nonce':R.nonce}})
+          .then(function(r){ return r.json(); })
+          .then(renderBiographies)
+          .catch(function(e){ biographyRowsEl.innerHTML='<tr><td colspan="6" class="empty">Error: '+esc(e.message)+'</td></tr>'; });
+      }
+
+      function renderBiographies(d){
+        biographyRows=d.rows||[];
+        if(d.available===false){
+          biographyRowsEl.innerHTML='<tr><td colspan="6" class="empty">Biography data is not available for this consumer.</td></tr>';
+        } else if(!biographyRows.length){
+          biographyRowsEl.innerHTML='<tr><td colspan="6" class="empty">No aggregate touches match.</td></tr>';
+        } else {
+          biographyRowsEl.innerHTML=biographyRows.map(function(r,i){
+            var versions=r.first_version===r.last_version ? ('v'+r.last_version) : ('v'+r.first_version+'&ndash;v'+r.last_version);
+            return '<tr data-bi="'+i+'" tabindex="0">'
+              +'<td><div class="bio-aggregate" title="'+esc(r.aggregate)+'">'+esc(r.aggregate)+'</div></td>'
+              +'<td class="idm">'+esc(r.aggregate_id)+'</td>'
+              +'<td class="idm">'+versions+'</td>'
+              +'<td><span class="bio-count">'+r.touch_count+'</span></td>'
+              +'<td><span class="bio-op op-'+esc(r.last_op)+'">'+esc(r.last_op)+'</span></td>'
+              +'<td class="idm">'+rel(r.last_at)+'</td></tr>';
+          }).join('');
+        }
+        biographyCount.textContent=d.total+' aggregates';
+        var from=d.total?((d.page-1)*d.per_page+1):0, to=Math.min(d.page*d.per_page,d.total);
+        biographyRange.innerHTML=from+'&ndash;'+to+' of '+d.total;
+        biographyPager.innerHTML=biographyPagerHtml(d.page,d.pages);
+      }
+
+      function showBiography(aggregate,aggregateId,ownerConsumer){
+        if(!aggregate||!aggregateId) return;
+        if(ownerConsumer && keys.indexOf(ownerConsumer)!==-1 && ownerConsumer!==state.consumer){
+          state.consumer=ownerConsumer;
+          try{ localStorage.setItem('tddd_consumer',ownerConsumer); }catch(e){}
+          syncConsumers();
+        }
+        if(currentBiography && currentBiography.consumer===state.consumer && currentBiography.aggregate===aggregate && currentBiography.aggregate_id===aggregateId && !views.biography.hidden) return;
+        var biographyConsumer=state.consumer;
+        currentBiography={consumer:biographyConsumer,aggregate:aggregate,aggregate_id:aggregateId};
+        closeDrawer(); only('biography');
+        biographyList.hidden=true; biographyDetail.hidden=false;
+        var hash=biographyHash(biographyConsumer,aggregate,aggregateId);
+        if(location.hash!=='#'+hash) location.hash=hash;
+        biographyHead.innerHTML='<div class="bio-name">'+esc(aggregate)+'</div><div class="bio-id">'+esc(aggregateId)+'</div>';
+        biographyTimeline.innerHTML='<div class="empty2">Loading&hellip;</div>';
+        var qs=new URLSearchParams({consumer:state.consumer,aggregate:aggregate,aggregate_id:aggregateId});
+        fetch(R.rest+'/biography?'+qs.toString(),{headers:{'X-WP-Nonce':R.nonce}})
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if(!currentBiography || currentBiography.consumer!==biographyConsumer || currentBiography.aggregate!==aggregate || currentBiography.aggregate_id!==aggregateId) return;
+            renderBiography(d);
+          })
+          .catch(function(e){ biographyTimeline.innerHTML='<div class="empty2">Error: '+esc(e.message)+'</div>'; });
+      }
+
+      function renderBiography(d){
+        var s=d.summary||{};
+        biographyHead.innerHTML='<div class="bio-heading"><div><div class="bio-name">'+esc(d.aggregate)+'</div><div class="bio-id">'+esc(d.aggregate_id)+'</div></div>'
+          +'<div class="bio-stats"><span><b>'+esc(s.touch_count||0)+'</b> touches</span>'
+          +'<span><b>'+(s.first_version==null?'&mdash;':('v'+s.first_version+'&ndash;v'+s.last_version))+'</b> retained</span>'
+          +'<span><b>'+rel(s.last_at)+'</b> last change</span></div></div>';
+        var entries=d.entries||[];
+        biographyTimeline._entries=entries;
+        if(d.available===false){ biographyTimeline.innerHTML='<div class="empty2">Biography data is not available for this consumer.</div>'; return; }
+        if(!entries.length){ biographyTimeline.innerHTML='<div class="empty2">No retained touches for this aggregate.</div>'; return; }
+        biographyTimeline.innerHTML=entries.map(function(e,i){
+          var fact=e.event_type||e.event_name;
+          var command=e.command_name||'command record unavailable';
+          var trace=e.correlation_id?'<button class="bio-link" data-bio-trace="'+esc(e.correlation_id)+'">Trace</button>':'';
+          return '<div class="biography-entry" data-be="'+i+'" tabindex="0">'
+            +'<div class="bio-version"><b>v'+e.version+'</b><span>'+esc(e.op)+'</span></div>'
+            +'<div class="bio-change"><div class="bio-event" title="'+esc(fact)+'">'+shortName(fact)+'</div>'
+            +'<div class="bio-records"><span title="'+esc(e.event_id||'')+'">fact '+shortId(e.event_id)+'</span>'
+            +'<span title="'+esc(e.command_id||'')+'">command '+shortName(command)+' &middot; '+shortId(e.command_id)+'</span></div></div>'
+            +'<div class="bio-entry-meta"><span class="bio-op op-'+esc(e.op)+'">'+esc(e.op)+'</span><time>'+esc(e.occurred_at||'')+'</time>'+trace+'</div>'
+            +'</div>';
+        }).join('');
+      }
+
+      function openBiographyEntry(entry){
+        var fact=entry.event_type||entry.event_name;
+        setDrawerLabel('biography entry');
+        dbody.innerHTML='<h3>'+esc(fact)+'</h3><dl class="kv">'
+          +'<dt>version</dt><dd>v'+entry.version+' &middot; '+esc(entry.op)+'</dd>'
+          +'<dt>fact</dt><dd>'+esc(fact)+'<br><span class="idm">'+esc(entry.event_id||'record unavailable')+'</span></dd>'
+          +'<dt>fact status</dt><dd>'+esc(entry.event_status||'record unavailable')+'</dd>'
+          +'<dt>command</dt><dd>'+esc(entry.command_name||'record unavailable')+'<br><span class="idm">'+esc(entry.command_id||'record unavailable')+'</span></dd>'
+          +'<dt>command status</dt><dd>'+esc(entry.command_status||'record unavailable')+'</dd>'
+          +'<dt>correlation</dt><dd>'+(entry.correlation_id?'<span class="corr-link" data-corr="'+esc(entry.correlation_id)+'">'+esc(entry.correlation_id)+'</span>':'&mdash;')+'</dd>'
+          +'<dt>occurred</dt><dd>'+esc(entry.occurred_at||'&mdash;')+'</dd></dl>'
+          +'<div class="jlbl">touch record</div>'+j(entry);
+        drawer.hidden=false;
+        var corr=dbody.querySelector('.corr-link'); if(corr) corr.addEventListener('click',function(){ showTrace(this.dataset.corr); });
+      }
+
+      function openBiographyRow(row){
+        var record=biographyRows[+row.dataset.bi];
+        if(record) location.hash=biographyHash(state.consumer,record.aggregate,record.aggregate_id);
+      }
+      biographyRowsEl.addEventListener('click',function(e){
+        var row=e.target.closest('tr[data-bi]'); if(row) openBiographyRow(row);
+      });
+      biographyRowsEl.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ') return;
+        var row=e.target.closest('tr[data-bi]'); if(!row) return;
+        e.preventDefault(); openBiographyRow(row);
+      });
+      biographyPager.addEventListener('click',function(e){
+        var b=e.target.closest('button[data-bp]'); if(!b||b.disabled) return;
+        biographyState.page=+b.dataset.bp; loadBiographies();
+      });
+      var biographySearch=$('#tddd-biography-search'), biographySearchTimer;
+      biographySearch.addEventListener('input',function(){
+        clearTimeout(biographySearchTimer);
+        biographySearchTimer=setTimeout(function(){ biographyState.search=biographySearch.value.trim(); biographyState.page=1; loadBiographies(); },280);
+      });
+      $('#tddd-biography-back').addEventListener('click',function(){ currentBiography=null; location.hash='biography'; });
+      biographyTimeline.addEventListener('click',function(e){
+        var trace=e.target.closest('[data-bio-trace]');
+        if(trace){ e.stopPropagation(); location.hash='trace/'+encodeURIComponent(trace.dataset.bioTrace); return; }
+        var row=e.target.closest('.biography-entry[data-be]'); if(!row) return;
+        var entry=biographyTimeline._entries&&biographyTimeline._entries[+row.dataset.be];
+        if(entry) openBiographyEntry(entry);
+      });
+      biographyTimeline.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ' || e.target.closest('button,a,input,select,textarea')) return;
+        var row=e.target.closest('.biography-entry[data-be]'); if(!row) return;
+        var entry=biographyTimeline._entries&&biographyTimeline._entries[+row.dataset.be];
+        if(entry){ e.preventDefault(); openBiographyEntry(entry); }
+      });
 
       // ── processes (sagas / workflows) ──
       var procSub='sagas';
@@ -906,12 +1141,13 @@
             .catch(function(){}); // silent
         }
       }
-      function startLive(){
+      function startLive(speed){
+        if(speed!==undefined) heartbeatSpeed=speed;
         var badge=$('#tddd-live-badge');
         if(!(window.jQuery && window.wp && wp.heartbeat)){
           // Heartbeat enqueues in the footer; on first paint it may not be ready yet — retry briefly.
           startLive._t = (startLive._t || 0) + 1;
-          if(startLive._t < 25){ setTimeout(startLive, 300); return; }
+          if(startLive._t < 25){ setTimeout(function(){ startLive(); }, 300); return; }
           badge.textContent='(heartbeat unavailable)'; return;
         }
         startLive._t = 0;
@@ -924,7 +1160,7 @@
           jQuery(document).on('heartbeat-tick', function(e,data){ if(data.tangible_ddd) onTick(data.tangible_ddd); });
         }
         liveCursor=0; $('#tddd-live-lines').innerHTML='';
-        wp.heartbeat.interval('fast');
+        wp.heartbeat.interval(heartbeatSpeed);
         wp.heartbeat.connectNow();
       }
       $('#tddd-live-lines').addEventListener('click', function(e){ var c=e.target.closest('.co[data-corr]'); if(c && c.dataset.corr) location.hash='trace/'+encodeURIComponent(c.dataset.corr); });
@@ -932,9 +1168,10 @@
       // consumer switch → reset + re-render current view + refresh vitals
       cz.addEventListener('click', function(e){ if(!e.target.closest('button')) return; auditLoaded=false; liveCursor=0; var ll=$('#tddd-live-lines'); if(ll) ll.innerHTML=''; loadVitals(); setTimeout(function(){
         if(!views.audit.hidden){ auditLoaded=true; load(); }
-        else if(!views.flow.hidden){ loadFlow(); startLive(); }
+        else if(!views.flow.hidden){ loadFlow(); startLive('fast'); }
         else if(!views.proc.hidden){ loadProc(); }
         else if(!tablesEl.hidden){ loadTables(); }
+        else if(!views.biography.hidden){ currentBiography=null; biographyState.page=1; location.hash='biography'; showBiographyRecent(); }
         else if(!views.trace.hidden && currentCorr){ var c=currentCorr; currentCorr=null; _prevTraceNodes={}; showTrace(c); }
         else if(!views.trace.hidden && !currentCorr){ _recentCorrs=[]; _pendingNewCorrs=[]; showTraceRecent(); }
       },0); });
@@ -942,12 +1179,25 @@
       function routeHash(){
         var m=/^#trace\/(.+)$/.exec(location.hash);
         if(m){ showTrace(decodeURIComponent(m[1])); return; }
+        var biographyOwnedMatch=/^#biography\/([^/]+)\/([^/]+)\/(.+)$/.exec(location.hash);
+        if(biographyOwnedMatch && keys.indexOf(decodeURIComponent(biographyOwnedMatch[1]))!==-1){
+          showBiography(
+            decodeURIComponent(biographyOwnedMatch[2]),
+            decodeURIComponent(biographyOwnedMatch[3]),
+            decodeURIComponent(biographyOwnedMatch[1])
+          );
+          return;
+        }
+        var biographyMatch=/^#biography\/([^/]+)\/(.+)$/.exec(location.hash);
+        if(biographyMatch){ showBiography(decodeURIComponent(biographyMatch[1]),decodeURIComponent(biographyMatch[2])); return; }
         var v=(location.hash||'#flow').replace(/^#/, '');
         // #trace with no corr → show recent list
         if(v==='trace'){ only('trace'); setNav('trace'); if(!currentCorr){ showTraceRecent(); } return; }
+        if(v==='biography'){ currentBiography=null; showBiographyRecent(); return; }
         if(!views[v]) v='flow';
         showView(v);
       }
       window.addEventListener('hashchange', routeHash);
+      if(requestedCorrelation && !location.hash){ location.hash='trace/'+encodeURIComponent(requestedCorrelation); }
       routeHash();
     })();

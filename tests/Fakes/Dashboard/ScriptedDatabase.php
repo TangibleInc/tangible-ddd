@@ -23,6 +23,9 @@ final class ScriptedDatabase implements Database
     /** @var list<list<mixed>> */
     public array $columns = [];
 
+    /** @var list<string> */
+    public array $missingTables = [];
+
     public function __construct(private readonly string $tablePrefix = 'wp_')
     {
     }
@@ -30,6 +33,11 @@ final class ScriptedDatabase implements Database
     public function prefix(): string
     {
         return $this->tablePrefix;
+    }
+
+    public function tableExists(string $table): bool
+    {
+        return ! in_array($table, $this->missingTables, true);
     }
 
     public function escapeLike(string $value): string

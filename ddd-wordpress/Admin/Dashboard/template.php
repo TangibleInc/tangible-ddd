@@ -36,6 +36,7 @@
           <button data-view="flow" aria-selected="true">Flow</button>
           <button data-view="audit">Command Audit</button>
           <button data-view="trace">Trace</button>
+          <button data-view="biography">Biography</button>
           <button data-view="proc">Processes</button>
           <button data-view="dlq">DLQ</button>
           <button data-view="outbox">Outbox</button>
@@ -135,6 +136,27 @@
           </div><!-- /tddd-trace-open -->
         </div>
 
+        <div id="tddd-view-biography" class="tview" hidden>
+          <div id="tddd-biography-list">
+            <div class="toolbar bio-toolbar">
+              <span class="search"><span class="mag">&#8981;</span><input id="tddd-biography-search" placeholder="aggregate name or id&hellip;"></span>
+              <span class="count" id="tddd-biography-count"></span>
+            </div>
+            <div class="tpager-bar"><span id="tddd-biography-range"></span><span class="pager" id="tddd-biography-pager"></span></div>
+            <div class="panel bio-list-panel">
+              <div class="twrap"><table class="t biography-table">
+                <thead><tr><th>aggregate</th><th>id</th><th>versions</th><th>touches</th><th>last change</th><th>when</th></tr></thead>
+                <tbody id="tddd-biography-rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
+              </table></div>
+            </div>
+          </div>
+          <div id="tddd-biography-detail" hidden>
+            <div class="tbreadcrumb"><button class="bck" id="tddd-biography-back">&lsaquo; All aggregates</button><span class="bsep">&#9656;</span><span class="bcur">Biography</span></div>
+            <div class="bio-head" id="tddd-biography-head"></div>
+            <div class="bio-timeline" id="tddd-biography-timeline"></div>
+          </div>
+        </div>
+
         <div id="tddd-view-proc" class="tview" hidden>
           <div class="subtabs">
             <button data-sub="sagas" aria-selected="true">Sagas <span class="sublbl">long_processes</span></button>
@@ -185,7 +207,7 @@
       <div class="tddd-drawer" id="tddd-drawer" hidden>
         <div class="dback" data-close></div>
         <aside class="dpanel">
-          <div class="dh"><span class="lbl">command</span><button class="dx" data-close>&times;</button></div>
+          <div class="dh"><span class="lbl" id="tddd-drawer-label">record</span><button class="dx" data-close>&times;</button></div>
           <div class="dbody" id="tddd-drawer-body"></div>
         </aside>
       </div>
