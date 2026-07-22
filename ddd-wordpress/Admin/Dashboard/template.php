@@ -123,6 +123,7 @@
             <span class="lg"><span class="sw sw-solid"></span>command</span>
             <span class="lg"><span class="sw sw-notched"></span>workflow</span>
             <span class="lg"><span class="sw sw-hatched"></span>process</span>
+            <span class="lg"><span class="sw sw-moment"></span>domain moment (inside act)</span>
             <span class="lg"><span class="sw sw-port"></span>emitted fact</span>
             <span class="lg"><span class="sw" style="background:#C22F32"></span>failed / dlq</span>
             <span class="lg lg-note">color = owning consumer &middot; &#9474; real duration &middot; &#8942; async gap (elapsed shown)</span>

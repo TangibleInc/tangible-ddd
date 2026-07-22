@@ -282,6 +282,7 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .trace-legend .sw-notched{background:repeating-linear-gradient(90deg,var(--muted) 0 3px,transparent 3px 5px)}
 .tddd-root .trace-legend .sw-hatched{background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 5px)}
 .tddd-root .trace-legend .sw-port{width:8px;height:8px;transform:rotate(45deg);border:2px solid var(--muted);background:var(--panel);border-radius:0}
+.tddd-root .trace-legend .sw-moment{width:8px;height:8px;border-radius:50%;border:2px solid var(--muted);background:var(--panel)}
 .tddd-root .trace-panel{margin:0 16px 16px}
 .tddd-root .ruler{display:grid;grid-template-columns:320px 1fr;border-bottom:1px solid var(--line);background:var(--panel2)}
 .tddd-root .ruler .rl{padding:6px 12px;border-right:1px solid var(--line)}

@@ -765,7 +765,7 @@
             if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
             var moments=n.moments||[], reactionCount=0;
             moments.forEach(function(m){ reactionCount+=((m&&m.reactions)||[]).length; });
-            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&#9670;&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
+            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&#9675;&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
             var barTxt=''; var latBar='';
             if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
               var ms=n.raw.duration_ms;
@@ -904,6 +904,8 @@
           +'<dt>memory</dt><dd>'+(raw.peak_memory_bytes?(Math.round(raw.peak_memory_bytes/1048576*10)/10+' MB peak'):'&mdash;')+'</dd>'
           +'</dl><div class="jlbl">emitted facts</div>'+factRows+'</div>';
         var reactionSum=0;
+        var portNames={};
+        ports.forEach(function(p){ portNames[p.name]=p; });
         var insideRows=moments.map(function(m){
           var rows=((m&&m.reactions)||[]).map(function(r){
             reactionSum+=r.duration_ms||0;
@@ -911,7 +913,13 @@
             var w=dur>0?Math.max(Math.round((r.duration_ms||0)/dur*100),2):2;
             return '<div class="drx"><span class="drn">'+esc(r.handler)+(r.error?' <b style="color:var(--crit)" title="'+esc(r.error)+'">!</b>':'')+'</span><span class="drb"><i style="width:'+w+'%"></i></span><span class="drms">'+(r.duration_ms||0)+'ms</span></div>';
           }).join('');
-          return '<div class="dmoment">&#9670; '+esc(m.name)+'</div>'+rows;
+          // ○ = interior moment. A moment sharing a port's name IS that fact
+          // (self-publisher): merge the glyphs and show its outbox status.
+          var pub=portNames[m.name];
+          var head=pub
+            ? '<div class="dmoment">&#9674; '+esc(m.name)+' <span class="idm">&rarr; published fact &middot; '+esc(pub.status)+'</span></div>'
+            : '<div class="dmoment">&#9675; '+esc(m.name)+'</div>';
+          return head+rows;
         }).join('');
         var inside='<div class="dpane" data-dp="inside"'+(tab!=='inside'?' hidden':'')+'>'
           +(moments.length
