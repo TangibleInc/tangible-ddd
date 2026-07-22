@@ -358,8 +358,10 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 /* Cross-consumer seam: two accents meeting where the story changes hands.
    Thin — the chunky owner spines carry identity; the seam only marks the cut. */
 .tddd-root .trc-seam{height:1.5px;background:linear-gradient(90deg,var(--sa,#646970) 0 50%,var(--sb,#646970) 50% 100%);opacity:.65}
-/* The moments chip — ordinal interior, detail in the drawer. */
-.tddd-root .mchip{font-family:var(--fm);font-size:.56rem;color:var(--muted);border:1px dotted var(--line);border-radius:3px;background:none;padding:0 5px;cursor:pointer;white-space:nowrap;line-height:1.6}
+/* The moments chip — ordinal interior, detail in the drawer. The ring is
+   DRAWN (not a text glyph) so it centers on the row regardless of font. */
+.tddd-root .mchip{display:inline-flex;align-items:center;gap:3px;font-family:var(--fm);font-size:.56rem;color:var(--muted);border:1px dotted var(--line);border-radius:3px;background:none;padding:1px 6px;cursor:pointer;white-space:nowrap;line-height:1.5}
+.tddd-root .mchip::before{content:'';width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;flex:none}
 .tddd-root .mchip:hover{border-color:var(--accent);color:var(--accent)}
 /* ── latency bar (per-command, in the label column) ── */
 .tddd-root .lat-wrap{display:flex;align-items:center;gap:5px;margin-top:4px}

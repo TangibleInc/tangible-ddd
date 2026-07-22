@@ -765,7 +765,7 @@
             if(n.unresolved){ from+='<div class="trace-unresolved">recorded parent unresolved</div>'; }
             var moments=n.moments||[], reactionCount=0;
             moments.forEach(function(m){ reactionCount+=((m&&m.reactions)||[]).length; });
-            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&#9675;&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
+            var mchip=moments.length?'<button class="mchip" data-dtab="inside" title="open: inside the act">&times;'+moments.length+(reactionCount?' &middot; '+reactionCount+' reactions':'')+'</button>':'';
             var barTxt=''; var latBar='';
             if(n.kind==='command' && n.raw && n.raw.duration_ms!=null){
               var ms=n.raw.duration_ms;
