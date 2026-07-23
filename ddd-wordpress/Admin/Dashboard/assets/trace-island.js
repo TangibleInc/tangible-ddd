@@ -69,7 +69,9 @@
             ${n.unresolved?html`<div class="trace-unresolved">recorded parent unresolved</div>`:null}
             ${latBar}
           </div>
-          <div class="slane"><div class=${'sbar f-'+kind+statusCls} style=${'left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%'}>${barTxt}</div>${sports}</div>
+          <div class="slane">${n.kind==='process'
+            ? html`<span class="proc-tick" style=${'left:'+n.start_pct+'%'} title="ignited here">▸</span>`
+            : html`<div class=${'sbar f-'+kind+statusCls} style=${'left:'+n.start_pct+'%;width:'+Math.max(n.width_pct,1)+'%'}>${barTxt}</div>`}${sports}</div>
         </div>`;
       }
 
@@ -90,19 +92,47 @@
         (nodes||[]).forEach(function(n, idx){
           if(!(n.kind==='process' && !n.is_workflow)) return;
           var el=rowEls[n.uid]; if(!el) return;
-          var last=el;
+          // The trellis covers the trajectory's OWN STEPS — rows whose parent
+          // is this process (the commands it sequenced) — NOT every downstream
+          // consequence in the subtree. Subscribers to facts the steps raised
+          // read via ports and from-lines; wrapping them overstated the span.
+          // Each step gets an elbow off the rail (the espalier).
+          var last=el, elbows=[];
           for(var j=idx+1;j<nodes.length;j++){
             if((nodes[j].depth||0)<=(n.depth||0)) break;
-            var childEl=rowEls[nodes[j].uid]; if(childEl) last=childEl;
+            if(nodes[j].parent!==n.uid) continue;
+            var stepEl=rowEls[nodes[j].uid]; if(!stepEl) continue;
+            last=stepEl;
+            elbows.push(stepEl.offsetTop+15);   // ~the step's name line
           }
           var top=el.offsetTop;
           var height=last.offsetTop+last.offsetHeight-top;
           var depth=Math.min(n.depth||0,5);
+          // Temporal region: the trajectory's spacetime in the LANE — from its
+          // ignition x to its last step's activity end, over the same rows.
+          // Percent coords are lane-relative; convert to px via a sample lane.
+          var laneEl=el.querySelector('.slane');
+          var region=null;
+          if(laneEl){
+            var laneLeft=laneEl.offsetLeft, laneW=laneEl.offsetWidth;
+            var x1=n.start_pct||0, x2=x1+1.5;
+            for(var k=idx+1;k<nodes.length;k++){
+              if((nodes[k].depth||0)<=(n.depth||0)) break;
+              if(nodes[k].parent!==n.uid) continue;
+              x2=Math.max(x2,(nodes[k].start_pct||0)+Math.max(nodes[k].width_pct||0,1));
+            }
+            region={
+              left:laneLeft+x1/100*laneW,
+              width:Math.max((x2-x1)/100*laneW+14,26),
+            };
+          }
           bands.push({
             uid:n.uid,
             top:top,
             left:8+depth*14,   // aligns with the d<depth> label indent, just past the owner spine
             height:height,
+            elbows:elbows,
+            region:region,
             accent:n.accent||'#646970',
             open:!!BAND_OPEN_STATUSES[String(n.status||'').toLowerCase()],
             title:shortName(n.name)+' · '+(n.status||'unknown'),
@@ -158,6 +188,16 @@
             title=${b.title}
             onClick=${function(){ if(handlers.onOpenNode && byUid[b.uid]) handlers.onOpenNode(byUid[b.uid], undefined); }}
           ></div>`);
+          (b.elbows||[]).forEach(function(top){
+            out.push(html`<div class="proc-elbow" style=${'--band-accent:'+b.accent+';top:'+top+'px;left:'+(b.left+5)+'px'}></div>`);
+          });
+          if(b.region){
+            out.push(html`<div
+              class=${'proc-region '+(b.open?'is-open':'is-closed')}
+              style=${'--band-accent:'+b.accent+';top:'+b.top+'px;left:'+b.region.left+'px;width:'+b.region.width+'px;height:'+b.height+'px'}
+              title=${b.title}
+            ></div>`);
+          }
         });
         return out;
       }

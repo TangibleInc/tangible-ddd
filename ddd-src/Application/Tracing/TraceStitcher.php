@@ -197,14 +197,21 @@ final class TraceStitcher
     private function commandNode(array $row, string $uid, array $consumer): array
     {
         $duration = (int) ($row['duration_ms'] ?? 0);
+        $decoded = $this->decodeCommand($row);
+        // Workflow-driving commands carry a workflow_id key in their payload —
+        // the WorkflowHandler pairing's fingerprint (null on the creating pass,
+        // set on continuations; the KEY is the signal). The name regex stays as
+        // a fallback for drivers that predate the convention.
+        $parameters = is_array($decoded['parameters'] ?? null) ? $decoded['parameters'] : [];
 
         return $this->node($uid, 'command', (string) $row['command_id'], (string) $row['command_name'], $consumer) + [
             'status' => (string) ($row['status'] ?? ''),
             'source' => (string) ($row['source'] ?? '') . (($row['source_id'] ?? null) ? '#' . $row['source_id'] : ''),
             'ts' => $this->epoch($row['started_at'] ?? null),
             'dur_ms' => $duration,
-            'raw' => $this->decodeCommand($row),
-            'is_workflow' => (bool) preg_match('/Behaviour|Workflow/', (string) $row['command_name']),
+            'raw' => $decoded,
+            'is_workflow' => array_key_exists('workflow_id', $parameters)
+                || (bool) preg_match('/Behaviour|Workflow/', (string) $row['command_name']),
             'causation_id' => $this->nullableString($row['causation_id'] ?? null),
             'causation_type' => $this->nullableString($row['causation_type'] ?? null),
         ];

@@ -366,6 +366,20 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .proc-band{position:absolute;width:5px;z-index:6;cursor:pointer;
   background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--band-accent,#646970) 45%,transparent) 0 4px,transparent 4px 8px)}
 .tddd-root .proc-band.is-closed{border-bottom:2px solid var(--band-accent,#646970)}
+/* Espalier elbows: one branch off the rail per step the trajectory sequenced. */
+.tddd-root .proc-elbow{position:absolute;width:9px;height:2px;background:var(--band-accent,#646970);opacity:.55;z-index:6;pointer-events:none;border-radius:0 2px 2px 0}
+/* Temporal region: the trajectory's spacetime in the lane — its rows × its
+   real span (ignition → last step activity). Step bars sit ON it (z above);
+   a still-running trajectory has no right edge — it fades, still extending. */
+.tddd-root .proc-region{position:absolute;z-index:0;pointer-events:none;border-radius:3px;
+  background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--band-accent,#646970) 14%,transparent) 0 5px,transparent 5px 10px);
+  border:1px solid color-mix(in srgb,var(--band-accent,#646970) 28%,transparent)}
+.tddd-root .proc-region.is-open{border-right:0;
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);
+  mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
+.tddd-root .sbar{z-index:1}
+.tddd-root .sports{z-index:1}
+.tddd-root .proc-tick{position:absolute;top:50%;transform:translateY(-50%);font-size:11px;line-height:1;color:var(--owner-accent,#646970);z-index:1}
 .tddd-root .proc-band.is-open{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent)}
 /* The moments chip — ordinal interior, detail in the drawer. The ring is
    DRAWN (not a text glyph) so it centers on the row regardless of font. */
