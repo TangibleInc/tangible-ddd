@@ -8,9 +8,9 @@ use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Behaviours\PrepareCredentialArtifacts;
 use Tangible\Cred\MegaTrace\Domain\Behaviours\ReviewIssuanceEvidence;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineItemCompleted;
+use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowHandler;
 use TangibleDDD\Application\Commands\ICommand;
-use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Events\IIntegrationEventBus;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
@@ -59,7 +59,6 @@ final class IssuanceRoutine extends WorkflowHandler
                 'journey_id' => $command->journey_id,
                 'learner_id' => $command->learner_id,
                 'portfolio_id' => $command->portfolio_id,
-                'correlation_id' => Correlation::peek()?->correlation_id,
             ],
         )];
     }
@@ -104,19 +103,24 @@ final class IssuanceRoutine extends WorkflowHandler
         ));
     }
 
+    /**
+     * Continue the workflow later through the fact lane (canonical shape,
+     * mirroring cred's ProcessEndpointResponseBehaviourHandler::reschedule):
+     * announce IssuanceRoutineRescheduled on the HOST's outbox-backed
+     * integration bus — the outbox row carries the delay and the causation
+     * edge back to this pass, and FleetPolicies' thin listener translates
+     * the fact into the next RunIssuanceRoutine. No raw Action Scheduler
+     * alarm: that lane carried no causation, so continuation passes
+     * rendered as depth-0 orphans in the trace.
+     */
     protected function reschedule(BehaviourWorkflow $workflow, int $delay_seconds): void
     {
-        as_schedule_single_action(
-            time() + $delay_seconds,
-            $this->infra_config->hook('mega_trace_workflow_continue'),
-            [
-                'workflow_id' => $workflow->get_id(),
-                'journey_id' => (string) $workflow->get_meta('journey_id'),
-                'learner_id' => (int) $workflow->get_meta('learner_id'),
-                'portfolio_id' => (string) $workflow->get_meta('portfolio_id'),
-                'correlation_id' => (string) $workflow->get_meta('correlation_id'),
-            ],
-            $this->infra_config->as_group('behaviours'),
-        );
+        $this->events->publish(new IssuanceRoutineRescheduled(
+            (string) $workflow->get_meta('journey_id'),
+            (int) $workflow->get_meta('learner_id'),
+            (string) $workflow->get_meta('portfolio_id'),
+            (int) $workflow->get_id(),
+            $delay_seconds,
+        ));
     }
 }

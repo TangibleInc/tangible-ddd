@@ -54,6 +54,31 @@ final class IssuanceRoutineItemCompleted extends IntegrationEvent
     }
 }
 
+/**
+ * The issuance routine's continuation fact: one workflow pass ran out of
+ * budget and booked the next. Rides the outbox WITH the delay (delay() is
+ * honored by OutboxRepository::write → scheduled_at), so the next
+ * RunIssuanceRoutine pass arrives causation-chained to this fact instead of
+ * as a depth-0 alarm orphan — cred's BehaviourWorkflowReschedule mechanism.
+ */
+#[Touches(Op::Updated, CredentialPortfolio::class, id: 'portfolio_id')]
+final class IssuanceRoutineRescheduled extends IntegrationEvent
+{
+    public function __construct(
+        public readonly string $journey_id,
+        public readonly int $learner_id,
+        public readonly string $portfolio_id,
+        public readonly int $workflow_id,
+        public readonly int $delay_seconds = 0,
+    ) {
+    }
+
+    public function delay(): int
+    {
+        return $this->delay_seconds;
+    }
+}
+
 #[Touches(Op::Updated, CredentialPortfolio::class, id: 'portfolio_id')]
 final class SupervisorAttestationReceived extends IntegrationEvent
 {

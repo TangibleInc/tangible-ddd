@@ -53,9 +53,10 @@ final class ModuleContainerFactoryTest extends TestCase
             host_prefix: 'module_test',
             namespace_root: __NAMESPACE__ . '\\Fixtures',
             transaction_service_id: 'host.transaction',
-            services: [Fixtures\ModuleProbe::class],
+            services: [Fixtures\ModuleProbe::class, Fixtures\ModulePairedHandler::class],
             processes: [Fixtures\ModuleProcess::class],
             bridged_services: [Fixtures\ModuleBridge::class],
+            handlers: [Fixtures\ModulePlainCommand::class => Fixtures\ModulePairedHandler::class],
         ));
 
         $module->get(CommandBus::class)->handle(new Fixtures\ModuleCommand());
@@ -70,6 +71,15 @@ final class ModuleContainerFactoryTest extends TestCase
             [Fixtures\ModuleProcess::class],
             array_keys($module->get(LongProcessCatalog::class)->all()),
         );
+
+        // Two-class shape: a PLAIN command passes the self-executing
+        // middleware untouched and terminates at its mapped paired handler,
+        // riding the same host brackets.
+        $module->get(CommandBus::class)->handle(new Fixtures\ModulePlainCommand());
+        self::assertSame(1, $module->get(Fixtures\ModulePairedHandler::class)->handled);
+        self::assertSame(2, $correlation->calls);
+        self::assertSame(2, $transaction->calls);
+        self::assertSame(2, $events->calls);
     }
 }
 
@@ -98,7 +108,10 @@ final class ModuleTestConfig implements IDDDConfig
 
 namespace TangibleDDD\Tests\Unit\MegaTrace\Fixtures;
 
+use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\CQRS\CommandBusAware;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\Result;
 
@@ -124,6 +137,21 @@ final class ModuleCommand extends SelfHandlingCommand
     protected function handle(ModuleProbe $probe): void
     {
         $probe->handled++;
+    }
+}
+
+final class ModulePlainCommand implements ICommand
+{
+    use CommandBusAware;
+}
+
+final class ModulePairedHandler implements ICommandHandler
+{
+    public int $handled = 0;
+
+    public function handle(ICommand $command): void
+    {
+        $this->handled++;
     }
 }
 

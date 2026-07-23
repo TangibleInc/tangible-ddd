@@ -51,7 +51,6 @@ final class Plugin
         add_action(ScenarioPlan::SUBMIT_CAPSTONE, [$this->runtime, 'submit_capstone'], 10, 2);
         add_action(ScenarioPlan::RECORD_ATTESTATION, [$this->runtime, 'record_attestation'], 10, 2);
         add_action(ScenarioPlan::ACKNOWLEDGE_REGISTRY, [$this->runtime, 'acknowledge_registry'], 10, 2);
-        add_action('tgbl_cred_mega_trace_workflow_continue', [$this->runtime, 'continue_workflow'], 10, 5);
         $this->admin->register();
 
         register_deactivation_hook($plugin_file, [$this->coordinator, 'disable']);

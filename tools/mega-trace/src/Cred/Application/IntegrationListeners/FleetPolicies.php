@@ -10,6 +10,7 @@ use Tangible\Cred\MegaTrace\Application\Commands\QueueCredentialNotification;
 use Tangible\Cred\MegaTrace\Application\Commands\RecordProvisionalCompetency;
 use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialIssued;
+use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
 use Tangible\Datastream\MegaTrace\Domain\Events\CredentialRegistrySynchronized;
 use Tangible\LMS\MegaTrace\Domain\Events\CertificationJourneyCompleted;
 use Tangible\LMS\MegaTrace\Domain\Events\CertificationJourneyLaunched;
@@ -44,6 +45,18 @@ final class FleetPolicies
                 $event->journey_id,
                 $event->learner_id,
                 ScenarioIds::portfolio($event->journey_id),
+            ),
+        );
+        // The continuation lane: the routine's reschedule fact drives the
+        // next workflow pass, so continuation passes stay on the causation
+        // chain (fact → command) instead of arriving as alarm orphans.
+        integration_listener(
+            IssuanceRoutineRescheduled::class,
+            static fn (IssuanceRoutineRescheduled $event): RunIssuanceRoutine => new RunIssuanceRoutine(
+                $event->journey_id,
+                $event->learner_id,
+                $event->portfolio_id,
+                $event->workflow_id,
             ),
         );
         integration_listener(

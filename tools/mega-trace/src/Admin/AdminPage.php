@@ -96,7 +96,10 @@ final class AdminPage
                         <tr><th>Started</th><td><?php echo esc_html(wp_date('Y-m-d H:i:s', $run->started_at)); ?></td></tr>
                         <tr><th>Scenario</th><td><code><?php echo esc_html($run->scenario_id); ?></code></td></tr>
                         <tr><th>Correlation</th><td><code><?php echo esc_html($run->correlation_id); ?></code></td></tr>
-                        <tr><th>Trace</th><td><a class="button" href="<?php echo esc_url(admin_url('tools.php?page=tangible-dddash&consumer=tangible_lms&correlation=' . rawurlencode($run->correlation_id))); ?>">Open trace</a></td></tr>
+                        <?php // The dashboard routes by HASH (#trace/<correlation>); it reads no
+      // consumer/correlation query params — the old href left inert params
+      // stuck in the address bar while never actually opening the trace. ?>
+                        <tr><th>Trace</th><td><a class="button" href="<?php echo esc_url(admin_url('tools.php?page=tangible-dddash') . '#trace/' . rawurlencode($run->correlation_id)); ?>">Open trace</a></td></tr>
                     </tbody>
                 </table>
             <?php endif; ?>

@@ -11,7 +11,9 @@ use Tangible\Cred\MegaTrace\Domain\Events\CompliancePortfolioOpened;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialEvidenceVerified;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialIssued;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialNotificationQueued;
+use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineItemCompleted;
+use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
 use Tangible\Cred\MegaTrace\Domain\Events\PortfolioExported;
 use Tangible\Cred\MegaTrace\Domain\Events\ProvisionalCompetencyRecorded;
 use Tangible\Cred\MegaTrace\Domain\Events\SupervisorAttestationReceived;
@@ -104,10 +106,14 @@ final class ModuleManifest
                     ProvisionalCompetencyRecorded::class,
                     CredentialEvidenceVerified::class,
                     IssuanceRoutineItemCompleted::class,
+                    IssuanceRoutineRescheduled::class,
                     SupervisorAttestationReceived::class,
                     CredentialIssued::class,
                     CredentialNotificationQueued::class,
                     PortfolioExported::class,
+                ],
+                handlers: [
+                    RunIssuanceRoutine::class => IssuanceRoutine::class,
                 ],
             ),
             new ModuleDefinition(

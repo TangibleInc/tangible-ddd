@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace TangibleDDD\MegaTrace\Module;
 
 use League\Tactician\CommandBus;
+use League\Tactician\Handler\CommandHandlerMiddleware;
+use League\Tactician\Handler\Mapping\MapByStaticList;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
@@ -45,14 +47,32 @@ final class ModuleContainerFactory
 
         $container->register(SelfExecutingCommandMiddleware::class)
             ->setArguments([new Reference('service_container')]);
+        $bus_middleware = [
+            new Reference(CorrelationMiddleware::class),
+            new Reference($module->transaction_service_id),
+            new Reference(DomainEventsPublishMiddleware::class),
+            new Reference(SelfExecutingCommandMiddleware::class),
+        ];
+        if ($module->handlers !== []) {
+            // Two-class shape terminal: a plain command passes through the
+            // self-executing middleware untouched and resolves its paired
+            // handler here, inside the module container (consumer-module
+            // rule: terminal command/query resolution stays module-local).
+            $container->register(MapByStaticList::class)
+                ->setArguments([array_map(
+                    static fn (string $handler): array => [$handler, 'handle'],
+                    $module->handlers,
+                )]);
+            $container->register(CommandHandlerMiddleware::class)
+                ->setArguments([
+                    new Reference('service_container'),
+                    new Reference(MapByStaticList::class),
+                ]);
+            $bus_middleware[] = new Reference(CommandHandlerMiddleware::class);
+        }
         $container->register(CommandBus::class)
             ->setPublic(true)
-            ->setArguments([
-                new Reference(CorrelationMiddleware::class),
-                new Reference($module->transaction_service_id),
-                new Reference(DomainEventsPublishMiddleware::class),
-                new Reference(SelfExecutingCommandMiddleware::class),
-            ]);
+            ->setArguments($bus_middleware);
 
         foreach ($module->services as $class) {
             $container->register($class, $class)
