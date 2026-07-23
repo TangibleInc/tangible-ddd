@@ -56,12 +56,20 @@ function command_audit_finalise(IDDDConfig $config, array $data): void {
   global $wpdb;
   $table = $config->table('command_audit');
 
+  // The events JSON column carries the act's whole eventing record: with a
+  // 'facts' key present (0.6.x middleware) it becomes {moments, facts} —
+  // same column, no schema change; without one (older callers) the at-rest
+  // shape stays the bare moments list. Readers accept both.
+  $events = array_key_exists('facts', $data)
+    ? ['moments' => $data['events'] ?? [], 'facts' => $data['facts'] ?? []]
+    : ($data['events'] ?? null);
+
   $row = [
     'status' => (string) ($data['status'] ?? 'success'),
     'ended_at' => gmdate('Y-m-d H:i:s'),
     'duration_ms' => (int) ($data['duration_ms'] ?? 0),
     'peak_memory_bytes' => (int) ($data['peak_memory_bytes'] ?? 0),
-    'events' => wp_json_encode($data['events'] ?? null, JSON_UNESCAPED_SLASHES),
+    'events' => wp_json_encode($events, JSON_UNESCAPED_SLASHES),
     'error' => wp_json_encode($data['error'] ?? null, JSON_UNESCAPED_SLASHES),
   ];
 

@@ -21,6 +21,7 @@ first; then the current documents below.
 | [Wiring a consumer](wiring-a-consumer.md) | Complete top-level consumer, DI, middleware, table, and deployment contract |
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |
 | [Consumer modules](consumer-modules.md) | Host/module lifecycle, separate-container bridge, routing, and process overlay |
+| [Eventing lanes](eventing-lanes.md) | The three raising lanes, reschedule-via-fact, the WorkflowHandler phase lock, and the replay-not-splice rule |
 | [DDDash v2 scope](dashboard/V2-OUTLINE.md) | Implemented unified trace, Aggregate Biography, consumer provenance, and explicit non-goals |
 | [Release and migration ledger](migration-0.2-to-0.3.md) | Version-by-version consumer changes; the old filename is retained for inbound links |
 | [Canonical agent skill](../.claude/skills/tangible-ddd/SKILL.md) | Current modeling decisions and source navigation for coding agents |

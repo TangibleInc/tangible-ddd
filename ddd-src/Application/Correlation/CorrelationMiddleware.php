@@ -47,6 +47,11 @@ final class CorrelationMiddleware implements Middleware {
     }
     $command_id = bin2hex(random_bytes(16));
     $command_name = get_class($command);
+
+    // Per-act whiteboard wipe: whatever a prior (audit-disabled or crashed)
+    // context left on the facts roster must not leak into this act's audit.
+    // Acts never nest (the guard above), so bracket-open is the one owner.
+    \TangibleDDD\Application\Events\ActFacts::reset();
     $audit = command_audit_enabled($this->config);
     $start_ts = microtime(true);
 
@@ -97,7 +102,17 @@ final class CorrelationMiddleware implements Middleware {
           'status' => $status,
           'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
           'peak_memory_bytes' => memory_get_peak_usage(true),
-          'events' => array_map(static fn ($e) => ['name' => $e::name(), 'reactions' => Reactions::of($e)], $this->events->published()),
+          'events' => array_map(fn ($e) => [
+            'name' => $e::name(),
+            'reactions' => Reactions::of($e),
+            // Item 5: where was this moment raised? 'aggregate' = harvested
+            // by collect_from; 'act' = recorded directly (handler/act lane).
+            'origin' => $this->events->origin_of($e),
+          ], $this->events->published()),
+          // Item 2: the facts roster — what this act put on the wire, with
+          // the twin edge back to the announcing moment. Lands in the same
+          // events JSON column as {moments, facts} — no schema change.
+          'facts' => \TangibleDDD\Application\Events\ActFacts::drain(),
           'error' => $error,
         ]);
       }

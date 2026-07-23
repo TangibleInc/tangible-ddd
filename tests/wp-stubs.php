@@ -114,6 +114,14 @@ if (!function_exists('do_action')) {
   }
 }
 
+if (!function_exists('has_action')) {
+  /** Real WP returns priority|false for a specific callback; bool for any. Tests only need the any-listener form. */
+  function has_action(string $hook, $callback = false): bool {
+    global $_test_actions;
+    return !empty($_test_actions[$hook]);
+  }
+}
+
 if (!function_exists('did_action')) {
   function did_action(string $hook): int {
     global $_test_did_actions;

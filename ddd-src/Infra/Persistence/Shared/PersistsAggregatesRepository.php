@@ -28,13 +28,18 @@ abstract class PersistsAggregatesRepository implements IPersistsAggregates {
   abstract protected function persist(Aggregate $aggregate): void;
 
   /**
-   * Save an aggregate with automatic event collection
+   * Save an aggregate with automatic event collection.
+   *
+   * FINAL: persist-then-collect is the seal's ground truth — a subclass
+   * overriding save() to skip collect_from() (or to harvest into thin air)
+   * is the one move that silently kills every downstream hook. Customize
+   * persist(); the harvest is not negotiable.
    *
    * @param Aggregate $aggregate The aggregate to save
    * @return void
    * @throws TypeMismatchException If aggregate type doesn't match expected type
    */
-  public function save(Aggregate $aggregate): void {
+  final public function save(Aggregate $aggregate): void {
     $expected = $this->get_aggregate_class();
     if (!$aggregate instanceof $expected) {
       throw new TypeMismatchException(

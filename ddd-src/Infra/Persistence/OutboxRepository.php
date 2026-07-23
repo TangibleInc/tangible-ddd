@@ -195,6 +195,39 @@ class OutboxRepository implements IOutboxRepository {
     );
   }
 
+  /**
+   * Record a delivered-with-zero-listeners condition on the row (item 3).
+   *
+   * NOT part of IOutboxRepository — deliberately additive: the processor
+   * guards the call with method_exists so consumer-authored repositories
+   * predating this release keep working. Appends a structured note to
+   * error_history and surfaces it in last_error; status is untouched (the
+   * entry completed — unheard is a smell, not a failure).
+   */
+  public function note_delivered_unheard(string $event_id, string $note): void {
+    global $wpdb;
+
+    $entry = $this->find_by_event_id($event_id);
+    if (!$entry) return;
+
+    $error_history = $entry->error_history ?? [];
+    $error_history[] = [
+      'condition' => 'delivered_unheard',
+      'error' => $note,
+      'attempt' => $entry->attempts,
+      'timestamp' => gmdate('Y-m-d H:i:s'),
+    ];
+
+    $wpdb->update(
+      $this->table_name(),
+      [
+        'last_error' => $note,
+        'error_history' => wp_json_encode($error_history),
+      ],
+      ['event_id' => $event_id]
+    );
+  }
+
   public function move_to_dlq(string $event_id, string $final_error = ''): void {
     global $wpdb;
 
