@@ -8,6 +8,8 @@ use TangibleDDD\Domain\Events\IEventFromArgs;
 
 abstract class WordPressActionHandler implements IEventHandler {
 
+  use \TangibleDDD\Application\Events\RaisesEvents;
+
   protected function get_number_of_args(): int {
     return 10; // Generous default so it never fails
   }
@@ -31,7 +33,17 @@ abstract class WordPressActionHandler implements IEventHandler {
     return $event;
   }
 
-  public function __construct() {
+  /**
+   * The optional unit of work feeds the act-level $this->event() lane
+   * (RaisesEvents), mirroring WorkflowHandler: a synchronous reaction may
+   * record follow-on facts mid-drain (the seal admits IAnnouncesIntegration)
+   * without wiring the trait plumbing itself. Subclasses that never raise
+   * keep calling parent::__construct() bare; without it event() throws
+   * rather than silently dropping a moment.
+   */
+  public function __construct(
+    protected readonly ?\TangibleDDD\Application\Events\EventsUnitOfWork $events_uow = null,
+  ) {
     $domain_action = $this->get_event_class()::action();
 
     add_action( $domain_action, function ( ...$params ) {
@@ -50,6 +62,10 @@ abstract class WordPressActionHandler implements IEventHandler {
       }
       Reactions::record( static::class, (int) round( ( microtime( true ) - $start ) * 1000 ) );
     }, 10, $this->get_number_of_args() );
+  }
+
+  protected function events_uow(): ?\TangibleDDD\Application\Events\EventsUnitOfWork {
+    return $this->events_uow;
   }
 }
 

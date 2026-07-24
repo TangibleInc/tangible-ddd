@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.2
+# Consumer release and migration ledger — through 0.6.4
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -484,6 +484,57 @@ and its scheduled callbacks. Version 0.6.2 does not automate that migration.
 
 See [Consumer modules](consumer-modules.md) for complete bootstrap, bridge,
 routing, dump, failure, and deactivation contracts.
+
+## 0.6.3 (eventing hardening)
+
+The eventing-lanes doctrine lands as enforceable surface (see
+[eventing-lanes.md](eventing-lanes.md) for the three raising lanes).
+
+**Mandatory for existing consumers: nothing at require-time** — all additive.
+But any consumer adopting 0.6.3 SHOULD, in the same change:
+
+1. Kill consumer-local static event facades. The unit of work is
+   container-managed state; adopt `RaisesEvents` (`$this->event()`) with an
+   injected `EventsUnitOfWork` instead. `WorkflowHandler` gained an optional
+   trailing `?EventsUnitOfWork $events_uow = null` constructor parameter for
+   its subclasses.
+2. Wire the conformance fences into the consumer suite:
+   `IntegrationConformance::pull_events_violations($src)` (absolute — the
+   harvest verb is framework-only) and
+   `IntegrationConformance::handler_raised_events($src, $allowlist)` (every
+   handler-level raise is a reviewed allowlist entry).
+3. Heal hydration-records-on-construction: gate birth events on identity
+   (null id ⇒ occurrence; persisted id ⇒ load records nothing), or use a
+   hydrate-silently door where application code legitimately constructs WITH
+   an id to update. `PersistsAggregatesRepository::save()` is now `final`
+   (persist → collect_from).
+
+**New public surfaces:** `RaisesEvents`, the two `IntegrationConformance`
+fences above, `FactDeliveredUnheard` (infrastructure event fired when an
+outbox delivery finds zero listeners — outbox/integration lane ONLY; unheard
+DOMAIN moments are not a pathology and get no flag).
+
+Reference adoptions: cred PR #9 (facade removal + fences + `HydratesSilently`),
+datastream PR #5 (identity-gated `CapturedEvent::occur()`).
+
+## 0.6.4 (act lane reaches domain-event handlers)
+
+`WordPressActionHandler` now mirrors `WorkflowHandler`: it uses `RaisesEvents`
+and accepts an optional trailing constructor parameter
+`?EventsUnitOfWork $events_uow = null`, exposed via `events_uow()`. A
+synchronous domain-event reaction can record follow-on facts mid-drain (the
+seal admits `IAnnouncesIntegration`; drain-until-empty routes them to the
+outbox in the same transaction) without wiring the trait plumbing itself.
+
+**Mandatory for existing consumers: nothing.** Subclasses calling
+`parent::__construct()` bare keep working; `$this->event()` without a unit of
+work throws a `LogicException` naming the handler rather than dropping the
+moment. Handlers that raise remain subject to the
+`handler_raised_events` allowlist fence.
+
+Reference adoption: datastream's `MatchSubscriptionsOnCapture` (the
+`EventReadyForDelivery` fan-out, converted from direct bus publication to
+self-publishing moments in datastream PR #6).
 
 ## How to verify a migration (any version)
 
