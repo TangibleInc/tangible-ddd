@@ -62,4 +62,27 @@ use TangibleDDD\Application\CQRS\CommandBusAware;
 abstract class SelfHandlingCommand implements ICommand {
 
   use CommandBusAware;
+  use \TangibleDDD\Application\Events\RaisesEvents;
+
+  private ?\TangibleDDD\Application\Events\EventsUnitOfWork $self_handling_events_uow = null;
+
+  /**
+   * Middleware-only wiring (0.6.4): SelfExecutingCommandMiddleware attaches
+   * the owning consumer's live EventsUnitOfWork before invoking handle(), so
+   * handle() bodies get the act-level $this->event() lane with zero
+   * declaration — the same lane WorkflowHandler and WordPressActionHandler
+   * carry. Queries never receive this: reads must not record.
+   *
+   * Raises from a command's handle() remain subject to the
+   * IntegrationConformance::handler_raised_events() allowlist fence, which
+   * scopes Application/Commands/ paths precisely because the trait arrives
+   * here invisibly (no per-file RaisesEvents mention to scan for).
+   */
+  public function attach_events_uow(\TangibleDDD\Application\Events\EventsUnitOfWork $events_uow): void {
+    $this->self_handling_events_uow = $events_uow;
+  }
+
+  protected function events_uow(): ?\TangibleDDD\Application\Events\EventsUnitOfWork {
+    return $this->self_handling_events_uow;
+  }
 }

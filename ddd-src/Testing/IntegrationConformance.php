@@ -195,7 +195,11 @@ final class IntegrationConformance {
       . 'Add it to the allowlist.',
       static function (string $path, string $source): bool {
         $normalized = str_replace('\\', '/', $path);
+        // Commands/ is in scope because SelfHandlingCommand carries the
+        // trait invisibly (0.6.4) — a raising handle() body never names
+        // RaisesEvents in its own file.
         return str_contains($normalized, 'Application/CommandHandlers/')
+          || str_contains($normalized, 'Application/Commands/')
           || str_contains($source, 'RaisesEvents');
       },
     );

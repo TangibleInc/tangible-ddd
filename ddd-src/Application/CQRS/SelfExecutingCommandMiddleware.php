@@ -72,6 +72,18 @@ final class SelfExecutingCommandMiddleware implements Middleware {
     $method = new ReflectionMethod($command, 'handle');
     $args = $this->resolve_arguments($command, $method);
 
+    // The act lane (0.6.4), COMMANDS ONLY — queries must not record. Attach
+    // the same live UoW instance the container holds (and the command
+    // middleware seals/drains) so handle() can $this->event() coordination
+    // facts. Absent service → nothing attached → a raise throws in
+    // RaisesEvents naming the command, never a silent drop.
+    if ($command instanceof SelfHandlingCommand
+      && $this->container->has(\TangibleDDD\Application\Events\EventsUnitOfWork::class)) {
+      $command->attach_events_uow(
+        $this->container->get(\TangibleDDD\Application\Events\EventsUnitOfWork::class)
+      );
+    }
+
     // Explicit though a no-op in PHP 8.1+: protected handle() is reachable
     // here and only here — no public escape hatch for manual callers.
     $method->setAccessible(true);
