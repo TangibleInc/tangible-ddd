@@ -45,9 +45,18 @@ final class WorkflowQuery
         ];
         $columns = array_values(array_intersect($wanted, $available));
         $columnSql = implode(',', array_map(static fn (string $column): string => "`{$column}`", $columns));
-        $order = in_array('updated_at', $available, true)
-            ? 'updated_at'
-            : (in_array('created_at', $available, true) ? 'created_at' : 'id');
+        // Legacy consumer repositories (cred's datatables writer) left
+        // updated_at as the zero-date on every row; a plain updated_at sort
+        // therefore collapses. Fall back per row to created_at.
+        $hasUpdated = in_array('updated_at', $available, true);
+        $hasCreated = in_array('created_at', $available, true);
+        if ($hasUpdated && $hasCreated) {
+            $order = "COALESCE(NULLIF(updated_at,'0000-00-00 00:00:00'), created_at)";
+        } elseif ($hasUpdated || $hasCreated) {
+            $order = $hasUpdated ? 'updated_at' : 'created_at';
+        } else {
+            $order = 'id';
+        }
         $rows = $this->db->results($this->db->prepare(
             "SELECT {$columnSql} FROM `{$workflows}` WHERE {$whereSql} "
             . "ORDER BY {$order} DESC LIMIT %d OFFSET %d",
@@ -57,6 +66,7 @@ final class WorkflowQuery
         $ids = array_map(static fn (array $row): int => (int) $row['id'], $rows);
         $itemsByWorkflow = [];
         $forksByWorkflow = [];
+        $metaByWorkflow = [];
         if ($ids !== []) {
             $placeholders = implode(',', array_fill(0, count($ids), '%d'));
             $itemRows = $this->db->results($this->db->prepare(
@@ -86,6 +96,19 @@ final class WorkflowQuery
                     'current_idx' => (int) $fork['current_idx'],
                 ];
             }
+            // Schema v7: meta lives in the side table; the row's JSON column
+            // only serves unbackfilled legacy rows (fallback below).
+            $metaTable = $this->config->table('behaviour_workflows_meta');
+            if ($this->db->tableExists($metaTable)) {
+                $metaRows = $this->db->results($this->db->prepare(
+                    "SELECT id,meta_key,meta_value FROM `{$metaTable}` "
+                    . "WHERE id IN ({$placeholders}) ORDER BY meta_id",
+                    $ids,
+                ));
+                foreach ($metaRows as $metaRow) {
+                    $metaByWorkflow[(int) $metaRow['id']][(string) $metaRow['meta_key']] = $metaRow['meta_value'];
+                }
+            }
         }
 
         foreach ($rows as &$row) {
@@ -99,6 +122,9 @@ final class WorkflowQuery
             $row['root_workflow_id'] = $row['root_workflow_id'] !== null
                 ? (int) $row['root_workflow_id']
                 : null;
+            if (isset($metaByWorkflow[$row['id']])) {
+                $row['meta'] = $metaByWorkflow[$row['id']];
+            }
             $row['items'] = $itemsByWorkflow[$row['id']] ?? [];
             $row['forks'] = $forksByWorkflow[$row['id']] ?? [];
         }
