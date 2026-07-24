@@ -25,7 +25,7 @@ trait RecordsDomainEvents {
    * EventsUnitOfWork::collect_from(), reached through the (final) repository
    * save(). Consumer code must never call it — walking off with the diary is
    * how events dodge the seal. To clear without harvesting, use
-   * discard_events(); IntegrationConformance::pull_events_violations() is
+   * IntegrationConformance::pull_events_violations() is
    * the fence.
    *
    * @return IDomainEvent[]
@@ -36,13 +36,4 @@ trait RecordsDomainEvents {
     return $events;
   }
 
-  /**
-   * Clear the diary WITHOUT returning it — the intention-revealing verb for
-   * reconstitution: an aggregate hydrated from storage may have raised
-   * constructor-time events, and loading must not re-raise them. Nothing is
-   * handed back, so there is nothing to smuggle past the unit of work.
-   */
-  public function discard_events(): void {
-    $this->events = [];
-  }
 }

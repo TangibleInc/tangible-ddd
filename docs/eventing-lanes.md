@@ -9,7 +9,7 @@ One rule generates everything else: **raise it on whom it happened to.**
 
 | # | Lane | Verb | Who | Fence |
 | --- | --- | --- | --- | --- |
-| 1 | Aggregate diary | `$this->event()` inside the aggregate (`RecordsDomainEvents`) | The thing it happened to | `PersistsAggregatesRepository::save()` is `final`; `pull_events()` is framework-only (`pull_events_violations`) |
+| 1 | Aggregate diary | `$this->event()` inside the aggregate (`RecordsDomainEvents`) | The thing it happened to | `PersistsAggregatesRepository::save()` is `final`; `pull_events()` is framework-only (`pull_events_violations`); hydration never records |
 | 2 | Handler-level raise | `$this->event()` via the `RaisesEvents` trait | A coordinator (command handler, `WorkflowHandler`) | `handler_raised_events()` — every call site allowlisted, i.e. reviewed |
 | 3 | Direct bus | `IIntegrationEventBus::publish()` | Transport fan-out only | Trajectory guard in the bus; the outbox row carries the raiser edge (`command_id`) |
 
@@ -23,10 +23,12 @@ overriding subclass is the one move that silently kills every downstream
 hook.
 
 `pull_events()` is the framework's **harvest verb** — its only caller is
-`EventsUnitOfWork::collect_from()`. Consumer code must never call it. To
-clear a diary during **reconstitution** (loading must not re-raise stored
-moments), use the intention-revealing alias `discard_events()`: it clears
-and returns nothing, so there is nothing to smuggle past the unit of work.
+`EventsUnitOfWork::collect_from()`. Consumer code must never call it, and
+there is no sanctioned reason to: **hydration never records**. Gate birth
+events on identity (`if (null === $id) $this->event(...)` — cred's
+`Earning` is the reference) and raise everything else in behavior methods
+(datastream's `EventSubscription`). A diary that needs clearing after load
+is a construction-path bug, not a cleanup chore.
 `IntegrationConformance::pull_events_violations($src_dir)` is the CI fence.
 
 ### Lane 2 — the handler-level raise (the exception, blessed)

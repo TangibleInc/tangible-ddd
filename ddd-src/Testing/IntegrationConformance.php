@@ -146,7 +146,8 @@ final class IntegrationConformance {
   /**
    * pull_events() fence (hardening item 1): the harvest verb belongs to
    * EventsUnitOfWork::collect_from() alone — consumer code clearing a
-   * freshly-loaded diary must say discard_events() (which returns nothing)
+   * freshly-loaded diary is a construction-path bug: hydration must not
+   * record (gate birth events on identity — null === $id)
    * instead of walking off with the events. A TEXT scan, not reflection:
    * the sin is a call site, and the sources must not need to be loadable
    * to be judged. Declarations (`function pull_events`) do not trip it.
@@ -164,7 +165,8 @@ final class IntegrationConformance {
       'pull_events(',
       static fn (string $line): bool => !str_contains($line, 'function pull_events'),
       'calls pull_events() — the framework\'s harvest verb (EventsUnitOfWork::collect_from '
-      . 'is its only caller); to clear a diary on reconstitution use discard_events()',
+      . 'is its only caller); a diary that needs clearing after load is a '
+      . 'construction-path bug — hydration must not record (gate birth events on identity)',
     );
   }
 

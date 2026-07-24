@@ -13,7 +13,7 @@ use TangibleDDD\Testing\IntegrationConformance;
  * autoloaded to be judged.
  *
  *  - pull_events_violations(): pull_events() is the framework's harvest
- *    verb; consumer code clearing a diary must say discard_events().
+ *    verb; a diary that needs clearing after load is a construction bug.
  *  - handler_raised_events(): every $this->event( in a command handler (or
  *    any class naming RaisesEvents) is an act-level raise — legal, but
  *    only as a conscious, reviewed decision. The allowlist IS the review.
@@ -30,10 +30,10 @@ class EventingConformanceTest extends TestCase {
     $this->assertCount(1, $violations);
     $this->assertStringContainsString('RehydratingRepository.php', $violations[0]['file']);
     $this->assertSame(14, $violations[0]['line']);
-    $this->assertStringContainsString('discard_events', $violations[0]['problem'], 'points at the blessed verb');
+    $this->assertStringContainsString('hydration must not record', $violations[0]['problem'], 'points at the doctrine');
   }
 
-  public function test_discarding_repository_is_clean_and_declarations_do_not_trip(): void {
+  public function test_identity_gated_repository_is_clean_and_declarations_do_not_trip(): void {
     $this->assertSame([], IntegrationConformance::pull_events_violations(self::FIXTURES . '/clean'));
   }
 
