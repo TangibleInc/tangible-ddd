@@ -21,6 +21,8 @@ final class EventRouter {
     $this->dispatcher->dispatch($event);
 
     if ($event instanceof IAnnouncesIntegration) {
+      // The announcer frame (facts roster, twin edge): the bus attributes
+      // announced_by to the moment whose routing put the fact on the wire.
       $this->bus->publish($event->to_integration());
     }
   }

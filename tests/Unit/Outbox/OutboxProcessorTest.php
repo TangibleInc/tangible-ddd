@@ -178,6 +178,78 @@ class OutboxProcessorTest extends TestCase {
     $this->assertSame('evt-wrap', $captured_payload['__event_id']);
   }
 
+  public function test_delivery_with_a_listener_is_not_flagged_unheard(): void {
+    global $_test_actions, $_test_did_actions;
+    $_test_actions = [];
+    $_test_did_actions = [];
+    add_action('test_integration_test_event', static function (): void {});
+
+    $entry = $this->make_entry('evt-heard');
+    $repo = new \TangibleDDD\Tests\Fakes\FakeOutboxRepository();
+    $repo->entries[] = $entry; // any pending row will do — fetch returns it
+
+    $publisher = $this->createMock(IOutboxPublisher::class);
+    $publisher->expects($this->once())->method('publish');
+
+    $processor = new OutboxProcessor($this->config, $repo, new OutboxConfig(), $publisher);
+    $result = $processor->process_batch();
+
+    $this->assertSame(1, $result->completed);
+    $this->assertSame(0, did_action('tangible_ddd_fact_delivered_unheard'));
+    $this->assertSame([], $repo->unheard_notes, 'a heard delivery leaves no note');
+  }
+
+  public function test_delivery_with_zero_listeners_still_delivers_but_flags_unheard(): void {
+    global $_test_actions, $_test_did_actions;
+    $_test_actions = [];
+    $_test_did_actions = [];
+
+    $entry = $this->make_entry('evt-unheard');
+    $repo = new \TangibleDDD\Tests\Fakes\FakeOutboxRepository();
+    $repo->entries[] = $entry;
+
+    $seen = null;
+    add_action('tangible_ddd_fact_delivered_unheard', static function ($event) use (&$seen): void {
+      $seen = $event;
+    });
+
+    $publisher = $this->createMock(IOutboxPublisher::class);
+    $publisher->expects($this->once())->method('publish'); // contract unchanged: deliver anyway
+
+    $processor = new OutboxProcessor($this->config, $repo, new OutboxConfig(), $publisher);
+    $result = $processor->process_batch();
+
+    $this->assertSame(1, $result->completed, 'status stays completed');
+    $this->assertSame(1, did_action('tangible_ddd_fact_delivered_unheard'));
+    $this->assertInstanceOf(\TangibleDDD\Application\Infrastructure\FactDeliveredUnheard::class, $seen);
+    $this->assertSame('evt-unheard', $seen->entry()->event_id);
+
+    $this->assertArrayHasKey('evt-unheard', $repo->unheard_notes);
+    $this->assertStringContainsString('zero listeners', $repo->unheard_notes['evt-unheard']);
+  }
+
+  public function test_unheard_note_is_skipped_on_repositories_without_the_method(): void {
+    // A consumer-authored IOutboxRepository predating this release must not
+    // fatal — the note is best-effort, guarded by method_exists.
+    global $_test_actions, $_test_did_actions;
+    $_test_actions = [];
+    $_test_did_actions = [];
+
+    $entry = $this->make_entry('evt-bare');
+    $repo = $this->createMock(IOutboxRepository::class);
+    $repo->method('release_stale_locks');
+    $repo->method('fetch_pending')->willReturn([$entry]);
+    $repo->expects($this->once())->method('mark_completed')->with('evt-bare');
+
+    $publisher = $this->createMock(IOutboxPublisher::class);
+
+    $processor = new OutboxProcessor($this->config, $repo, new OutboxConfig(), $publisher);
+    $result = $processor->process_batch();
+
+    $this->assertSame(1, $result->completed);
+    $this->assertSame(1, did_action('tangible_ddd_fact_delivered_unheard'), 'the observability action still fires');
+  }
+
   public function test_stale_locks_released_before_fetching(): void {
     $repo = $this->createMock(IOutboxRepository::class);
     // release_stale_locks should be called with the config value

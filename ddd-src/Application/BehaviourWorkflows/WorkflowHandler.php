@@ -29,6 +29,7 @@ use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus;
  */
 abstract class WorkflowHandler implements ICommandHandler {
   use RescheduleAware;
+  use \TangibleDDD\Application\Events\RaisesEvents;
 
   public static int $max_retries = 3;
   public static int $reschedule_interval = 5;
@@ -43,7 +44,17 @@ abstract class WorkflowHandler implements ICommandHandler {
     // $config property. Existing subclasses (parent::__construct(repo, item_repo))
     // are unaffected; pass it to enable WorkflowFailed infrastructure events.
     protected readonly ?IDDDConfig $infra_config = null,
+    // Optional + distinctly named ($events would collide with subclasses
+    // promoting their own — e.g. mega-trace's IssuanceRoutine holds its bus
+    // as $events). Pass the consumer's live EventsUnitOfWork to enable the
+    // act-level $this->event() lane (RaisesEvents); without it event()
+    // throws rather than silently dropping moments.
+    protected readonly ?\TangibleDDD\Application\Events\EventsUnitOfWork $events_uow = null,
   ) {}
+
+  protected function events_uow(): ?\TangibleDDD\Application\Events\EventsUnitOfWork {
+    return $this->events_uow;
+  }
 
   public function handle(ICommand $command): void {
     $this->started_at = time();

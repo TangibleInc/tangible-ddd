@@ -16,7 +16,11 @@ interface IRecordsDomainEvents {
   /**
    * Pull all recorded events and clear the internal list.
    *
+   * Framework harvest verb — called by EventsUnitOfWork::collect_from()
+   * only; consumer code never calls it (hydration must not record).
+   *
    * @return IDomainEvent[]
    */
   public function pull_events(): array;
+
 }

@@ -144,15 +144,144 @@ final class IntegrationConformance {
   }
 
   /**
-   * One line per violation — ready for an assertion message or doctor output.
+   * pull_events() fence (hardening item 1): the harvest verb belongs to
+   * EventsUnitOfWork::collect_from() alone — consumer code clearing a
+   * freshly-loaded diary is a construction-path bug: hydration must not
+   * record (gate birth events on identity — null === $id)
+   * instead of walking off with the events. A TEXT scan, not reflection:
+   * the sin is a call site, and the sources must not need to be loadable
+   * to be judged. Declarations (`function pull_events`) do not trip it.
    *
-   * @param list<array{class: string, param: string, problem: string}> $violations
+   * Wire it like event_violations():
+   *
+   *   $this->assertSame([], IntegrationConformance::pull_events_violations(__DIR__ . '/../../src'),
+   *     IntegrationConformance::describe(...));
+   *
+   * @return list<array{file: string, line: int, problem: string}>
+   */
+  public static function pull_events_violations(string $src_dir): array {
+    return self::grep_sources(
+      $src_dir,
+      'pull_events(',
+      static fn (string $line): bool => !str_contains($line, 'function pull_events'),
+      'calls pull_events() — the framework\'s harvest verb (EventsUnitOfWork::collect_from '
+      . 'is its only caller); a diary that needs clearing after load is a '
+      . 'construction-path bug — hydration must not record (gate birth events on identity)',
+    );
+  }
+
+  /**
+   * Handler-raise fitness check (hardening item 5): every `$this->event(`
+   * in a command handler — or in any class naming the RaisesEvents
+   * trait — is an act-level raise. Legal, but never casual: ALLOWLISTING
+   * IS THE POINT — each occurrence a consumer suite passes here is a
+   * conscious, reviewed decision, and a new unreviewed raise fails CI.
+   *
+   * Scope: files under an Application/CommandHandlers path segment, plus
+   * any file whose source mentions RaisesEvents. Allowlist entries
+   * cover an occurrence when they equal a class declared in the file or
+   * appear as a substring of its path.
+   *
+   * @param list<string> $allowlist reviewed classes (FQCN) or path fragments
+   * @return list<array{file: string, line: int, problem: string}>
+   */
+  public static function handler_raised_events(string $src_dir, array $allowlist = []): array {
+    $occurrences = self::grep_sources(
+      $src_dir,
+      '$this->event(',
+      null,
+      'raises an act-level event — reschedules/process starts only; if this names something '
+      . 'that happened to a thing with a repository, raise it on the aggregate. Reviewed? '
+      . 'Add it to the allowlist.',
+      static function (string $path, string $source): bool {
+        $normalized = str_replace('\\', '/', $path);
+        return str_contains($normalized, 'Application/CommandHandlers/')
+          || str_contains($source, 'RaisesEvents');
+      },
+    );
+
+    if ($allowlist === []) {
+      return $occurrences;
+    }
+
+    return array_values(array_filter($occurrences, static function (array $o) use ($allowlist): bool {
+      $source = (string) file_get_contents($o['file']);
+      $declared = self::declared_in_source($source);
+      foreach ($allowlist as $entry) {
+        if (in_array(ltrim($entry, '\\'), $declared, true) || str_contains($o['file'], $entry)) {
+          return false; // covered — a reviewed decision
+        }
+      }
+      return true;
+    }));
+  }
+
+  /**
+   * One line per violation — ready for an assertion message or doctor output.
+   * Handles both the reflection rows ({class, param, problem}) and the grep
+   * rows ({file, line, problem}).
+   *
+   * @param list<array{class?: string, param?: string, file?: string, line?: int, problem: string}> $violations
    */
   public static function describe(array $violations): string {
     return implode("\n", array_map(
-      static fn (array $v) => sprintf('%s::$%s — %s', $v['class'], $v['param'], $v['problem']),
+      static fn (array $v) => isset($v['file'])
+        ? sprintf('%s:%d — %s', $v['file'], $v['line'], $v['problem'])
+        : sprintf('%s::$%s — %s', $v['class'], $v['param'], $v['problem']),
       $violations,
     ));
+  }
+
+  /**
+   * Shared text scanner for the call-site fences.
+   *
+   * @param callable(string): bool|null $line_ok extra per-line filter (true = keep flagging)
+   * @param callable(string, string): bool|null $file_in_scope path+source scope gate
+   * @return list<array{file: string, line: int, problem: string}>
+   */
+  private static function grep_sources(
+    string $src_dir,
+    string $needle,
+    ?callable $line_ok,
+    string $problem,
+    ?callable $file_in_scope = null
+  ): array {
+    $real = realpath($src_dir);
+    if ($real === false) {
+      return [];
+    }
+
+    $violations = [];
+    $files = new \RecursiveIteratorIterator(
+      new \RecursiveDirectoryIterator($real, \FilesystemIterator::SKIP_DOTS),
+    );
+
+    foreach ($files as $file) {
+      if ($file->getExtension() !== 'php') {
+        continue;
+      }
+
+      $path = $file->getPathname();
+      $source = (string) file_get_contents($path);
+      if (!str_contains($source, $needle)) {
+        continue;
+      }
+      if ($file_in_scope !== null && !$file_in_scope($path, $source)) {
+        continue;
+      }
+
+      foreach (explode("\n", $source) as $i => $line) {
+        if (!str_contains($line, $needle)) {
+          continue;
+        }
+        if ($line_ok !== null && !$line_ok($line)) {
+          continue;
+        }
+        $violations[] = ['file' => $path, 'line' => $i + 1, 'problem' => $problem];
+      }
+    }
+
+    return $violations;
   }
 
   // ── the codec's law, as reflection ───────────────────────────────────

@@ -21,6 +21,13 @@ trait RecordsDomainEvents {
   /**
    * Pull all recorded events and clear the list.
    *
+   * THE FRAMEWORK'S HARVEST VERB. Its only caller is
+   * EventsUnitOfWork::collect_from(), reached through the (final) repository
+   * save(). Consumer code must never call it — walking off with the diary is
+   * how events dodge the seal. To clear without harvesting, use
+   * IntegrationConformance::pull_events_violations() is
+   * the fence.
+   *
    * @return IDomainEvent[]
    */
   public function pull_events(): array {
@@ -28,4 +35,5 @@ trait RecordsDomainEvents {
     $this->events = [];
     return $events;
   }
+
 }

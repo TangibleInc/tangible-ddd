@@ -20,6 +20,9 @@ final class FakeOutboxRepository implements IOutboxRepository {
   /** @var string[] */
   public array $dlq = [];
 
+  /** @var array<string, string> event_id => unheard note */
+  public array $unheard_notes = [];
+
   /** @var int */
   public int $stale_locks_released = 0;
 
@@ -90,6 +93,10 @@ final class FakeOutboxRepository implements IOutboxRepository {
 
   public function mark_failed(string $event_id, string $error): void {
     $this->failed[$event_id] = $error;
+  }
+
+  public function note_delivered_unheard(string $event_id, string $note): void {
+    $this->unheard_notes[$event_id] = $note;
   }
 
   public function move_to_dlq(string $event_id, string $final_error = ''): void {

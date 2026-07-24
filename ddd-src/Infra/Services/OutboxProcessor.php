@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Infra\Services;
 
+use TangibleDDD\Application\Infrastructure\FactDeliveredUnheard;
 use TangibleDDD\Application\Infrastructure\OutboxAttemptFailed;
 use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Application\Outbox\IOutboxPublisher;
@@ -62,12 +63,35 @@ final class OutboxProcessor {
 
     foreach ($entries as $entry) {
       try {
+        // Delivered-to-nobody check happens BEFORE firing: has_action reads
+        // the listener table as it stands at drain time. The contract is
+        // unchanged either way — an unheard fact is still delivered.
+        $unheard = function_exists('has_action') && !has_action($entry->integration_action);
+
         $wrapped = $this->wrap_payload_for_transport($entry);
         $this->publisher->publish($entry, $wrapped);
         $this->outbox->mark_completed($entry->event_id);
         $completed++;
 
         $this->log_event('completed', $entry);
+
+        if ($unheard) {
+          // Observability, not failure: status stays completed. The action
+          // is for monitors; the row note survives for the dashboard.
+          // Fires {prefix}_fact_delivered_unheard + the global
+          // tangible_ddd_fact_delivered_unheard.
+          (new FactDeliveredUnheard($entry))->dispatch($this->config);
+
+          // Best-effort, additive: the note method lives on the concrete
+          // repository, NOT on IOutboxRepository — a consumer-authored
+          // implementation predating this release must not fatal here.
+          if (method_exists($this->outbox, 'note_delivered_unheard')) {
+            $this->outbox->note_delivered_unheard(
+              $entry->event_id,
+              sprintf('delivered with zero listeners on "%s"', $entry->integration_action)
+            );
+          }
+        }
 
       } catch (Throwable $e) {
         $new_attempts = $entry->attempts + 1;

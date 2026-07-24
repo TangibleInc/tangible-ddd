@@ -70,6 +70,10 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
       \TangibleDDD\WordPress\touches_index_fact(
         $this->config, $event, $event_id, $correlation, $raiser
       );
+
+      // The facts roster (item 2): only ACTS keep one — flat announces and
+      // drain-side (fact-scope) publishes have no act audit to ride.
+      // announced_by is the routing moment when EventRouter's frame is
     }
   }
 }
