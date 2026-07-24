@@ -28,24 +28,10 @@ class EventsUnitOfWork {
 
   private bool $sealed = false;
 
-  /**
-   * Origin stamps (hardening item 5): instance → 'aggregate'|'act'. A
-   * WeakMap so stamps die with their events; reset() renews it with the
-   * rest of the per-command state. Read at finalise via origin_of().
-   *
-   * @var \WeakMap<IDomainEvent, string>
-   */
-  private \WeakMap $origins;
-
-  public function __construct() {
-    $this->origins = new \WeakMap();
-  }
-
   public function reset(): void {
     $this->queued = [];
     $this->published = [];
     $this->sealed = false;
-    $this->origins = new \WeakMap();
   }
 
   /**
@@ -57,12 +43,7 @@ class EventsUnitOfWork {
     $this->sealed = true;
   }
 
-  /**
-   * @param string $origin Which lane raised this moment: 'act' (default —
-   *   handler/coordinator record) or 'aggregate' (collect_from harvest).
-   *   Additive param; stamped per instance for the audit's events entries.
-   */
-  public function record(IDomainEvent $event, string $origin = 'act'): void {
+  public function record(IDomainEvent $event): void {
     // Re-raise guard: keyed on IIntegrationEvent because PublishedFacts tracks
     // published FACTS (self-publisher instances). Distinct from the seal.
     if ($event instanceof IIntegrationEvent && null !== $published_as = PublishedFacts::id_of($event)) {
@@ -80,24 +61,14 @@ class EventsUnitOfWork {
       throw new DomainEventAfterSealException(get_class($event));
     }
     $this->queued[] = $event;
-    $this->origins[$event] = $origin;
   }
 
   public function collect_from(IRecordsDomainEvents $aggregate): void {
     $events = $aggregate->pull_events();
 
     foreach ($events as $e) {
-      $this->record($e, 'aggregate');
+      $this->record($e);
     }
-  }
-
-  /**
-   * The lane this instance was raised through. Unknown instances read as
-   * 'act' — the conservative answer (an unstamped moment gets the lane
-   * that invites review, never a fabricated aggregate pedigree).
-   */
-  public function origin_of(IDomainEvent $event): string {
-    return $this->origins[$event] ?? 'act';
   }
 
   /**

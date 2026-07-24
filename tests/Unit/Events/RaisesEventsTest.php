@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowHandler;
 use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
-use TangibleDDD\Application\Events\RaisesActEvents;
+use TangibleDDD\Application\Events\RaisesEvents;
 use TangibleDDD\Domain\BehaviourWorkflow;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionResult;
@@ -21,7 +21,7 @@ use TangibleDDD\Tests\Fakes\FakeWorkItemRepository;
  * the live EventsUnitOfWork. This lane is for ACT-level coordination facts
  * only — anything that happened to an aggregate belongs on the aggregate.
  */
-class RaisesActEventsTest extends TestCase {
+class RaisesEventsTest extends TestCase {
 
   public function test_event_records_into_the_unit_of_work(): void {
     $uow = new EventsUnitOfWork();
@@ -88,11 +88,11 @@ class RaisesActEventsTest extends TestCase {
 
   private function make_raiser(?EventsUnitOfWork $uow): object {
     return new class($uow) {
-      use RaisesActEvents;
+      use RaisesEvents;
 
       public function __construct(private readonly ?EventsUnitOfWork $uow) {}
 
-      protected function act_events(): ?EventsUnitOfWork { return $this->uow; }
+      protected function events_uow(): ?EventsUnitOfWork { return $this->uow; }
 
       public function raise(\TangibleDDD\Domain\Events\IDomainEvent $e): void { $this->event($e); }
     };

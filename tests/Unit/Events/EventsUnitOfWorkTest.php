@@ -100,56 +100,6 @@ class EventsUnitOfWorkTest extends TestCase {
     $this->assertCount(3, $drained);
   }
 
-  // ── origin stamps (hardening item 5) ──
-
-  public function test_record_defaults_to_act_origin(): void {
-    $event = new FakeDomainEvent(1);
-    $this->uow->record($event);
-
-    $this->assertSame('act', $this->uow->origin_of($event));
-  }
-
-  public function test_collect_from_stamps_aggregate_origin(): void {
-    $aggregate = new class(null) extends \TangibleDDD\Domain\Shared\Aggregate {};
-    $event = new FakeDomainEvent(1);
-    $aggregate->event($event);
-
-    $this->uow->collect_from($aggregate);
-
-    $this->assertSame('aggregate', $this->uow->origin_of($event));
-  }
-
-  public function test_origin_survives_the_drain(): void {
-    // Finalise reads origins off published() AFTER drains — the stamp must
-    // outlive the queue, like Reactions' rows do.
-    $aggregate = new class(null) extends \TangibleDDD\Domain\Shared\Aggregate {};
-    $harvested = new FakeDomainEvent(1);
-    $aggregate->event($harvested);
-    $this->uow->collect_from($aggregate);
-    $raised = new FakeDomainEvent(2);
-    $this->uow->record($raised);
-
-    $this->uow->drain();
-
-    $this->assertSame('aggregate', $this->uow->origin_of($harvested));
-    $this->assertSame('act', $this->uow->origin_of($raised));
-  }
-
-  public function test_unknown_instance_reads_as_act(): void {
-    $this->assertSame('act', $this->uow->origin_of(new FakeDomainEvent(9)));
-  }
-
-  public function test_reset_clears_origins(): void {
-    $aggregate = new class(null) extends \TangibleDDD\Domain\Shared\Aggregate {};
-    $event = new FakeDomainEvent(1);
-    $aggregate->event($event);
-    $this->uow->collect_from($aggregate);
-
-    $this->uow->reset();
-
-    $this->assertSame('act', $this->uow->origin_of($event), 'stamps die with the unit of work');
-  }
-
   public function test_sealed_uow_rejects_domain_events(): void {
     $this->uow->seal();
 

@@ -74,14 +74,6 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
       // The facts roster (item 2): only ACTS keep one — flat announces and
       // drain-side (fact-scope) publishes have no act audit to ride.
       // announced_by is the routing moment when EventRouter's frame is
-      // open, null for a momentless-port (direct bus) publish.
-      if ($cause?->kind === Kind::Act) {
-        \TangibleDDD\Application\Events\ActFacts::note(
-          $event::name(),
-          $event_id,
-          \TangibleDDD\Application\Events\ActFacts::announcing()
-        );
-      }
     }
   }
 }

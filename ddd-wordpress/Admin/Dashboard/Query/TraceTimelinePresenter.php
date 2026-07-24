@@ -217,12 +217,6 @@ final class TraceTimelinePresenter
                     return $port;
                 }, $portsByAct[$node['uid']] ?? []);
                 $moments = $node['raw']['events'] ?? null;
-                if (is_array($moments) && array_key_exists('moments', $moments)) {
-                    // 0.6.x at-rest shape: {moments, facts}. The facts
-                    // roster is data-first — dash consumption is a
-                    // follow-up; only the moments list feeds the drawer.
-                    $moments = $moments['moments'];
-                }
                 $node['moments'] = is_array($moments) ? $moments : [];
             }
             unset(

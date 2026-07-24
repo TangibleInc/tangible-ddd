@@ -76,9 +76,9 @@ class ActFootprintTest extends TestCase {
 
     $events = json_decode($this->updates[0]['events'], true);
     $this->assertSame(
-      [['name' => LicenseIssued::name(), 'reactions' => [], 'origin' => 'act']],
-      $events['moments'],
-      'names + reactions + origin only — touches are a JOIN away, not a copy'
+      [['name' => LicenseIssued::name(), 'reactions' => []]],
+      $events,
+      'names + reactions only — touches are a JOIN away, not a copy'
     );
   }
 

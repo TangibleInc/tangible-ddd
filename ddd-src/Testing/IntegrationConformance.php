@@ -170,13 +170,13 @@ final class IntegrationConformance {
 
   /**
    * Handler-raise fitness check (hardening item 5): every `$this->event(`
-   * in a command handler — or in any class naming the RaisesActEvents
+   * in a command handler — or in any class naming the RaisesEvents
    * trait — is an act-level raise. Legal, but never casual: ALLOWLISTING
    * IS THE POINT — each occurrence a consumer suite passes here is a
    * conscious, reviewed decision, and a new unreviewed raise fails CI.
    *
    * Scope: files under an Application/CommandHandlers path segment, plus
-   * any file whose source mentions RaisesActEvents. Allowlist entries
+   * any file whose source mentions RaisesEvents. Allowlist entries
    * cover an occurrence when they equal a class declared in the file or
    * appear as a substring of its path.
    *
@@ -194,7 +194,7 @@ final class IntegrationConformance {
       static function (string $path, string $source): bool {
         $normalized = str_replace('\\', '/', $path);
         return str_contains($normalized, 'Application/CommandHandlers/')
-          || str_contains($source, 'RaisesActEvents');
+          || str_contains($source, 'RaisesEvents');
       },
     );
 

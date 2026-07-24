@@ -30,7 +30,6 @@ class ActBracketTest extends TestCase {
   protected function setUp(): void {
     Correlation::reset();
     Reactions::reset();
-    \TangibleDDD\Application\Events\ActFacts::reset();
     $this->inserts = [];
     $this->updates = [];
   }
@@ -202,73 +201,14 @@ class ActBracketTest extends TestCase {
 
     $events = json_decode($this->updates[0]['events'], true);
     $this->assertSame([
-      'moments' => [
-        [
-          'name' => 'fake_domain_event',
-          'reactions' => [['handler' => 'Acme\\Handlers\\SendWelcome', 'duration_ms' => 7]],
-          'origin' => 'act',
-        ],
-        [
-          'name' => 'fake_domain_event',
-          'reactions' => [],
-          'origin' => 'act',
-        ],
+      [
+        'name' => 'fake_domain_event',
+        'reactions' => [['handler' => 'Acme\\Handlers\\SendWelcome', 'duration_ms' => 7]],
       ],
-      'facts' => [],
+      [
+        'name' => 'fake_domain_event',
+        'reactions' => [],
+      ],
     ], $events);
-  }
-
-  public function test_facts_ride_the_finalise_alongside_moments(): void {
-    // The facts roster (hardening item 2): every integration fact published
-    // from inside this act lands in the same audit JSON as the moments —
-    // {moments: [...], facts: [{name, event_id, announced_by}]}. A direct
-    // bus publish has no routing moment, so announced_by is null.
-    $bracket = $this->make_bracket('actb10');
-    $bus = new \TangibleDDD\Infra\Services\OutboxIntegrationEventBus(
-      new \TangibleDDD\Tests\Fakes\FakeOutboxRepository(),
-      new \TangibleDDD\Tests\Fakes\FakeDDDConfig()
-    );
-
-    $bracket->execute(new \stdClass(), static function () use ($bus) {
-      $bus->publish(new \TangibleDDD\Tests\Fakes\FakeIntegrationEvent(entity_id: 7));
-      return 'ok';
-    });
-
-    $events = json_decode($this->updates[0]['events'], true);
-    $this->assertSame(
-      [['name' => 'fake_integration_event', 'event_id' => 'evt_1', 'announced_by' => null]],
-      $events['facts']
-    );
-  }
-
-  public function test_stray_facts_from_a_previous_context_never_leak_into_an_act(): void {
-    // Per-act reset at bracket-open: whatever a prior (audit-disabled or
-    // crashed) context left on the whiteboard is wiped before the handler.
-    \TangibleDDD\Application\Events\ActFacts::note('stray_fact', 'evt-stale', null);
-
-    $bracket = $this->make_bracket('actb11');
-    $bracket->execute(new \stdClass(), static fn () => 'ok');
-
-    $events = json_decode($this->updates[0]['events'], true);
-    $this->assertSame([], $events['facts']);
-  }
-
-  public function test_moments_carry_their_origin(): void {
-    // Item 5: aggregate-harvested moments say 'aggregate'; handler/act-level
-    // record() says 'act' — the fitness signal for handler-raise review.
-    $bracket = $this->make_bracket('actb12');
-
-    $bracket->execute(new \stdClass(), function () {
-      $aggregate = new class(null) extends \TangibleDDD\Domain\Shared\Aggregate {};
-      $aggregate->event(new \TangibleDDD\Tests\Fakes\FakeDomainEvent(1, 'grown'));
-      $this->uow->collect_from($aggregate);
-      $this->uow->record(new \TangibleDDD\Tests\Fakes\FakeDomainEvent(2, 'rescheduled'));
-      $this->uow->drain();
-      return 'ok';
-    });
-
-    $moments = json_decode($this->updates[0]['events'], true)['moments'];
-    $this->assertSame('aggregate', $moments[0]['origin']);
-    $this->assertSame('act', $moments[1]['origin']);
   }
 }

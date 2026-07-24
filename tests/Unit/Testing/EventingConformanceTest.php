@@ -15,7 +15,7 @@ use TangibleDDD\Testing\IntegrationConformance;
  *  - pull_events_violations(): pull_events() is the framework's harvest
  *    verb; consumer code clearing a diary must say discard_events().
  *  - handler_raised_events(): every $this->event( in a command handler (or
- *    any class naming RaisesActEvents) is an act-level raise — legal, but
+ *    any class naming RaisesEvents) is an act-level raise — legal, but
  *    only as a conscious, reviewed decision. The allowlist IS the review.
  */
 class EventingConformanceTest extends TestCase {
@@ -60,7 +60,7 @@ class EventingConformanceTest extends TestCase {
     $this->assertSame(
       ['RescheduleRaisingHandler.php', 'TraitRaisingService.php'],
       $files,
-      'CommandHandlers/* and RaisesActEvents users are in scope; other $this->event( calls are not'
+      'CommandHandlers/* and RaisesEvents users are in scope; other $this->event( calls are not'
     );
   }
 

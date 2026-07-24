@@ -23,14 +23,7 @@ final class EventRouter {
     if ($event instanceof IAnnouncesIntegration) {
       // The announcer frame (facts roster, twin edge): the bus attributes
       // announced_by to the moment whose routing put the fact on the wire.
-      // Mirrors Reactions' dispatch stack; finally so a failed publish
-      // never leaves a stale frame.
-      ActFacts::announce_open($event::name());
-      try {
-        $this->bus->publish($event->to_integration());
-      } finally {
-        ActFacts::announce_close();
-      }
+      $this->bus->publish($event->to_integration());
     }
   }
 }
