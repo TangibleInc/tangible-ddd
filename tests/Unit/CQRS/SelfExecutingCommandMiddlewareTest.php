@@ -225,6 +225,58 @@ class SelfExecutingCommandMiddlewareTest extends TestCase {
 
     $this->assertSame(42, $command->seen);
   }
+
+  // ── the act lane (0.6.4): $this->event() on self-handling commands ──
+
+  public function test_command_raises_into_the_container_uow(): void {
+    $uow = new \TangibleDDD\Application\Events\EventsUnitOfWork();
+    $middleware = new SelfExecutingCommandMiddleware($this->make_container([
+      \TangibleDDD\Application\Events\EventsUnitOfWork::class => $uow,
+    ]));
+
+    $command = new class extends SelfHandlingCommand {
+      protected function handle(): void {
+        $this->event(new \TangibleDDD\Tests\Fakes\FakeDomainEvent(4021, 'requested'));
+      }
+    };
+
+    $middleware->execute($command, $this->fail_next());
+
+    $drained = $uow->drain();
+    $this->assertCount(1, $drained, 'the raise landed in the SAME UoW instance the container holds');
+    $this->assertSame(4021, $drained[0]->entity_id);
+  }
+
+  public function test_command_raise_without_uow_service_throws_naming_the_command(): void {
+    // Container has no EventsUnitOfWork: the raise must throw, never
+    // silently drop the moment.
+    $middleware = new SelfExecutingCommandMiddleware($this->make_container());
+
+    $command = new SelfRaisingProbeCommand();
+
+    try {
+      $middleware->execute($command, $this->fail_next());
+      $this->fail('a raise without a unit of work must throw');
+    } catch (\LogicException $e) {
+      $this->assertStringContainsString(SelfRaisingProbeCommand::class, $e->getMessage());
+    }
+  }
+
+  public function test_query_never_receives_the_act_lane(): void {
+    // Reads must not record: the query base carries no event() and the
+    // middleware attaches nothing to queries even when the container could
+    // supply a UoW.
+    $this->assertFalse(
+      method_exists(\TangibleDDD\Application\Queries\SelfHandlingQuery::class, 'event'),
+      'SelfHandlingQuery must not grow a raise lane'
+    );
+  }
+}
+
+class SelfRaisingProbeCommand extends SelfHandlingCommand {
+  protected function handle(): void {
+    $this->event(new \TangibleDDD\Tests\Fakes\FakeDomainEvent(1, 'doomed'));
+  }
 }
 
 class HandleDepA {}

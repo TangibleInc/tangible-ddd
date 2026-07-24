@@ -517,7 +517,7 @@ DOMAIN moments are not a pathology and get no flag).
 Reference adoptions: cred PR #9 (facade removal + fences + `HydratesSilently`),
 datastream PR #5 (identity-gated `CapturedEvent::occur()`).
 
-## 0.6.4 (act lane reaches domain-event handlers)
+## 0.6.4 (act lane reaches domain-event handlers and self-handling commands)
 
 `WordPressActionHandler` now mirrors `WorkflowHandler`: it uses `RaisesEvents`
 and accepts an optional trailing constructor parameter
@@ -526,11 +526,21 @@ synchronous domain-event reaction can record follow-on facts mid-drain (the
 seal admits `IAnnouncesIntegration`; drain-until-empty routes them to the
 outbox in the same transaction) without wiring the trait plumbing itself.
 
+`SelfHandlingCommand` carries the lane too — with zero declaration:
+`SelfExecutingCommandMiddleware` attaches the owning consumer's live
+`EventsUnitOfWork` (the same instance it method-injects from) before invoking
+`handle()`, so any self-handling command body may `$this->event()` a
+coordination fact. Queries never receive it: reads must not record.
+Because the trait arrives invisibly (no per-file `RaisesEvents` mention),
+`IntegrationConformance::handler_raised_events()` now also scopes
+`Application/Commands/` paths — a raising self-handling command needs an
+allowlist entry like any other handler raise.
+
 **Mandatory for existing consumers: nothing.** Subclasses calling
 `parent::__construct()` bare keep working; `$this->event()` without a unit of
-work throws a `LogicException` naming the handler rather than dropping the
-moment. Handlers that raise remain subject to the
-`handler_raised_events` allowlist fence.
+work throws a `LogicException` naming the raiser rather than dropping the
+moment. All raise sites remain subject to the `handler_raised_events`
+allowlist fence.
 
 Reference adoption: datastream's `MatchSubscriptionsOnCapture` (the
 `EventReadyForDelivery` fan-out, converted from direct bus publication to
