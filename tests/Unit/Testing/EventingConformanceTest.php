@@ -58,9 +58,9 @@ class EventingConformanceTest extends TestCase {
     $files = array_map(static fn (array $o) => basename($o['file']), $occurrences);
     sort($files);
     $this->assertSame(
-      ['RescheduleRaisingHandler.php', 'SelfRaisingCommand.php', 'TraitRaisingService.php'],
+      ['ReactionRaisingHandler.php', 'RescheduleRaisingHandler.php', 'SelfRaisingCommand.php', 'TraitRaisingService.php'],
       $files,
-      'CommandHandlers/*, Commands/* (self-handling, trait inherited invisibly) and RaisesEvents users are in scope; other $this->event( calls are not'
+      'CommandHandlers/*, Commands/* and EventHandlers/* (0.6.4 bases carry the trait invisibly) and RaisesEvents users are in scope; other $this->event( calls are not'
     );
   }
 
@@ -71,11 +71,12 @@ class EventingConformanceTest extends TestCase {
 
     $files = array_map(static fn (array $o) => basename($o['file']), $occurrences);
     sort($files);
-    $this->assertSame(['SelfRaisingCommand.php', 'TraitRaisingService.php'], $files);
+    $this->assertSame(['ReactionRaisingHandler.php', 'SelfRaisingCommand.php', 'TraitRaisingService.php'], $files);
   }
 
   public function test_allowlist_also_matches_by_path_fragment(): void {
     $occurrences = IntegrationConformance::handler_raised_events(self::FIXTURES . '/handlers', [
+      'ReactionRaisingHandler.php',
       'RescheduleRaisingHandler.php',
       'SelfRaisingCommand.php',
       'TraitRaisingService.php',
