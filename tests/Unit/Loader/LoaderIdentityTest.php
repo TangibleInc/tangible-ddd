@@ -102,9 +102,13 @@ class LoaderIdentityTest extends TestCase
         }
     }
 
-    public function test_the_0_6_2_winner_loads_the_module_facade_after_the_host_hooks(): void
+    public function test_the_winner_loads_the_module_facade_after_the_host_hooks(): void
     {
-        $this->assertSame('0.6.2', $this->header_version());
+        // THE RELEASE PIN — bump this with every tag. This literal is the
+        // only tree-visible tie between the git tag and the loader identity;
+        // v0.6.3 shipped registering as 0.6.2 because the tag ritual skipped
+        // the loader bump and nothing in CI could see the tag.
+        $this->assertSame('0.6.4', $this->header_version());
 
         $hooks = strpos($this->source, "'ddd-wordpress/hooks.php'");
         $modules = strpos($this->source, "'ddd-wordpress/modules.php'");
