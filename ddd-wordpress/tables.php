@@ -21,6 +21,7 @@ function install_tables(IDDDConfig $config): void {
   install_command_audit_table($config);
   install_touches_table($config);
   install_behaviour_workflow_tables($config);
+  install_behaviour_workflow_meta_table($config);
   install_behaviour_workflow_item_tables($config);
 }
 
@@ -255,6 +256,37 @@ function install_behaviour_workflow_tables(IDDDConfig $config): void {
     KEY idx_correlation (correlation_id),
     KEY idx_blog_ref (blog_id, ref_type, ref_id),
     KEY idx_blog_status (blog_id, is_complete, is_failed)
+  ) $charset";
+
+  dbDelta($sql);
+}
+
+/**
+ * Install the behaviour workflow meta side table (schema v7).
+ *
+ * Meta is stored WP-meta style — one row per key, values stringly-typed at
+ * rest (non-scalars as JSON text) — instead of the workflow row's JSON `meta`
+ * column, which is write-dead since v7. The shape deliberately matches cred's
+ * long-standing {prefix}_behaviour_workflows_meta table so the legacy
+ * repository there can eventually rebind with zero data movement.
+ *
+ * `id` is the workflow id (cred's historical column name, kept for that
+ * compatibility; it is NOT this table's identity — meta_id is).
+ */
+function install_behaviour_workflow_meta_table(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('behaviour_workflows_meta');
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE $table (
+    meta_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (meta_id),
+    id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    meta_key VARCHAR(255) NULL,
+    meta_value LONGTEXT NULL,
+    KEY idx_workflow (id),
+    KEY idx_meta_key (meta_key(191))
   ) $charset";
 
   dbDelta($sql);

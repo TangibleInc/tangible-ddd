@@ -42,7 +42,7 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       throw new \RuntimeException("BehaviourWorkflow not found: {$id}");
     }
 
-    return $this->workflow_from_row($row);
+    return $this->workflow_from_row($row, $this->meta_for([$id])[$id] ?? null);
   }
 
   public function get_by_ref_id(int $ref_id, string $ref_type): array {
@@ -56,7 +56,10 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       $ref_type
     ));
 
-    return array_map(fn($row) => $this->workflow_from_row($row), $rows ?: []);
+    $rows = $rows ?: [];
+    $meta = $this->meta_for(array_map(static fn($row) => (int) $row->id, $rows));
+
+    return array_map(fn($row) => $this->workflow_from_row($row, $meta[(int) $row->id] ?? null), $rows);
   }
 
   public function get_for_requests(array $request_ids): array {
@@ -75,11 +78,12 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       array_merge(['request'], $request_ids)
     );
 
-    $rows = $wpdb->get_results($sql);
+    $rows = $wpdb->get_results($sql) ?: [];
+    $meta = $this->meta_for(array_map(static fn($row) => (int) $row->id, $rows));
     $workflows = [];
 
     foreach ($rows as $row) {
-      $workflow = $this->workflow_from_row($row);
+      $workflow = $this->workflow_from_row($row, $meta[(int) $row->id] ?? null);
       $request_id = $workflow->get_ref_id();
       $attempt_id = (int) ($workflow->get_all_meta()['attempt_id'] ?? 0);
       $workflows[$request_id][$attempt_id][] = $workflow;
@@ -110,7 +114,9 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       'is_complete' => $aggregate->is_complete() ? 1 : 0,
       'is_failed' => $aggregate->is_failed() ? 1 : 0,
       'correlation_id' => Correlation::peek()?->correlation_id,
-      'meta' => wp_json_encode($aggregate->get_all_meta(), JSON_UNESCAPED_SLASHES),
+      // v7: meta lives in the side table; the JSON column is write-dead and
+      // nulled on update so a row never carries two divergent meta stories.
+      'meta' => null,
       'updated_at' => $now,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,
     ];
@@ -119,19 +125,89 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       $row['created_at'] = $now;
       $wpdb->insert($this->table_name(), $row);
       $aggregate->set_id((int) $wpdb->insert_id);
-      return;
+    } else {
+      $wpdb->update(
+        $this->table_name(),
+        $row,
+        ['id' => $aggregate->get_id()]
+      );
     }
 
-    $wpdb->update(
-      $this->table_name(),
-      $row,
-      ['id' => $aggregate->get_id()]
-    );
+    $this->persist_meta((int) $aggregate->get_id(), $aggregate->get_all_meta());
   }
 
-  private function workflow_from_row(object $row): BehaviourWorkflow {
+  /**
+   * Rewrite the workflow's meta rows (WP-meta idiom, one row per key).
+   * Values are stringly-typed at rest; non-scalars stored as JSON text.
+   * Identity (correlation) is a stamped column on the workflow row and is
+   * never duplicated into meta.
+   */
+  private function persist_meta(int $workflow_id, array $meta): void {
+    global $wpdb;
+
+    $wpdb->delete($this->meta_table_name(), ['id' => $workflow_id]);
+
+    foreach ($meta as $key => $value) {
+      $wpdb->insert($this->meta_table_name(), [
+        'id' => $workflow_id,
+        'meta_key' => (string) $key,
+        'meta_value' => is_scalar($value) || $value === null
+          ? (string) $value
+          : wp_json_encode($value, JSON_UNESCAPED_SLASHES),
+      ]);
+    }
+  }
+
+  /**
+   * Load meta for a set of workflow rows in one query.
+   * Values starting with { or [ decode as JSON (the non-scalar lane);
+   * everything else stays a string — consumers cast on read.
+   *
+   * @param int[] $workflow_ids
+   * @return array<int, array<string, mixed>>
+   */
+  private function meta_for(array $workflow_ids): array {
+    global $wpdb;
+
+    $workflow_ids = array_values(array_filter(array_map('intval', $workflow_ids)));
+    if (empty($workflow_ids)) {
+      return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($workflow_ids), '%d'));
+    $rows = $wpdb->get_results($wpdb->prepare(
+      "SELECT id, meta_key, meta_value FROM `{$this->meta_table_name()}`
+       WHERE id IN ($placeholders) ORDER BY meta_id ASC",
+      $workflow_ids
+    ));
+
+    $meta = [];
+    foreach ($rows ?: [] as $row) {
+      $value = $row->meta_value;
+      if (is_string($value) && $value !== '' && ($value[0] === '{' || $value[0] === '[')) {
+        $decoded = json_decode($value, true);
+        if ($decoded !== null) {
+          $value = $decoded;
+        }
+      }
+      $meta[(int) $row->id][(string) $row->meta_key] = $value;
+    }
+
+    return $meta;
+  }
+
+  /**
+   * @param array<string, mixed>|null $meta Side-table meta for this row; null
+   *   means "no rows found" — an unbackfilled pre-v7 row, so fall back to the
+   *   legacy JSON column. (Post-v7 saves always have rows or genuinely-empty meta.)
+   */
+  private function workflow_from_row(object $row, ?array $meta = null): BehaviourWorkflow {
     $configs_json = json_decode($row->behaviour_configs);
     $results_json = json_decode($row->behaviour_results);
+
+    if ($meta === null) {
+      $meta = $row->meta ? (json_decode($row->meta, true) ?: []) : [];
+    }
 
     return new BehaviourWorkflow(
       id: (int) $row->id,
@@ -143,13 +219,17 @@ final class BehaviourWorkflowRepository extends PersistsAggregatesRepository imp
       current_phase: (int) $row->current_phase,
       is_complete: (bool) $row->is_complete,
       is_failed: (bool) $row->is_failed,
-      meta: $row->meta ? (json_decode($row->meta, true) ?: []) : [],
+      meta: $meta,
       root_workflow_id: $row->root_workflow_id ? (int) $row->root_workflow_id : null,
     );
   }
 
   private function table_name(): string {
     return $this->config->table('behaviour_workflows');
+  }
+
+  private function meta_table_name(): string {
+    return $this->config->table('behaviour_workflows_meta');
   }
 }
 

@@ -44,16 +44,22 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_6(): void {
+  public function test_current_schema_version_is_7(): void {
     // Regression guard for the v3-fast-path bug lineage: bumping the schema
-    // (v6 = the touches table) must move this constant, or consumers'
-    // fast-paths treat themselves as current and never create the table.
-    $this->assertSame(6, DDD_SCHEMA_VERSION);
+    // (v7 = the workflow meta side table) must move this constant, or
+    // consumers' fast-paths treat themselves as current and never create
+    // the table.
+    $this->assertSame(7, DDD_SCHEMA_VERSION);
   }
 
   public function test_v6_migration_installs_the_touches_table(): void {
     $migrations = ddd_explicit_migrations();
     $this->assertArrayHasKey(6, $migrations, 'consumers already at v5 skip dbDelta on the fast path — the explicit entry creates the touches table for them.');
+  }
+
+  public function test_v7_migration_installs_the_workflow_meta_table_and_backfills(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(7, $migrations, 'consumers already at v6 skip dbDelta on the fast path — the explicit entry creates behaviour_workflows_meta and pivots the JSON meta column into rows.');
   }
 
   public function test_v4_migration_adds_await_mechanism_after_match_criteria_on_long_processes(): void {
