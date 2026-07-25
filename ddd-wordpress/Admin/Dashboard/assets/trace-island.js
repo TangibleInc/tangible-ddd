@@ -473,6 +473,10 @@
 
       // ── vanilla-facing contract ──
 
+      // Breadstick orientation: vertical = artifact-style pole at the process's
+      // rank with stations at its steps' LANES and horizontal departures;
+      // false = horizontal stick spanning sequential step ranks.
+      var VINE_STICK_VERTICAL=true;
       // ── The Vine: causation-topology projection of the SAME trace payload ──
       // (artifact 44adfca9). Rank = causal depth, spine = heaviest subtree,
       // siblings ordered by first-timestamp (append-mostly layout under live
@@ -536,10 +540,12 @@
         var kids={};
         vnodes.forEach(function(v){ if(v.parent&&vByUid[v.parent]) (kids[v.parent]=kids[v.parent]||[]).push(v); });
         var seqOffset={};
-        Object.keys(kids).forEach(function(k){
-          if((vByUid[k]||{}).vkind!=='process') return;
-          kids[k].slice().sort(function(a,b){ return a.ts-b.ts; }).forEach(function(c,i){ seqOffset[c.uid]=i; });
-        });
+        if(!VINE_STICK_VERTICAL){
+          Object.keys(kids).forEach(function(k){
+            if((vByUid[k]||{}).vkind!=='process') return;
+            kids[k].slice().sort(function(a,b){ return a.ts-b.ts; }).forEach(function(c,i){ seqOffset[c.uid]=i; });
+          });
+        }
         function rank(v){
           if(v.__r!=null) return v.__r;
           v.__r=0;
@@ -624,7 +630,13 @@
           var spine=p.__c===v.__c;
           var isStep=!!stepOrdinal[v.uid];
           var path;
-          if(isStep){
+          if(isStep&&VINE_STICK_VERTICAL){
+            // Departure: horizontal, from the station at the step's LANE on
+            // the vertical stick straight out to the step.
+            var hy=ny(v)+NW/2;
+            x1=nx(p)+NW; y1=hy; x2=nx(v)-3; y2=hy;
+            path='M'+x1+','+hy+' L'+x2+','+hy;
+          } else if(isStep){
             // Departure: a short drop from the step's STATION on the stick
             // (same rank as the step) straight down to the step itself.
             var sx=nx(v)+NW/2, sy=ny(p)+NW;
@@ -653,29 +665,47 @@
               <path class="vine-loop" d=${'M'+(x+NW+30)+','+(y+3)+' c 16,-14 -14,-16 -12,-2'} style=${'stroke:'+a}/>
             </g>`;
           } else if(v.vkind==='process'){
-            // The BREADSTICK: body spans from ignition rank to the last
-            // station's rank; stations sit ON it where steps depart; a
-            // suspended/running trajectory extends dashed past its last
-            // station with the current gate labeled from waiting_for.
-            var stepRanks=[];
-            g.nodes.forEach(function(o){ if(o.parent===v.uid) stepRanks.push(o.__r); });
-            var lastRank=stepRanks.length?Math.max.apply(null,stepRanks):v.__r;
-            var stickW=Math.max((lastRank-v.__r)*RANKW+NW+14, NW+30);
+            // The BREADSTICK. Vertical: an artifact-style pole at the
+            // process's rank, body spanning its steps' lanes, stations at
+            // each step's lane, horizontal departures. Horizontal: body
+            // spans sequential step ranks. Suspended/running trajectories
+            // extend dashed with the current gate from waiting_for.
             var raw=(v.node&&v.node.raw)||{};
             var open=String(v.node&&v.node.status||'').match(/running|suspended|scheduled|pending/i);
-            var ghostW=open?46:0;
-            glyph=html`<g>
-              <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" style=${'fill:'+a+';opacity:.08'}/>
-              <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
-              ${stepRanks.map(function(r){
-                var sx=X0+r*RANKW+NW/2;
-                return html`<rect x=${sx-5} y=${y+2} width="10" height=${NW-4} rx="2" style=${'fill:'+a+';opacity:.85'}/>`;
-              })}
-              ${open?html`<g>
-                <rect x=${x+stickW+4} y=${y} width=${ghostW} height=${NW} rx="9" fill="none" style=${'stroke:'+a+';stroke-width:1.5;stroke-dasharray:4 3;opacity:.55'}/>
-                <text class="vine-meta" x=${x+stickW+8} y=${y+NW+11}>${raw.waiting_for?'⧗ awaits '+shortName(raw.waiting_for):'…'}</text>
-              </g>`:null}
-            </g>`;
+            if(VINE_STICK_VERTICAL){
+              var stepLanes=[];
+              g.nodes.forEach(function(o){ if(o.parent===v.uid) stepLanes.push(ny(o)); });
+              var lastY=stepLanes.length?Math.max.apply(null,stepLanes):y;
+              var stickH=Math.max(lastY+NW-y, NW+22);
+              glyph=html`<g>
+                <rect x=${x} y=${y} width=${NW} height=${stickH} rx="9" style=${'fill:'+a+';opacity:.08'}/>
+                <rect x=${x} y=${y} width=${NW} height=${stickH} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
+                ${stepLanes.map(function(sy){
+                  return html`<rect x=${x+2} y=${sy+3} width=${NW-4} height="12" rx="2" style=${'fill:'+a+';opacity:.85'}/>`;
+                })}
+                ${open?html`<g>
+                  <rect x=${x} y=${y+stickH+4} width=${NW} height="34" rx="9" fill="none" style=${'stroke:'+a+';stroke-width:1.5;stroke-dasharray:4 3;opacity:.55'}/>
+                  <text class="vine-meta" x=${x+NW+6} y=${y+stickH+22}>${raw.waiting_for?'⧗ awaits '+shortName(raw.waiting_for):'…'}</text>
+                </g>`:null}
+              </g>`;
+            } else {
+              var stepRanks=[];
+              g.nodes.forEach(function(o){ if(o.parent===v.uid) stepRanks.push(o.__r); });
+              var lastRank=stepRanks.length?Math.max.apply(null,stepRanks):v.__r;
+              var stickW=Math.max((lastRank-v.__r)*RANKW+NW+14, NW+30);
+              glyph=html`<g>
+                <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" style=${'fill:'+a+';opacity:.08'}/>
+                <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
+                ${stepRanks.map(function(r){
+                  var sx=X0+r*RANKW+NW/2;
+                  return html`<rect x=${sx-5} y=${y+2} width="10" height=${NW-4} rx="2" style=${'fill:'+a+';opacity:.85'}/>`;
+                })}
+                ${open?html`<g>
+                  <rect x=${x+stickW+4} y=${y} width="46" height=${NW} rx="9" fill="none" style=${'stroke:'+a+';stroke-width:1.5;stroke-dasharray:4 3;opacity:.55'}/>
+                  <text class="vine-meta" x=${x+stickW+8} y=${y+NW+11}>${raw.waiting_for?'⧗ awaits '+shortName(raw.waiting_for):'…'}</text>
+                </g>`:null}
+              </g>`;
+            }
           } else {
             // Act square + its emitted facts docked as diamonds (≤3, then ×n) —
             // the artifact's fact vocabulary, back in the picture.
