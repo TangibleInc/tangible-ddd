@@ -779,6 +779,10 @@
           if(minDelta>0 && minDelta<Infinity){ tlW=Math.max(tlW, Math.min(64*100/minDelta, 12000)); }
           traceRows.style.minWidth = tlW+'px';
           ruler.parentNode.style.minWidth = tlW+'px';
+          // Rows, seams, ports, gap markers and process bands render in the
+          // Preact island; the vanilla shell only supplies data + handlers.
+          TDDDTrace.renderRows(traceRows, d, traceIslandHandlers());
+          _prevTraceNodes=newUids;
         }
         renderTraceWorkflows(d);
       }
