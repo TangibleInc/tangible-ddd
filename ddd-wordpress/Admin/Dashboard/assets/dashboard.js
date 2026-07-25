@@ -764,9 +764,9 @@
             +'<div class="wft-head">'
             +'<span class="wft-label">workflow in trace</span>'
             +'<span class="trace-participant"><i style="background:'+esc(w.accent||'#646970')+'"></i><b>'+esc(w.consumer_label||w.consumer)+'</b></span>'
-            +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
+            +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+' <span style="color:var(--faint);font-weight:400">wf #'+w.id+'</span>'+isFork+'</span>'
             +'<span class="wft-badge '+badgeCls+'">'+statusTxt+'</span>'
-            +'<span class="wft-meta">wf id #'+w.id+' &middot; '+loom.brackets.length+' pass'+(loom.brackets.length!==1?'es':'')+' &middot; '+totalItems+' items</span>'
+            +'<span class="wft-meta">'+loom.brackets.length+' pass'+(loom.brackets.length!==1?'es':'')+' &middot; '+totalItems+' items</span>'
             +'</div>'
             +'<div class="wft-body">'+renderLoom(loom)+'</div>'
             +'</div>';
