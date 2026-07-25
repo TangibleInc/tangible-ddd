@@ -517,22 +517,33 @@
         function weight(v){ if(v.__w!=null) return v.__w; v.__w=1; (kids[v.uid]||[]).forEach(function(c){ v.__w+=weight(c); }); return v.__w; }
         vnodes.forEach(weight);
         Object.keys(kids).forEach(function(k){ kids[k].sort(function(a,b){ return (b.__w-a.__w)||(a.ts-b.ts); }); });
-        // 4. Columns: DFS, spine child inherits the parent column; siblings take next free.
-        var nextCol=0;
-        function place(v, col){
-          if(v.__c!=null) return;
-          v.__c=col;
-          nextCol=Math.max(nextCol, col+1);
-          (kids[v.uid]||[]).forEach(function(c,i){ place(c, i===0?col:nextCol); });
+        // 4. Lanes: tidy-tree (Reingold–Tilford style) — leaves take
+        // consecutive lanes, every parent CENTERS on its children's extent,
+        // and each node's branches are ordered to FLANK the spine child
+        // (heaviest first, alternating above/below), so the main descent
+        // runs through the middle with limbs shooting both ways.
+        var nextLane=0;
+        function layout(v){
+          if(v.__c!=null||v.__visiting) return;
+          v.__visiting=true;
+          var ks=kids[v.uid]||[];
+          if(!ks.length){ v.__c=nextLane++; v.__visiting=false; return; }
+          var spineChild=ks[0], above=[], below=[];
+          for(var i=1;i<ks.length;i++){ (i%2?above:below).push(ks[i]); }
+          var ordered=above.reverse().concat([spineChild]).concat(below);
+          ordered.forEach(layout);
+          var lanes=ordered.map(function(c){ return c.__c; }).filter(function(l){ return l!=null; });
+          v.__c=lanes.length?(lanes[0]+lanes[lanes.length-1])/2:nextLane++;
+          v.__visiting=false;
         }
         var roots=vnodes.filter(function(v){ return !v.parent||!vByUid[v.parent]; });
         roots.sort(function(a,b){ return (b.__w-a.__w)||(a.ts-b.ts); });
-        roots.forEach(function(r,i){ place(r, i===0?0:nextCol); });
+        roots.forEach(layout);
         // Cycle survivors: nodes unreachable from any root (the stitcher
-        // preserves recorded cycles as evidence). Park them in fresh columns
+        // preserves recorded cycles as evidence). Park them in fresh lanes
         // rather than letting them collapse onto NaN coordinates.
-        vnodes.forEach(function(v){ if(v.__c==null){ v.__cyc=true; place(v, nextCol); } });
-        return {nodes:vnodes, byUid:vByUid, cols:nextCol};
+        vnodes.forEach(function(v){ if(v.__c==null){ v.__cyc=true; layout(v); if(v.__c==null) v.__c=nextLane++; } });
+        return {nodes:vnodes, byUid:vByUid, cols:nextLane};
       }
 
       function VineView(props){
@@ -579,7 +590,18 @@
               <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
             </g>`;
           } else {
-            glyph=html`<rect x=${x} y=${y} width=${NW} height=${NW} rx="4" style=${'fill:'+a+(v.err?';stroke:var(--crit);stroke-width:2.5':'')}/>`;
+            // Act square + its emitted facts docked as diamonds (≤3, then ×n) —
+            // the artifact's fact vocabulary, back in the picture.
+            var ports=(v.node&&v.node.ports)||[];
+            var shown=ports.slice(0,3);
+            glyph=html`<g>
+              <rect x=${x} y=${y} width=${NW} height=${NW} rx="4" style=${'fill:'+a+(v.err?';stroke:var(--crit);stroke-width:2.5':'')}/>
+              ${shown.map(function(p,pi){
+                var px=x+NW+6+pi*13, bad=p.status==='dlq'||p.status==='failed';
+                return html`<rect x=${px} y=${y+5} width="8" height="8" transform=${'rotate(45 '+(px+4)+' '+(y+9)+')'} class="vine-fact" style=${'stroke:'+(bad?'var(--crit)':(p.accent||a))+(bad?';fill:var(--critbg)':'')}><title>${p.name+' · '+p.status}</title></rect>`;
+              })}
+              ${ports.length>3?html`<text class="vine-meta" x=${x+NW+6+3*13} y=${y+13}>◆×${ports.length}</text>`:null}
+            </g>`;
           }
           return html`<g class="vine-node" onClick=${function(){ if(handlers.onOpenNode){ handlers.onOpenNode(v.node||v.first, v.vkind==='capsule'?'workflow':undefined); } }}>
             ${glyph}

@@ -193,8 +193,10 @@
         var toMs=now-backMs;
         var fromMs=toMs-spanMs;
         return {
-          from:msToDateStr(fromMs),
-          to:msToDateStr(toMs),
+          // Full UTC datetimes: sub-day windows must keep their time of day
+          // (date-only strings widened a 3h window to the whole day).
+          from:new Date(fromMs).toISOString().slice(0,19).replace('T',' '),
+          to:new Date(toMs).toISOString().slice(0,19).replace('T',' '),
           label:spanLabel+' window · '+(backLabel==='now'?'now':backLabel+' back')
             +'  →  '+msToAbsLabel(fromMs)+' – '+msToAbsLabel(toMs)
         };
@@ -460,14 +462,14 @@
 
       function applyAuditScrub(from, to){
         state.from=from; state.to=to;
-        if(dateFrom) dateFrom.value=from;
-        if(dateTo)   dateTo.value=to;
+        if(dateFrom) dateFrom.value=String(from).slice(0,10);
+        if(dateTo)   dateTo.value=String(to).slice(0,10);
         state.page=1; load();
       }
       function applyTablesScrub(from, to){
         tablesState.from=from; tablesState.to=to;
-        if(tblFrom) tblFrom.value=from;
-        if(tblTo)   tblTo.value=to;
+        if(tblFrom) tblFrom.value=String(from).slice(0,10);
+        if(tblTo)   tblTo.value=String(to).slice(0,10);
         tablesPage=1; loadTables();
       }
 
@@ -497,12 +499,12 @@
       (function(){
         var w=scrubWindow(SPAN_STEPS[auditSpanIdx], BACK_STEPS[auditBackIdx]);
         state.from=w.from; state.to=w.to;
-        if(dateFrom) dateFrom.value=w.from;
-        if(dateTo)   dateTo.value=w.to;
+        if(dateFrom) dateFrom.value=String(w.from).slice(0,10);
+        if(dateTo)   dateTo.value=String(w.to).slice(0,10);
         var wt=scrubWindow(SPAN_STEPS[tablesSpanIdx], BACK_STEPS[tablesBackIdx]);
         tablesState.from=wt.from; tablesState.to=wt.to;
-        if(tblFrom) tblFrom.value=wt.from;
-        if(tblTo)   tblTo.value=wt.to;
+        if(tblFrom) tblFrom.value=String(wt.from).slice(0,10);
+        if(tblTo)   tblTo.value=String(wt.to).slice(0,10);
       })();
 
       var auditToggle=$('#tddd-audit-scrub-toggle');
@@ -888,6 +890,29 @@
           loomHtml: loomDrawerHtml,
         };
       }
+      // Grab-to-pan for the wide trace/vine canvas: left- or middle-button
+      // drag scrolls the lane (the scrollbar lives at the bottom of a tall
+      // canvas — unreachable mid-trace). Clicks after a real drag are
+      // swallowed so panning never opens a drawer.
+      (function(){
+        var sc=document.querySelector('.trace-scroll');
+        if(!sc) return;
+        var panning=false, moved=false, sx=0, sy=0, sl=0, st=0;
+        sc.addEventListener('pointerdown', function(e){
+          if(e.button!==0 && e.button!==1) return;
+          panning=true; moved=false; sx=e.clientX; sy=e.clientY; sl=sc.scrollLeft; st=window.scrollY;
+          sc.classList.add('is-panning');
+        });
+        window.addEventListener('pointermove', function(e){
+          if(!panning) return;
+          var dx=e.clientX-sx, dy=e.clientY-sy;
+          if(Math.abs(dx)>5||Math.abs(dy)>5) moved=true;
+          sc.scrollLeft=sl-dx;
+          window.scrollTo(window.scrollX, st-dy);
+        });
+        window.addEventListener('pointerup', function(){ panning=false; sc.classList.remove('is-panning'); });
+        sc.addEventListener('click', function(e){ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } }, true);
+      })();
       // Story ⇄ Vine: pure presentation — re-project the cached payload.
       traceHead.addEventListener('click', function(e){
         var b=e.target.closest('[data-tview]');
