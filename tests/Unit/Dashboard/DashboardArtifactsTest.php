@@ -75,7 +75,10 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('setDrawerLabel(drawerNodeLabel(n))', $script);
         self::assertStringContainsString("'workflow pass · wf #'+n.pass.wf", $script);
         self::assertStringContainsString("setDrawerLabel('biography entry')", $script);
-        self::assertStringContainsString('style="--owner-accent:', $script);
+        // Owner-accent styling moved with the strip markup into the island
+        // when the bottom workflow strips retired (2026-07-25).
+        $island = file_get_contents($root . '/assets/trace-island.js');
+        self::assertStringContainsString("'--owner-accent:'", $island);
         self::assertStringContainsString('function showBiography', $script);
         self::assertStringContainsString('function biographyHash(consumer,aggregate,aggregateId)', $script);
         self::assertStringContainsString('biographyOwnedMatch', $script);

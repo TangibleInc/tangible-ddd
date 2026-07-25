@@ -607,3 +607,24 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .tband-seg.live{background:color-mix(in srgb,var(--owner-accent,#646970) 40%,transparent)}
 .tddd-root .tband-cut{position:absolute;right:-5px;top:-14px;font-style:normal;font-size:.6rem;color:var(--warn,#b07f18)}
 .tddd-root .tband-scissor{position:absolute;left:-8px;top:-14px;font-style:normal;font-size:.6rem;color:var(--crit)}
+/* Story ⇄ Vine toggle + the vine projection */
+.tddd-root .vtoggle{display:inline-flex;gap:2px;margin-left:14px;vertical-align:middle}
+.tddd-root .vtoggle button{font-family:var(--fm);font-size:.6rem;font-weight:700;border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:2px 10px;cursor:pointer}
+.tddd-root .vtoggle button:first-child{border-radius:3px 0 0 3px}
+.tddd-root .vtoggle button:last-child{border-radius:0 3px 3px 0}
+.tddd-root .vtoggle button.on{border-color:var(--accent);color:var(--accent2);background:var(--softer)}
+.tddd-root .vine-wrap{overflow:auto;padding:10px 0}
+.tddd-root .vine-pipe{fill:none;stroke-width:1.6;opacity:.75}
+.tddd-root .vine-pipe.broke{stroke-dasharray:4 4;stroke:var(--crit)!important;opacity:.6}
+.tddd-root .vine-fact{fill:var(--panel);stroke-width:2.5}
+.tddd-root .vine-capsule{fill:color-mix(in srgb,currentColor 10%,transparent);stroke-width:2}
+.tddd-root .vine-process{stroke-width:2;fill:none;stroke-dasharray:5 3}
+.tddd-root .vine-loop{fill:none;stroke-width:1.5;opacity:.7}
+.tddd-root .vine-node{cursor:pointer}
+.tddd-root .vine-node:hover .vine-label{fill:var(--accent2)}
+.tddd-root .vine-label{font-family:var(--fm);font-size:10.5px;fill:var(--ink);font-weight:600}
+.tddd-root .vine-meta{font-family:var(--fm);font-size:8.5px;fill:var(--faint)}
+.tddd-root .vine-elabel{font-family:var(--fm);font-size:8.5px;fill:var(--muted)}
+.tddd-root .vine-scissor{font-size:10px;fill:var(--crit)}
+.tddd-root .corr-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.tddd-root .tbreadcrumb{display:flex;align-items:center;gap:8px}
