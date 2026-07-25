@@ -125,11 +125,13 @@
             last=stepEl;
             elbows.push(stepEl.offsetTop+15);   // ~the step's name line
           }
-          // Inset like the workflow rails: start at the process row's dot,
-          // end at the last step's duration bar — adjacent gutter art never
-          // merges into one continuous band.
-          var top=el.offsetTop+12;
-          var height=last.offsetTop+last.offsetHeight-14-top;
+          // Two geometries: the GUTTER band insets (start at the process row's
+          // dot, end at the last step's bar) so adjacent art never merges; the
+          // temporal REGION in the lane keeps full row coverage.
+          var fullTop=el.offsetTop;
+          var fullHeight=last.offsetTop+last.offsetHeight-fullTop;
+          var top=fullTop+12;
+          var height=fullHeight-26;
           var depth=Math.min(n.depth||0,5);
           // Temporal region: the trajectory's spacetime in the LANE — from its
           // ignition x to its last step's activity end, over the same rows.
@@ -154,6 +156,8 @@
             top:top,
             left:8+depth*14,   // aligns with the d<depth> label indent, just past the owner spine
             height:height,
+            rtop:fullTop,
+            rheight:fullHeight,
             elbows:elbows,
             region:region,
             accent:n.accent||'#646970',
@@ -326,7 +330,7 @@
           if(b.region){
             out.push(html`<div
               class=${'proc-region '+(b.open?'is-open':'is-closed')}
-              style=${'--band-accent:'+b.accent+';top:'+b.top+'px;left:'+b.region.left+'px;width:'+b.region.width+'px;height:'+b.height+'px'}
+              style=${'--band-accent:'+b.accent+';top:'+b.rtop+'px;left:'+b.region.left+'px;width:'+b.region.width+'px;height:'+b.rheight+'px'}
               title=${b.title}
             ></div>`);
           }
@@ -468,7 +472,118 @@
 
       // ── vanilla-facing contract ──
 
+      // ── The Vine: causation-topology projection of the SAME trace payload ──
+      // (artifact 44adfca9). Rank = causal depth, spine = heaviest subtree,
+      // siblings ordered by first-timestamp (append-mostly layout under live
+      // polling). Workflow pass chains collapse into capsules with a self-loop;
+      // processes render as hatched capsules; ✂ marks arrivals without cause.
+      function buildVine(d){
+        var nodes=(d&&d.nodes)||[];
+        // 1. Collapse workflow passes into capsule nodes.
+        var byWf={}, vnodes=[], vByUid={}, uidToCapsule={};
+        nodes.forEach(function(n){ if(n.pass) (byWf[n.pass.wf]=byWf[n.pass.wf]||[]).push(n); });
+        var emittedCapsule={};
+        nodes.forEach(function(n){
+          if(n.pass){
+            var wf=n.pass.wf;
+            uidToCapsule[n.uid]='cap-'+wf;
+            if(emittedCapsule[wf]) return;
+            emittedCapsule[wf]=true;
+            var passes=byWf[wf];
+            var errs=0,cuts=0,broke=false;
+            passes.forEach(function(p){ if(p.pass.errors)errs++; if(p.pass.cut)cuts++; if(p.unresolved||(!p.parent&&p.pass.n>1))broke=true; });
+            var cap={uid:'cap-'+wf, vkind:'capsule', name:shortName(n.name), consumer:n.consumer, accent:n.accent,
+              meta:'workflow #'+wf+' · ×'+passes.length+' passes'+(cuts?' · '+cuts+' ⌁':'')+(errs?' · '+errs+' failed':''),
+              err:errs>0, broke:broke, parent:passes[0].parent, ts:passes[0].elapsed_s||0, first:passes[0]};
+            vnodes.push(cap); vByUid[cap.uid]=cap;
+            return;
+          }
+          var v={uid:n.uid, vkind:(n.kind==='process'?'process':(n.kind==='event'?'fact':'act')),
+            name:shortName(n.name), consumer:n.consumer, accent:n.accent, meta:(n.status||''),
+            err:n.status==='error'||n.status==='dlq', broke:!!n.unresolved, parent:n.parent, ts:n.elapsed_s||0, node:n};
+          vnodes.push(v); vByUid[v.uid]=v;
+        });
+        // Re-parent through collapsed passes; drop self-parenting inside a capsule.
+        vnodes.forEach(function(v){
+          if(v.parent && uidToCapsule[v.parent]) v.parent=uidToCapsule[v.parent];
+          if(v.parent===v.uid) v.parent=null;
+        });
+        // 2. Ranks (longest path from root) + children map.
+        var kids={};
+        vnodes.forEach(function(v){ if(v.parent&&vByUid[v.parent]) (kids[v.parent]=kids[v.parent]||[]).push(v); });
+        function rank(v){ if(v.__r!=null) return v.__r; v.__r=0; if(v.parent&&vByUid[v.parent]) v.__r=rank(vByUid[v.parent])+1; return v.__r; }
+        vnodes.forEach(rank);
+        // 3. Subtree weight for spine election; sibling order = weight desc (spine first), then ts.
+        function weight(v){ if(v.__w!=null) return v.__w; v.__w=1; (kids[v.uid]||[]).forEach(function(c){ v.__w+=weight(c); }); return v.__w; }
+        vnodes.forEach(weight);
+        Object.keys(kids).forEach(function(k){ kids[k].sort(function(a,b){ return (b.__w-a.__w)||(a.ts-b.ts); }); });
+        // 4. Columns: DFS, spine child inherits the parent column; siblings take next free.
+        var nextCol=0;
+        function place(v, col){
+          if(v.__c!=null) return;
+          v.__c=col;
+          nextCol=Math.max(nextCol, col+1);
+          (kids[v.uid]||[]).forEach(function(c,i){ place(c, i===0?col:nextCol); });
+        }
+        var roots=vnodes.filter(function(v){ return !v.parent||!vByUid[v.parent]; });
+        roots.sort(function(a,b){ return (b.__w-a.__w)||(a.ts-b.ts); });
+        roots.forEach(function(r,i){ place(r, i===0?0:nextCol); });
+        // Cycle survivors: nodes unreachable from any root (the stitcher
+        // preserves recorded cycles as evidence). Park them in fresh columns
+        // rather than letting them collapse onto NaN coordinates.
+        vnodes.forEach(function(v){ if(v.__c==null){ v.__cyc=true; place(v, nextCol); } });
+        return {nodes:vnodes, byUid:vByUid, cols:nextCol};
+      }
+
+      function VineView(props){
+        var d=props.data, handlers=props.handlers||{};
+        if(!d||!(d.nodes||[]).length) return html`<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>`;
+        var g=buildVine(d);
+        var COLW=250, ROWH=64, X0=30, Y0=28, NW=16;
+        var maxRank=0; g.nodes.forEach(function(v){ maxRank=Math.max(maxRank,v.__r); });
+        var W=X0+g.cols*COLW+220, H=Y0+(maxRank+1)*ROWH+40;
+        function nx(v){ return X0+v.__c*COLW; }
+        function ny(v){ return Y0+v.__r*ROWH; }
+        var pipes=[], marks=[];
+        g.nodes.forEach(function(v){
+          if(!v.parent||!g.byUid[v.parent]) return;
+          var p=g.byUid[v.parent];
+          var x1=nx(p)+NW/2, y1=ny(p)+NW, x2=nx(v)+NW/2, y2=ny(v);
+          var path=x1===x2
+            ? 'M'+x1+','+y1+' L'+x2+','+y2
+            : 'M'+x1+','+y1+' C'+x1+','+(y1+24)+' '+x2+','+(y2-24)+' '+x2+','+y2;
+          pipes.push(html`<path class="vine-pipe${v.broke?' broke':''}" d=${path} style=${'stroke:'+(v.accent||'#646970')}/>`);
+          var wait=Math.max(0,(v.ts||0)-(p.ts||0));
+          if(wait>=2) marks.push(html`<text class="vine-elabel" x=${(x1+x2)/2+6} y=${(y1+y2)/2}>${fmtTraceSpan(wait)}</text>`);
+        });
+        var shapes=g.nodes.map(function(v){
+          var x=nx(v), y=ny(v), a=v.accent||'#646970';
+          var glyph;
+          if(v.vkind==='fact'){
+            glyph=html`<rect x=${x+1} y=${y+1} width=${NW-2} height=${NW-2} transform=${'rotate(45 '+(x+NW/2)+' '+(y+NW/2)+')'} class="vine-fact" style=${'stroke:'+a}/>`;
+          } else if(v.vkind==='capsule'){
+            glyph=html`<g><rect x=${x-4} y=${y} width=${NW+26} height=${NW} rx="8" class="vine-capsule" style=${'stroke:'+a+';color:'+a}/><path class="vine-loop" d=${'M'+(x+NW+22)+','+(y+NW/2)+' c 14,0 14,-'+(NW+2)+' 0,-'+(NW/2)} style=${'stroke:'+a}/></g>`;
+          } else if(v.vkind==='process'){
+            glyph=html`<rect x=${x-4} y=${y} width=${NW+26} height=${NW} rx="8" class="vine-process" style=${'stroke:'+a+';color:'+a}/>`;
+          } else {
+            glyph=html`<rect x=${x} y=${y} width=${NW} height=${NW} rx="3" style=${'fill:'+a+(v.err?';stroke:var(--crit);stroke-width:2':'')}/>`;
+          }
+          return html`<g class="vine-node" onClick=${function(){ if(handlers.onOpenNode){ handlers.onOpenNode(v.node||v.first, v.vkind==='capsule'?'workflow':undefined); } }}>
+            ${glyph}
+            ${v.broke?html`<text class="vine-scissor" x=${x-14} y=${y+12}>✂</text>`:null}
+            <text class="vine-label" x=${x+(v.vkind==='capsule'||v.vkind==='process'?NW+28:NW+8)} y=${y+8}>${v.name}</text>
+            <text class="vine-meta" x=${x+(v.vkind==='capsule'||v.vkind==='process'?NW+28:NW+8)} y=${y+19}>${v.meta||''}</text>
+          </g>`;
+        });
+        return html`<div class="vine-wrap"><svg width=${W} height=${H} viewBox=${'0 0 '+W+' '+H}>${pipes}${marks}${shapes}</svg></div>`;
+      }
+
       window.TDDDTrace = {
+        // The Vine: same payload, topology projection. Toggle is pure presentation.
+        renderVine: function(container, data, handlers){
+          if(!container._tdddIsland){ container.textContent=''; container._tdddIsland=true; }
+          preact.render(html`<${VineView} data=${data} handlers=${handlers}/>`, container);
+        },
         // Renders the trace rows region (seams, act rows, gaps lane, process bands).
         // data=null renders nothing (loading); empty nodes render the empty state.
         // handlers: { onOpenNode(node, initialTab), prevUids } — prevUids marks

@@ -716,7 +716,9 @@
           .catch(function(e){ traceHead.innerHTML='<div class="meta">Error: '+esc(e.message)+'</div>'; });
       }
       function cfgLabelTrace(c){ return (typeof c==='string')?c:((c&&(c.type||c._class||c['class']))||'behaviour'); }
+      var traceView='story', _lastTraceD=null;
       function renderTrace(d){
+        _lastTraceD=d;
         var inProgressNow = !!(d.in_progress);
         // Derive in_progress from workflows/nodes when not explicitly set by the endpoint.
         if(d.in_progress===undefined){
@@ -731,15 +733,29 @@
             +'<b>'+esc(p.label||key)+'</b>'+(p.ghost?'<small>ghost</small>':'')+'</span>';
         }).join('');
         var warningCount=(d.warnings||[]).length;
-        traceHead.innerHTML='<div class="corr">'+esc(d.correlation_id)+liveBadge+'</div>'
-          +'<div class="meta">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
+        var vtoggle='<span class="vtoggle">'
+          +'<button data-tview="story"'+(traceView==='story'?' class="on"':'')+'>story</button>'
+          +'<button data-tview="vine"'+(traceView==='vine'?' class="on"':'')+' title="causation topology — same data, different projection">vine</button>'
+          +'</span>';
+        traceHead.innerHTML='<div class="corr-row"><div class="corr">'+esc(d.correlation_id)+liveBadge+vtoggle+'</div>'
+          +'<div class="meta" style="margin-left:auto;text-align:right">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
           +(d.has_error?' &middot; <span class="err">has error</span>':'')
           +(d.started_at?' &middot; <span title="first recorded act (UTC)">started <b>'+esc(d.started_at)+'</b> UTC &middot; '+rel(d.started_at)+'</span>':'')
-          +(participants?' <span class="trace-participants" style="display:inline-flex;vertical-align:middle;margin-left:8px">'+participants+'</span>':'')
-          +'</div>'
+          +'</div></div>'
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
+        // Consumer legend rides the breadcrumb bar — one less header row.
+        var partsEl=document.getElementById('tddd-trace-parts');
+        if(partsEl) partsEl.innerHTML=participants;
+        if(traceView==='vine'){
+          // Same payload, topology projection — the toggle is pure presentation.
+          ruler.innerHTML='<div class="rt-note">the vine &middot; rank = causal depth &middot; spine = heaviest descent &middot; waits label the pipes</div>';
+          ruler.parentNode.style.minWidth=''; traceRows.style.minWidth='';
+          TDDDTrace.renderVine(traceRows, d, traceIslandHandlers());
+          renderTraceWorkflows(d);
+          return;
+        }
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
         ruler.innerHTML='<div class="rt-note">durations &radic;-compressed (order true, length not proportional) &middot; sparse gap markers show cumulative elapsed time</div>';
@@ -764,30 +780,18 @@
           traceRows.style.minWidth = tlW+'px';
           ruler.parentNode.style.minWidth = tlW+'px';
         }
-        // ── Render workflows nested in this trace ──
+        renderTraceWorkflows(d);
+      }
+      // ── Render workflows nested in this trace (both projections share it) ──
+      function renderTraceWorkflows(d){
+        // The bottom strips are RETIRED (owner 2026-07-25): the loom now lives
+        // in the drawer's Workflow tab, the collapsed trellis bands, and the
+        // Workflows screen. This keeps only the lookup maps those need.
         _traceNodesById={};
         (d.nodes||[]).forEach(function(n){ if(n.id) _traceNodesById[n.id]=n; });
         _traceWorkflowsById={};
         (d.workflows||[]).forEach(function(w){ _traceWorkflowsById[w.id]=w; });
-        var wfs=d.workflows||[];
-        if(!wfs.length){ traceWf.innerHTML=''; return; }
-        traceWf.innerHTML=wfs.map(function(w){
-          var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
-          var badgeCls=w.is_failed?'failed':(w.is_complete?'complete':'running');
-          var isFork=w.root_workflow_id?(' &middot; fork of wf #'+w.root_workflow_id):'';
-          var loom=w.loom||{segments:[],brackets:[]};
-          var totalItems=loom.segments.reduce(function(n,s){ return n+s.total; },0);
-          return '<div class="wf-in-trace" style="--owner-accent:'+esc(w.accent||'#646970')+'">'
-            +'<div class="wft-head">'
-            +'<span class="wft-label">workflow in trace</span>'
-            +'<span class="trace-participant"><i style="background:'+esc(w.accent||'#646970')+'"></i><b>'+esc(w.consumer_label||w.consumer)+'</b></span>'
-            +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+' <span style="color:var(--faint);font-weight:400">wf #'+w.id+'</span>'+isFork+'</span>'
-            +'<span class="wft-badge '+badgeCls+'">'+statusTxt+'</span>'
-            +'<span class="wft-meta">'+loom.brackets.length+' pass'+(loom.brackets.length!==1?'es':'')+' &middot; '+totalItems+' items</span>'
-            +'</div>'
-            +'<div class="wft-body">'+renderLoom(loom)+'</div>'
-            +'</div>';
-        }).join('');
+        traceWf.innerHTML='';
       }
       // ── The Loom: segments (behaviour × item cells) + brackets (pass windows). ──
       // Geometry constants shared by tape + bracket rail; all ordinal, never time-scaled.
@@ -886,6 +890,13 @@
           loomHtml: loomDrawerHtml,
         };
       }
+      // Story ⇄ Vine: pure presentation — re-project the cached payload.
+      traceHead.addEventListener('click', function(e){
+        var b=e.target.closest('[data-tview]');
+        if(!b||b.dataset.tview===traceView) return;
+        traceView=b.dataset.tview;
+        if(_lastTraceD) renderTrace(_lastTraceD);
+      });
       // Loom brackets/pass blocks link back to their pass command's drawer.
       traceWf.addEventListener('click', function(e){
         var b=e.target.closest('[data-cmd]');

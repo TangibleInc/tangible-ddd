@@ -106,7 +106,7 @@
         </div><!-- /view-audit -->
 
         <div id="tddd-view-trace" class="tview" hidden>
-          <div class="tbreadcrumb"><button class="bck" id="tddd-trace-back">&lsaquo; Command Audit</button><span class="bsep">&#9656;</span><span class="bcur">Trace</span></div>
+          <div class="tbreadcrumb"><button class="bck" id="tddd-trace-back">&lsaquo; Command Audit</button><span class="bsep">&#9656;</span><span class="bcur">Trace</span><span id="tddd-trace-parts" class="trace-participants" style="margin-left:auto;display:inline-flex;gap:10px"></span></div>
           <!-- Recent-traces list (shown when no trace is selected) -->
           <div id="tddd-trace-recent" hidden>
             <div class="panel">
