@@ -33,6 +33,9 @@ final class ModuleBootstrap
     {
         BaseBehaviourConfig::register_type(ReviewIssuanceEvidence::TYPE, ReviewIssuanceEvidence::class);
         BaseBehaviourConfig::register_type(PrepareCredentialArtifacts::TYPE, PrepareCredentialArtifacts::class);
+        BaseBehaviourConfig::register_type(\Tangible\Cred\MegaTrace\Domain\Behaviours\ValidateCompliance::TYPE, \Tangible\Cred\MegaTrace\Domain\Behaviours\ValidateCompliance::class);
+        BaseBehaviourConfig::register_type(\Tangible\Cred\MegaTrace\Domain\Behaviours\ReconcileLedger::TYPE, \Tangible\Cred\MegaTrace\Domain\Behaviours\ReconcileLedger::class);
+        BaseBehaviourConfig::register_type(\Tangible\Cred\MegaTrace\Domain\Behaviours\NotifyBoards::TYPE, \Tangible\Cred\MegaTrace\Domain\Behaviours\NotifyBoards::class);
 
         $hosts = ConsumerRegistry::all();
         foreach (ModuleManifest::definitions() as $module) {

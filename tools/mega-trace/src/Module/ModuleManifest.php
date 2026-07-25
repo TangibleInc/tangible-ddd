@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace TangibleDDD\MegaTrace\Module;
 
+use Tangible\Cred\MegaTrace\Application\BehaviourWorkflows\CertificationAuditRoutine;
 use Tangible\Cred\MegaTrace\Application\BehaviourWorkflows\IssuanceRoutine;
 use Tangible\Cred\MegaTrace\Application\IntegrationListeners\FleetPolicies as CredPolicies;
 use Tangible\Cred\MegaTrace\Application\Process\CredentialIssuanceProcess;
+use Tangible\Cred\MegaTrace\Domain\Events\CertificationAuditRescheduled;
 use Tangible\Cred\MegaTrace\Domain\Events\CompliancePortfolioOpened;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialEvidenceVerified;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialIssued;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialNotificationQueued;
+use Tangible\Cred\MegaTrace\Application\Commands\RunCertificationAudit;
 use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineItemCompleted;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
@@ -94,7 +97,7 @@ final class ModuleManifest
                 host_prefix: 'tgbl_cred',
                 namespace_root: 'Tangible\\Cred\\MegaTrace',
                 transaction_service_id: TransactionMiddleware::class,
-                services: [CredPolicies::class, IssuanceRoutine::class],
+                services: [CredPolicies::class, IssuanceRoutine::class, CertificationAuditRoutine::class],
                 processes: [CredentialIssuanceProcess::class],
                 bridged_services: [
                     IIntegrationEventBus::class,
@@ -107,6 +110,7 @@ final class ModuleManifest
                     CredentialEvidenceVerified::class,
                     IssuanceRoutineItemCompleted::class,
                     IssuanceRoutineRescheduled::class,
+                    CertificationAuditRescheduled::class,
                     SupervisorAttestationReceived::class,
                     CredentialIssued::class,
                     CredentialNotificationQueued::class,
@@ -114,6 +118,7 @@ final class ModuleManifest
                 ],
                 handlers: [
                     RunIssuanceRoutine::class => IssuanceRoutine::class,
+                    RunCertificationAudit::class => CertificationAuditRoutine::class,
                 ],
             ),
             new ModuleDefinition(

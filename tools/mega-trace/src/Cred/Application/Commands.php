@@ -153,3 +153,20 @@ final class MarkPortfolioExported extends PublishFactCommand
         return new PortfolioExported($this->journey_id, $this->portfolio_id, $this->receipt_id);
     }
 }
+
+/**
+ * Driving command of the CALM audit routine — the two-class pairing, same
+ * shape as RunIssuanceRoutine. workflow_id null on the creating pass.
+ */
+final class RunCertificationAudit implements ICommand, ITransactionalCommand
+{
+    use CommandBusAware;
+
+    public function __construct(
+        public readonly string $journey_id,
+        public readonly int $learner_id,
+        public readonly string $portfolio_id,
+        public readonly ?int $workflow_id = null,
+    ) {
+    }
+}

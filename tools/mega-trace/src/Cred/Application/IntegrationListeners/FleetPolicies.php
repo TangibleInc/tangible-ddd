@@ -8,7 +8,9 @@ use Tangible\Cred\MegaTrace\Application\Commands\MarkPortfolioExported;
 use Tangible\Cred\MegaTrace\Application\Commands\OpenCompliancePortfolio;
 use Tangible\Cred\MegaTrace\Application\Commands\QueueCredentialNotification;
 use Tangible\Cred\MegaTrace\Application\Commands\RecordProvisionalCompetency;
+use Tangible\Cred\MegaTrace\Application\Commands\RunCertificationAudit;
 use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
+use Tangible\Cred\MegaTrace\Domain\Events\CertificationAuditRescheduled;
 use Tangible\Cred\MegaTrace\Domain\Events\CredentialIssued;
 use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
 use Tangible\Datastream\MegaTrace\Domain\Events\CredentialRegistrySynchronized;
@@ -53,6 +55,25 @@ final class FleetPolicies
         integration_listener(
             IssuanceRoutineRescheduled::class,
             static fn (IssuanceRoutineRescheduled $event): RunIssuanceRoutine => new RunIssuanceRoutine(
+                $event->journey_id,
+                $event->learner_id,
+                $event->portfolio_id,
+                $event->workflow_id,
+            ),
+        );
+        // The CALM workflow runs alongside issuance off the same fact — a
+        // second lane in the trace, at a real budget (wide loom brackets).
+        integration_listener(
+            CertificationJourneyCompleted::class,
+            static fn (CertificationJourneyCompleted $event): RunCertificationAudit => new RunCertificationAudit(
+                $event->journey_id,
+                $event->learner_id,
+                ScenarioIds::portfolio($event->journey_id),
+            ),
+        );
+        integration_listener(
+            CertificationAuditRescheduled::class,
+            static fn (CertificationAuditRescheduled $event): RunCertificationAudit => new RunCertificationAudit(
                 $event->journey_id,
                 $event->learner_id,
                 $event->portfolio_id,
