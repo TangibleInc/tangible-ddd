@@ -301,7 +301,7 @@ final class TraceTimelinePresenterTest extends TestCase
             array_column($trace['nodes'], 'uid'),
             'the elder process tops the component; the ignition back-edge is the one inversion'
         );
-        self::assertSame([0, 1, 2, 3], array_column($trace['nodes'], 'depth'));
+        self::assertSame([0, 1, 1, 2], array_column($trace['nodes'], 'depth'), 'both commands are the elder process\'s children; the subscriber hangs off grade');
         $subscriber = $trace['nodes'][3];
         self::assertSame('quiz:c:grade', $subscriber['parent']);
     }
