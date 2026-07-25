@@ -34,12 +34,13 @@ use TangibleDDD\MegaTrace\Scenario\ScenarioIds;
  * before the budget cuts it — the production shape (cred reporting runs the
  * stock 25s budget). Expect FEW, WIDE, often cross-segment loom brackets.
  *
- * One deterministic pathology: NotifyBoards' 'board_ohio' item fails on its
- * first attempt. Its siblings succeed → PARTIAL failure → the runner FORKS
- * the failed item into a child workflow (root_workflow_id lineage). In the
- * child the lone item fails again (attempts reset on transfer), all-failed
- * → no re-fork → reschedule; the retry pass succeeds. Yields: a fork lane,
- * a failed→retried→done cell, and a ranged bracket — on every story.
+ * One deterministic pathology: NotifyBoards' 'board_ohio' item fails on the
+ * parent lane. Its siblings succeed → PARTIAL failure → the runner FORKS
+ * the failed item into a child workflow (root_workflow_id lineage; the item
+ * transfers reset-to-pending). The child's pass succeeds — the fork IS the
+ * retry lane: the runner never re-runs a failed item in place (that is what
+ * cred's user-triggered retry behaviour exists for). Yields per story: a
+ * fork lane, a failed cell on the parent, and a healed child loom.
  */
 final class CertificationAuditRoutine extends WorkflowHandler
 {
@@ -90,7 +91,15 @@ final class CertificationAuditRoutine extends WorkflowHandler
     ): BehaviourExecutionResult {
         SyntheticWorkload::spend(450);
 
-        if ($config instanceof NotifyBoards && $item->item_key === self::FLAKY_KEY && $item->attempts === 0) {
+        // Fails on the PARENT lane only: the runner never re-runs failed items
+        // in place (that is what user-triggered retry is for), so the fork IS
+        // the retry — the child's fresh pass over the transferred item succeeds.
+        if (
+            $config instanceof NotifyBoards
+            && $item->item_key === self::FLAKY_KEY
+            && $item->attempts === 0
+            && !$this->current_workflow->is_forked()
+        ) {
             return new BehaviourExecutionResult(
                 type: $config->get_behaviour_type(),
                 success: false,
