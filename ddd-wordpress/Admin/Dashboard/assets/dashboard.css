@@ -587,3 +587,6 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root table.loom-ledger td:first-child{color:var(--accent2);font-weight:700}
 .tddd-root table.loom-ledger tr[data-cmd]{cursor:pointer}
 .tddd-root table.loom-ledger tr.err td{color:var(--crit)}
+/* Sticky gutter layer: process bands + workflow rails pin with the label
+   column on horizontal scroll (zero-size, children absolute). */
+.tddd-root .trace-gutter{position:sticky;left:0;width:0;height:0;z-index:6;overflow:visible;display:block}

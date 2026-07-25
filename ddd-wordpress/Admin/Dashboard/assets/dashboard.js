@@ -726,6 +726,7 @@
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
           +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>'
+          +(d.started_at?'<div class="meta" title="first recorded act (UTC)">started <b>'+esc(d.started_at)+'</b> UTC &middot; '+rel(d.started_at)+'</div>':'')
           +(participants?'<div class="trace-participants">'+participants+'</div>':'')
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
@@ -756,7 +757,7 @@
         traceWf.innerHTML=wfs.map(function(w){
           var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
           var badgeCls=w.is_failed?'failed':(w.is_complete?'complete':'running');
-          var isFork=w.root_workflow_id?(' &middot; fork of #'+w.root_workflow_id):'';
+          var isFork=w.root_workflow_id?(' &middot; fork of wf #'+w.root_workflow_id):'';
           var loom=w.loom||{segments:[],brackets:[]};
           var totalItems=loom.segments.reduce(function(n,s){ return n+s.total; },0);
           return '<div class="wf-in-trace" style="--owner-accent:'+esc(w.accent||'#646970')+'">'
@@ -855,7 +856,7 @@
             return '<tr'+(b.errors?' class="err"':'')+' data-cmd="'+esc(b.command_id||'')+'"><td>'+(b.pass===null?'?':b.pass)+'</td><td>'+note+'</td><td>'+b.keys.length+'</td><td>'+(b.errors?b.errors+' failed':'ok')+(b.cut?' &#8961;':'')+'</td></tr>';
           }).join('')+'</table>':'';
         return '<div class="loom-drawer-id">'+esc(w.ref_type)+' #'+w.ref_id
-          +(w.root_workflow_id?' &middot; fork of #'+w.root_workflow_id:'')
+          +(w.root_workflow_id?' &middot; fork of wf #'+w.root_workflow_id:'')
           +' <span class="wft-badge '+statusTxt+'">'+statusTxt+'</span> <span class="idm">wf #'+w.id+'</span></div>'
           +(chips?'<div class="chips" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px">'+chips+'</div>':'')
           +renderLoom(loom)+ledger;
@@ -1138,12 +1139,12 @@
           var its=w.items||[]; var idone=its.filter(function(i){return i.status==='done';}).length; var itot=its.length; var ipct=itot?Math.round(idone/itot*100):0;
           var steps=configs.map(function(nm,i){ var s=i<w.current_idx?'done':(i===w.current_idx?'active':'pending'); return '<div class="step '+s+'"><div class="sn">'+esc(nm)+'</div><div class="ss">phase '+(i+1)+'</div></div>'; }).join('');
           var items=(w.items||[]).map(function(it){ return '<span class="item"><span class="idot '+esc(it.status)+'"></span><span class="ik">'+esc(it.item_key)+'</span>'+(it.attempts?'<span style="color:var(--faint)">&times;'+it.attempts+'</span>':'')+'</span>'; }).join('');
-          var forks=(w.forks||[]).map(function(f){ return '<div class="fork">&#8627; fork #'+f.id+' &middot; '+(f.is_failed?'failed':(f.is_complete?'complete':'running'))+' &middot; idx '+f.current_idx+'</div>'; }).join('');
-          var isFork=w.root_workflow_id?(' <span style="color:var(--coral-ink)">(fork of #'+w.root_workflow_id+')</span>'):'';
+          var forks=(w.forks||[]).map(function(f){ return '<div class="fork">&#8627; fork wf #'+f.id+' &middot; '+(f.is_failed?'failed':(f.is_complete?'complete':'running'))+' &middot; idx '+f.current_idx+'</div>'; }).join('');
+          var isFork=w.root_workflow_id?(' <span style="color:var(--coral-ink)">(fork of wf #'+w.root_workflow_id+')</span>'):'';
           return '<div class="prow">'
             +'<div class="phead"><span class="chev">&#9656;</span>'
             +'<span class="badge b-'+sb+'">'+statusTxt+'</span>'
-            +'<span class="pname">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
+            +'<span class="pname">'+esc(w.ref_type)+' #'+w.ref_id+' <span style="color:var(--faint);font-weight:400">wf #'+w.id+'</span>'+isFork+'</span>'
             +'<span class="wbar" title="work-items done"><span class="wbar-t"><i style="width:'+ipct+'%"></i></span><span class="wbar-n">'+idone+'/'+itot+'</span></span>'
             +'<span class="pmeta"><span>idx '+w.current_idx+'/'+configs.length+'</span><span>phase '+w.current_phase+'</span>'+(w.forks.length?'<span>'+w.forks.length+' fork'+(w.forks.length>1?'s':'')+'</span>':'')+'<span>'+rel(w.updated_at)+'</span></span></div>'
             +'<div class="pbody"><div class="lane-lbl">behaviour chain</div><div class="flow">'+steps+'</div>'

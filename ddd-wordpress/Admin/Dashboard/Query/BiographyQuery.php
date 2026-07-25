@@ -103,7 +103,7 @@ final class BiographyQuery
             . "LEFT JOIN `{$audit}` a ON a.command_id=t.command_id AND a.blog_id=t.blog_id "
             . "LEFT JOIN `{$outbox}` o ON o.event_id=t.event_id AND o.blog_id=t.blog_id "
             . 'WHERE t.aggregate=%s AND t.aggregate_id=%s '
-            . 'ORDER BY t.version ASC,t.occurred_at ASC,t.id ASC LIMIT %d OFFSET %d';
+            . 'ORDER BY t.version DESC,t.occurred_at DESC,t.id DESC LIMIT %d OFFSET %d';
         $offset = ($page - 1) * $perPage;
         $entries = $this->db->results($this->db->prepare($sql, [$aggregate, $aggregateId, $perPage, $offset]));
         foreach ($entries as &$entry) {
