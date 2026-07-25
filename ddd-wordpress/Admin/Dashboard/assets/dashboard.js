@@ -871,7 +871,7 @@
         if(!b||!b.dataset.cmd) return;
         var n=_traceNodesById[b.dataset.cmd];
         if(!n) return;
-        setDrawerLabel(n.kind);
+        setDrawerLabel(n.is_workflow ? "workflow pass" : n.kind);
         TDDDTrace.openDrawer(dbody, n, null, drawerCtx());
         drawer.hidden=false;
       });
@@ -890,7 +890,7 @@
         return {
           prevUids:_prevTraceNodes,
           onOpenNode:function(n, initialTab){
-            setDrawerLabel(n.kind);
+            setDrawerLabel(n.is_workflow ? "workflow pass" : n.kind);
             TDDDTrace.openDrawer(dbody, n, initialTab, drawerCtx());
             drawer.hidden=false;
           },
