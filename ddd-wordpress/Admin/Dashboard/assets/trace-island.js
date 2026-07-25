@@ -536,46 +536,64 @@
       }
 
       function VineView(props){
+        // HORIZONTAL flow (owner 2026-07-25): causal depth runs left→right —
+        // after capsule collapse a trace is deeper than it is branchy, so
+        // depth belongs on the wide axis. Siblings stack vertically.
         var d=props.data, handlers=props.handlers||{};
         if(!d||!(d.nodes||[]).length) return html`<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>`;
         var g=buildVine(d);
-        var COLW=250, ROWH=64, X0=30, Y0=28, NW=16;
+        var RANKW=210, LANEH=76, X0=36, Y0=30, NW=18;
         var maxRank=0; g.nodes.forEach(function(v){ maxRank=Math.max(maxRank,v.__r); });
-        var W=X0+g.cols*COLW+220, H=Y0+(maxRank+1)*ROWH+40;
-        function nx(v){ return X0+v.__c*COLW; }
-        function ny(v){ return Y0+v.__r*ROWH; }
+        var W=X0+(maxRank+1)*RANKW+120, H=Y0+g.cols*LANEH+50;
+        function nx(v){ return X0+v.__r*RANKW; }
+        function ny(v){ return Y0+v.__c*LANEH; }
+        function glyphW(v){ return v.vkind==='capsule'||v.vkind==='process'?NW+30:NW; }
         var pipes=[], marks=[];
         g.nodes.forEach(function(v){
           if(!v.parent||!g.byUid[v.parent]) return;
           var p=g.byUid[v.parent];
-          var x1=nx(p)+NW/2, y1=ny(p)+NW, x2=nx(v)+NW/2, y2=ny(v);
-          var path=x1===x2
+          var x1=nx(p)+glyphW(p), y1=ny(p)+NW/2, x2=nx(v)-3, y2=ny(v)+NW/2;
+          var spine=p.__c===v.__c;
+          var path=y1===y2
             ? 'M'+x1+','+y1+' L'+x2+','+y2
-            : 'M'+x1+','+y1+' C'+x1+','+(y1+24)+' '+x2+','+(y2-24)+' '+x2+','+y2;
-          pipes.push(html`<path class="vine-pipe${v.broke?' broke':''}" d=${path} style=${'stroke:'+(v.accent||'#646970')}/>`);
+            : 'M'+x1+','+y1+' C'+(x1+(x2-x1)*0.55)+','+y1+' '+(x1+(x2-x1)*0.45)+','+y2+' '+x2+','+y2;
+          pipes.push(html`<path class=${'vine-pipe'+(v.broke?' broke':'')+(spine?' spine':'')} d=${path} style=${'stroke:'+(v.accent||'#646970')}/>`);
           var wait=Math.max(0,(v.ts||0)-(p.ts||0));
-          if(wait>=2) marks.push(html`<text class="vine-elabel" x=${(x1+x2)/2+6} y=${(y1+y2)/2}>${fmtTraceSpan(wait)}</text>`);
+          if(wait>=2) marks.push(html`<text class="vine-elabel" x=${(x1+x2)/2} y=${(y1+y2)/2-5} text-anchor="middle">${fmtTraceSpan(wait)}</text>`);
         });
         var shapes=g.nodes.map(function(v){
           var x=nx(v), y=ny(v), a=v.accent||'#646970';
           var glyph;
           if(v.vkind==='fact'){
-            glyph=html`<rect x=${x+1} y=${y+1} width=${NW-2} height=${NW-2} transform=${'rotate(45 '+(x+NW/2)+' '+(y+NW/2)+')'} class="vine-fact" style=${'stroke:'+a}/>`;
+            glyph=html`<rect x=${x+2} y=${y+2} width=${NW-4} height=${NW-4} transform=${'rotate(45 '+(x+NW/2)+' '+(y+NW/2)+')'} class="vine-fact" style=${'stroke:'+a}/>`;
           } else if(v.vkind==='capsule'){
-            glyph=html`<g><rect x=${x-4} y=${y} width=${NW+26} height=${NW} rx="8" class="vine-capsule" style=${'stroke:'+a+';color:'+a}/><path class="vine-loop" d=${'M'+(x+NW+22)+','+(y+NW/2)+' c 14,0 14,-'+(NW+2)+' 0,-'+(NW/2)} style=${'stroke:'+a}/></g>`;
+            // Workflow capsule: the 90° stripe identity + the continuation self-loop.
+            glyph=html`<g>
+              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" style=${'fill:'+a+';opacity:.14'}/>
+              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" fill="url(#vine-vstripe)" style=${'stroke:'+a+';stroke-width:2'}/>
+              <path class="vine-loop" d=${'M'+(x+NW+30)+','+(y+3)+' c 16,-14 -14,-16 -12,-2'} style=${'stroke:'+a}/>
+            </g>`;
           } else if(v.vkind==='process'){
-            glyph=html`<rect x=${x-4} y=${y} width=${NW+26} height=${NW} rx="8" class="vine-process" style=${'stroke:'+a+';color:'+a}/>`;
+            glyph=html`<g>
+              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" style=${'fill:'+a+';opacity:.08'}/>
+              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
+            </g>`;
           } else {
-            glyph=html`<rect x=${x} y=${y} width=${NW} height=${NW} rx="3" style=${'fill:'+a+(v.err?';stroke:var(--crit);stroke-width:2':'')}/>`;
+            glyph=html`<rect x=${x} y=${y} width=${NW} height=${NW} rx="4" style=${'fill:'+a+(v.err?';stroke:var(--crit);stroke-width:2.5':'')}/>`;
           }
           return html`<g class="vine-node" onClick=${function(){ if(handlers.onOpenNode){ handlers.onOpenNode(v.node||v.first, v.vkind==='capsule'?'workflow':undefined); } }}>
             ${glyph}
-            ${v.broke?html`<text class="vine-scissor" x=${x-14} y=${y+12}>✂</text>`:null}
-            <text class="vine-label" x=${x+(v.vkind==='capsule'||v.vkind==='process'?NW+28:NW+8)} y=${y+8}>${v.name}</text>
-            <text class="vine-meta" x=${x+(v.vkind==='capsule'||v.vkind==='process'?NW+28:NW+8)} y=${y+19}>${v.meta||''}</text>
+            ${v.broke?html`<text class="vine-scissor" x=${x-4} y=${y-4}>✂</text>`:null}
+            <text class="vine-label" x=${x} y=${y+NW+13}>${v.name}</text>
+            <text class="vine-meta" x=${x} y=${y+NW+24}>${v.meta||''}</text>
           </g>`;
         });
-        return html`<div class="vine-wrap"><svg width=${W} height=${H} viewBox=${'0 0 '+W+' '+H}>${pipes}${marks}${shapes}</svg></div>`;
+        return html`<div class="vine-wrap"><svg width=${W} height=${H} viewBox=${'0 0 '+W+' '+H}>
+          <defs>
+            <pattern id="vine-vstripe" width="5" height="8" patternUnits="userSpaceOnUse"><line x1="1" y1="0" x2="1" y2="8" stroke="#8a8578" stroke-width="2" opacity=".5"/></pattern>
+            <pattern id="vine-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#8a8578" stroke-width="2" opacity=".35"/></pattern>
+          </defs>
+          ${pipes}${marks}${shapes}</svg></div>`;
       }
 
       window.TDDDTrace = {
