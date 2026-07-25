@@ -762,11 +762,9 @@
         if(!d.nodes||!d.nodes.length){ TDDDTrace.renderRows(traceRows, d, traceIslandHandlers()); ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
           var newUids={}; d.nodes.forEach(function(n){ newUids[n.uid]=true; });
-          // Rows, seams, ports, gap markers and process bands render in the
-          // Preact island; the vanilla shell only supplies data + handlers.
-          TDDDTrace.renderRows(traceRows, d, traceIslandHandlers());
-          _prevTraceNodes=newUids;
-          // Widen the lane when there are many spans so bars stay legible → horizontal scroll.
+          // Widen the lane BEFORE the island renders: its layout effects
+          // measure the lane to convert pct→px for process regions — setting
+          // minWidth after rendering fed them a stale narrow width.
           // Gap markers get their own budget: the layout guarantees 130 units between
           // markers, but long bars inflate totalUnits and shrink those units to
           // slivers. Measure the tightest marker separation (in pct) and stretch
