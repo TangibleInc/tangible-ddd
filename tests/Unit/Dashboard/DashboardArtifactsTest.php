@@ -72,7 +72,8 @@ final class DashboardArtifactsTest extends TestCase
         self::assertStringContainsString('var R = window.TDDD;', $script);
         self::assertStringContainsString("location.hash='trace/'", $script);
         self::assertStringContainsString('trace-participant', $script);
-        self::assertStringContainsString('setDrawerLabel(n.is_workflow ? "workflow pass" : n.kind)', $script);
+        self::assertStringContainsString('setDrawerLabel(drawerNodeLabel(n))', $script);
+        self::assertStringContainsString("'workflow pass · wf #'+n.pass.wf", $script);
         self::assertStringContainsString("setDrawerLabel('biography entry')", $script);
         self::assertStringContainsString('style="--owner-accent:', $script);
         self::assertStringContainsString('function showBiography', $script);

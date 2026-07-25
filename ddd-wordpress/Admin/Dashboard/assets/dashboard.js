@@ -115,6 +115,16 @@
       document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeDrawer(); });
       function j(o){ return o==null ? '<span class="idm">&mdash;</span>' : '<pre>'+esc(JSON.stringify(o,null,2))+'</pre>'; }
       function setDrawerLabel(label){ drawerLabel.textContent=label; }
+      // The drawer chrome carries the record's identity, not just its kind:
+      // command → short command_id; workflow pass → wf # + short command_id;
+      // process → its row id.
+      function drawerNodeLabel(n){
+        var id=n.id?String(n.id):'';
+        var shortid=id.length>10?id.slice(0,8):id;
+        if(n.is_workflow && n.pass) return 'workflow pass · wf #'+n.pass.wf+' · '+shortid;
+        if(n.is_workflow) return 'workflow pass · '+shortid;
+        return n.kind+(shortid?' · '+(n.kind==='process'?'#':'')+shortid:'');
+      }
       function openDrawer(r){
         setDrawerLabel('command');
         TDDDTrace.unmountDrawer(dbody); // the trace island may own this element
@@ -875,7 +885,7 @@
         if(!b||!b.dataset.cmd) return;
         var n=_traceNodesById[b.dataset.cmd];
         if(!n) return;
-        setDrawerLabel(n.is_workflow ? "workflow pass" : n.kind);
+        setDrawerLabel(drawerNodeLabel(n));
         TDDDTrace.openDrawer(dbody, n, null, drawerCtx());
         drawer.hidden=false;
       });
@@ -894,7 +904,7 @@
         return {
           prevUids:_prevTraceNodes,
           onOpenNode:function(n, initialTab){
-            setDrawerLabel(n.is_workflow ? "workflow pass" : n.kind);
+            setDrawerLabel(drawerNodeLabel(n));
             TDDDTrace.openDrawer(dbody, n, initialTab, drawerCtx());
             drawer.hidden=false;
           },
