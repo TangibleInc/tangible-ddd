@@ -739,7 +739,10 @@
           TDDDTrace.renderRows(traceRows, d, traceIslandHandlers());
           _prevTraceNodes=newUids;
           // Widen the lane when there are many spans so bars stay legible → horizontal scroll.
-          var tlW = d.nodes.length*44 + 360;
+          // Gap markers get their own budget: the layout guarantees 130 units between
+          // markers, but units→px only holds if the lane is wide enough — 48px ≈ the
+          // widest cumulative label ("+3m 19s") plus breathing room.
+          var tlW = d.nodes.length*44 + (d.time_markers||[]).length*48 + 360;
           traceRows.style.minWidth = tlW+'px';
           ruler.parentNode.style.minWidth = tlW+'px';
         }
