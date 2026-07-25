@@ -236,15 +236,20 @@
           />`);
         });
         out.push(html`<${GapsLane} markers=${d.time_markers}/>`);
+        // Gutter-dwelling art (bands, elbows, rails, ticks) lives in a
+        // zero-size sticky layer so it pins with the label column instead of
+        // sliding away on horizontal scroll. Temporal regions stay in the
+        // scrolling content — they mark real x-positions in the lane.
+        var gutter=[];
         bands.forEach(function(b){
-          out.push(html`<div
+          gutter.push(html`<div
             class=${'proc-band '+(b.open?'is-open':'is-closed')}
             style=${'--band-accent:'+b.accent+';top:'+b.top+'px;left:'+b.left+'px;height:'+b.height+'px'}
             title=${b.title}
             onClick=${function(){ if(handlers.onOpenNode && byUid[b.uid]) handlers.onOpenNode(byUid[b.uid], undefined); }}
           ></div>`);
           (b.elbows||[]).forEach(function(top){
-            out.push(html`<div class="proc-elbow" style=${'--band-accent:'+b.accent+';top:'+top+'px;left:'+(b.left+5)+'px'}></div>`);
+            gutter.push(html`<div class="proc-elbow" style=${'--band-accent:'+b.accent+';top:'+top+'px;left:'+(b.left+5)+'px'}></div>`);
           });
           if(b.region){
             out.push(html`<div
@@ -255,11 +260,12 @@
           }
         });
         rails.forEach(function(r){
-          out.push(html`<div class="wf-rail" style=${'--band-accent:'+r.accent+';top:'+r.top+'px;left:'+r.left+'px;height:'+r.height+'px'} title=${r.title}></div>`);
+          gutter.push(html`<div class="wf-rail" style=${'--band-accent:'+r.accent+';top:'+r.top+'px;left:'+r.left+'px;height:'+r.height+'px'} title=${r.title}></div>`);
           r.ticks.forEach(function(t){
-            out.push(html`<div class=${'wf-rail-tick'+(t.err?' err':'')} style=${'--band-accent:'+r.accent+';top:'+t.top+'px;left:'+r.left+'px'}>${t.cut?html`<i>⌁</i>`:null}</div>`);
+            gutter.push(html`<div class=${'wf-rail-tick'+(t.err?' err':'')} style=${'--band-accent:'+r.accent+';top:'+t.top+'px;left:'+r.left+'px'}>${t.cut?html`<i>⌁</i>`:null}</div>`);
           });
         });
+        out.unshift(html`<div class="trace-gutter">${gutter}</div>`);
         return out;
       }
 
