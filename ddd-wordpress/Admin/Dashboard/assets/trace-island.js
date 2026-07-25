@@ -66,6 +66,7 @@
           <div class="slabel" style=${'--owner-accent:'+accent}>
             <div class="snrow"><span class="sdot" style=${'background:'+accent}></span><span class="sname" title=${n.name}>${shortName(n.name)}</span><span class="stype">${kind}</span>${moments.length?html`<button class="mchip" data-dtab="inside" title="open: inside the act">×${moments.length}${reactionCount?' · '+reactionCount+' reactions':''}</button>`:null}</div>
             ${n.pass?html`<div class="spass"><span class=${'pass-chip'+(n.pass.errors?' err':'')} title=${'workflow #'+n.pass.wf+' · pass '+n.pass.n+' of '+n.pass.of+' · '+n.pass.note+(n.pass.cut?' · stopped with work remaining':'')+(n.pass.errors?' · '+n.pass.errors+' failed':'')}>pass ${n.pass.n}/${n.pass.of} · ${n.pass.note}${n.pass.cut?' ⌁':''}${n.pass.errors?' ×'+n.pass.errors:''}</span></div>`:null}
+            ${n.kind==='process'?html`<div class="spass"><span class="pass-chip" title=${'long process #'+n.id+' · '+(n.status||'')+(n.raw&&n.raw.step_name?' · step: '+n.raw.step_name:'')+(n.raw&&n.raw.waiting_for?' · awaits '+n.raw.waiting_for:'')}>trajectory #${n.id} · ${n.status||'?'}${n.raw&&n.raw.step_name?' · '+n.raw.step_name:''}${n.raw&&n.raw.waiting_for?' · awaits ⧗':''}</span></div>`:null}
             ${showFrom?html`<div class="sfrom">↳ from <b>${n.parent_label}</b>${handoff}</div>`:null}
             ${n.unresolved?html`<div class="trace-unresolved">recorded parent unresolved</div>`:null}
             ${latBar}
@@ -508,6 +509,27 @@
           if(v.parent && uidToCapsule[v.parent]) v.parent=uidToCapsule[v.parent];
           if(v.parent===v.uid) v.parent=null;
         });
+        // Consumed facts live in the payload as PORTS docked on their raising
+        // act, not as nodes — so a process ignited by one (or a command caused
+        // by one) pointed at a missing parent and floated as its own tree.
+        // PROMOTE such facts to chain nodes: act → ◆fact → ignited process.
+        var portIndex={};
+        nodes.forEach(function(n){
+          (n.ports||[]).forEach(function(p){
+            portIndex[p.uid]={port:p, act:uidToCapsule[n.uid]||n.uid};
+          });
+        });
+        vnodes.slice().forEach(function(v){
+          if(!v.parent||vByUid[v.parent]||!portIndex[v.parent]) return;
+          var pi=portIndex[v.parent];
+          if(!vByUid[v.parent]){
+            var f={uid:pi.port.uid, vkind:'fact', name:shortName(pi.port.name),
+              consumer:pi.port.consumer, accent:pi.port.accent||'#646970',
+              meta:(pi.port.status||''), err:pi.port.status==='dlq'||pi.port.status==='failed',
+              broke:false, parent:pi.act, ts:v.ts};
+            vnodes.push(f); vByUid[f.uid]=f;
+          }
+        });
         // 2. Ranks (longest path from root) + children map.
         var kids={};
         vnodes.forEach(function(v){ if(v.parent&&vByUid[v.parent]) (kids[v.parent]=kids[v.parent]||[]).push(v); });
@@ -559,18 +581,38 @@
         function nx(v){ return X0+v.__r*RANKW; }
         function ny(v){ return Y0+v.__c*LANEH; }
         function glyphW(v){ return v.vkind==='capsule'||v.vkind==='process'?NW+30:NW; }
+        // A process SEQUENCES its children (they are its steps, not a causal
+        // fan-out) — its out-pipes speak step language: orthogonal elbows off
+        // the rail with 'step N' ordinals, instead of organic cause-curves.
+        var stepOrdinal={};
+        g.nodes.forEach(function(v){
+          if(!v.parent||!g.byUid[v.parent]) return;
+          if(g.byUid[v.parent].vkind==='process'){
+            var sibs=(function(){ var s=[]; g.nodes.forEach(function(o){ if(o.parent===v.parent) s.push(o); }); s.sort(function(a,b){ return a.ts-b.ts; }); return s; })();
+            stepOrdinal[v.uid]=sibs.indexOf(v)+1;
+          }
+        });
         var pipes=[], marks=[];
         g.nodes.forEach(function(v){
           if(!v.parent||!g.byUid[v.parent]) return;
           var p=g.byUid[v.parent];
           var x1=nx(p)+glyphW(p), y1=ny(p)+NW/2, x2=nx(v)-3, y2=ny(v)+NW/2;
           var spine=p.__c===v.__c;
-          var path=y1===y2
-            ? 'M'+x1+','+y1+' L'+x2+','+y2
-            : 'M'+x1+','+y1+' C'+(x1+(x2-x1)*0.55)+','+y1+' '+(x1+(x2-x1)*0.45)+','+y2+' '+x2+','+y2;
-          pipes.push(html`<path class=${'vine-pipe'+(v.broke?' broke':'')+(spine?' spine':'')} d=${path} style=${'stroke:'+(v.accent||'#646970')}/>`);
+          var isStep=!!stepOrdinal[v.uid];
+          var path;
+          if(isStep&&y1!==y2){
+            // Elbow: out of the rail, drop/rise, run to the step.
+            var mx=x1+18;
+            path='M'+x1+','+y1+' L'+mx+','+y1+' L'+mx+','+y2+' L'+x2+','+y2;
+          } else {
+            path=y1===y2
+              ? 'M'+x1+','+y1+' L'+x2+','+y2
+              : 'M'+x1+','+y1+' C'+(x1+(x2-x1)*0.55)+','+y1+' '+(x1+(x2-x1)*0.45)+','+y2+' '+x2+','+y2;
+          }
+          pipes.push(html`<path class=${'vine-pipe'+(v.broke?' broke':'')+(spine?' spine':'')+(isStep?' step':'')} d=${path} style=${'stroke:'+(v.accent||'#646970')}/>`);
           var wait=Math.max(0,(v.ts||0)-(p.ts||0));
-          if(wait>=2) marks.push(html`<text class="vine-elabel" x=${(x1+x2)/2} y=${(y1+y2)/2-5} text-anchor="middle">${fmtTraceSpan(wait)}</text>`);
+          var lbl=(isStep?'step '+stepOrdinal[v.uid]:'')+((wait>=2)?((isStep?' · ':'')+fmtTraceSpan(wait)):'');
+          if(lbl) marks.push(html`<text class="vine-elabel" x=${(x1+x2)/2} y=${(y1+y2)/2-5} text-anchor="middle">${lbl}</text>`);
         });
         var shapes=g.nodes.map(function(v){
           var x=nx(v), y=ny(v), a=v.accent||'#646970';

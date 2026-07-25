@@ -631,3 +631,4 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .trace-scroll{cursor:grab}
 .tddd-root .trace-scroll.is-panning{cursor:grabbing;user-select:none}
 .tddd-root .vine-wrap{overflow:visible}
+.tddd-root .vine-pipe.step{stroke-width:2;opacity:.9}
