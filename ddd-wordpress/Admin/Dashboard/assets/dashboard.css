@@ -416,6 +416,14 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .wft-kv b{color:var(--ink-soft)}
 .tddd-root .wft-connector{display:flex;align-items:center;gap:7px;padding:8px 12px;background:var(--softer);border-top:1px solid var(--linesoft);font-family:var(--fm);font-size:.6rem;color:var(--faint)}
 .tddd-root .wft-connector .wft-arrow{color:var(--accent2);font-size:.8rem}
+/* ── in-row trellis: pass chips + workflow rails ── */
+.tddd-root .pass-chip{font-family:var(--fm);font-size:.58rem;font-weight:700;color:var(--owner-accent,var(--accent));border:1px solid color-mix(in srgb,var(--owner-accent,var(--accent)) 45%,transparent);border-radius:3px;padding:0 6px;white-space:nowrap;background:color-mix(in srgb,var(--owner-accent,var(--accent)) 7%,transparent);display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.tddd-root .pass-chip.err{color:var(--crit);border-color:var(--crit);background:var(--critbg)}
+.tddd-root .wf-rail{position:absolute;width:5px;border-radius:3px;z-index:1;pointer-events:auto;
+  background:repeating-linear-gradient(180deg,color-mix(in srgb,var(--band-accent,#646970) 40%,transparent) 0 3px,transparent 3px 6px)}
+.tddd-root .wf-rail-tick{position:absolute;width:11px;height:2px;background:var(--band-accent,#646970);border-radius:1px;z-index:1}
+.tddd-root .wf-rail-tick.err{background:var(--crit)}
+.tddd-root .wf-rail-tick i{position:absolute;left:12px;top:-8px;font-style:normal;font-family:var(--fm);font-size:.6rem;color:var(--warn,#b07f18)}
 /* ── the loom (workflow progress: segments × cells + pass brackets) ── */
 .tddd-root .loom{overflow-x:auto;padding-bottom:2px}
 .tddd-root .loom-labels{display:flex;white-space:nowrap;margin-bottom:6px}
@@ -567,3 +575,4 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
   .tddd-root .bio-timeline{margin-left:8px;margin-right:8px}
   .tddd-root .bio-head{top:0}
 }
+.tddd-root .spass{margin:2px 0 0 15px;line-height:1.3}

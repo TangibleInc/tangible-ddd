@@ -65,6 +65,7 @@
           onClick=${props.onClick}>
           <div class="slabel" style=${'--owner-accent:'+accent}>
             <div class="snrow"><span class="sdot" style=${'background:'+accent}></span><span class="sname" title=${n.name}>${shortName(n.name)}</span><span class="stype">${kind}</span>${moments.length?html`<button class="mchip" data-dtab="inside" title="open: inside the act">×${moments.length}${reactionCount?' · '+reactionCount+' reactions':''}</button>`:null}</div>
+            ${n.pass?html`<div class="spass"><span class=${'pass-chip'+(n.pass.errors?' err':'')} title=${'workflow #'+n.pass.wf+' · pass '+n.pass.n+' of '+n.pass.of+' · '+n.pass.note+(n.pass.cut?' · stopped with work remaining':'')+(n.pass.errors?' · '+n.pass.errors+' failed':'')}>pass ${n.pass.n}/${n.pass.of} · ${n.pass.note}${n.pass.cut?' ⌁':''}${n.pass.errors?' ×'+n.pass.errors:''}</span></div>`:null}
             ${showFrom?html`<div class="sfrom">↳ from <b>${n.parent_label}</b>${handoff}</div>`:null}
             ${n.unresolved?html`<div class="trace-unresolved">recorded parent unresolved</div>`:null}
             ${latBar}
@@ -141,15 +142,50 @@
         return bands;
       }
 
+      // Workflow rails: the trellis, in-row. A workflow's passes are chained
+      // commands (no parent node to hang a subtree band from), so the rail
+      // groups rows sharing pass.wf — one vertical band, one TICK per pass
+      // (the rules land on pass boundaries; a stripe is never decoration).
+      function computeWorkflowRails(nodes, rowEls){
+        var byWf={};
+        (nodes||[]).forEach(function(n){
+          if(!n.pass) return;
+          var el=rowEls[n.uid]; if(!el) return;
+          var g=byWf[n.pass.wf]=byWf[n.pass.wf]||{rows:[],accent:n.accent||'#646970',depth:n.depth||0,of:n.pass.of,wf:n.pass.wf,cut:0,err:0};
+          g.rows.push({top:el.offsetTop,height:el.offsetHeight,cut:!!n.pass.cut,err:!!n.pass.errors});
+          g.depth=Math.min(g.depth,n.depth||0);
+          if(n.pass.cut) g.cut++;
+          if(n.pass.errors) g.err++;
+        });
+        var rails=[];
+        Object.keys(byWf).forEach(function(k){
+          var g=byWf[k];
+          if(g.rows.length<2) return;   // a rail needs extent; single-pass workflows read fine bare
+          g.rows.sort(function(a,b){ return a.top-b.top; });
+          var top=g.rows[0].top, bottom=g.rows[g.rows.length-1].top+g.rows[g.rows.length-1].height;
+          rails.push({
+            wf:g.wf, accent:g.accent,
+            top:top, height:bottom-top,
+            left:Math.max(2, 8+Math.min(g.depth,5)*14-6),
+            ticks:g.rows.map(function(r){ return {top:r.top+15, cut:r.cut, err:r.err}; }),
+            title:'workflow #'+g.wf+' · '+g.rows.length+' passes in trace'+(g.cut?' · '+g.cut+' budget cuts':'')+(g.err?' · '+g.err+' with failures':''),
+          });
+        });
+        return rails;
+      }
+
       function TraceRows(props){
         var d=props.data, handlers=props.handlers||{};
         var nodes=(d&&d.nodes)||[];
         var rowRefs=useRef({});
         var bandsState=useState([]);
         var bands=bandsState[0], setBands=bandsState[1];
+        var railsState=useState([]);
+        var rails=railsState[0], setRails=railsState[1];
         rowRefs.current={};
         useLayoutEffect(function(){
           setBands(computeBands(nodes, rowRefs.current));
+          setRails(computeWorkflowRails(nodes, rowRefs.current));
         },[d]);
         if(!d) return null;
         if(!nodes.length) return html`<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>`;
@@ -198,6 +234,12 @@
               title=${b.title}
             ></div>`);
           }
+        });
+        rails.forEach(function(r){
+          out.push(html`<div class="wf-rail" style=${'--band-accent:'+r.accent+';top:'+r.top+'px;left:'+r.left+'px;height:'+r.height+'px'} title=${r.title}></div>`);
+          r.ticks.forEach(function(t){
+            out.push(html`<div class=${'wf-rail-tick'+(t.err?' err':'')} style=${'--band-accent:'+r.accent+';top:'+t.top+'px;left:'+r.left+'px'}>${t.cut?html`<i>⌁</i>`:null}</div>`);
+          });
         });
         return out;
       }

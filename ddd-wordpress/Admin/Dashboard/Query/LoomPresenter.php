@@ -67,12 +67,21 @@ final class LoomPresenter
             }
             usort($cells, static fn (array $a, array $b): int => [$a['seg'], $a['cell']] <=> [$b['seg'], $b['cell']]);
 
+            $spans = [];
+            foreach ($cells as $cell) {
+                $spans[$cell['seg']] = ($spans[$cell['seg']] ?? 0) + 1;
+            }
+
             $brackets[] = [
                 'pass' => $group['pass'],
                 'command_id' => $group['command_id'],
                 'from' => $cells[0] ?? null,
                 'to' => $cells !== [] ? $cells[count($cells) - 1] : null,
                 'keys' => array_map(static fn (array $pair): string => $pair[1], $keys),
+                'spans' => array_map(
+                    static fn (int $seg): array => ['seg' => $seg, 'count' => $spans[$seg]],
+                    array_keys($spans),
+                ),
                 'errors' => $errors,
                 'cut' => $cut,
             ];

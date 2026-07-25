@@ -68,6 +68,13 @@ final class LoomPresenterTest extends TestCase
         $this->assertSame(['seg' => 1, 'cell' => 2], $p2['from']);
         $this->assertSame(['seg' => 1, 'cell' => 2], $p2['to']);
         $this->assertFalse($p2['cut']);
+
+        // Per-segment spans: the chip note's raw material ("validate 2 → submit 2").
+        $this->assertSame([
+            ['seg' => 0, 'count' => 2],
+            ['seg' => 1, 'count' => 2],
+        ], $p1['spans']);
+        $this->assertSame([['seg' => 1, 'count' => 1]], $p2['spans']);
     }
 
     public function test_failed_keys_mark_the_bracket_and_survive_alongside_cells(): void
