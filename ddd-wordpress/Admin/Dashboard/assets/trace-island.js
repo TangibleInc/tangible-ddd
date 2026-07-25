@@ -530,10 +530,22 @@
             vnodes.push(f); vByUid[f.uid]=f;
           }
         });
-        // 2. Ranks (longest path from root) + children map.
+        // 2. Ranks (longest path from root) + children map. A process's steps
+        // are SEQUENTIAL: they take successive ranks by timestamp, so their
+        // stations march along the breadstick instead of piling on one x.
         var kids={};
         vnodes.forEach(function(v){ if(v.parent&&vByUid[v.parent]) (kids[v.parent]=kids[v.parent]||[]).push(v); });
-        function rank(v){ if(v.__r!=null) return v.__r; v.__r=0; if(v.parent&&vByUid[v.parent]) v.__r=rank(vByUid[v.parent])+1; return v.__r; }
+        var seqOffset={};
+        Object.keys(kids).forEach(function(k){
+          if((vByUid[k]||{}).vkind!=='process') return;
+          kids[k].slice().sort(function(a,b){ return a.ts-b.ts; }).forEach(function(c,i){ seqOffset[c.uid]=i; });
+        });
+        function rank(v){
+          if(v.__r!=null) return v.__r;
+          v.__r=0;
+          if(v.parent&&vByUid[v.parent]) v.__r=rank(vByUid[v.parent])+1+(seqOffset[v.uid]||0);
+          return v.__r;
+        }
         vnodes.forEach(rank);
         // 3. Subtree weight for spine election; sibling order = weight desc (spine first), then ts.
         function weight(v){ if(v.__w!=null) return v.__w; v.__w=1; (kids[v.uid]||[]).forEach(function(c){ v.__w+=weight(c); }); return v.__w; }
@@ -550,12 +562,24 @@
           v.__visiting=true;
           var ks=kids[v.uid]||[];
           if(!ks.length){ v.__c=nextLane++; v.__visiting=false; return; }
-          var spineChild=ks[0], above=[], below=[];
-          for(var i=1;i<ks.length;i++){ (i%2?above:below).push(ks[i]); }
-          var ordered=above.reverse().concat([spineChild]).concat(below);
+          var ordered;
+          if(v.vkind==='process'){
+            // A process is a BREADSTICK: its body spans ranks and its steps
+            // hang BELOW their stations — no flanking, no fan.
+            ordered=ks.slice().sort(function(a,b){ return a.ts-b.ts; });
+          } else {
+            var spineChild=ks[0], above=[], below=[];
+            for(var i=1;i<ks.length;i++){ (i%2?above:below).push(ks[i]); }
+            ordered=above.reverse().concat([spineChild]).concat(below);
+          }
           ordered.forEach(layout);
           var lanes=ordered.map(function(c){ return c.__c; }).filter(function(l){ return l!=null; });
-          v.__c=lanes.length?(lanes[0]+lanes[lanes.length-1])/2:nextLane++;
+          if(v.vkind==='process'){
+            // Stick rides just above its first step's lane.
+            v.__c=lanes.length?lanes[0]-0.55:nextLane++;
+          } else {
+            v.__c=lanes.length?(lanes[0]+lanes[lanes.length-1])/2:nextLane++;
+          }
           v.__visiting=false;
         }
         var roots=vnodes.filter(function(v){ return !v.parent||!vByUid[v.parent]; });
@@ -600,10 +624,12 @@
           var spine=p.__c===v.__c;
           var isStep=!!stepOrdinal[v.uid];
           var path;
-          if(isStep&&y1!==y2){
-            // Elbow: out of the rail, drop/rise, run to the step.
-            var mx=x1+18;
-            path='M'+x1+','+y1+' L'+mx+','+y1+' L'+mx+','+y2+' L'+x2+','+y2;
+          if(isStep){
+            // Departure: a short drop from the step's STATION on the stick
+            // (same rank as the step) straight down to the step itself.
+            var sx=nx(v)+NW/2, sy=ny(p)+NW;
+            x1=sx; y1=sy; x2=sx; y2=ny(v)-3;
+            path='M'+sx+','+sy+' L'+sx+','+y2;
           } else {
             path=y1===y2
               ? 'M'+x1+','+y1+' L'+x2+','+y2
@@ -627,9 +653,28 @@
               <path class="vine-loop" d=${'M'+(x+NW+30)+','+(y+3)+' c 16,-14 -14,-16 -12,-2'} style=${'stroke:'+a}/>
             </g>`;
           } else if(v.vkind==='process'){
+            // The BREADSTICK: body spans from ignition rank to the last
+            // station's rank; stations sit ON it where steps depart; a
+            // suspended/running trajectory extends dashed past its last
+            // station with the current gate labeled from waiting_for.
+            var stepRanks=[];
+            g.nodes.forEach(function(o){ if(o.parent===v.uid) stepRanks.push(o.__r); });
+            var lastRank=stepRanks.length?Math.max.apply(null,stepRanks):v.__r;
+            var stickW=Math.max((lastRank-v.__r)*RANKW+NW+14, NW+30);
+            var raw=(v.node&&v.node.raw)||{};
+            var open=String(v.node&&v.node.status||'').match(/running|suspended|scheduled|pending/i);
+            var ghostW=open?46:0;
             glyph=html`<g>
-              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" style=${'fill:'+a+';opacity:.08'}/>
-              <rect x=${x} y=${y} width=${NW+30} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
+              <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" style=${'fill:'+a+';opacity:.08'}/>
+              <rect x=${x} y=${y} width=${stickW} height=${NW} rx="9" fill="url(#vine-hatch)" style=${'stroke:'+a+';stroke-width:2'}/>
+              ${stepRanks.map(function(r){
+                var sx=X0+r*RANKW+NW/2;
+                return html`<rect x=${sx-5} y=${y+2} width="10" height=${NW-4} rx="2" style=${'fill:'+a+';opacity:.85'}/>`;
+              })}
+              ${open?html`<g>
+                <rect x=${x+stickW+4} y=${y} width=${ghostW} height=${NW} rx="9" fill="none" style=${'stroke:'+a+';stroke-width:1.5;stroke-dasharray:4 3;opacity:.55'}/>
+                <text class="vine-meta" x=${x+stickW+8} y=${y+NW+11}>${raw.waiting_for?'⧗ awaits '+shortName(raw.waiting_for):'…'}</text>
+              </g>`:null}
             </g>`;
           } else {
             // Act square + its emitted facts docked as diamonds (≤3, then ×n) —
