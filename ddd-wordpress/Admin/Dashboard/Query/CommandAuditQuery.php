@@ -53,7 +53,11 @@ final class CommandAuditQuery
             }
         }
         if (! empty($filters['to']) && preg_match('/^\d{4}-\d{2}-\d{2}/', (string) $filters['to'])) {
-            $timestamp = strtotime((string) $filters['to'] . ' 23:59:59 UTC');
+            // Date-only widens to end-of-day; a datetime (the scrubber's
+            // sub-day windows) keeps its time — appending 23:59:59 to a
+            // datetime made strtotime() fail and silently DROPPED the bound.
+            $suffix = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['to']) ? ' 23:59:59' : '';
+            $timestamp = strtotime((string) $filters['to'] . $suffix . ' UTC');
             if ($timestamp !== false) {
                 $where[] = 'started_at <= %s';
                 $params[] = gmdate('Y-m-d H:i:s', $timestamp);

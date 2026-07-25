@@ -11,6 +11,26 @@ use TangibleDDD\WordPress\Admin\Dashboard\Query\CommandAuditQuery;
 
 final class CommandAuditQueryTest extends TestCase
 {
+    public function test_datetime_windows_keep_their_time_of_day(): void
+    {
+        // The scrubber emits sub-day windows ('3h · now'); date-only handling
+        // silently widened them to the whole day.
+        $db = new ScriptedDatabase();
+        $db->values = [0];
+        $db->resultSets = [[]];
+
+        (new CommandAuditQuery(new FakeDDDConfig(), $db))->run([
+            'from' => '2026-07-25 15:07:00',
+            'to' => '2026-07-25 18:07:00',
+        ]);
+
+        self::assertSame(
+            ['2026-07-25 15:07:00', '2026-07-25 18:07:00'],
+            $db->prepared[0]['args'],
+            'time of day must survive; no 00:00:00/23:59:59 widening'
+        );
+    }
+
     public function test_it_preserves_filters_pagination_and_json_normalization(): void
     {
         $db = new ScriptedDatabase();

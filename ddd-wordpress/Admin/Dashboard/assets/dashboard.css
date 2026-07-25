@@ -628,3 +628,6 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .vine-scissor{font-size:10px;fill:var(--crit)}
 .tddd-root .corr-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .tddd-root .tbreadcrumb{display:flex;align-items:center;gap:8px}
+.tddd-root .trace-scroll{cursor:grab}
+.tddd-root .trace-scroll.is-panning{cursor:grabbing;user-select:none}
+.tddd-root .vine-wrap{overflow:visible}
