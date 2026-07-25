@@ -576,3 +576,14 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
   .tddd-root .bio-head{top:0}
 }
 .tddd-root .spass{margin:2px 0 0 15px;line-height:1.3}
+/* drawer workflow tab */
+.tddd-root .loom-drawer-id{font-family:var(--fm);font-size:.74rem;font-weight:700;color:var(--ink);margin-bottom:6px}
+.tddd-root .loom-drawer-id .idm{font-weight:400}
+.tddd-root .chip{font-family:var(--fm);font-size:.6rem;border:1px solid var(--line);border-radius:10px;padding:1px 8px;color:var(--muted);background:var(--softer)}
+.tddd-root .chip b{color:var(--ink-soft);font-weight:600}
+.tddd-root table.loom-ledger{border-collapse:collapse;font-family:var(--fm);font-size:.64rem;width:100%}
+.tddd-root table.loom-ledger th{text-align:left;color:var(--faint);font-weight:500;padding:3px 8px 3px 0;border-bottom:1px solid var(--line)}
+.tddd-root table.loom-ledger td{padding:4px 8px 4px 0;border-bottom:1px dashed var(--linesoft);color:var(--muted);white-space:nowrap}
+.tddd-root table.loom-ledger td:first-child{color:var(--accent2);font-weight:700}
+.tddd-root table.loom-ledger tr[data-cmd]{cursor:pointer}
+.tddd-root table.loom-ledger tr.err td{color:var(--crit)}
