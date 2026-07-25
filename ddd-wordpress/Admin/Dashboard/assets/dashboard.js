@@ -742,7 +742,7 @@
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
-        ruler.innerHTML='<div class="rt-note">durations to scale &middot; sparse gap markers show cumulative elapsed time</div>';
+        ruler.innerHTML='<div class="rt-note">durations &radic;-compressed (order true, length not proportional) &middot; sparse gap markers show cumulative elapsed time</div>';
         if(!d.nodes||!d.nodes.length){ TDDDTrace.renderRows(traceRows, d, traceIslandHandlers()); ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
           var newUids={}; d.nodes.forEach(function(n){ newUids[n.uid]=true; });

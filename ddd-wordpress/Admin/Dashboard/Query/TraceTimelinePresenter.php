@@ -321,7 +321,10 @@ final class TraceTimelinePresenter
                 ) {
                     $start = max($start, $positioned[$parent]['end'] + 10);
                 }
-                $end = $start + max((int) $node['dur_ms'], 16);
+                // √-compressed duration→width: order stays true, but the
+                // dynamic range tames (2283ms vs 25ms is 91× linear, ~9.5×
+                // here) — a 2s bar stops eating 800px while 25ms stays legible.
+                $end = $start + max((int) round(sqrt(max((int) $node['dur_ms'], 0)) * 8), 16);
                 $ordered[$index]['cstart'] = $start;
                 $ordered[$index]['cend'] = $end;
                 $positioned[$node['uid']] = ['ts' => $timestamp, 'end' => $end];
