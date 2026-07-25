@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.4
+# Consumer release and migration ledger — through 0.6.5
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -545,6 +545,38 @@ allowlist fence.
 Reference adoption: datastream's `MatchSubscriptionsOnCapture` (the
 `EventReadyForDelivery` fan-out, converted from direct bus publication to
 self-publishing moments in datastream PR #6).
+
+## 0.6.5 (workflow meta side table — schema v7)
+
+Workflow meta moves out of the `behaviour_workflows.meta` JSON column into a
+side table `{prefix}_behaviour_workflows_meta` (WP-meta idiom: `meta_id` PK,
+`id` = workflow id, `meta_key`, `meta_value`; one row per key, values
+stringly-typed at rest, non-scalars stored as JSON text). The shape matches
+cred's long-standing side table on purpose: the owner ruling (2026-07-24) makes
+the meta *table* canonical rather than the JSON column, so cred's legacy
+repository can eventually rebind to the stock repository with zero data
+movement.
+
+Schema migration v7 creates the table and idempotently pivots existing JSON
+meta into rows on each consumer's next `admin_init`/`init`. The JSON column
+stays (migrations are never destructive) but is write-dead: the stock
+repository nulls it on save and hydrates meta from the side table, falling
+back to the column only for rows with no meta rows at all (unbackfilled
+pre-v7 data).
+
+Doctrine reminder enforced by the stock writer: identity lives on the
+row/envelope/scope — `correlation_id` is a stamped column and is never
+duplicated into meta (cred's legacy writer does this; treat those rows as
+residue, not a contract).
+
+The dashboard `WorkflowQuery` reads meta from the side table when present and
+orders by `COALESCE(NULLIF(updated_at, zero-date), created_at)` — legacy cred
+rows all carry zero-date `updated_at` (its writer omitted the column; fixed
+cred-side in 97ae750) and previously collapsed the recency sort.
+
+**Mandatory for existing consumers: nothing.** The migration self-applies per
+consumer prefix; reads fall back for unbackfilled rows. Consumers that query
+the JSON column directly (none known) must switch to the side table.
 
 ## How to verify a migration (any version)
 

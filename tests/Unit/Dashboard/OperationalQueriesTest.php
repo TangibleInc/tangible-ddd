@@ -132,6 +132,51 @@ final class OperationalQueriesTest extends TestCase
         self::assertStringContainsString('ORDER BY created_at DESC', $db->prepared[0]['sql']);
     }
 
+    public function test_workflow_list_survives_zero_date_updated_at_and_reads_meta_from_the_side_table(): void
+    {
+        $db = new ScriptedDatabase();
+        $db->values = [2];
+        $db->columns = [['id', 'ref_id', 'ref_type', 'root_workflow_id', 'behaviour_configs', 'behaviour_results', 'current_idx', 'current_phase', 'is_complete', 'is_failed', 'meta', 'created_at', 'updated_at']];
+        $db->resultSets = [
+            [
+                [
+                    'id' => '8', 'ref_id' => '9', 'ref_type' => 'mega_trace_certification', 'root_workflow_id' => null,
+                    'behaviour_configs' => '[]', 'behaviour_results' => '[]',
+                    'current_idx' => '0', 'current_phase' => '1', 'is_complete' => '0', 'is_failed' => '0',
+                    'meta' => null, 'created_at' => 'now', 'updated_at' => '0000-00-00 00:00:00',
+                ],
+                [
+                    'id' => '3', 'ref_id' => '4', 'ref_type' => 'request', 'root_workflow_id' => null,
+                    'behaviour_configs' => '[]', 'behaviour_results' => '[]',
+                    'current_idx' => '1', 'current_phase' => '1', 'is_complete' => '1', 'is_failed' => '0',
+                    'meta' => '{"legacy":"json"}', 'created_at' => 'then', 'updated_at' => '0000-00-00 00:00:00',
+                ],
+            ],
+            [], // items
+            [], // forks
+            [   // side-table meta rows: only workflow 8 has them
+                ['id' => '8', 'meta_key' => 'journey_id', 'meta_value' => 'journey-abc'],
+                ['id' => '8', 'meta_key' => 'learner_id', 'meta_value' => '71180'],
+            ],
+        ];
+
+        $page = (new WorkflowQuery(new FakeDDDConfig(), $db))->list([]);
+
+        // Ordering: zero-date updated_at must not win/borehole the sort — fall
+        // back to created_at per row (cred's legacy rows all carry zero-dates).
+        self::assertStringContainsString(
+            "COALESCE(NULLIF(updated_at,'0000-00-00 00:00:00'), created_at) DESC",
+            $db->prepared[0]['sql'],
+        );
+
+        // Meta: side-table rows win; the JSON column is only a legacy fallback.
+        self::assertSame(
+            ['journey_id' => 'journey-abc', 'learner_id' => '71180'],
+            $page['rows'][0]['meta'],
+        );
+        self::assertSame(['legacy' => 'json'], $page['rows'][1]['meta']);
+    }
+
     public function test_outbox_and_dead_letter_lists_preserve_filters_and_integer_fields(): void
     {
         $outboxDb = new ScriptedDatabase();

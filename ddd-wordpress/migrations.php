@@ -33,8 +33,10 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 2: command_audit gains causation_id + causation_type (+ idx_causation)
  *  - 3: behaviour_workflows gains correlation_id (+ idx_correlation)
  *  - 4: long_processes gains await_mechanism
+ *  - 7: behaviour_workflows_meta side table; JSON meta column write-dead,
+ *       existing values pivoted into rows
  */
-const DDD_SCHEMA_VERSION = 6;
+const DDD_SCHEMA_VERSION = 7;
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -103,6 +105,46 @@ function ddd_explicit_migrations(): array {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
       }
       install_touches_table($config);
+    },
+
+    // v7 — behaviour_workflows_meta side table + backfill. The JSON `meta`
+    // column on behaviour_workflows goes write-dead: existing values are
+    // pivoted into rows here, the repository writes rows from now on. The
+    // column itself stays (never destructive in a migration); hydration
+    // falls back to it only for rows with no meta rows at all.
+    7 => static function (IDDDConfig $config): void {
+      global $wpdb;
+
+      if (!function_exists('dbDelta')) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+      }
+      install_behaviour_workflow_meta_table($config);
+
+      $wf_table = $config->table('behaviour_workflows');
+      $meta_table = $config->table('behaviour_workflows_meta');
+
+      // Idempotent: only rows that have JSON meta and no side-table rows yet.
+      $rows = $wpdb->get_results(
+        "SELECT w.id, w.meta FROM `{$wf_table}` w
+         WHERE w.meta IS NOT NULL AND w.meta <> '' AND w.meta <> 'null'
+           AND NOT EXISTS (SELECT 1 FROM `{$meta_table}` m WHERE m.id = w.id)"
+      );
+
+      foreach ($rows ?: [] as $row) {
+        $meta = json_decode((string) $row->meta, true);
+        if (!is_array($meta)) {
+          continue;
+        }
+        foreach ($meta as $key => $value) {
+          $wpdb->insert($meta_table, [
+            'id' => (int) $row->id,
+            'meta_key' => (string) $key,
+            'meta_value' => is_scalar($value) || $value === null
+              ? (string) $value
+              : wp_json_encode($value, JSON_UNESCAPED_SLASHES),
+          ]);
+        }
+      }
     },
   ];
 }

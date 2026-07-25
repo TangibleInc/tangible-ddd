@@ -108,7 +108,7 @@ class LoaderIdentityTest extends TestCase
         // only tree-visible tie between the git tag and the loader identity;
         // v0.6.3 shipped registering as 0.6.2 because the tag ritual skipped
         // the loader bump and nothing in CI could see the tag.
-        $this->assertSame('0.6.4', $this->header_version());
+        $this->assertSame('0.6.5', $this->header_version());
 
         $hooks = strpos($this->source, "'ddd-wordpress/hooks.php'");
         $modules = strpos($this->source, "'ddd-wordpress/modules.php'");
