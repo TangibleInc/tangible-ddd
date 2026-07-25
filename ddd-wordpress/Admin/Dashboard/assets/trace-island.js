@@ -570,9 +570,14 @@
           if(!ks.length){ v.__c=nextLane++; v.__visiting=false; return; }
           var ordered;
           if(v.vkind==='process'){
-            // A process is a BREADSTICK: its body spans ranks and its steps
-            // hang BELOW their stations — no flanking, no fan.
+            // A process is a BREADSTICK: it claims its own FULL lane first,
+            // then its steps take the lanes below their stations — no
+            // fractional wedging into a neighbor's label space.
+            v.__c=nextLane++;
             ordered=ks.slice().sort(function(a,b){ return a.ts-b.ts; });
+            ordered.forEach(layout);
+            v.__visiting=false;
+            return;
           } else {
             var spineChild=ks[0], above=[], below=[];
             for(var i=1;i<ks.length;i++){ (i%2?above:below).push(ks[i]); }
@@ -580,12 +585,7 @@
           }
           ordered.forEach(layout);
           var lanes=ordered.map(function(c){ return c.__c; }).filter(function(l){ return l!=null; });
-          if(v.vkind==='process'){
-            // Stick rides just above its first step's lane.
-            v.__c=lanes.length?lanes[0]-0.55:nextLane++;
-          } else {
-            v.__c=lanes.length?(lanes[0]+lanes[lanes.length-1])/2:nextLane++;
-          }
+          v.__c=lanes.length?(lanes[0]+lanes[lanes.length-1])/2:nextLane++;
           v.__visiting=false;
         }
         var roots=vnodes.filter(function(v){ return !v.parent||!vByUid[v.parent]; });
@@ -595,7 +595,13 @@
         // preserves recorded cycles as evidence). Park them in fresh lanes
         // rather than letting them collapse onto NaN coordinates.
         vnodes.forEach(function(v){ if(v.__c==null){ v.__cyc=true; layout(v); if(v.__c==null) v.__c=nextLane++; } });
-        return {nodes:vnodes, byUid:vByUid, cols:nextLane};
+        // Normalize: poles sit at fractional lanes ABOVE their first step,
+        // which goes negative when that step holds lane 0 — short vines
+        // shifted clean out of the viewport. Shift so the top lane is 0.
+        var minC=Infinity, maxC=-Infinity;
+        vnodes.forEach(function(v){ minC=Math.min(minC,v.__c); maxC=Math.max(maxC,v.__c); });
+        if(minC!==Infinity && minC!==0){ vnodes.forEach(function(v){ v.__c-=minC; }); maxC-=minC; }
+        return {nodes:vnodes, byUid:vByUid, cols:(maxC===-Infinity?1:Math.ceil(maxC)+1)};
       }
 
       function VineView(props){
@@ -720,11 +726,15 @@
               ${ports.length>3?html`<text class="vine-meta" x=${x+NW+6+3*13} y=${y+13}>◆×${ports.length}</text>`:null}
             </g>`;
           }
+          // Poles wear their labels on the shoulder (beside the top), not
+          // under the glyph — the glyph IS a column and swallowed them.
+          var isPole=v.vkind==='process'&&VINE_STICK_VERTICAL;
+          var lx=isPole?x+NW+8:x, ly1=isPole?y+8:y+NW+13, ly2=isPole?y+19:y+NW+24;
           return html`<g class="vine-node" onClick=${function(){ if(handlers.onOpenNode){ handlers.onOpenNode(v.node||v.first, v.vkind==='capsule'?'workflow':undefined); } }}>
             ${glyph}
             ${v.broke?html`<text class="vine-scissor" x=${x-4} y=${y-4}>✂</text>`:null}
-            <text class="vine-label" x=${x} y=${y+NW+13}>${v.name}</text>
-            <text class="vine-meta" x=${x} y=${y+NW+24}>${v.meta||''}</text>
+            <text class="vine-label" x=${lx} y=${ly1}>${v.name}</text>
+            <text class="vine-meta" x=${lx} y=${ly2}>${v.meta||''}</text>
           </g>`;
         });
         return html`<div class="vine-wrap"><svg width=${W} height=${H} viewBox=${'0 0 '+W+' '+H}>
