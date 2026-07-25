@@ -590,3 +590,20 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 /* Sticky gutter layer: process bands + workflow rails pin with the label
    column on horizontal scroll (zero-size, children absolute). */
 .tddd-root .trace-gutter{position:sticky;left:0;width:0;height:0;z-index:6;overflow:visible;display:block}
+/* workflows screen: state filter chips */
+.tddd-root .wff{display:flex;gap:6px;padding:10px 14px 4px}
+.tddd-root .wff-chip{font-family:var(--fm);font-size:.62rem;font-weight:700;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:12px;padding:2px 12px;cursor:pointer}
+.tddd-root .wff-chip.on{border-color:var(--accent);color:var(--accent2);background:var(--softer)}
+.tddd-root .pcorr{font-family:var(--fm);font-size:.6rem;color:var(--accent2);cursor:pointer;border:1px solid var(--line);border-radius:3px;padding:1px 6px;background:var(--softer)}
+/* trellis band: a collapsed workflow cascade as one row (artifact §03b) */
+.tddd-root .tband-chev{border:1px solid var(--line);background:var(--panel);border-radius:3px;font-size:.6rem;color:var(--muted);cursor:pointer;padding:0 4px;line-height:1.4;margin-right:2px}
+.tddd-root .tband{position:absolute;top:50%;transform:translateY(-50%);height:16px;border:1.5px solid var(--owner-accent,#646970);border-radius:3px;background:color-mix(in srgb,var(--owner-accent,#646970) 8%,transparent);min-width:60px}
+.tddd-root .tband-seg{position:absolute;top:0;height:100%;border-right:2px solid color-mix(in srgb,var(--owner-accent,#646970) 55%,transparent);cursor:pointer;
+  background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--owner-accent,#646970) 30%,transparent) 0 2px,transparent 2px 5px)}
+.tddd-root .tband-seg:last-child{border-right:none}
+.tddd-root .tband-seg:hover{background:color-mix(in srgb,var(--owner-accent,#646970) 45%,transparent)}
+.tddd-root .tband-seg.err{background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--crit) 45%,transparent) 0 2px,transparent 2px 5px);border-right-color:var(--crit)}
+.tddd-root .tband-seg.broke{border-left:3px double var(--crit)}
+.tddd-root .tband-seg.live{background:color-mix(in srgb,var(--owner-accent,#646970) 40%,transparent)}
+.tddd-root .tband-cut{position:absolute;right:-5px;top:-14px;font-style:normal;font-size:.6rem;color:var(--warn,#b07f18)}
+.tddd-root .tband-scissor{position:absolute;left:-8px;top:-14px;font-style:normal;font-size:.6rem;color:var(--crit)}

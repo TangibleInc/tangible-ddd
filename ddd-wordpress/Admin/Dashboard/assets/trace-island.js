@@ -198,9 +198,65 @@
         return rails;
       }
 
+      // ── the collapsed trellis band: N pass rows become one row ──
+      // Artifact §03b: the workflow's vertical-stripe identity promoted from
+      // texture to data — the band spans first→last pass in lane coords, every
+      // internal rule IS a pass boundary. ⌁ = budget cut, ✂ = causation break,
+      // red = failures. Click a segment → that pass's drawer; chevron → rows.
+      var COLLAPSE_THRESHOLD=5;
+      function TrellisBand(props){
+        var passes=props.passes, onExpand=props.onExpand, handlers=props.handlers||{};
+        var first=passes[0], accent=first.accent||'#646970';
+        var x0=Math.min.apply(null,passes.map(function(p){ return p.start_pct; }));
+        var x1=Math.max.apply(null,passes.map(function(p){ return p.start_pct+Math.max(p.width_pct,0.6); }));
+        var cuts=0, errs=0;
+        passes.forEach(function(p){ if(p.pass&&p.pass.cut) cuts++; if(p.pass&&p.pass.errors) errs++; });
+        var segs=passes.map(function(p,i){
+          var sx=p.start_pct, ex=(i+1<passes.length)?passes[i+1].start_pct:x1;
+          var broke=p.unresolved||(!p.parent&&p.pass&&p.pass.n>1);
+          return html`<span
+            class=${'tband-seg'+(p.pass&&p.pass.errors?' err':'')+(broke?' broke':'')+(String(p.status||'')==='in_progress'?' live':'')}
+            style=${'left:'+((sx-x0)/(x1-x0)*100)+'%;width:'+Math.max((ex-sx)/(x1-x0)*100,1.5)+'%'}
+            title=${'pass '+(p.pass?p.pass.n:'?')+(p.pass?' · '+p.pass.note:'')+(p.pass&&p.pass.cut?' ⌁':'')+(p.pass&&p.pass.errors?' · '+p.pass.errors+' failed':'')+(broke?' · ✂ arrived without cause':'')}
+            onClick=${function(ev){ ev.stopPropagation(); if(handlers.onOpenNode) handlers.onOpenNode(p,'workflow'); }}>
+            ${p.pass&&p.pass.cut?html`<i class="tband-cut">⌁</i>`:null}${broke?html`<i class="tband-scissor">✂</i>`:null}
+          </span>`;
+        });
+        var wfId=first.pass?first.pass.wf:'?';
+        return html`<div class="srow is-node d${Math.min(first.depth||0,5)}" style=${'--owner-accent:'+accent}>
+          <div class="slabel" style=${'--owner-accent:'+accent}>
+            <div class="snrow">
+              <button class="tband-chev" title="expand into pass rows" onClick=${onExpand}>▸</button>
+              <span class="sdot" style=${'background:'+accent}></span>
+              <span class="sname" title=${first.name}>${shortName(first.name)}</span>
+              <span class="stype">workflow</span>
+            </div>
+            <div class="sfrom">wf #${wfId} · ${passes.length} passes collapsed${cuts?' · '+cuts+' ⌁':''}${errs?html` · <b style="color:var(--crit)">${errs} with failures</b>`:null}</div>
+          </div>
+          <div class="slane"><div class="tband" style=${'left:'+x0+'%;width:'+Math.max(x1-x0,2)+'%'}>${segs}</div></div>
+        </div>`;
+      }
+
       function TraceRows(props){
         var d=props.data, handlers=props.handlers||{};
-        var nodes=(d&&d.nodes)||[];
+        var allNodes=(d&&d.nodes)||[];
+        var expandedState=useState({});
+        var expandedWfs=expandedState[0], setExpandedWfs=expandedState[1];
+        // Group pass rows per workflow; big cascades collapse by default.
+        var passesByWf={};
+        allNodes.forEach(function(n){ if(n.pass) (passesByWf[n.pass.wf]=passesByWf[n.pass.wf]||[]).push(n); });
+        var collapsed={};
+        Object.keys(passesByWf).forEach(function(wf){
+          if(passesByWf[wf].length>COLLAPSE_THRESHOLD && !expandedWfs[wf]) collapsed[wf]=true;
+        });
+        var nodes=[], bandAt={};
+        allNodes.forEach(function(n){
+          if(n.pass && collapsed[n.pass.wf]){
+            if(!bandAt[n.pass.wf]){ bandAt[n.pass.wf]=true; nodes.push({__band:n.pass.wf}); }
+            return;
+          }
+          nodes.push(n);
+        });
         var rowRefs=useRef({});
         var bandsState=useState([]);
         var bands=bandsState[0], setBands=bandsState[1];
@@ -208,9 +264,10 @@
         var rails=railsState[0], setRails=railsState[1];
         rowRefs.current={};
         useLayoutEffect(function(){
-          setBands(computeBands(nodes, rowRefs.current));
-          setRails(computeWorkflowRails(nodes, rowRefs.current));
-        },[d]);
+          var real=nodes.filter(function(n){ return !n.__band; });
+          setBands(computeBands(real, rowRefs.current));
+          setRails(computeWorkflowRails(real, rowRefs.current));
+        },[d, expandedWfs]);
         if(!d) return null;
         if(!nodes.length) return html`<div style="padding:24px;text-align:center;color:var(--faint);font-family:var(--fm)">No spans.</div>`;
         var prevUids=handlers.prevUids||{};
@@ -225,7 +282,17 @@
         }
         var out=[];
         nodes.forEach(function(n, idx){
-          var prev=idx>0?nodes[idx-1]:null;
+          if(n.__band){
+            var wfKey=n.__band;
+            out.push(html`<${TrellisBand}
+              key=${'band-'+wfKey}
+              passes=${passesByWf[wfKey]}
+              handlers=${handlers}
+              onExpand=${function(ev){ ev.stopPropagation(); var next={}; Object.keys(expandedWfs).forEach(function(k){ next[k]=expandedWfs[k]; }); next[wfKey]=true; setExpandedWfs(next); }}
+            />`);
+            return;
+          }
+          var prev=idx>0&&!nodes[idx-1].__band?nodes[idx-1]:null;
           // kind = form, consumer = color: a handoff paints a seam between rows.
           if(prev && prev.consumer!==n.consumer && !n.unresolved && !prev.unresolved){
             out.push(html`<div class="trc-seam" style=${'--sa:'+(prev.accent||'#646970')+';--sb:'+(n.accent||'#646970')}></div>`);
@@ -265,7 +332,10 @@
           }
         });
         rails.forEach(function(r){
-          gutter.push(html`<div class="wf-rail" style=${'--band-accent:'+r.accent+';top:'+r.top+'px;left:'+r.left+'px;height:'+r.height+'px'} title=${r.title}></div>`);
+          var canCollapse=(passesByWf[r.wf]||[]).length>COLLAPSE_THRESHOLD;
+          gutter.push(html`<div class="wf-rail" style=${'--band-accent:'+r.accent+';top:'+r.top+'px;left:'+r.left+'px;height:'+r.height+'px'+(canCollapse?';cursor:pointer':'')}
+            title=${r.title+(canCollapse?' · click to collapse':'')}
+            onClick=${canCollapse?function(){ var next={}; Object.keys(expandedWfs).forEach(function(k){ next[k]=expandedWfs[k]; }); next[r.wf]=false; setExpandedWfs(next); }:null}></div>`);
           r.ticks.forEach(function(t){
             gutter.push(html`<div class=${'wf-rail-tick'+(t.err?' err':'')} style=${'--band-accent:'+r.accent+';top:'+t.top+'px;left:'+r.left+'px'}>${t.cut?html`<i>⌁</i>`:null}</div>`);
           });

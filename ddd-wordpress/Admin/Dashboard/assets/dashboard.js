@@ -735,9 +735,10 @@
           +'<div class="meta">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
-          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>'
-          +(d.started_at?'<div class="meta" title="first recorded act (UTC)">started <b>'+esc(d.started_at)+'</b> UTC &middot; '+rel(d.started_at)+'</div>':'')
-          +(participants?'<div class="trace-participants">'+participants+'</div>':'')
+          +(d.has_error?' &middot; <span class="err">has error</span>':'')
+          +(d.started_at?' &middot; <span title="first recorded act (UTC)">started <b>'+esc(d.started_at)+'</b> UTC &middot; '+rel(d.started_at)+'</span>':'')
+          +(participants?' <span class="trace-participants" style="display:inline-flex;vertical-align:middle;margin-left:8px">'+participants+'</span>':'')
+          +'</div>'
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
@@ -1139,32 +1140,46 @@
       }
 
       function cfgLabel(c){ return (typeof c==='string')?c:((c&&(c._class||c['class']||c.type))||'behaviour'); }
+      var wfState='';
       function loadWorkflows(){
         var el=$('#tddd-workflows'); el.innerHTML='<div class="empty2">Loading&hellip;</div>';
-        fetch(R.rest+'/workflows?consumer='+encodeURIComponent(state.consumer)+'&per_page=40',{headers:{'X-WP-Nonce':R.nonce}})
+        fetch(R.rest+'/workflows?consumer='+encodeURIComponent(state.consumer)+'&per_page=40'+(wfState?'&state='+encodeURIComponent(wfState):''),{headers:{'X-WP-Nonce':R.nonce}})
           .then(function(r){return r.json();}).then(function(d){ renderWorkflows(d); $('#tddd-proc-count').textContent=d.total+' workflows'; })
           .catch(function(e){ el.innerHTML='<div class="empty2">Error: '+esc(e.message)+'</div>'; });
       }
+      // Executions ledger for the workflows screen: same table as the drawer,
+      // but ordinals are time-ordered EXECUTIONS (no correlation context here,
+      // so no command binding — the trace view owns real pass identity).
+      function loomRunLedger(loom){
+        if(!loom.brackets.length) return '';
+        return '<div class="lane-lbl" style="margin-top:14px">execution ledger</div>'
+          +'<table class="loom-ledger"><tr><th>run</th><th>window</th><th>items</th><th>result</th></tr>'
+          +loom.brackets.map(function(b){
+            var note=(b.spans||[]).map(function(s){ var seg=loom.segments[s.seg]||{}; return esc(seg.label||('b'+s.seg))+' '+s.count; }).join(' → ')||'resolve · no items';
+            return '<tr'+(b.errors?' class="err"':'')+'><td>'+b.pass+'</td><td>'+note+'</td><td>'+b.keys.length+'</td><td>'+(b.errors?b.errors+' failed':'ok')+(b.cut?' &#8961;':'')+'</td></tr>';
+          }).join('')+'</table>';
+      }
       function renderWorkflows(d){
         var el=$('#tddd-workflows');
-        if(!d.rows.length){ el.innerHTML='<div class="empty2">No workflows.</div>'; return; }
-        el.innerHTML=d.rows.map(function(w){
-          var configs=(w.behaviour_configs||[]).map(cfgLabel);
+        var chips='<div class="wff">'+[['','all'],['running','running'],['failed','failed'],['complete','complete']].map(function(f){
+          return '<button class="wff-chip'+(wfState===f[0]?' on':'')+'" data-wfstate="'+f[0]+'">'+f[1]+'</button>';
+        }).join('')+'</div>';
+        if(!d.rows.length){ el.innerHTML=chips+'<div class="empty2">No workflows'+(wfState?' in state &ldquo;'+esc(wfState)+'&rdquo;':'')+'.</div>'; return; }
+        el.innerHTML=chips+d.rows.map(function(w){
+          var loom=w.loom||{segments:[],brackets:[]};
           var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
           var sb=w.is_failed?'error':(w.is_complete?'success':'in_progress');
           var its=w.items||[]; var idone=its.filter(function(i){return i.status==='done';}).length; var itot=its.length; var ipct=itot?Math.round(idone/itot*100):0;
-          var steps=configs.map(function(nm,i){ var s=i<w.current_idx?'done':(i===w.current_idx?'active':'pending'); return '<div class="step '+s+'"><div class="sn">'+esc(nm)+'</div><div class="ss">phase '+(i+1)+'</div></div>'; }).join('');
-          var items=(w.items||[]).map(function(it){ return '<span class="item"><span class="idot '+esc(it.status)+'"></span><span class="ik">'+esc(it.item_key)+'</span>'+(it.attempts?'<span style="color:var(--faint)">&times;'+it.attempts+'</span>':'')+'</span>'; }).join('');
           var forks=(w.forks||[]).map(function(f){ return '<div class="fork">&#8627; fork wf #'+f.id+' &middot; '+(f.is_failed?'failed':(f.is_complete?'complete':'running'))+' &middot; idx '+f.current_idx+'</div>'; }).join('');
           var isFork=w.root_workflow_id?(' <span style="color:var(--coral-ink)">(fork of wf #'+w.root_workflow_id+')</span>'):'';
+          var corrChip=w.correlation_id?'<span class="pcorr" data-corr="'+esc(w.correlation_id)+'" title="open this workflow&rsquo;s trace">'+esc(String(w.correlation_id).slice(0,8))+' &rarr;</span>':'';
           return '<div class="prow">'
             +'<div class="phead"><span class="chev">&#9656;</span>'
             +'<span class="badge b-'+sb+'">'+statusTxt+'</span>'
             +'<span class="pname">'+esc(w.ref_type)+' #'+w.ref_id+' <span style="color:var(--faint);font-weight:400">wf #'+w.id+'</span>'+isFork+'</span>'
             +'<span class="wbar" title="work-items done"><span class="wbar-t"><i style="width:'+ipct+'%"></i></span><span class="wbar-n">'+idone+'/'+itot+'</span></span>'
-            +'<span class="pmeta"><span>idx '+w.current_idx+'/'+configs.length+'</span><span>phase '+w.current_phase+'</span>'+(w.forks.length?'<span>'+w.forks.length+' fork'+(w.forks.length>1?'s':'')+'</span>':'')+'<span>'+rel(w.updated_at)+'</span></span></div>'
-            +'<div class="pbody"><div class="lane-lbl">behaviour chain</div><div class="flow">'+steps+'</div>'
-            +'<div class="lane-lbl" style="margin-top:14px">work-item ledger ('+(w.items||[]).length+')</div><div class="items">'+(items||'<span style="color:var(--faint)">no items</span>')+'</div>'
+            +'<span class="pmeta">'+corrChip+'<span>'+loom.brackets.length+' run'+(loom.brackets.length!==1?'s':'')+'</span>'+(w.forks.length?'<span>'+w.forks.length+' fork'+(w.forks.length>1?'s':'')+'</span>':'')+'<span>'+rel(w.updated_at)+'</span></span></div>'
+            +'<div class="pbody">'+renderLoom(loom)+loomRunLedger(loom)
             +(forks?'<div class="lane-lbl" style="margin-top:14px">forks</div><div class="forks">'+forks+'</div>':'')
             +'</div></div>';
         }).join('');
@@ -1172,6 +1187,7 @@
 
       $('#tddd-view-proc').addEventListener('click', function(e){
         if(e.target.closest('.subtabs')) return;
+        var chip=e.target.closest('[data-wfstate]'); if(chip){ wfState=chip.dataset.wfstate; loadWorkflows(); return; }
         var corr=e.target.closest('.pcorr'); if(corr&&corr.dataset.corr){ e.stopPropagation(); location.hash='trace/'+encodeURIComponent(corr.dataset.corr); return; }
         var head=e.target.closest('.phead'); if(head){ head.parentElement.classList.toggle('open'); }
       });

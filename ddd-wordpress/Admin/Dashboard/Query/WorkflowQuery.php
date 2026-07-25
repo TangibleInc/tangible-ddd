@@ -41,7 +41,7 @@ final class WorkflowQuery
         $available = $this->db->column("SHOW COLUMNS FROM `{$workflows}`");
         $wanted = [
             'id', 'ref_id', 'ref_type', 'root_workflow_id', 'behaviour_configs', 'behaviour_results',
-            'current_idx', 'current_phase', 'is_complete', 'is_failed', 'meta', 'created_at', 'updated_at',
+            'current_idx', 'current_phase', 'is_complete', 'is_failed', 'correlation_id', 'meta', 'created_at', 'updated_at',
         ];
         $columns = array_values(array_intersect($wanted, $available));
         $columnSql = implode(',', array_map(static fn (string $column): string => "`{$column}`", $columns));
@@ -127,6 +127,19 @@ final class WorkflowQuery
             }
             $row['items'] = $itemsByWorkflow[$row['id']] ?? [];
             $row['forks'] = $forksByWorkflow[$row['id']] ?? [];
+            // The loom, correlation-less: no command windows here, so brackets
+            // come back unbound — renumber them by time as EXECUTIONS (the
+            // trace view owns real pass binding).
+            $loom = (new LoomPresenter())->present([
+                'behaviour_configs' => $row['behaviour_configs'] ?? [],
+                'behaviour_results' => $row['behaviour_results'] ?? [],
+                'items' => $row['items'],
+            ], []);
+            foreach ($loom['brackets'] as $ordinal => &$bracket) {
+                $bracket['pass'] = $ordinal + 1;
+            }
+            unset($bracket);
+            $row['loom'] = $loom;
         }
         unset($row);
 
