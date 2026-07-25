@@ -78,7 +78,26 @@
 
       function GapsLane(props){
         var markers=props.markers||[];
-        return html`<div class="tl-gaps"><div class="tl-gsp"></div><div class="tl-glane">${markers.map(function(marker){
+        var laneRef=useRef(null);
+        // Label thinning: with the lane wider than its min-width the px value
+        // of the layout's 130-unit spacing floats — when two labels would land
+        // within 48px, keep both dashed lines but drop the EARLIER label
+        // (cumulative elapsed: the later one subsumes it).
+        useLayoutEffect(function(){
+          var lane=laneRef.current; if(!lane) return;
+          var w=lane.offsetWidth; if(!w) return;
+          var els=lane.querySelectorAll('.tl-gap');
+          var kept=Infinity;
+          // Walk right-to-left so the LATEST of any crowded cluster survives.
+          for(var i=els.length-1;i>=0;i--){
+            var px=parseFloat(els[i].style.left)/100*w;
+            var label=els[i].querySelector('.tl-gap-label');
+            if(!label) continue;
+            if(kept-px>=48){ label.style.visibility=''; kept=px; }
+            else { label.style.visibility='hidden'; }
+          }
+        },[markers]);
+        return html`<div class="tl-gaps"><div class="tl-gsp"></div><div class="tl-glane" ref=${laneRef}>${markers.map(function(marker){
           return html`<div class="tl-gap" style=${'left:'+marker.start_pct+'%'}><span class="tl-gap-label"><b>${fmtTraceTime(marker.elapsed_s)}</b>${marker.gap_s>=300?html`<i class="tl-hiatus">${fmtTraceSpan(marker.gap_s)} gap</i>`:null}</span></div>`;
         })}</div></div>`;
       }

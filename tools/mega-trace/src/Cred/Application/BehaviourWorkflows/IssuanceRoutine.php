@@ -26,7 +26,7 @@ use TangibleDDD\MegaTrace\Scenario\ScenarioIds;
 
 final class IssuanceRoutine extends WorkflowHandler
 {
-    public static int $reschedule_interval = 18;
+    public static int $reschedule_interval = 0; // ASAP: continuation due immediately; pacing = pure relay/cron cadence
 
     public function __construct(
         IBehaviourWorkflowRepository $workflow_repo,
