@@ -746,6 +746,8 @@
         // ── Render workflows nested in this trace ──
         _traceNodesById={};
         (d.nodes||[]).forEach(function(n){ if(n.id) _traceNodesById[n.id]=n; });
+        _traceWorkflowsById={};
+        (d.workflows||[]).forEach(function(w){ _traceWorkflowsById[w.id]=w; });
         var wfs=d.workflows||[];
         if(!wfs.length){ traceWf.innerHTML=''; return; }
         traceWf.innerHTML=wfs.map(function(w){
@@ -827,6 +829,42 @@
         }).join('')+'</div>':'';
         return '<div class="loom loom-dense">'+rows+ruler+'</div>';
       }
+      // Drawer Workflow tab: the loom + pass ledger + meta chips for the
+      // workflow a pass command belongs to. Rendered shell-side (the loom
+      // renderer lives here), handed to the island as an HTML string.
+      var _traceWorkflowsById={};
+      function loomDrawerHtml(wfId){
+        var w=_traceWorkflowsById[wfId];
+        if(!w) return '';
+        var loom=w.loom||{segments:[],brackets:[]};
+        var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
+        var chips='';
+        if(w.meta && typeof w.meta==='object'){
+          chips=Object.keys(w.meta).map(function(k){
+            var v=String(w.meta[k]); if(v.length>18) v=v.slice(0,16)+'…';
+            return '<span class="chip">'+esc(k)+' <b>'+esc(v)+'</b></span>';
+          }).join('');
+        }
+        var ledger=loom.brackets.length?'<div class="jlbl" style="margin-top:14px">pass ledger</div>'
+          +'<table class="loom-ledger"><tr><th>pass</th><th>window</th><th>items</th><th>result</th></tr>'
+          +loom.brackets.map(function(b){
+            var note=(b.spans||[]).map(function(s){ var seg=loom.segments[s.seg]||{}; return esc(seg.label||('b'+s.seg))+' '+s.count; }).join(' → ')||'resolve · no items';
+            return '<tr'+(b.errors?' class="err"':'')+' data-cmd="'+esc(b.command_id||'')+'"><td>'+(b.pass===null?'?':b.pass)+'</td><td>'+note+'</td><td>'+b.keys.length+'</td><td>'+(b.errors?b.errors+' failed':'ok')+(b.cut?' &#8961;':'')+'</td></tr>';
+          }).join('')+'</table>':'';
+        return '<div class="loom-drawer-id">'+esc(w.ref_type)+' #'+w.ref_id
+          +(w.root_workflow_id?' &middot; fork of #'+w.root_workflow_id:'')
+          +' <span class="wft-badge '+statusTxt+'">'+statusTxt+'</span> <span class="idm">wf #'+w.id+'</span></div>'
+          +(chips?'<div class="chips" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px">'+chips+'</div>':'')
+          +renderLoom(loom)+ledger;
+      }
+      function drawerCtx(){
+        return {
+          correlation: currentCorr,
+          onShowTrace: showTrace,
+          onShowBiography: showBiography,
+          loomHtml: loomDrawerHtml,
+        };
+      }
       // Loom brackets/pass blocks link back to their pass command's drawer.
       traceWf.addEventListener('click', function(e){
         var b=e.target.closest('[data-cmd]');
@@ -834,11 +872,16 @@
         var n=_traceNodesById[b.dataset.cmd];
         if(!n) return;
         setDrawerLabel(n.kind);
-        TDDDTrace.openDrawer(dbody, n, null, {
-          correlation: currentCorr,
-          onShowTrace: showTrace,
-          onShowBiography: showBiography,
-        });
+        TDDDTrace.openDrawer(dbody, n, null, drawerCtx());
+        drawer.hidden=false;
+      });
+      // The pass ledger inside the drawer links between passes too.
+      dbody.addEventListener('click', function(e){
+        var b=e.target.closest('.loom-ledger [data-cmd], .dpane .loom [data-cmd]');
+        if(!b||!b.dataset.cmd) return;
+        var n=_traceNodesById[b.dataset.cmd];
+        if(!n) return;
+        TDDDTrace.openDrawer(dbody, n, 'workflow', drawerCtx());
       });
       // The trace island (trace-island.js, Preact + htm) owns the rows region and
       // the trace drawer. The shell hands it data + these handlers, and keeps the
@@ -848,11 +891,7 @@
           prevUids:_prevTraceNodes,
           onOpenNode:function(n, initialTab){
             setDrawerLabel(n.kind);
-            TDDDTrace.openDrawer(dbody, n, initialTab, {
-              correlation: currentCorr,
-              onShowTrace: showTrace,
-              onShowBiography: showBiography,
-            });
+            TDDDTrace.openDrawer(dbody, n, initialTab, drawerCtx());
             drawer.hidden=false;
           },
         };

@@ -294,6 +294,10 @@
         var n=props.node, ctx=props.ctx||{};
         var tabState=useState(props.initialTab||'story');
         var tab=tabState[0], setTab=tabState[1];
+        // A workflow pass gains the Workflow tab: the full loom + pass ledger,
+        // rendered shell-side (ctx.loomHtml) — the loom renderer lives there.
+        var loomHtml=(n.pass && ctx.loomHtml)?ctx.loomHtml(n.pass.wf):'';
+        var tabs=loomHtml?DRAWER_TABS.concat([['workflow','Workflow']]):DRAWER_TABS;
         var raw=n.raw||{}, ports=n.ports||[], moments=n.moments||[];
         var touches=(n.touches||[]).slice();
         ports.forEach(function(p){ (p.touches||[]).forEach(function(t){ touches.push(t); }); });
@@ -324,7 +328,7 @@
         });
         return html`<h3>${n.name}</h3>
           <div class="trace-owner" style=${'--owner-accent:'+(n.accent||'#646970')}><i></i><b>${n.consumer_label||n.consumer}</b><span>${n.status||''} · ${dur}ms</span></div>
-          <div class="dtabs">${DRAWER_TABS.map(function(t){
+          <div class="dtabs">${tabs.map(function(t){
             return html`<button data-dt=${t[0]} aria-current=${t[0]===tab?'true':null} onClick=${function(){ setTab(t[0]); }}>${t[1]}</button>`;
           })}</div>
           <div class="dpane" data-dp="story" hidden=${tab!=='story'}>
@@ -349,7 +353,11 @@
             ${raw.parameters?html`<div class="jlbl">parameters</div><${Json} value=${raw.parameters}/>`:null}
             ${raw.error?html`<div class="jlbl">error</div><${Json} value=${raw.error}/>`:null}
             <div class="jlbl">audit row</div><${Json} value=${raw}/>
-          </div>`;
+          </div>
+          ${loomHtml?html`<div class="dpane" data-dp="workflow" hidden=${tab!=='workflow'}>
+            ${n.pass?html`<div class="jlbl">this pass</div><div class="idm" style="margin-bottom:10px">pass ${n.pass.n} of ${n.pass.of} · ${n.pass.note}${n.pass.cut?' · stopped with work remaining ⌁':''}${n.pass.errors?html` · <b style="color:var(--crit)">${n.pass.errors} failed</b>`:null}</div>`:null}
+            <div dangerouslySetInnerHTML=${{__html:loomHtml}}></div>
+          </div>`:null}`;
       }
 
       function DrawerBody(props){
