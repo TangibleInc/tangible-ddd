@@ -416,6 +416,45 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .wft-kv b{color:var(--ink-soft)}
 .tddd-root .wft-connector{display:flex;align-items:center;gap:7px;padding:8px 12px;background:var(--softer);border-top:1px solid var(--linesoft);font-family:var(--fm);font-size:.6rem;color:var(--faint)}
 .tddd-root .wft-connector .wft-arrow{color:var(--accent2);font-size:.8rem}
+/* ── the loom (workflow progress: segments × cells + pass brackets) ── */
+.tddd-root .loom{overflow-x:auto;padding-bottom:2px}
+.tddd-root .loom-labels{display:flex;white-space:nowrap;margin-bottom:6px}
+.tddd-root .loom-seglbl{font-family:var(--fm);font-size:.6rem;color:var(--muted)}
+.tddd-root .loom-seglbl b{color:var(--ink-soft);font-weight:700}
+.tddd-root .loom-seglbl.ghost{opacity:.5}
+.tddd-root .loom-seglbl .lm-err,.tddd-root .lm-err{color:var(--crit);font-weight:700}
+.tddd-root .loom-tape{display:flex;align-items:center}
+.tddd-root .loom-seg{display:inline-flex;gap:3px;margin-right:18px}
+.tddd-root .loom-seg:last-child{margin-right:0}
+.tddd-root .loom-cell{width:16px;height:16px;border-radius:3px;border:1px solid var(--line);background:var(--softer);position:relative;flex:none}
+.tddd-root .loom-cell.done{background:var(--okbg);border-color:var(--ok)}
+.tddd-root .loom-cell.done::after{content:"";position:absolute;inset:4px;border-radius:1px;background:var(--ok)}
+.tddd-root .loom-cell.fail{background:var(--critbg);border-color:var(--crit)}
+.tddd-root .loom-cell.fail::after{content:"\00d7";position:absolute;inset:0;color:var(--crit);font:700 11px/16px var(--fm);text-align:center}
+.tddd-root .loom-cell.wait{border-color:var(--warn,#b07f18)}
+.tddd-root .loom-cell.wait::after{content:"";position:absolute;inset:4px;border-radius:50%;border:2px solid var(--warn,#b07f18)}
+.tddd-root .loom-cell.ghost{border-style:dashed;opacity:.45;background:transparent}
+.tddd-root .loom-ticks{position:absolute;bottom:-3px;left:1px;font:700 10px/1 var(--fm);color:var(--crit);letter-spacing:-1px;font-style:normal}
+.tddd-root .loom-rail{position:relative;height:20px;margin-top:4px}
+.tddd-root .loom-bracket{position:absolute;top:0;height:7px;border:2px solid var(--owner-accent,var(--accent));border-top:none;border-radius:0 0 4px 4px}
+.tddd-root .loom-bracket b{position:absolute;left:50%;transform:translateX(-50%);top:7px;font:700 .58rem/1.5 var(--fm);color:var(--owner-accent,var(--accent));white-space:nowrap}
+.tddd-root .loom-bracket.err{border-color:var(--crit)}.tddd-root .loom-bracket.err b{color:var(--crit)}
+.tddd-root .loom-bracket.unbound{border-style:dashed;opacity:.6}
+.tddd-root .loom-bracket[data-cmd]{cursor:pointer}
+/* tier 2/3: dense strips + pass ruler */
+.tddd-root .loom-dense .loom-striprow{display:flex;align-items:center;gap:10px;padding:3px 0}
+.tddd-root .loom-dense .loom-striprow.ghost{opacity:.5}
+.tddd-root .loom-dense .loom-seglbl{flex:none;min-width:150px}
+.tddd-root .loom-strip{flex:1;display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--line);min-width:220px}
+.tddd-root .loom-strip i{display:block;height:100%}
+.tddd-root .lms-done{background:var(--ok);opacity:.72}
+.tddd-root .lms-fail{background:var(--crit);flex:none;width:5px}
+.tddd-root .lms-wait{background:var(--warnbg,#f5e9cd)}
+.tddd-root .lms-pend{background:var(--softer)}
+.tddd-root .loom-count{flex:none;font-family:var(--fm);font-size:.62rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.tddd-root .loom-ruler{display:flex;gap:2px;margin-top:6px;margin-left:160px}
+.tddd-root .loom-pblk{border:1px solid var(--owner-accent,var(--accent));border-radius:3px;font:700 .56rem/14px var(--fm);color:var(--owner-accent,var(--accent));text-align:center;overflow:hidden;white-space:nowrap;background:var(--softer);cursor:pointer}
+.tddd-root .loom-pblk.err{border-color:var(--crit);color:var(--crit);background:var(--critbg)}
 /* ── recent-traces list ── */
 .tddd-root .trc-list{padding:4px 0}
 .tddd-root .trc-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--linesoft);cursor:pointer;transition:background .12s}

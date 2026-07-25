@@ -303,6 +303,45 @@ final class TraceTimelinePresenterTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    public function test_workflow_carries_a_loom_with_pass_bound_brackets(): void
+    {
+        $creating = $this->command('wf-p1', 'Cred\\RunRoutine', null, null, '2026-07-25 10:00:00', 24100);
+        $creating['parameters'] = '{"workflow_id":null}';
+        $continuation = $this->command('wf-p2', 'Cred\\RunRoutine', 'evt-r1', 'integration_event', '2026-07-25 10:01:00', 11300);
+        $continuation['parameters'] = '{"workflow_id":77}';
+
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#7c4de0', 'ghost' => false],
+            'commands' => [$creating, $continuation],
+            'events' => [],
+            'processes' => [],
+            'workflows' => [[
+                'id' => '77', 'ref_id' => '9', 'ref_type' => 'request', 'root_workflow_id' => null,
+                'behaviour_configs' => '[{"type":"validate","batch":["a","b"]},{"type":"submit","batch":["x"]}]',
+                'behaviour_results' => '[' .
+                    '{"type":"validate","status":"completed","timestamp":"2026-07-25T10:00:20+00:00","batch_success":["a","b"],"batch_error":[],"history":[]},' .
+                    '{"type":"submit","status":"completed","timestamp":"2026-07-25T10:01:05+00:00","batch_success":["x"],"batch_error":[],"history":[]}]',
+                'current_idx' => '1', 'current_phase' => '1', 'is_complete' => '1', 'is_failed' => '0',
+                'created_at' => '2026-07-25 10:00:00',
+                'items' => [
+                    ['workflow_id' => '77', 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'a', 'status' => 'done', 'attempts' => '1'],
+                    ['workflow_id' => '77', 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'b', 'status' => 'done', 'attempts' => '1'],
+                    ['workflow_id' => '77', 'behaviour_idx' => '1', 'phase' => '1', 'item_key' => 'x', 'status' => 'done', 'attempts' => '1'],
+                ],
+            ]],
+        ]]);
+
+        $presented = (new TraceTimelinePresenter())->present('corr-mega', $graph);
+        $loom = $presented['workflows'][0]['loom'];
+
+        $this->assertSame(['validate', 'submit'], array_column($loom['segments'], 'label'));
+        $this->assertSame(2, $loom['segments'][0]['done']);
+        $this->assertCount(2, $loom['brackets']);
+        $this->assertSame([1, 2], array_column($loom['brackets'], 'pass'));
+        $this->assertSame(['wf-p1', 'wf-p2'], array_column($loom['brackets'], 'command_id'), 'creating pass bound despite its null workflow_id');
+        $this->assertSame(['seg' => 1, 'cell' => 0], $loom['brackets'][1]['from']);
+    }
+
     private function command(
         string $id,
         string $name,
