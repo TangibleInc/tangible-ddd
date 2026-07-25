@@ -81,7 +81,7 @@
         var laneRef=useRef(null);
         // Label thinning: with the lane wider than its min-width the px value
         // of the layout's 130-unit spacing floats — when two labels would land
-        // within 48px, keep both dashed lines but drop the EARLIER label
+        // within 64px, keep both dashed lines but drop the EARLIER label
         // (cumulative elapsed: the later one subsumes it).
         useLayoutEffect(function(){
           var lane=laneRef.current; if(!lane) return;
@@ -93,7 +93,7 @@
             var px=parseFloat(els[i].style.left)/100*w;
             var label=els[i].querySelector('.tl-gap-label');
             if(!label) continue;
-            if(kept-px>=48){ label.style.visibility=''; kept=px; }
+            if(kept-px>=64){ label.style.visibility=''; kept=px; }
             else { label.style.visibility='hidden'; }
           }
         },[markers]);
@@ -125,8 +125,11 @@
             last=stepEl;
             elbows.push(stepEl.offsetTop+15);   // ~the step's name line
           }
-          var top=el.offsetTop;
-          var height=last.offsetTop+last.offsetHeight-top;
+          // Inset like the workflow rails: start at the process row's dot,
+          // end at the last step's duration bar — adjacent gutter art never
+          // merges into one continuous band.
+          var top=el.offsetTop+12;
+          var height=last.offsetTop+last.offsetHeight-14-top;
           var depth=Math.min(n.depth||0,5);
           // Temporal region: the trajectory's spacetime in the LANE — from its
           // ignition x to its last step's activity end, over the same rows.
@@ -179,9 +182,11 @@
         var rails=[];
         Object.keys(byWf).forEach(function(k){
           var g=byWf[k];
-          if(g.rows.length<2) return;   // a rail needs extent; single-pass workflows read fine bare
           g.rows.sort(function(a,b){ return a.top-b.top; });
-          var top=g.rows[0].top, bottom=g.rows[g.rows.length-1].top+g.rows[g.rows.length-1].height;
+          // Inset: start at the first pass's command dot, end at the last
+          // pass's duration bar — consecutive workflows' rails never touch.
+          var top=g.rows[0].top+12;
+          var bottom=g.rows[g.rows.length-1].top+g.rows[g.rows.length-1].height-14;
           rails.push({
             wf:g.wf, accent:g.accent,
             top:top, height:bottom-top,
