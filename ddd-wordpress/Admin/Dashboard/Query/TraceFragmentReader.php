@@ -86,6 +86,41 @@ final class TraceFragmentReader
             $fragment[$target] = $this->db->results($this->db->prepare($sql, [$correlationId]));
         }
 
+        $this->attach_work_items($fragment, $config);
+
         return $fragment;
+    }
+
+    /**
+     * Loom cells: attach each workflow's work-item ledger rows. Second query
+     * by workflow id (items carry no correlation of their own).
+     */
+    private function attach_work_items(array &$fragment, $config): void
+    {
+        if ($fragment['workflows'] === []) {
+            return;
+        }
+
+        $table = $config->table('behaviour_workflow_items');
+        if (! $this->db->tableExists($table)) {
+            return;
+        }
+
+        $ids = array_map(static fn (array $row): int => (int) $row['id'], $fragment['workflows']);
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $rows = $this->db->results($this->db->prepare(
+            "SELECT workflow_id,behaviour_idx,phase,item_key,status,attempts FROM `{$table}` "
+            . "WHERE workflow_id IN ({$placeholders}) ORDER BY behaviour_idx ASC, phase ASC, id ASC",
+            $ids,
+        ));
+
+        $byWorkflow = [];
+        foreach ($rows as $row) {
+            $byWorkflow[(int) $row['workflow_id']][] = $row;
+        }
+        foreach ($fragment['workflows'] as &$workflow) {
+            $workflow['items'] = $byWorkflow[(int) $workflow['id']] ?? [];
+        }
+        unset($workflow);
     }
 }

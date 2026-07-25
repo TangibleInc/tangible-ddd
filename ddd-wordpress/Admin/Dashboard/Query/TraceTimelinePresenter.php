@@ -233,7 +233,14 @@ final class TraceTimelinePresenter
             return $node;
         }, $ordered);
 
-        $workflows = array_map([$this, 'workflow'], $graph['workflows']);
+        $commandNodes = array_values(array_filter(
+            $graph['nodes'] ?? [],
+            static fn (array $node): bool => ($node['kind'] ?? '') === 'command',
+        ));
+        $workflows = array_map(
+            fn (array $workflow): array => $this->workflow($workflow, $commandNodes),
+            $graph['workflows'],
+        );
 
         return [
             'correlation_id' => $correlationId,
@@ -328,8 +335,12 @@ final class TraceTimelinePresenter
         return [$ordered, $markers];
     }
 
-    /** @param array<string, mixed> $workflow @return array<string, mixed> */
-    private function workflow(array $workflow): array
+    /**
+     * @param array<string, mixed> $workflow
+     * @param list<array<string, mixed>> $spans all command nodes in the trace
+     * @return array<string, mixed>
+     */
+    private function workflow(array $workflow, array $spans = []): array
     {
         foreach (['behaviour_configs', 'behaviour_results'] as $column) {
             $value = $workflow[$column] ?? null;
@@ -340,7 +351,59 @@ final class TraceTimelinePresenter
         }
         $root = $workflow['root_workflow_id'] ?? null;
         $workflow['root_workflow_id'] = $root !== null && $root !== '' ? (int) $root : null;
+
+        $workflow['loom'] = (new LoomPresenter())->present(
+            [
+                'behaviour_configs' => $workflow['behaviour_configs'] ?? [],
+                'behaviour_results' => $workflow['behaviour_results'] ?? [],
+                'items' => $workflow['items'] ?? [],
+            ],
+            $this->pass_windows($workflow['id'], $workflow['consumer'] ?? null, $spans),
+        );
+        unset($workflow['items']);
+
         return $workflow;
+    }
+
+    /**
+     * Pass windows: this workflow's driving commands. Continuation passes
+     * carry workflow_id in their payload; the CREATING pass carries null —
+     * it is included when it belongs to the same consumer and precedes the
+     * first continuation (there is exactly one creating pass per workflow).
+     *
+     * @param list<array<string, mixed>> $spans
+     * @return list<array{command_id: string, ts: int, dur_ms: int}>
+     */
+    private function pass_windows(int $workflowId, ?string $consumer, array $spans): array
+    {
+        $windows = [];
+        $creator = null;
+        $firstContinuationTs = null;
+        foreach ($spans as $span) {
+            if (empty($span['is_workflow']) || ($consumer !== null && $span['consumer'] !== $consumer)) {
+                continue;
+            }
+            $parameters = is_array($span['raw']['parameters'] ?? null) ? $span['raw']['parameters'] : [];
+            if (! array_key_exists('workflow_id', $parameters)) {
+                continue;
+            }
+            $window = [
+                'command_id' => (string) $span['id'],
+                'ts' => (int) ($span['ts'] ?? 0),
+                'dur_ms' => (int) ($span['dur_ms'] ?? 0),
+            ];
+            if ((int) ($parameters['workflow_id'] ?? 0) === $workflowId) {
+                $windows[] = $window;
+                $firstContinuationTs = min($firstContinuationTs ?? PHP_INT_MAX, $window['ts']);
+            } elseif (($parameters['workflow_id'] ?? null) === null) {
+                $creator = $creator === null || $window['ts'] < $creator['ts'] ? $window : $creator;
+            }
+        }
+        if ($creator !== null && ($firstContinuationTs === null || $creator['ts'] <= $firstContinuationTs)) {
+            $windows[] = $creator;
+        }
+
+        return $windows;
     }
 
     /** @param array<string, mixed> $node */
