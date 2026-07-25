@@ -340,6 +340,96 @@ final class TraceTimelinePresenterTest extends TestCase
         $this->assertSame([1, 2], array_column($loom['brackets'], 'pass'));
         $this->assertSame(['wf-p1', 'wf-p2'], array_column($loom['brackets'], 'command_id'), 'creating pass bound despite its null workflow_id');
         $this->assertSame(['seg' => 1, 'cell' => 0], $loom['brackets'][1]['from']);
+
+        // In-row trellis: each pass command node carries its pass annotation.
+        $byId = [];
+        foreach ($presented['nodes'] as $node) {
+            $byId[$node['id']] = $node;
+        }
+        $this->assertSame(
+            ['wf' => 77, 'n' => 1, 'of' => 2, 'items' => 2, 'cut' => false, 'errors' => 0, 'note' => 'validate 2/2'],
+            $byId['wf-p1']['pass'],
+        );
+        $this->assertSame('submit 1/1', $byId['wf-p2']['pass']['note']);
+        $this->assertArrayNotHasKey('pass', array_values(array_filter(
+            $presented['nodes'],
+            static fn (array $n): bool => $n['id'] === 'wf-p1',
+        ))[0]['raw'] ?? [], 'annotation lives on the node, not raw');
+    }
+
+    public function test_two_workflows_in_one_consumer_attribute_their_own_creating_passes(): void
+    {
+        // Both creating passes carry workflow_id null; only the command NAME
+        // (shared with each workflow's continuations) can tell them apart.
+        $issuanceCreate = $this->command('iss-p1', 'Cred\\RunIssuance', null, null, '2026-07-25 10:00:00', 500);
+        $issuanceCreate['parameters'] = '{"workflow_id":null}';
+        $issuanceCont = $this->command('iss-p2', 'Cred\\RunIssuance', 'evt-i', 'integration_event', '2026-07-25 10:01:00', 500);
+        $issuanceCont['parameters'] = '{"workflow_id":70}';
+        $auditCreate = $this->command('aud-p1', 'Cred\\RunAudit', null, null, '2026-07-25 10:00:05', 500);
+        $auditCreate['parameters'] = '{"workflow_id":null}';
+        $auditCont = $this->command('aud-p2', 'Cred\\RunAudit', 'evt-a', 'integration_event', '2026-07-25 10:01:05', 500);
+        $auditCont['parameters'] = '{"workflow_id":71}';
+
+        $wf = static fn (int $id, string $key, string $ts): array => [
+            'id' => (string) $id, 'ref_id' => '1', 'ref_type' => 'r', 'root_workflow_id' => null,
+            'behaviour_configs' => '[{"type":"' . $key . '","batch":["a"]}]',
+            'behaviour_results' => '[{"type":"' . $key . '","status":"completed","timestamp":"' . $ts . '","batch_success":["a"],"batch_error":[],"history":[]}]',
+            'current_idx' => '0', 'current_phase' => '1', 'is_complete' => '1', 'is_failed' => '0',
+            'created_at' => '2026-07-25 10:00:00',
+            'items' => [['workflow_id' => (string) $id, 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'a', 'status' => 'done', 'attempts' => '1']],
+        ];
+
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#7c4de0', 'ghost' => false],
+            'commands' => [$issuanceCreate, $issuanceCont, $auditCreate, $auditCont],
+            'events' => [],
+            'processes' => [],
+            'workflows' => [
+                $wf(70, 'issue', '2026-07-25T10:00:02+00:00'),
+                $wf(71, 'audit', '2026-07-25T10:00:07+00:00'),
+            ],
+        ]]);
+
+        $presented = (new TraceTimelinePresenter())->present('corr-two', $graph);
+        $looms = [];
+        foreach ($presented['workflows'] as $workflow) {
+            $looms[$workflow['id']] = array_column($workflow['loom']['brackets'], 'command_id');
+        }
+
+        $this->assertSame(['iss-p1'], array_slice($looms[70], 0, 1), 'issuance creating pass stays with issuance');
+        $this->assertSame(['aud-p1'], array_slice($looms[71], 0, 1), 'audit creating pass stays with audit');
+    }
+
+    public function test_a_forked_workflow_never_inherits_the_parent_creating_pass(): void
+    {
+        // A fork is born inside the parent's pass — it has NO creating command.
+        // Its continuation (same command name as the parent's) must be pass 1.
+        $parentCreate = $this->command('par-p1', 'Cred\\RunAudit', null, null, '2026-07-25 10:00:00', 500);
+        $parentCreate['parameters'] = '{"workflow_id":null}';
+        $forkCont = $this->command('fork-p1', 'Cred\\RunAudit', 'evt-f', 'integration_event', '2026-07-25 10:02:00', 500);
+        $forkCont['parameters'] = '{"workflow_id":81}';
+
+        $graph = (new TraceStitcher())->stitch([[
+            'consumer' => ['key' => 'cred', 'label' => 'Cred', 'accent' => '#7c4de0', 'ghost' => false],
+            'commands' => [$parentCreate, $forkCont],
+            'events' => [],
+            'processes' => [],
+            'workflows' => [[
+                'id' => '81', 'ref_id' => '1', 'ref_type' => 'r', 'root_workflow_id' => '80',
+                'behaviour_configs' => '[{"type":"notify","batch":["n"]}]',
+                'behaviour_results' => '[{"type":"notify","status":"completed","timestamp":"2026-07-25T10:02:02+00:00","batch_success":["n"],"batch_error":[],"history":[]}]',
+                'current_idx' => '0', 'current_phase' => '1', 'is_complete' => '1', 'is_failed' => '0',
+                'created_at' => '2026-07-25 10:00:30',
+                'items' => [['workflow_id' => '81', 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'n', 'status' => 'done', 'attempts' => '1']],
+            ]],
+        ]]);
+
+        $presented = (new TraceTimelinePresenter())->present('corr-fork', $graph);
+        $brackets = $presented['workflows'][0]['loom']['brackets'];
+
+        $this->assertCount(1, $brackets);
+        $this->assertSame(1, $brackets[0]['pass']);
+        $this->assertSame('fork-p1', $brackets[0]['command_id']);
     }
 
     private function command(

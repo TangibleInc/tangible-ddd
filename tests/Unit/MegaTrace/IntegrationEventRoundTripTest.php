@@ -49,6 +49,6 @@ final class IntegrationEventRoundTripTest extends TestCase
             }
         }
 
-        self::assertSame(30, $count);
+        self::assertSame(31, $count); // +CertificationAuditRescheduled (the calm routine's continuation fact)
     }
 }
