@@ -124,3 +124,27 @@ final class PortfolioExported extends IntegrationEvent
     ) {
     }
 }
+
+/**
+ * Continuation fact for the CALM audit routine (real time budget — passes
+ * are wide; see CertificationAuditRoutine). Same fact-lane shape as
+ * IssuanceRoutineRescheduled: the delay rides the outbox row, the next
+ * pass arrives causation-chained.
+ */
+#[Touches(Op::Updated, CredentialPortfolio::class, id: 'portfolio_id')]
+final class CertificationAuditRescheduled extends IntegrationEvent
+{
+    public function __construct(
+        public readonly string $journey_id,
+        public readonly int $learner_id,
+        public readonly string $portfolio_id,
+        public readonly int $workflow_id,
+        public readonly int $delay_seconds = 0,
+    ) {
+    }
+
+    public function delay(): int
+    {
+        return $this->delay_seconds;
+    }
+}

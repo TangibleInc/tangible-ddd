@@ -782,7 +782,7 @@
         var labels=segs.map(function(s){
           var done=s.done+'/'+s.total, extra=(s.failed?' &middot; <span class="lm-err">'+s.failed+' failed</span>':'');
           var w=s.total*(LOOM_CELL+LOOM_GAP)-LOOM_GAP+LOOM_SEG_GAP;
-          return '<span class="loom-seglbl'+(s.ghost?' ghost':'')+'" style="min-width:'+w+'px"><b>'+esc(s.label)+'</b> '+(s.ghost?'unreached':done+extra)+'</span>';
+          return '<span class="loom-seglbl'+(s.ghost?' ghost':'')+'" style="width:'+w+'px"><b>'+esc(s.label)+'</b> '+(s.ghost?'unreached':done+extra)+'</span>';
         }).join('');
         var tape=segs.map(function(s){
           return '<span class="loom-seg">'+s.items.map(function(it){
@@ -796,7 +796,7 @@
           var x0=loomCellX(segs,b.from.seg,b.from.cell), x1=loomCellX(segs,b.to.seg,b.to.cell)+LOOM_CELL;
           return '<span class="loom-bracket'+(b.errors?' err':'')+(b.pass===null?' unbound':'')+'" data-cmd="'+esc(b.command_id||'')+'" style="left:'+x0+'px;width:'+(x1-x0)+'px" '
             +'title="pass '+(b.pass===null?'?':b.pass)+' &middot; '+b.keys.length+' item'+(b.keys.length!==1?'s':'')+(b.cut?' &middot; stopped with work remaining':'')+(b.errors?' &middot; '+b.errors+' failed':'')+'">'
-            +'<b>'+(b.pass===null?'?':b.pass)+(b.cut?' &#8993;':'')+'</b></span>';
+            +'<b>'+(b.pass===null?'?':b.pass)+(b.cut?' &#8961;':'')+'</b></span>';
         }).join('');
         return '<div class="loom">'
           +'<div class="loom-labels">'+labels+'</div>'

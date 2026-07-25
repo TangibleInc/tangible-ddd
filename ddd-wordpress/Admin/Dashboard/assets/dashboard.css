@@ -419,6 +419,7 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 /* ── the loom (workflow progress: segments × cells + pass brackets) ── */
 .tddd-root .loom{overflow-x:auto;padding-bottom:2px}
 .tddd-root .loom-labels{display:flex;white-space:nowrap;margin-bottom:6px}
+.tddd-root .loom-labels .loom-seglbl{display:inline-block;overflow:hidden;text-overflow:ellipsis;padding-right:10px;box-sizing:border-box}
 .tddd-root .loom-seglbl{font-family:var(--fm);font-size:.6rem;color:var(--muted)}
 .tddd-root .loom-seglbl b{color:var(--ink-soft);font-weight:700}
 .tddd-root .loom-seglbl.ghost{opacity:.5}
