@@ -166,6 +166,41 @@ final class TraceStitcherTest extends TestCase
      * @param list<array<string, mixed>> $touches
      * @return array<string, mixed>
      */
+    public function test_long_process_causation_never_resolves_to_a_process_younger_than_its_effect(): void
+    {
+        // causation_id for long_process causes is a TABLE-LOCAL integer with
+        // no consumer qualifier. When LMS process #48 dispatches a QUIZ
+        // command cross-consumer, quiz's audit records causation_id=48 — and
+        // quiz's OWN #48 (ignited by that very command's fact!) used to win
+        // by local-first preference, producing a causal loop on screen.
+        // A cause cannot postdate its effect: candidates younger than the
+        // command are excluded.
+        $trace = (new TraceStitcher())->stitch([
+            $this->fragment('lms', [], [], [
+                $this->process(48, 'Lms\\CertificationJourneyProcess', '2026-07-25 12:00:00'),
+            ]),
+            $this->fragment('quiz', [
+                $this->command('cmd-prepare', 'Quiz\\PrepareDiagnosticAssessment', '48', 'long_process', '2026-07-25 12:01:00'),
+                $this->command('cmd-open', 'Quiz\\OpenDiagnosticAttempt', '48', 'long_process', '2026-07-25 12:02:00'),
+            ], [
+                $this->event('evt-prepared', 'Quiz\\DiagnosticAssessmentPrepared', 'cmd-prepare', '2026-07-25 12:01:01'),
+            ], [
+                $this->process(48, 'Quiz\\AdaptiveAssessmentProcess', '2026-07-25 12:01:01', 'evt-prepared'),
+            ]),
+        ]);
+
+        self::assertSame(
+            'lms:p:48',
+            $trace['nodes']['quiz:c:cmd-prepare']['parent'],
+            'the elder LMS process dispatched it — quiz #48 did not exist yet'
+        );
+        self::assertSame(
+            'quiz:p:48',
+            $trace['nodes']['quiz:c:cmd-open']['parent'],
+            'commands younger than the local process keep their local parent'
+        );
+    }
+
     private function fragment(
         string $consumer,
         array $commands = [],

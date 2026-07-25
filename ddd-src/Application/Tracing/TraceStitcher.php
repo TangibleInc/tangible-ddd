@@ -117,8 +117,21 @@ final class TraceStitcher
                 $causeType = $node['causation_type'];
                 $causeId = $node['causation_id'];
                 if ($causeType === 'long_process') {
+                    // causation_id is a TABLE-LOCAL integer with no consumer
+                    // qualifier; cross-consumer process dispatch makes ids
+                    // collide (LMS #48 dispatches a quiz command while quiz
+                    // has its own #48). A cause cannot postdate its effect:
+                    // processes created after the command started are
+                    // excluded before the local-first preference applies.
+                    $eligible = array_values(array_filter(
+                        $processes['*'][$causeId] ?? [],
+                        static fn (string $candidateUid): bool =>
+                            ((int) ($nodes[$candidateUid]['ts'] ?? 0)) <= ((int) ($node['ts'] ?? PHP_INT_MAX)),
+                    ));
                     $local = $processes[$node['consumer']][$causeId] ?? null;
-                    $candidates = $local !== null ? [$local] : ($processes['*'][$causeId] ?? []);
+                    $candidates = ($local !== null && in_array($local, $eligible, true))
+                        ? [$local]
+                        : $eligible;
                 } else {
                     $candidates = match ($causeType) {
                         'integration_event' => $events[$causeId] ?? [],

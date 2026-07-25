@@ -252,10 +252,13 @@ final class TraceTimelinePresenterTest extends TestCase
 
     public function test_a_causation_cycle_does_not_orphan_the_branch_or_scramble_row_order(): void
     {
-        // The mega-trace bug shape: the process claims it caused Prepare, but
-        // the process was ignited by the fact Prepare raised — a cycle. The
-        // branch is unreachable from any real root; the presenter must still
-        // render it as ONE coherent subtree (children below parents), not as
+        // A recorded cycle: the process claims it caused Prepare while being
+        // ignited by the fact Prepare raised. (The stitcher's younger-than-
+        // effect filter now dissolves the common id-collision variant, so
+        // this fixture uses an ELDER process — corrupt-data shape — to keep
+        // the presenter's cycle-proofing exercised.) The branch is
+        // unreachable from any real root; the presenter must still render it
+        // as ONE coherent subtree (children below parents), not as
         // insertion-ordered fake roots.
         $graph = (new TraceStitcher())->stitch([
             [
@@ -281,7 +284,7 @@ final class TraceTimelinePresenterTest extends TestCase
                     'id' => '12', 'process_class' => 'Quiz\\AdaptiveAssessmentProcess',
                     'status' => 'running', 'step_name' => 'grade', 'waiting_for' => null,
                     'ignited_by_event_id' => 'evt-prepared',
-                    'created_at' => '2026-07-22 10:01:33', 'updated_at' => '2026-07-22 10:02:48',
+                    'created_at' => '2026-07-22 10:00:33', 'updated_at' => '2026-07-22 10:02:48',
                 ]],
                 'workflows' => [],
             ],
@@ -294,8 +297,9 @@ final class TraceTimelinePresenterTest extends TestCase
         // and the cross-consumer subscriber renders BELOW the act that raised
         // its cause — never as an insertion-ordered fake root.
         self::assertSame(
-            ['quiz:c:prepare', 'quiz:p:12', 'quiz:c:grade', 'cred:c:record-competency'],
+            ['quiz:p:12', 'quiz:c:prepare', 'quiz:c:grade', 'cred:c:record-competency'],
             array_column($trace['nodes'], 'uid'),
+            'the elder process tops the component; the ignition back-edge is the one inversion'
         );
         self::assertSame([0, 1, 2, 3], array_column($trace['nodes'], 'depth'));
         $subscriber = $trace['nodes'][3];
