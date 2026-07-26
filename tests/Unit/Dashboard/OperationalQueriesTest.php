@@ -177,6 +177,39 @@ final class OperationalQueriesTest extends TestCase
         self::assertSame(['legacy' => 'json'], $page['rows'][1]['meta']);
     }
 
+    public function test_workflow_list_carries_a_loom_with_execution_ordinal_brackets(): void
+    {
+        // The workflows screen has no correlation context, so brackets can't
+        // bind to command windows — executions still number ordinally by time.
+        $db = new ScriptedDatabase();
+        $db->values = [1];
+        $db->columns = [['id', 'ref_id', 'ref_type', 'root_workflow_id', 'behaviour_configs', 'behaviour_results', 'current_idx', 'current_phase', 'is_complete', 'is_failed', 'correlation_id', 'meta', 'created_at', 'updated_at']];
+        $db->resultSets = [
+            [[
+                'id' => '9', 'ref_id' => '3', 'ref_type' => 'request', 'root_workflow_id' => null,
+                'behaviour_configs' => '[{"type":"validate","batch":["a","b"]}]',
+                'behaviour_results' => '[{"type":"validate","status":"completed","timestamp":"2026-07-25T10:00:20+00:00","batch_success":["b"],"batch_error":[],"history":[' .
+                    '{"type":"validate","status":"batched","timestamp":"2026-07-25T10:00:05+00:00","batch_success":["a"],"batch_error":[],"history":[]}]}]',
+                'current_idx' => '0', 'current_phase' => '1', 'is_complete' => '1', 'is_failed' => '0',
+                'correlation_id' => 'corr-x', 'meta' => null, 'created_at' => 'now', 'updated_at' => 'now',
+            ]],
+            [[ 'workflow_id' => '9', 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'a', 'status' => 'done', 'attempts' => '1'],
+             [ 'workflow_id' => '9', 'behaviour_idx' => '0', 'phase' => '1', 'item_key' => 'b', 'status' => 'done', 'attempts' => '1']],
+            [], // forks
+            [], // meta side table
+        ];
+
+        $page = (new WorkflowQuery(new FakeDDDConfig(), $db))->list([]);
+        $row = $page['rows'][0];
+
+        self::assertSame('corr-x', $row['correlation_id']);
+        $loom = $row['loom'];
+        self::assertSame([1, 2], array_column($loom['brackets'], 'pass'), 'executions numbered by time, oldest first');
+        self::assertSame(['a'], $loom['brackets'][0]['keys']);
+        self::assertSame(['b'], $loom['brackets'][1]['keys']);
+        self::assertNull($loom['brackets'][0]['command_id']);
+    }
+
     public function test_outbox_and_dead_letter_lists_preserve_filters_and_integer_fields(): void
     {
         $outboxDb = new ScriptedDatabase();

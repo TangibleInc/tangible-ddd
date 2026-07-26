@@ -202,7 +202,17 @@ final class TraceTimelinePresenter
             unset($marker['cstart']);
             return $marker;
         }, $timeMarkers);
-        $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp, $portsByAct): array {
+        $commandNodes = array_values(array_filter(
+            $graph['nodes'] ?? [],
+            static fn (array $node): bool => ($node['kind'] ?? '') === 'command',
+        ));
+        $workflows = array_map(
+            fn (array $workflow): array => $this->workflow($workflow, $commandNodes),
+            $graph['workflows'],
+        );
+        $passByCommand = $this->pass_annotations($workflows);
+
+        $outputNodes = array_map(static function (array $node) use ($totalUnits, $minTimestamp, $portsByAct, $passByCommand): array {
             $node['start_pct'] = round($node['cstart'] / $totalUnits * 100, 2);
             $node['width_pct'] = round(max(($node['cend'] - $node['cstart']) / $totalUnits * 100, 0.6), 2);
             $node['elapsed_s'] = $minTimestamp > 0
@@ -218,6 +228,9 @@ final class TraceTimelinePresenter
                 }, $portsByAct[$node['uid']] ?? []);
                 $moments = $node['raw']['events'] ?? null;
                 $node['moments'] = is_array($moments) ? $moments : [];
+                if (isset($passByCommand[$node['id']])) {
+                    $node['pass'] = $passByCommand[$node['id']];
+                }
             }
             unset(
                 $node['ts'],
@@ -232,8 +245,6 @@ final class TraceTimelinePresenter
             );
             return $node;
         }, $ordered);
-
-        $workflows = array_map([$this, 'workflow'], $graph['workflows']);
 
         return [
             'correlation_id' => $correlationId,
@@ -310,7 +321,10 @@ final class TraceTimelinePresenter
                 ) {
                     $start = max($start, $positioned[$parent]['end'] + 10);
                 }
-                $end = $start + max((int) $node['dur_ms'], 16);
+                // √-compressed duration→width: order stays true, but the
+                // dynamic range tames (2283ms vs 25ms is 91× linear, ~9.5×
+                // here) — a 2s bar stops eating 800px while 25ms stays legible.
+                $end = $start + max((int) round(sqrt(max((int) $node['dur_ms'], 0)) * 8), 16);
                 $ordered[$index]['cstart'] = $start;
                 $ordered[$index]['cend'] = $end;
                 $positioned[$node['uid']] = ['ts' => $timestamp, 'end' => $end];
@@ -328,8 +342,12 @@ final class TraceTimelinePresenter
         return [$ordered, $markers];
     }
 
-    /** @param array<string, mixed> $workflow @return array<string, mixed> */
-    private function workflow(array $workflow): array
+    /**
+     * @param array<string, mixed> $workflow
+     * @param list<array<string, mixed>> $spans all command nodes in the trace
+     * @return array<string, mixed>
+     */
+    private function workflow(array $workflow, array $spans = []): array
     {
         foreach (['behaviour_configs', 'behaviour_results'] as $column) {
             $value = $workflow[$column] ?? null;
@@ -340,7 +358,125 @@ final class TraceTimelinePresenter
         }
         $root = $workflow['root_workflow_id'] ?? null;
         $workflow['root_workflow_id'] = $root !== null && $root !== '' ? (int) $root : null;
+
+        $workflow['loom'] = (new LoomPresenter())->present(
+            [
+                'behaviour_configs' => $workflow['behaviour_configs'] ?? [],
+                'behaviour_results' => $workflow['behaviour_results'] ?? [],
+                'items' => $workflow['items'] ?? [],
+            ],
+            $this->pass_windows(
+                $workflow['id'],
+                $workflow['consumer'] ?? null,
+                $spans,
+                $workflow['root_workflow_id'] !== null,
+            ),
+        );
+        unset($workflow['items']);
+
         return $workflow;
+    }
+
+    /**
+     * The in-row trellis annotation: command_id => this pass's slice of the
+     * loom, for the chip on the pass row ("p 3/8 · validate 2/2 ⌁").
+     *
+     * @param list<array<string, mixed>> $workflows presented workflows (with looms)
+     * @return array<string, array<string, mixed>>
+     */
+    private function pass_annotations(array $workflows): array
+    {
+        $annotations = [];
+        foreach ($workflows as $workflow) {
+            $loom = $workflow['loom'] ?? null;
+            if ($loom === null) {
+                continue;
+            }
+            $bound = array_values(array_filter(
+                $loom['brackets'],
+                static fn (array $bracket): bool => $bracket['pass'] !== null && $bracket['command_id'] !== null,
+            ));
+            foreach ($bound as $bracket) {
+                $notes = [];
+                foreach ($bracket['spans'] as $span) {
+                    $segment = $loom['segments'][$span['seg']] ?? null;
+                    $notes[] = ($segment['label'] ?? 's' . $span['seg']) . ' ' . $span['count'] . '/' . ($segment['total'] ?? '?');
+                }
+                $annotations[(string) $bracket['command_id']] = [
+                    'wf' => (int) $workflow['id'],
+                    'n' => (int) $bracket['pass'],
+                    'of' => count($bound),
+                    'items' => count($bracket['keys']),
+                    'cut' => (bool) $bracket['cut'],
+                    'errors' => (int) $bracket['errors'],
+                    'note' => $notes === [] ? 'resolve · no items' : implode(' → ', $notes),
+                ];
+            }
+        }
+        return $annotations;
+    }
+
+    /**
+     * Pass windows: this workflow's driving commands. Continuation passes
+     * carry workflow_id in their payload; the CREATING pass carries null —
+     * it is included when it belongs to the same consumer and precedes the
+     * first continuation (there is exactly one creating pass per workflow).
+     *
+     * @param list<array<string, mixed>> $spans
+     * @return list<array{command_id: string, ts: int, dur_ms: int}>
+     */
+    private function pass_windows(int $workflowId, ?string $consumer, array $spans, bool $forked = false): array
+    {
+        $windows = [];
+        $creators = [];
+        $continuationName = null;
+        $firstContinuationTs = null;
+        foreach ($spans as $span) {
+            if (empty($span['is_workflow']) || ($consumer !== null && $span['consumer'] !== $consumer)) {
+                continue;
+            }
+            $parameters = is_array($span['raw']['parameters'] ?? null) ? $span['raw']['parameters'] : [];
+            if (! array_key_exists('workflow_id', $parameters)) {
+                continue;
+            }
+            $window = [
+                'command_id' => (string) $span['id'],
+                'ts' => (int) ($span['ts'] ?? 0),
+                'dur_ms' => (int) ($span['dur_ms'] ?? 0),
+                'name' => (string) ($span['name'] ?? ''),
+            ];
+            if ((int) ($parameters['workflow_id'] ?? 0) === $workflowId) {
+                $windows[] = $window;
+                $continuationName = $window['name'];
+                $firstContinuationTs = min($firstContinuationTs ?? PHP_INT_MAX, $window['ts']);
+            } elseif (($parameters['workflow_id'] ?? null) === null) {
+                $creators[] = $window;
+            }
+        }
+        // The creating pass carries workflow_id null — with several workflows
+        // in one consumer, only the COMMAND NAME (shared with continuations)
+        // discriminates. Earliest same-named creator preceding the first
+        // continuation wins; without continuations, fall back to earliest.
+        // A FORKED workflow has no creating command at all (it is born inside
+        // the parent's pass) — never attribute one.
+        if ($forked) {
+            $creators = [];
+        }
+        usort($creators, static fn (array $a, array $b): int => $a['ts'] <=> $b['ts']);
+        foreach ($creators as $creator) {
+            if ($continuationName !== null && $creator['name'] !== $continuationName) {
+                continue;
+            }
+            if ($firstContinuationTs === null || $creator['ts'] <= $firstContinuationTs) {
+                $windows[] = $creator;
+            }
+            break;
+        }
+
+        return array_map(static function (array $window): array {
+            unset($window['name']);
+            return $window;
+        }, $windows);
     }
 
     /** @param array<string, mixed> $node */

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tangible\Cred\MegaTrace\Application\BehaviourWorkflows;
 
-use Tangible\Cred\MegaTrace\Application\Commands\RunIssuanceRoutine;
-use Tangible\Cred\MegaTrace\Domain\Behaviours\PrepareCredentialArtifacts;
-use Tangible\Cred\MegaTrace\Domain\Behaviours\ReviewIssuanceEvidence;
-use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineItemCompleted;
-use Tangible\Cred\MegaTrace\Domain\Events\IssuanceRoutineRescheduled;
+use Tangible\Cred\MegaTrace\Application\Commands\RunCertificationAudit;
+use Tangible\Cred\MegaTrace\Domain\Behaviours\NotifyBoards;
+use Tangible\Cred\MegaTrace\Domain\Behaviours\ReconcileLedger;
+use Tangible\Cred\MegaTrace\Domain\Behaviours\ValidateCompliance;
+use Tangible\Cred\MegaTrace\Domain\Events\CertificationAuditRescheduled;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowHandler;
 use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Events\IIntegrationEventBus;
@@ -24,9 +24,29 @@ use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\MegaTrace\Command\SyntheticWorkload;
 use TangibleDDD\MegaTrace\Scenario\ScenarioIds;
 
-final class IssuanceRoutine extends WorkflowHandler
+/**
+ * The CALM workflow — IssuanceRoutine's counterpart at a REAL time budget.
+ *
+ * Where IssuanceRoutine sets max_execution_seconds = 0 (one item per pass:
+ * maximum passes, maximum causation-chain drama), this routine runs a 2s
+ * budget over ~450ms items, so a pass swallows several items, advances the
+ * behaviour cursor mid-transaction, and takes a bite of the next behaviour
+ * before the budget cuts it — the production shape (cred reporting runs the
+ * stock 25s budget). Expect FEW, WIDE, often cross-segment loom brackets.
+ *
+ * One deterministic pathology: NotifyBoards' 'board_ohio' item fails on the
+ * parent lane. Its siblings succeed → PARTIAL failure → the runner FORKS
+ * the failed item into a child workflow (root_workflow_id lineage; the item
+ * transfers reset-to-pending). The child's pass succeeds — the fork IS the
+ * retry lane: the runner never re-runs a failed item in place (that is what
+ * cred's user-triggered retry behaviour exists for). Yields per story: a
+ * fork lane, a failed cell on the parent, and a healed child loom.
+ */
+final class CertificationAuditRoutine extends WorkflowHandler
 {
-    public static int $reschedule_interval = 0; // ASAP: continuation due immediately; pacing = pure relay/cron cadence
+    public static int $reschedule_interval = 15;
+
+    private const FLAKY_KEY = 'board_ohio';
 
     public function __construct(
         IBehaviourWorkflowRepository $workflow_repo,
@@ -35,12 +55,12 @@ final class IssuanceRoutine extends WorkflowHandler
         private readonly IIntegrationEventBus $events,
     ) {
         parent::__construct($workflow_repo, $item_repo, $infra_config);
-        $this->max_execution_seconds = 0;
+        $this->max_execution_seconds = 2;
     }
 
     protected function get_workflows(ICommand $command): array
     {
-        if (!$command instanceof RunIssuanceRoutine) {
+        if (!$command instanceof RunCertificationAudit) {
             return [];
         }
         if ($command->workflow_id !== null) {
@@ -50,10 +70,11 @@ final class IssuanceRoutine extends WorkflowHandler
         return [new BehaviourWorkflow(
             id: null,
             ref_id: ScenarioIds::reference($command->journey_id),
-            ref_type: 'mega_trace_certification',
+            ref_type: 'mega_trace_certification_audit',
             behaviour_configs: [
-                new ReviewIssuanceEvidence(['identity', 'assessment', 'completion']),
-                new PrepareCredentialArtifacts(['certificate', 'transcript', 'badge']),
+                new ValidateCompliance(['scope', 'license', 'hours', 'ethics']),
+                new ReconcileLedger(['q1', 'q2', 'q3', 'q4', 'carryover', 'adjustments']),
+                new NotifyBoards(['board_home', self::FLAKY_KEY, 'board_compact']),
             ],
             meta: [
                 'journey_id' => $command->journey_id,
@@ -68,14 +89,25 @@ final class IssuanceRoutine extends WorkflowHandler
         WorkItem $item,
         ?BehaviourExecutionResult $previous,
     ): BehaviourExecutionResult {
-        SyntheticWorkload::spend(SyntheticWorkload::routine_item_ms($item->item_key));
+        SyntheticWorkload::spend(450);
 
-        $this->events->publish(new IssuanceRoutineItemCompleted(
-            (string) $this->current_workflow->get_meta('journey_id'),
-            (string) $this->current_workflow->get_meta('portfolio_id'),
-            $config->get_behaviour_type(),
-            $item->item_key,
-        ));
+        // Fails on the PARENT lane only: the runner never re-runs failed items
+        // in place (that is what user-triggered retry is for), so the fork IS
+        // the retry — the child's fresh pass over the transferred item succeeds.
+        if (
+            $config instanceof NotifyBoards
+            && $item->item_key === self::FLAKY_KEY
+            && $item->attempts === 0
+            && !$this->current_workflow->is_forked()
+        ) {
+            return new BehaviourExecutionResult(
+                type: $config->get_behaviour_type(),
+                success: false,
+                context: ['message' => 'board endpoint 503 (deterministic first-attempt failure)'],
+                status: BehaviourExecutionStatus::failed,
+                timestamp: gmdate('c'),
+            );
+        }
 
         return new BehaviourExecutionResult(
             type: $config->get_behaviour_type(),
@@ -103,19 +135,10 @@ final class IssuanceRoutine extends WorkflowHandler
         ));
     }
 
-    /**
-     * Continue the workflow later through the fact lane (canonical shape,
-     * mirroring cred's ProcessEndpointResponseBehaviourHandler::reschedule):
-     * announce IssuanceRoutineRescheduled on the HOST's outbox-backed
-     * integration bus — the outbox row carries the delay and the causation
-     * edge back to this pass, and FleetPolicies' thin listener translates
-     * the fact into the next RunIssuanceRoutine. No raw Action Scheduler
-     * alarm: that lane carried no causation, so continuation passes
-     * rendered as depth-0 orphans in the trace.
-     */
+    /** Continuation through the fact lane — mirrors IssuanceRoutine::reschedule(). */
     protected function reschedule(BehaviourWorkflow $workflow, int $delay_seconds): void
     {
-        $this->events->publish(new IssuanceRoutineRescheduled(
+        $this->events->publish(new CertificationAuditRescheduled(
             (string) $workflow->get_meta('journey_id'),
             (int) $workflow->get_meta('learner_id'),
             (string) $workflow->get_meta('portfolio_id'),

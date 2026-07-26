@@ -416,6 +416,54 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
 .tddd-root .wft-kv b{color:var(--ink-soft)}
 .tddd-root .wft-connector{display:flex;align-items:center;gap:7px;padding:8px 12px;background:var(--softer);border-top:1px solid var(--linesoft);font-family:var(--fm);font-size:.6rem;color:var(--faint)}
 .tddd-root .wft-connector .wft-arrow{color:var(--accent2);font-size:.8rem}
+/* ── in-row trellis: pass chips + workflow rails ── */
+.tddd-root .pass-chip{font-family:var(--fm);font-size:.58rem;font-weight:700;color:var(--owner-accent,var(--accent));border:1px solid color-mix(in srgb,var(--owner-accent,var(--accent)) 45%,transparent);border-radius:3px;padding:0 6px;white-space:nowrap;background:color-mix(in srgb,var(--owner-accent,var(--accent)) 7%,transparent);display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.tddd-root .pass-chip.err{color:var(--crit);border-color:var(--crit);background:var(--critbg)}
+.tddd-root .wf-rail{position:absolute;width:5px;border-radius:3px;z-index:1;pointer-events:auto;
+  background:repeating-linear-gradient(180deg,color-mix(in srgb,var(--band-accent,#646970) 40%,transparent) 0 3px,transparent 3px 6px)}
+.tddd-root .wf-rail-tick{position:absolute;width:11px;height:2px;background:var(--band-accent,#646970);border-radius:1px;z-index:1}
+.tddd-root .wf-rail-tick.err{background:var(--crit)}
+.tddd-root .wf-rail-tick i{position:absolute;left:12px;top:-8px;font-style:normal;font-family:var(--fm);font-size:.6rem;color:var(--warn,#b07f18)}
+/* ── the loom (workflow progress: segments × cells + pass brackets) ── */
+.tddd-root .loom{overflow-x:auto;padding-bottom:2px}
+.tddd-root .loom-labels{display:flex;white-space:nowrap;margin-bottom:6px}
+.tddd-root .loom-labels .loom-seglbl{display:inline-block;overflow:hidden;text-overflow:ellipsis;padding-right:10px;box-sizing:border-box}
+.tddd-root .loom-seglbl{font-family:var(--fm);font-size:.6rem;color:var(--muted)}
+.tddd-root .loom-seglbl b{color:var(--ink-soft);font-weight:700}
+.tddd-root .loom-seglbl.ghost{opacity:.5}
+.tddd-root .loom-seglbl .lm-err,.tddd-root .lm-err{color:var(--crit);font-weight:700}
+.tddd-root .loom-tape{display:flex;align-items:center}
+.tddd-root .loom-seg{display:inline-flex;gap:3px;margin-right:18px}
+.tddd-root .loom-seg:last-child{margin-right:0}
+.tddd-root .loom-cell{width:16px;height:16px;border-radius:3px;border:1px solid var(--line);background:var(--softer);position:relative;flex:none}
+.tddd-root .loom-cell.done{background:var(--okbg);border-color:var(--ok)}
+.tddd-root .loom-cell.done::after{content:"";position:absolute;inset:4px;border-radius:1px;background:var(--ok)}
+.tddd-root .loom-cell.fail{background:var(--critbg);border-color:var(--crit)}
+.tddd-root .loom-cell.fail::after{content:"\00d7";position:absolute;inset:0;color:var(--crit);font:700 11px/16px var(--fm);text-align:center}
+.tddd-root .loom-cell.wait{border-color:var(--warn,#b07f18)}
+.tddd-root .loom-cell.wait::after{content:"";position:absolute;inset:4px;border-radius:50%;border:2px solid var(--warn,#b07f18)}
+.tddd-root .loom-cell.ghost{border-style:dashed;opacity:.45;background:transparent}
+.tddd-root .loom-ticks{position:absolute;bottom:-3px;left:1px;font:700 10px/1 var(--fm);color:var(--crit);letter-spacing:-1px;font-style:normal}
+.tddd-root .loom-rail{position:relative;height:20px;margin-top:4px}
+.tddd-root .loom-bracket{position:absolute;top:0;height:7px;border:2px solid var(--owner-accent,var(--accent));border-top:none;border-radius:0 0 4px 4px}
+.tddd-root .loom-bracket b{position:absolute;left:50%;transform:translateX(-50%);top:7px;font:700 .58rem/1.5 var(--fm);color:var(--owner-accent,var(--accent));white-space:nowrap}
+.tddd-root .loom-bracket.err{border-color:var(--crit)}.tddd-root .loom-bracket.err b{color:var(--crit)}
+.tddd-root .loom-bracket.unbound{border-style:dashed;opacity:.6}
+.tddd-root .loom-bracket[data-cmd]{cursor:pointer}
+/* tier 2/3: dense strips + pass ruler */
+.tddd-root .loom-dense .loom-striprow{display:flex;align-items:center;gap:10px;padding:3px 0}
+.tddd-root .loom-dense .loom-striprow.ghost{opacity:.5}
+.tddd-root .loom-dense .loom-seglbl{flex:none;min-width:150px}
+.tddd-root .loom-strip{flex:1;display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--line);min-width:220px}
+.tddd-root .loom-strip i{display:block;height:100%}
+.tddd-root .lms-done{background:var(--ok);opacity:.72}
+.tddd-root .lms-fail{background:var(--crit);flex:none;width:5px}
+.tddd-root .lms-wait{background:var(--warnbg,#f5e9cd)}
+.tddd-root .lms-pend{background:var(--softer)}
+.tddd-root .loom-count{flex:none;font-family:var(--fm);font-size:.62rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.tddd-root .loom-ruler{display:flex;gap:2px;margin-top:6px;margin-left:160px}
+.tddd-root .loom-pblk{border:1px solid var(--owner-accent,var(--accent));border-radius:3px;font:700 .56rem/14px var(--fm);color:var(--owner-accent,var(--accent));text-align:center;overflow:hidden;white-space:nowrap;background:var(--softer);cursor:pointer}
+.tddd-root .loom-pblk.err{border-color:var(--crit);color:var(--crit);background:var(--critbg)}
 /* ── recent-traces list ── */
 .tddd-root .trc-list{padding:4px 0}
 .tddd-root .trc-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--linesoft);cursor:pointer;transition:background .12s}
@@ -527,3 +575,60 @@ body.tddd-fullbleed #wpbody-content > .notice,body.tddd-fullbleed #wpbody-conten
   .tddd-root .bio-timeline{margin-left:8px;margin-right:8px}
   .tddd-root .bio-head{top:0}
 }
+.tddd-root .spass{margin:2px 0 0 15px;line-height:1.3}
+/* drawer workflow tab */
+.tddd-root .loom-drawer-id{font-family:var(--fm);font-size:.74rem;font-weight:700;color:var(--ink);margin-bottom:6px}
+.tddd-root .loom-drawer-id .idm{font-weight:400}
+.tddd-root .chip{font-family:var(--fm);font-size:.6rem;border:1px solid var(--line);border-radius:10px;padding:1px 8px;color:var(--muted);background:var(--softer)}
+.tddd-root .chip b{color:var(--ink-soft);font-weight:600}
+.tddd-root table.loom-ledger{border-collapse:collapse;font-family:var(--fm);font-size:.64rem;width:100%}
+.tddd-root table.loom-ledger th{text-align:left;color:var(--faint);font-weight:500;padding:3px 8px 3px 0;border-bottom:1px solid var(--line)}
+.tddd-root table.loom-ledger td{padding:4px 8px 4px 0;border-bottom:1px dashed var(--linesoft);color:var(--muted);white-space:nowrap}
+.tddd-root table.loom-ledger td:first-child{color:var(--accent2);font-weight:700}
+.tddd-root table.loom-ledger tr[data-cmd]{cursor:pointer}
+.tddd-root table.loom-ledger tr.err td{color:var(--crit)}
+/* Sticky gutter layer: process bands + workflow rails pin with the label
+   column on horizontal scroll (zero-size, children absolute). */
+.tddd-root .trace-gutter{position:sticky;left:0;width:0;height:0;z-index:6;overflow:visible;display:block}
+/* workflows screen: state filter chips */
+.tddd-root .wff{display:flex;gap:6px;padding:10px 14px 4px}
+.tddd-root .wff-chip{font-family:var(--fm);font-size:.62rem;font-weight:700;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:12px;padding:2px 12px;cursor:pointer}
+.tddd-root .wff-chip.on{border-color:var(--accent);color:var(--accent2);background:var(--softer)}
+.tddd-root .pcorr{font-family:var(--fm);font-size:.6rem;color:var(--accent2);cursor:pointer;border:1px solid var(--line);border-radius:3px;padding:1px 6px;background:var(--softer)}
+/* trellis band: a collapsed workflow cascade as one row (artifact §03b) */
+.tddd-root .tband-chev{border:1px solid var(--line);background:var(--panel);border-radius:3px;font-size:.6rem;color:var(--muted);cursor:pointer;padding:0 4px;line-height:1.4;margin-right:2px}
+.tddd-root .tband{position:absolute;top:50%;transform:translateY(-50%);height:16px;border:1.5px solid var(--owner-accent,#646970);border-radius:3px;background:color-mix(in srgb,var(--owner-accent,#646970) 8%,transparent);min-width:60px}
+.tddd-root .tband-seg{position:absolute;top:0;height:100%;border-right:2px solid color-mix(in srgb,var(--owner-accent,#646970) 55%,transparent);cursor:pointer;
+  background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--owner-accent,#646970) 30%,transparent) 0 2px,transparent 2px 5px)}
+.tddd-root .tband-seg:last-child{border-right:none}
+.tddd-root .tband-seg:hover{background:color-mix(in srgb,var(--owner-accent,#646970) 45%,transparent)}
+.tddd-root .tband-seg.err{background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--crit) 45%,transparent) 0 2px,transparent 2px 5px);border-right-color:var(--crit)}
+.tddd-root .tband-seg.broke{border-left:3px double var(--crit)}
+.tddd-root .tband-seg.live{background:color-mix(in srgb,var(--owner-accent,#646970) 40%,transparent)}
+.tddd-root .tband-cut{position:absolute;right:-5px;top:-14px;font-style:normal;font-size:.6rem;color:var(--warn,#b07f18)}
+.tddd-root .tband-scissor{position:absolute;left:-8px;top:-14px;font-style:normal;font-size:.6rem;color:var(--crit)}
+/* Story ⇄ Vine toggle + the vine projection */
+.tddd-root .vtoggle{display:inline-flex;gap:2px;margin-left:14px;vertical-align:middle}
+.tddd-root .vtoggle button{font-family:var(--fm);font-size:.6rem;font-weight:700;border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:2px 10px;cursor:pointer}
+.tddd-root .vtoggle button:first-child{border-radius:3px 0 0 3px}
+.tddd-root .vtoggle button:last-child{border-radius:0 3px 3px 0}
+.tddd-root .vtoggle button.on{border-color:var(--accent);color:var(--accent2);background:var(--softer)}
+.tddd-root .vine-wrap{overflow:auto;padding:10px 0}
+.tddd-root .vine-pipe{fill:none;stroke-width:1.6;opacity:.75}
+.tddd-root .vine-pipe.broke{stroke-dasharray:4 4;stroke:var(--crit)!important;opacity:.6}
+.tddd-root .vine-fact{fill:var(--panel);stroke-width:2.5}
+.tddd-root .vine-capsule{fill:color-mix(in srgb,currentColor 10%,transparent);stroke-width:2}
+.tddd-root .vine-process{stroke-width:2;fill:none;stroke-dasharray:5 3}
+.tddd-root .vine-loop{fill:none;stroke-width:1.5;opacity:.7}
+.tddd-root .vine-node{cursor:pointer}
+.tddd-root .vine-node:hover .vine-label{fill:var(--accent2)}
+.tddd-root .vine-label{font-family:var(--fm);font-size:10.5px;fill:var(--ink);font-weight:600}
+.tddd-root .vine-meta{font-family:var(--fm);font-size:8.5px;fill:var(--faint)}
+.tddd-root .vine-elabel{font-family:var(--fm);font-size:8.5px;fill:var(--muted)}
+.tddd-root .vine-scissor{font-size:10px;fill:var(--crit)}
+.tddd-root .corr-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.tddd-root .tbreadcrumb{display:flex;align-items:center;gap:8px}
+.tddd-root .trace-scroll{cursor:grab}
+.tddd-root .trace-scroll.is-panning{cursor:grabbing;user-select:none}
+.tddd-root .vine-wrap{overflow:visible}
+.tddd-root .vine-pipe.step{stroke-width:2;opacity:.9}

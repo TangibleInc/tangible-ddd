@@ -115,6 +115,16 @@
       document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeDrawer(); });
       function j(o){ return o==null ? '<span class="idm">&mdash;</span>' : '<pre>'+esc(JSON.stringify(o,null,2))+'</pre>'; }
       function setDrawerLabel(label){ drawerLabel.textContent=label; }
+      // The drawer chrome carries the record's identity, not just its kind:
+      // command → short command_id; workflow pass → wf # + short command_id;
+      // process → its row id.
+      function drawerNodeLabel(n){
+        var id=n.id?String(n.id):'';
+        var shortid=id.length>10?id.slice(0,8):id;
+        if(n.is_workflow && n.pass) return 'workflow pass · wf #'+n.pass.wf+' · '+shortid;
+        if(n.is_workflow) return 'workflow pass · '+shortid;
+        return n.kind+(shortid?' · '+(n.kind==='process'?'#':'')+shortid:'');
+      }
       function openDrawer(r){
         setDrawerLabel('command');
         TDDDTrace.unmountDrawer(dbody); // the trace island may own this element
@@ -151,7 +161,7 @@
       var auditLoaded=false, currentCorr=null, liveStarted=false, liveCursor=0, heartbeatSpeed=60;
       var biographyState={search:'',page:1,per_page:25}, biographyRows=[], currentBiography=null;
       // recent-traces state
-      var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={};
+      var _recentCorrs=[], _pendingNewCorrs=[], _prevTraceNodes={}, _recentBuckets={}, _traceNodesById={};
       function fmtDur(ms){ ms=Math.round(ms); if(ms<1000)return ms+'ms'; return (ms/1000).toFixed(1)+'s'; }
       // fmtTraceSpan/fmtTraceTime live in the trace island now (gap markers + drawer).
       function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
@@ -183,8 +193,10 @@
         var toMs=now-backMs;
         var fromMs=toMs-spanMs;
         return {
-          from:msToDateStr(fromMs),
-          to:msToDateStr(toMs),
+          // Full UTC datetimes: sub-day windows must keep their time of day
+          // (date-only strings widened a 3h window to the whole day).
+          from:new Date(fromMs).toISOString().slice(0,19).replace('T',' '),
+          to:new Date(toMs).toISOString().slice(0,19).replace('T',' '),
           label:spanLabel+' window · '+(backLabel==='now'?'now':backLabel+' back')
             +'  →  '+msToAbsLabel(fromMs)+' – '+msToAbsLabel(toMs)
         };
@@ -450,14 +462,14 @@
 
       function applyAuditScrub(from, to){
         state.from=from; state.to=to;
-        if(dateFrom) dateFrom.value=from;
-        if(dateTo)   dateTo.value=to;
+        if(dateFrom) dateFrom.value=String(from).slice(0,10);
+        if(dateTo)   dateTo.value=String(to).slice(0,10);
         state.page=1; load();
       }
       function applyTablesScrub(from, to){
         tablesState.from=from; tablesState.to=to;
-        if(tblFrom) tblFrom.value=from;
-        if(tblTo)   tblTo.value=to;
+        if(tblFrom) tblFrom.value=String(from).slice(0,10);
+        if(tblTo)   tblTo.value=String(to).slice(0,10);
         tablesPage=1; loadTables();
       }
 
@@ -487,12 +499,12 @@
       (function(){
         var w=scrubWindow(SPAN_STEPS[auditSpanIdx], BACK_STEPS[auditBackIdx]);
         state.from=w.from; state.to=w.to;
-        if(dateFrom) dateFrom.value=w.from;
-        if(dateTo)   dateTo.value=w.to;
+        if(dateFrom) dateFrom.value=String(w.from).slice(0,10);
+        if(dateTo)   dateTo.value=String(w.to).slice(0,10);
         var wt=scrubWindow(SPAN_STEPS[tablesSpanIdx], BACK_STEPS[tablesBackIdx]);
         tablesState.from=wt.from; tablesState.to=wt.to;
-        if(tblFrom) tblFrom.value=wt.from;
-        if(tblTo)   tblTo.value=wt.to;
+        if(tblFrom) tblFrom.value=String(wt.from).slice(0,10);
+        if(tblTo)   tblTo.value=String(wt.to).slice(0,10);
       })();
 
       var auditToggle=$('#tddd-audit-scrub-toggle');
@@ -706,7 +718,9 @@
           .catch(function(e){ traceHead.innerHTML='<div class="meta">Error: '+esc(e.message)+'</div>'; });
       }
       function cfgLabelTrace(c){ return (typeof c==='string')?c:((c&&(c.type||c._class||c['class']))||'behaviour'); }
+      var traceView='story', _lastTraceD=null;
       function renderTrace(d){
+        _lastTraceD=d;
         var inProgressNow = !!(d.in_progress);
         // Derive in_progress from workflows/nodes when not explicitly set by the endpoint.
         if(d.in_progress===undefined){
@@ -721,62 +735,213 @@
             +'<b>'+esc(p.label||key)+'</b>'+(p.ghost?'<small>ghost</small>':'')+'</span>';
         }).join('');
         var warningCount=(d.warnings||[]).length;
-        traceHead.innerHTML='<div class="corr">'+esc(d.correlation_id)+liveBadge+'</div>'
-          +'<div class="meta">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
+        var vtoggle='<span class="vtoggle">'
+          +'<button data-tview="story"'+(traceView==='story'?' class="on"':'')+'>story</button>'
+          +'<button data-tview="vine"'+(traceView==='vine'?' class="on"':'')+' title="causation topology — same data, different projection">vine</button>'
+          +'</span>';
+        traceHead.innerHTML='<div class="corr-row"><div class="corr">'+esc(d.correlation_id)+liveBadge+vtoggle+'</div>'
+          +'<div class="meta" style="margin-left:auto;text-align:right">'+d.span_count+' spans &middot; '+d.event_count+' events &middot; '+d.process_count+' processes'
           +(d.workflow_count?' &middot; '+d.workflow_count+' workflow'+(d.workflow_count!==1?'s':''):'')
           +' &middot; '+fmtDur(d.total_ms)
-          +(d.has_error?' &middot; <span class="err">has error</span>':'')+'</div>'
-          +(participants?'<div class="trace-participants">'+participants+'</div>':'')
+          +(d.has_error?' &middot; <span class="err">has error</span>':'')
+          +(d.started_at?' &middot; <span title="first recorded act (UTC)">started <b>'+esc(d.started_at)+'</b> UTC &middot; '+rel(d.started_at)+'</span>':'')
+          +'</div></div>'
           +(warningCount?'<div class="trace-warning">'+warningCount+' recorded parent link'+(warningCount!==1?'s':'')+' could not be resolved exactly</div>':'');
+        // Consumer legend rides the breadcrumb bar — one less header row.
+        var partsEl=document.getElementById('tddd-trace-parts');
+        if(partsEl) partsEl.innerHTML=participants;
+        if(traceView==='vine'){
+          // Same payload, topology projection — the toggle is pure presentation.
+          ruler.innerHTML='<div class="rt-note">the vine &middot; rank = causal depth &middot; spine = heaviest descent &middot; waits label the pipes</div>';
+          ruler.parentNode.style.minWidth=''; traceRows.style.minWidth='';
+          TDDDTrace.renderVine(traceRows, d, traceIslandHandlers());
+          renderTraceWorkflows(d);
+          return;
+        }
         // The X-axis is COMPRESSED (durations to scale, async waits elided), so proportional
         // wall-time ticks would lie. The ruler is a short note; timing lives on gap markers.
-        ruler.innerHTML='<div class="rt-note">durations to scale &middot; sparse gap markers show cumulative elapsed time</div>';
+        ruler.innerHTML='<div class="rt-note">durations &radic;-compressed (order true, length not proportional) &middot; sparse gap markers show cumulative elapsed time</div>';
         if(!d.nodes||!d.nodes.length){ TDDDTrace.renderRows(traceRows, d, traceIslandHandlers()); ruler.parentNode.style.minWidth=''; traceRows.style.minWidth=''; }
         else {
           var newUids={}; d.nodes.forEach(function(n){ newUids[n.uid]=true; });
+          // Widen the lane BEFORE the island renders: its layout effects
+          // measure the lane to convert pct→px for process regions — setting
+          // minWidth after rendering fed them a stale narrow width.
+          // Gap markers get their own budget: the layout guarantees 130 units between
+          // markers, but long bars inflate totalUnits and shrink those units to
+          // slivers. Measure the tightest marker separation (in pct) and stretch
+          // the lane until it is ≥64px — capped so one pathological trace can't
+          // demand an absurd scroll width.
+          var tlW = d.nodes.length*44 + (d.time_markers||[]).length*48 + 360;
+          var pcts=(d.time_markers||[]).map(function(m){ return m.start_pct; }).sort(function(a,b){ return a-b; });
+          var minDelta=Infinity;
+          for(var gi=1;gi<pcts.length;gi++){ minDelta=Math.min(minDelta,pcts[gi]-pcts[gi-1]); }
+          if(minDelta>0 && minDelta<Infinity){ tlW=Math.max(tlW, Math.min(64*100/minDelta, 12000)); }
+          traceRows.style.minWidth = tlW+'px';
+          ruler.parentNode.style.minWidth = tlW+'px';
           // Rows, seams, ports, gap markers and process bands render in the
           // Preact island; the vanilla shell only supplies data + handlers.
           TDDDTrace.renderRows(traceRows, d, traceIslandHandlers());
           _prevTraceNodes=newUids;
-          // Widen the lane when there are many spans so bars stay legible → horizontal scroll.
-          var tlW = d.nodes.length*44 + 360;
-          traceRows.style.minWidth = tlW+'px';
-          ruler.parentNode.style.minWidth = tlW+'px';
         }
-        // ── Render workflows nested in this trace ──
-        var wfs=d.workflows||[];
-        if(!wfs.length){ traceWf.innerHTML=''; return; }
-        traceWf.innerHTML=wfs.map(function(w){
-          var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
-          var badgeCls=w.is_failed?'failed':(w.is_complete?'complete':'running');
-          var configs=(w.behaviour_configs||[]).map(cfgLabelTrace);
-          var steps=configs.map(function(nm,i){
-            var s=i<w.current_idx?'done':(i===w.current_idx&&!w.is_complete?'active':'pending');
-            if(w.is_complete && i<configs.length) s='done';
-            return '<div class="wft-step '+s+'"><div class="wsn">'+esc(nm)+'</div><div class="wss">phase '+(i+1)+'</div></div>';
-          }).join('');
-          var isFork=w.root_workflow_id?(' &middot; fork of #'+w.root_workflow_id):'';
-          return '<div class="wf-in-trace" style="--owner-accent:'+esc(w.accent||'#646970')+'">'
-            +'<div class="wft-head">'
-            +'<span class="wft-label">workflow in trace</span>'
-            +'<span class="trace-participant"><i style="background:'+esc(w.accent||'#646970')+'"></i><b>'+esc(w.consumer_label||w.consumer)+'</b></span>'
-            +'<span class="wft-title">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
-            +'<span class="wft-badge '+badgeCls+'">'+statusTxt+'</span>'
-            +'<span class="wft-meta">wf id #'+w.id+' &middot; idx '+w.current_idx+'/'+configs.length+'</span>'
-            +'</div>'
-            +'<div class="wft-body">'
-            +'<div class="lane-lbl" style="font-family:var(--fm);font-size:.56rem;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin-bottom:8px">behaviour chain</div>'
-            +'<div class="wft-chain">'+steps+'</div>'
-            +'<div class="wft-kv"><span>id <b>#'+w.id+'</b></span><span>ref_type <b>'+esc(w.ref_type)+'</b></span><span>ref_id <b>'+w.ref_id+'</b></span>'
-            +'<span>behaviours <b>'+configs.length+'</b></span>'
-            +'<span>phase <b>'+w.current_phase+'</b></span>'
-            +(w.root_workflow_id?'<span>root <b>#'+w.root_workflow_id+'</b></span>':'')
-            +'</div>'
-            +'</div>'
-            +'<div class="wft-connector"><span class="wft-arrow">&#8594;</span> triggered by command in this trace &middot; correlation_id anchors the workflow</div>'
-            +'</div>';
-        }).join('');
+        renderTraceWorkflows(d);
       }
+      // ── Render workflows nested in this trace (both projections share it) ──
+      function renderTraceWorkflows(d){
+        // The bottom strips are RETIRED (owner 2026-07-25): the loom now lives
+        // in the drawer's Workflow tab, the collapsed trellis bands, and the
+        // Workflows screen. This keeps only the lookup maps those need.
+        _traceNodesById={};
+        (d.nodes||[]).forEach(function(n){ if(n.id) _traceNodesById[n.id]=n; });
+        _traceWorkflowsById={};
+        (d.workflows||[]).forEach(function(w){ _traceWorkflowsById[w.id]=w; });
+        traceWf.innerHTML='';
+      }
+      // ── The Loom: segments (behaviour × item cells) + brackets (pass windows). ──
+      // Geometry constants shared by tape + bracket rail; all ordinal, never time-scaled.
+      var LOOM_CELL=16, LOOM_GAP=3, LOOM_SEG_GAP=18, LOOM_TIER1_MAX=32, LOOM_TIER2_MAX=200;
+      function loomCellX(segs, seg, cell){
+        var x=0;
+        for(var i=0;i<seg;i++){ x+=segs[i].total*(LOOM_CELL+LOOM_GAP)-LOOM_GAP+LOOM_SEG_GAP; }
+        return x+cell*(LOOM_CELL+LOOM_GAP);
+      }
+      function renderLoom(loom){
+        var segs=loom.segments||[], brackets=loom.brackets||[];
+        if(!segs.length) return '<div class="idm">no behaviour chain recorded</div>';
+        var total=segs.reduce(function(n,s){ return n+s.total; },0);
+        if(total>LOOM_TIER1_MAX) return renderLoomStrip(segs, brackets, total);
+        var labels=segs.map(function(s){
+          var done=s.done+'/'+s.total, extra=(s.failed?' &middot; <span class="lm-err">'+s.failed+' failed</span>':'');
+          var w=s.total*(LOOM_CELL+LOOM_GAP)-LOOM_GAP+LOOM_SEG_GAP;
+          return '<span class="loom-seglbl'+(s.ghost?' ghost':'')+'" style="width:'+w+'px"><b>'+esc(s.label)+'</b> '+(s.ghost?'unreached':done+extra)+'</span>';
+        }).join('');
+        var tape=segs.map(function(s){
+          return '<span class="loom-seg">'+s.items.map(function(it){
+            var cls=it.status==='done'||it.status==='skipped'?'done':(it.status==='failed'?'fail':(it.status==='waiting'?'wait':(it.status==='ghost'?'ghost':'pend')));
+            var dots=it.attempts>1?'<i class="loom-ticks">'+Array(Math.min(it.attempts,4)).join('&middot;')+'&middot;</i>':'';
+            return '<span class="loom-cell '+cls+'" title="'+esc(it.key)+' &middot; '+esc(it.status)+' &middot; '+it.attempts+' attempt'+(it.attempts!==1?'s':'')+'">'+dots+'</span>';
+          }).join('')+'</span>';
+        }).join('');
+        var rail=brackets.map(function(b){
+          if(!b.from) return '';
+          var x0=loomCellX(segs,b.from.seg,b.from.cell), x1=loomCellX(segs,b.to.seg,b.to.cell)+LOOM_CELL;
+          return '<span class="loom-bracket'+(b.errors?' err':'')+(b.pass===null?' unbound':'')+'" data-cmd="'+esc(b.command_id||'')+'" style="left:'+x0+'px;width:'+(x1-x0)+'px" '
+            +'title="pass '+(b.pass===null?'?':b.pass)+' &middot; '+b.keys.length+' item'+(b.keys.length!==1?'s':'')+(b.cut?' &middot; stopped with work remaining':'')+(b.errors?' &middot; '+b.errors+' failed':'')+'">'
+            +'<b>'+(b.pass===null?'?':b.pass)+(b.cut?' &#8961;':'')+'</b></span>';
+        }).join('');
+        return '<div class="loom">'
+          +'<div class="loom-labels">'+labels+'</div>'
+          +'<div class="loom-tape">'+tape+'</div>'
+          +'<div class="loom-rail">'+rail+'</div>'
+          +'</div>';
+      }
+      // Tier 2/3: run-length strips per segment; failures stay individually visible.
+      function renderLoomStrip(segs, brackets, total){
+        var rows=segs.map(function(s){
+          var blocks;
+          if(total>LOOM_TIER2_MAX){
+            blocks='<i class="lms-done" style="flex:'+s.done+'"></i>'
+              +Array((s.failed||0)+1).join('<i class="lms-fail"></i>')
+              +'<i class="lms-wait" style="flex:'+s.waiting+'"></i><i class="lms-pend" style="flex:'+s.pending+'"></i>';
+          } else {
+            blocks=s.items.map(function(it){
+              var cls=it.status==='done'||it.status==='skipped'?'lms-done':(it.status==='failed'?'lms-fail':(it.status==='waiting'?'lms-wait':'lms-pend'));
+              return '<i class="'+cls+'" style="flex:1" title="'+esc(it.key)+'"></i>';
+            }).join('');
+          }
+          return '<div class="loom-striprow'+(s.ghost?' ghost':'')+'"><span class="loom-seglbl"><b>'+esc(s.label)+'</b></span>'
+            +'<span class="loom-strip">'+blocks+'</span>'
+            +'<span class="loom-count">'+s.done+'/'+s.total+(s.failed?' &middot; <span class="lm-err">'+s.failed+'&times;</span>':'')+'</span></div>';
+        }).join('');
+        var ruler=brackets.length?'<div class="loom-ruler">'+brackets.map(function(b){
+          return '<span class="loom-pblk'+(b.errors?' err':'')+'" data-cmd="'+esc(b.command_id||'')+'" style="flex:'+Math.max(b.keys.length,1)+'" title="pass '+(b.pass===null?'?':b.pass)+' &middot; '+b.keys.length+' items'+(b.errors?' &middot; '+b.errors+' failed':'')+'">'+(b.pass===null?'?':b.pass)+' &times;'+b.keys.length+'</span>';
+        }).join('')+'</div>':'';
+        return '<div class="loom loom-dense">'+rows+ruler+'</div>';
+      }
+      // Drawer Workflow tab: the loom + pass ledger + meta chips for the
+      // workflow a pass command belongs to. Rendered shell-side (the loom
+      // renderer lives here), handed to the island as an HTML string.
+      var _traceWorkflowsById={};
+      function loomDrawerHtml(wfId){
+        var w=_traceWorkflowsById[wfId];
+        if(!w) return '';
+        var loom=w.loom||{segments:[],brackets:[]};
+        var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
+        var chips='';
+        if(w.meta && typeof w.meta==='object'){
+          chips=Object.keys(w.meta).map(function(k){
+            var v=String(w.meta[k]); if(v.length>18) v=v.slice(0,16)+'…';
+            return '<span class="chip">'+esc(k)+' <b>'+esc(v)+'</b></span>';
+          }).join('');
+        }
+        var ledger=loom.brackets.length?'<div class="jlbl" style="margin-top:14px">pass ledger</div>'
+          +'<table class="loom-ledger"><tr><th>pass</th><th>window</th><th>items</th><th>result</th></tr>'
+          +loom.brackets.map(function(b){
+            var note=(b.spans||[]).map(function(s){ var seg=loom.segments[s.seg]||{}; return esc(seg.label||('b'+s.seg))+' '+s.count; }).join(' → ')||'resolve · no items';
+            return '<tr'+(b.errors?' class="err"':'')+' data-cmd="'+esc(b.command_id||'')+'"><td>'+(b.pass===null?'?':b.pass)+'</td><td>'+note+'</td><td>'+b.keys.length+'</td><td>'+(b.errors?b.errors+' failed':'ok')+(b.cut?' &#8961;':'')+'</td></tr>';
+          }).join('')+'</table>':'';
+        return '<div class="loom-drawer-id">'+esc(w.ref_type)+' #'+w.ref_id
+          +(w.root_workflow_id?' &middot; fork of wf #'+w.root_workflow_id:'')
+          +' <span class="wft-badge '+statusTxt+'">'+statusTxt+'</span> <span class="idm">wf #'+w.id+'</span></div>'
+          +(chips?'<div class="chips" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px">'+chips+'</div>':'')
+          +renderLoom(loom)+ledger;
+      }
+      function drawerCtx(){
+        return {
+          correlation: currentCorr,
+          onShowTrace: showTrace,
+          onShowBiography: showBiography,
+          loomHtml: loomDrawerHtml,
+        };
+      }
+      // Grab-to-pan for the wide trace/vine canvas: left- or middle-button
+      // drag scrolls the lane (the scrollbar lives at the bottom of a tall
+      // canvas — unreachable mid-trace). Clicks after a real drag are
+      // swallowed so panning never opens a drawer.
+      (function(){
+        var sc=document.querySelector('.trace-scroll');
+        if(!sc) return;
+        var panning=false, moved=false, sx=0, sy=0, sl=0, st=0;
+        sc.addEventListener('pointerdown', function(e){
+          if(e.button!==0 && e.button!==1) return;
+          panning=true; moved=false; sx=e.clientX; sy=e.clientY; sl=sc.scrollLeft; st=window.scrollY;
+          sc.classList.add('is-panning');
+        });
+        window.addEventListener('pointermove', function(e){
+          if(!panning) return;
+          var dx=e.clientX-sx, dy=e.clientY-sy;
+          if(Math.abs(dx)>5||Math.abs(dy)>5) moved=true;
+          sc.scrollLeft=sl-dx;
+          window.scrollTo(window.scrollX, st-dy);
+        });
+        window.addEventListener('pointerup', function(){ panning=false; sc.classList.remove('is-panning'); });
+        sc.addEventListener('click', function(e){ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } }, true);
+      })();
+      // Story ⇄ Vine: pure presentation — re-project the cached payload.
+      traceHead.addEventListener('click', function(e){
+        var b=e.target.closest('[data-tview]');
+        if(!b||b.dataset.tview===traceView) return;
+        traceView=b.dataset.tview;
+        if(_lastTraceD) renderTrace(_lastTraceD);
+      });
+      // Loom brackets/pass blocks link back to their pass command's drawer.
+      traceWf.addEventListener('click', function(e){
+        var b=e.target.closest('[data-cmd]');
+        if(!b||!b.dataset.cmd) return;
+        var n=_traceNodesById[b.dataset.cmd];
+        if(!n) return;
+        setDrawerLabel(drawerNodeLabel(n));
+        TDDDTrace.openDrawer(dbody, n, null, drawerCtx());
+        drawer.hidden=false;
+      });
+      // The pass ledger inside the drawer links between passes too.
+      dbody.addEventListener('click', function(e){
+        var b=e.target.closest('.loom-ledger [data-cmd], .dpane .loom [data-cmd]');
+        if(!b||!b.dataset.cmd) return;
+        var n=_traceNodesById[b.dataset.cmd];
+        if(!n) return;
+        TDDDTrace.openDrawer(dbody, n, 'workflow', drawerCtx());
+      });
       // The trace island (trace-island.js, Preact + htm) owns the rows region and
       // the trace drawer. The shell hands it data + these handlers, and keeps the
       // drawer chrome (label + visibility) on its side of the boundary.
@@ -784,12 +949,8 @@
         return {
           prevUids:_prevTraceNodes,
           onOpenNode:function(n, initialTab){
-            setDrawerLabel(n.kind);
-            TDDDTrace.openDrawer(dbody, n, initialTab, {
-              correlation: currentCorr,
-              onShowTrace: showTrace,
-              onShowBiography: showBiography,
-            });
+            setDrawerLabel(drawerNodeLabel(n));
+            TDDDTrace.openDrawer(dbody, n, initialTab, drawerCtx());
             drawer.hidden=false;
           },
         };
@@ -1017,32 +1178,46 @@
       }
 
       function cfgLabel(c){ return (typeof c==='string')?c:((c&&(c._class||c['class']||c.type))||'behaviour'); }
+      var wfState='';
       function loadWorkflows(){
         var el=$('#tddd-workflows'); el.innerHTML='<div class="empty2">Loading&hellip;</div>';
-        fetch(R.rest+'/workflows?consumer='+encodeURIComponent(state.consumer)+'&per_page=40',{headers:{'X-WP-Nonce':R.nonce}})
+        fetch(R.rest+'/workflows?consumer='+encodeURIComponent(state.consumer)+'&per_page=40'+(wfState?'&state='+encodeURIComponent(wfState):''),{headers:{'X-WP-Nonce':R.nonce}})
           .then(function(r){return r.json();}).then(function(d){ renderWorkflows(d); $('#tddd-proc-count').textContent=d.total+' workflows'; })
           .catch(function(e){ el.innerHTML='<div class="empty2">Error: '+esc(e.message)+'</div>'; });
       }
+      // Executions ledger for the workflows screen: same table as the drawer,
+      // but ordinals are time-ordered EXECUTIONS (no correlation context here,
+      // so no command binding — the trace view owns real pass identity).
+      function loomRunLedger(loom){
+        if(!loom.brackets.length) return '';
+        return '<div class="lane-lbl" style="margin-top:14px">execution ledger</div>'
+          +'<table class="loom-ledger"><tr><th>run</th><th>window</th><th>items</th><th>result</th></tr>'
+          +loom.brackets.map(function(b){
+            var note=(b.spans||[]).map(function(s){ var seg=loom.segments[s.seg]||{}; return esc(seg.label||('b'+s.seg))+' '+s.count; }).join(' → ')||'resolve · no items';
+            return '<tr'+(b.errors?' class="err"':'')+'><td>'+b.pass+'</td><td>'+note+'</td><td>'+b.keys.length+'</td><td>'+(b.errors?b.errors+' failed':'ok')+(b.cut?' &#8961;':'')+'</td></tr>';
+          }).join('')+'</table>';
+      }
       function renderWorkflows(d){
         var el=$('#tddd-workflows');
-        if(!d.rows.length){ el.innerHTML='<div class="empty2">No workflows.</div>'; return; }
-        el.innerHTML=d.rows.map(function(w){
-          var configs=(w.behaviour_configs||[]).map(cfgLabel);
+        var chips='<div class="wff">'+[['','all'],['running','running'],['failed','failed'],['complete','complete']].map(function(f){
+          return '<button class="wff-chip'+(wfState===f[0]?' on':'')+'" data-wfstate="'+f[0]+'">'+f[1]+'</button>';
+        }).join('')+'</div>';
+        if(!d.rows.length){ el.innerHTML=chips+'<div class="empty2">No workflows'+(wfState?' in state &ldquo;'+esc(wfState)+'&rdquo;':'')+'.</div>'; return; }
+        el.innerHTML=chips+d.rows.map(function(w){
+          var loom=w.loom||{segments:[],brackets:[]};
           var statusTxt=w.is_failed?'failed':(w.is_complete?'complete':'running');
           var sb=w.is_failed?'error':(w.is_complete?'success':'in_progress');
           var its=w.items||[]; var idone=its.filter(function(i){return i.status==='done';}).length; var itot=its.length; var ipct=itot?Math.round(idone/itot*100):0;
-          var steps=configs.map(function(nm,i){ var s=i<w.current_idx?'done':(i===w.current_idx?'active':'pending'); return '<div class="step '+s+'"><div class="sn">'+esc(nm)+'</div><div class="ss">phase '+(i+1)+'</div></div>'; }).join('');
-          var items=(w.items||[]).map(function(it){ return '<span class="item"><span class="idot '+esc(it.status)+'"></span><span class="ik">'+esc(it.item_key)+'</span>'+(it.attempts?'<span style="color:var(--faint)">&times;'+it.attempts+'</span>':'')+'</span>'; }).join('');
-          var forks=(w.forks||[]).map(function(f){ return '<div class="fork">&#8627; fork #'+f.id+' &middot; '+(f.is_failed?'failed':(f.is_complete?'complete':'running'))+' &middot; idx '+f.current_idx+'</div>'; }).join('');
-          var isFork=w.root_workflow_id?(' <span style="color:var(--coral-ink)">(fork of #'+w.root_workflow_id+')</span>'):'';
+          var forks=(w.forks||[]).map(function(f){ return '<div class="fork">&#8627; fork wf #'+f.id+' &middot; '+(f.is_failed?'failed':(f.is_complete?'complete':'running'))+' &middot; idx '+f.current_idx+'</div>'; }).join('');
+          var isFork=w.root_workflow_id?(' <span style="color:var(--coral-ink)">(fork of wf #'+w.root_workflow_id+')</span>'):'';
+          var corrChip=w.correlation_id?'<span class="pcorr" data-corr="'+esc(w.correlation_id)+'" title="open this workflow&rsquo;s trace">'+esc(String(w.correlation_id).slice(0,8))+' &rarr;</span>':'';
           return '<div class="prow">'
             +'<div class="phead"><span class="chev">&#9656;</span>'
             +'<span class="badge b-'+sb+'">'+statusTxt+'</span>'
-            +'<span class="pname">'+esc(w.ref_type)+' #'+w.ref_id+isFork+'</span>'
+            +'<span class="pname">'+esc(w.ref_type)+' #'+w.ref_id+' <span style="color:var(--faint);font-weight:400">wf #'+w.id+'</span>'+isFork+'</span>'
             +'<span class="wbar" title="work-items done"><span class="wbar-t"><i style="width:'+ipct+'%"></i></span><span class="wbar-n">'+idone+'/'+itot+'</span></span>'
-            +'<span class="pmeta"><span>idx '+w.current_idx+'/'+configs.length+'</span><span>phase '+w.current_phase+'</span>'+(w.forks.length?'<span>'+w.forks.length+' fork'+(w.forks.length>1?'s':'')+'</span>':'')+'<span>'+rel(w.updated_at)+'</span></span></div>'
-            +'<div class="pbody"><div class="lane-lbl">behaviour chain</div><div class="flow">'+steps+'</div>'
-            +'<div class="lane-lbl" style="margin-top:14px">work-item ledger ('+(w.items||[]).length+')</div><div class="items">'+(items||'<span style="color:var(--faint)">no items</span>')+'</div>'
+            +'<span class="pmeta">'+corrChip+'<span>'+loom.brackets.length+' run'+(loom.brackets.length!==1?'s':'')+'</span>'+(w.forks.length?'<span>'+w.forks.length+' fork'+(w.forks.length>1?'s':'')+'</span>':'')+'<span>'+rel(w.updated_at)+'</span></span></div>'
+            +'<div class="pbody">'+renderLoom(loom)+loomRunLedger(loom)
             +(forks?'<div class="lane-lbl" style="margin-top:14px">forks</div><div class="forks">'+forks+'</div>':'')
             +'</div></div>';
         }).join('');
@@ -1050,6 +1225,7 @@
 
       $('#tddd-view-proc').addEventListener('click', function(e){
         if(e.target.closest('.subtabs')) return;
+        var chip=e.target.closest('[data-wfstate]'); if(chip){ wfState=chip.dataset.wfstate; loadWorkflows(); return; }
         var corr=e.target.closest('.pcorr'); if(corr&&corr.dataset.corr){ e.stopPropagation(); location.hash='trace/'+encodeURIComponent(corr.dataset.corr); return; }
         var head=e.target.closest('.phead'); if(head){ head.parentElement.classList.toggle('open'); }
       });
