@@ -9,6 +9,7 @@ use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Infra\Consumers\IntegrationHookName;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use Throwable;
@@ -65,10 +66,16 @@ final class ProcessRunner {
       throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
     }
 
+    $action = IntegrationHookName::resolve($event_class);
+    if ($action === null) {
+      IntegrationHookName::note_absent($event_class, 'process resume');
+      return $this;
+    }
+
     $this->registered_events[$event_class] = true;
 
     add_action(
-      $event_class::integration_action(),
+      $action,
       function (array $payload) use ($event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
 
@@ -130,10 +137,16 @@ final class ProcessRunner {
       );
     }
 
+    $action = IntegrationHookName::resolve($event_class);
+    if ($action === null) {
+      IntegrationHookName::note_absent($event_class, 'process ignition');
+      return $this;
+    }
+
     $this->registered_starts[$process_class][$event_class] = true;
 
     add_action(
-      $event_class::integration_action(),
+      $action,
       function (array $payload) use ($process_class, $event_class) {
         $envelope = \TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($payload);
 

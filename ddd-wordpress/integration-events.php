@@ -5,6 +5,7 @@ namespace TangibleDDD\WordPress;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Infra\Consumers\IntegrationHookName;
 
 /**
  * Register an integration event handler with automatic correlation scoping.
@@ -27,7 +28,11 @@ function integration_action(
     throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
   }
 
-  $action = $event_class::integration_action();
+  $action = IntegrationHookName::resolve($event_class);
+  if ($action === null) {
+    IntegrationHookName::note_absent($event_class, 'integration_action');
+    return;
+  }
 
   add_action($action, function(...$params) use ($callback, $event_class) {
     // The drain bracket: unwrap once, open a facade scope with the fact as
@@ -74,7 +79,13 @@ function integration_listener(string $event_class, callable $translate): void {
     throw new \InvalidArgumentException("$event_class must implement IIntegrationEvent");
   }
 
-  add_action($event_class::integration_action(), function (array $wrapped) use ($event_class, $translate) {
+  $action = IntegrationHookName::resolve($event_class);
+  if ($action === null) {
+    IntegrationHookName::note_absent($event_class, 'integration_listener');
+    return;
+  }
+
+  add_action($action, function (array $wrapped) use ($event_class, $translate) {
     $envelope = IntegrationEnvelope::unwrap($wrapped);
 
     $ctx = $envelope->trace_context();
