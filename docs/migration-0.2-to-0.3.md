@@ -578,6 +578,37 @@ cred-side in 97ae750) and previously collapsed the recency sort.
 consumer prefix; reads fall back for unbackfilled rows. Consumers that query
 the JSON column directly (none known) must switch to the side table.
 
+## 0.6.6 (an absent plugin is a survivable condition)
+
+Wire-time resolution no longer assumes every referenced consumer booted. A
+cross-plugin integration listener or long process names an event class owned by
+another plugin; deactivate that plugin and its namespace root is no longer
+registered, so resolving the hook name threw `NoConsumerOwnsClass` — from inside
+`wp-settings.php`, taking down every request including wp-admin, with no
+recovery screen.
+
+Listeners and processes wire at `init` priority 3, *after* every active plugin
+has registered, so a root that cannot be resolved at that point belongs to a
+plugin that is absent, not one that is late. Such an event can never be
+published, so the only correct response is to skip the registration.
+`IntegrationHookName::resolve()` holds that rule once for all three wire-time
+paths: `integration_listener`/`integration_action`, process ignition
+(`register_start`) and process resume (`register_event`). Skips are logged once
+per event class, so absence stays visible rather than silent.
+
+The publish path is deliberately untouched: recording an event whose consumer
+never booted is still a bug and still throws. This release only makes *wiring*
+tolerant, never writing.
+
+Dashboard: the TangibleDDDash screen now renders without foreign admin notices
+(`in_admin_header`, screen-gated to `tools_page_tangible-dddash`). Unrelated
+plugin nags carry no operational meaning on an instrument surface and displace
+the readouts. Every other admin screen is unaffected.
+
+**Mandatory for existing consumers: nothing.** Behaviour only widens: wiring
+that previously fataled now skips and logs. Consumers that relied on the fatal
+as an activation-order alarm should watch the log line instead.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.
