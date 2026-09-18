@@ -20,6 +20,25 @@ final class AdminPage
         add_action('admin_menu', [$this, 'registerMenu'], 100);
         add_action('admin_enqueue_scripts', [$this, 'enqueue']);
         add_filter('admin_body_class', [$this, 'bodyClass']);
+        add_action('in_admin_header', [$this, 'suppressNotices'], 1000);
+    }
+
+    /**
+     * The dashboard is a full-bleed instrument surface. Unrelated plugin nags
+     * carry no operational meaning here and displace the readouts, so this
+     * screen — and only this screen — renders without them.
+     */
+    public function suppressNotices(): void
+    {
+        $screen = get_current_screen();
+        if (!is_object($screen) || ($screen->id ?? '') !== self::HOOK) {
+            return;
+        }
+
+        remove_all_actions('admin_notices');
+        remove_all_actions('all_admin_notices');
+        remove_all_actions('user_admin_notices');
+        remove_all_actions('network_admin_notices');
     }
 
     public function registerMenu(): void
