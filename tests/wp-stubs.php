@@ -260,6 +260,13 @@ if (!function_exists('wp_add_inline_script')) {
   }
 }
 
+if (!function_exists('remove_all_actions')) {
+  function remove_all_actions(string $hook, int|bool $priority = false): void {
+    global $_test_actions;
+    $_test_actions[$hook] = [];
+  }
+}
+
 if (!function_exists('get_current_screen')) {
   global $_test_current_screen;
   $_test_current_screen = null;

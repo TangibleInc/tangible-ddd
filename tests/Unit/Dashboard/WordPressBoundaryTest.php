@@ -214,6 +214,35 @@ final class WordPressBoundaryTest extends TestCase
         self::assertStringContainsString('window.TDDD', $_test_inline_scripts['tangible-dddash'][0]['data']);
     }
 
+    public function test_admin_page_silences_foreign_admin_notices_on_its_own_screen_only(): void
+    {
+        global $_test_actions, $_test_current_screen, $_test_action_registrations;
+        [$catalog] = $this->catalog();
+        $page = new AdminPage($catalog, dirname(__DIR__, 3));
+
+        $page->register();
+        self::assertContains(
+            [$page, 'suppressNotices'],
+            $_test_actions['in_admin_header'] ?? [],
+            'the dashboard must claim a seat before notices are rendered'
+        );
+
+        $_test_actions['admin_notices'][] = 'some_plugin_nag';
+        $_test_actions['all_admin_notices'][] = 'another_nag';
+
+        // A foreign screen keeps every notice it was given.
+        $_test_current_screen = (object) ['id' => 'edit-post'];
+        $page->suppressNotices();
+        self::assertContains('some_plugin_nag', $_test_actions['admin_notices']);
+        self::assertContains('another_nag', $_test_actions['all_admin_notices']);
+
+        // The dashboard's own screen is an instrument surface: nothing nags here.
+        $_test_current_screen = (object) ['id' => AdminPage::HOOK];
+        $page->suppressNotices();
+        self::assertSame([], $_test_actions['admin_notices']);
+        self::assertSame([], $_test_actions['all_admin_notices']);
+    }
+
     /** @return array{ConsumerCatalog, ScriptedDatabase} */
     private function catalog(): array
     {
