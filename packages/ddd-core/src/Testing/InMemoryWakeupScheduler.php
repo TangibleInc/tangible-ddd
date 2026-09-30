@@ -12,9 +12,11 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
 
 /**
  * In-memory IWakeupScheduler driven by the caller's clock (pass FrozenClock
- * time to claimDue). With a boundary, schedule()/cancel() enforce the
- * "inside the process transaction" rule; enlist it in that boundary so an
- * intent rolls back with the process save.
+ * time to claimDue). schedule()/cancel() enforce the "inside the process
+ * transaction" rule against the required boundary (WakeupOutsideTransaction
+ * otherwise); enlist it in that boundary so an intent rolls back with the
+ * process save. Tests that deliberately skip the rule must say so with
+ * withoutTransactionCheck().
  */
 final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional {
 
@@ -23,7 +25,20 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
 
   private int $seq = 0;
 
-  public function __construct(private readonly ?ITransactionBoundary $boundary = null) {}
+  private bool $checkTransaction = true;
+
+  public function __construct(private readonly ITransactionBoundary $boundary) {}
+
+  /**
+   * Explicit lenient mode: schedule()/cancel() accept calls outside any
+   * transaction. Never use it in conformance or runner tests, where it
+   * would hide an intent written outside the process transaction (C8/C9).
+   */
+  public static function withoutTransactionCheck(): self {
+    $s = new self(new InMemoryTransactionBoundary());
+    $s->checkTransaction = false;
+    return $s;
+  }
 
   public function schedule(WakeupIntent $i): void {
     $this->assertInTransaction('schedule');
@@ -98,7 +113,7 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
   }
 
   private function assertInTransaction(string $op): void {
-    if ($this->boundary !== null && !$this->boundary->isActive()) {
+    if ($this->checkTransaction && !$this->boundary->isActive()) {
       throw new WakeupOutsideTransaction("IWakeupScheduler::$op() must run inside the process store's transaction.");
     }
   }

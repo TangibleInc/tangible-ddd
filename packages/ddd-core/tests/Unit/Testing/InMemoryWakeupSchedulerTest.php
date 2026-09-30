@@ -56,6 +56,27 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
     $this->scheduler->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
   }
 
+  public function test_cancel_outside_a_transaction_throws(): void {
+    $this->expectException(WakeupOutsideTransaction::class);
+    $this->scheduler->cancel('any');
+  }
+
+  public function test_the_constructor_requires_a_boundary(): void {
+    $param = (new \ReflectionMethod(InMemoryWakeupScheduler::class, '__construct'))->getParameters()[0];
+    self::assertFalse($param->allowsNull(), 'leniency must be an explicit factory choice');
+    self::assertFalse($param->isOptional());
+  }
+
+  public function test_lenient_mode_is_an_explicit_named_factory(): void {
+    $lenient = InMemoryWakeupScheduler::withoutTransactionCheck();
+
+    $lenient->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
+    self::assertCount(1, $lenient->pending());
+
+    $lenient->cancel(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())->idempotencyKey);
+    self::assertSame([], $lenient->pending());
+  }
+
   public function test_an_intent_rolls_back_with_the_process_save(): void {
     try {
       $this->tx->run(function () {
