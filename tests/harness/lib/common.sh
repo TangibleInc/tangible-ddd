@@ -169,8 +169,8 @@ h_datastream() {
   rm -rf "$dest/.git"
 }
 
-# Download WordPress (cached per version), write the guarded wp-config, install.
-h_wordpress() {
+# Download WordPress $WP_VERSION into WP_TESTS_ABSPATH_HOST unless present.
+h_wp_download() {
   mkdir -p "$WP_TESTS_ABSPATH_HOST"
   if ! grep -q "\$wp_version = '$WP_VERSION'" "$WP_TESTS_ABSPATH_HOST/wp-includes/version.php" 2>/dev/null; then
     log "downloading WordPress $WP_VERSION into $WP_TESTS_ABSPATH_HOST"
@@ -179,6 +179,11 @@ h_wordpress() {
   else
     log "WordPress $WP_VERSION present in $WP_TESTS_ABSPATH_HOST"
   fi
+}
+
+# Download WordPress (cached per version), write the guarded wp-config, install.
+h_wordpress() {
+  h_wp_download
   cp "$HARNESS_DIR/wp/wp-config.php" "$WP_TESTS_ABSPATH_HOST/wp-config.php"
   mkdir -p "$WP_TESTS_ABSPATH_HOST/wp-content/plugins"
   h_run /var/www/html wp core install --url=http://localhost --title=ddd-harness \

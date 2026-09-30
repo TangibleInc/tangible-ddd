@@ -1,0 +1,207 @@
+{
+    "case": "load.legacy-first",
+    "register": "section 7.2",
+    "recorded_against": {
+        "current_version": "0.6.6",
+        "current_sha": "dfd058e122c648d42df0aab2dd2299ae89a294dd",
+        "note": "baseline of today's loader, not the pass condition"
+    },
+    "cases": {
+        "L-0.6.2 then current": {
+            "active_plugins": [
+                "fx-legacy-0_6_2/fx-legacy-0_6_2.php",
+                "fx-current/fx-current.php"
+            ],
+            "loader_files_included": [
+                "legacy-0_6_2"
+            ],
+            "version_constant": "0.6.2",
+            "registered": {
+                "0.6.2": "legacy-0_6_2"
+            },
+            "winner": {
+                "version": "0.6.2",
+                "copy": "legacy-0_6_2"
+            },
+            "initialized": true,
+            "unmet_minimums": {
+                "fx-current": "0.6.6"
+            },
+            "slugged_functions": [
+                "tangible_ddd_initialize_0_6_2",
+                "tangible_ddd_register_0_6_2"
+            ],
+            "class_origin": {
+                "Tangible_DDD_Versions": "legacy-0_6_2",
+                "TangibleDDD\\Application\\Process\\ProcessRunner": "legacy-0_6_2",
+                "TangibleDDD\\Application\\Outbox\\OutboxConfig": "legacy-0_6_2",
+                "TangibleDDD\\Infra\\Consumers\\ConsumerRegistry": "legacy-0_6_2",
+                "TangibleDDD\\Infra\\Persistence\\OutboxRepository": "legacy-0_6_2",
+                "TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher": "legacy-0_6_2",
+                "TangibleDDD\\WordPress\\Admin\\Dashboard\\AdminPage": "legacy-0_6_2"
+            },
+            "function_origin": {
+                "tangible_ddd_self_consume": "legacy-0_6_2",
+                "TangibleDDD\\WordPress\\install_tables": "legacy-0_6_2",
+                "TangibleDDD\\WordPress\\SelfConsumer\\di": "legacy-0_6_2"
+            },
+            "self_consumer": "built:Symfony\\Component\\DependencyInjection\\ContainerBuilder",
+            "wp_ddd_command": true,
+            "trace": [
+                {
+                    "event": "include",
+                    "plugin": "legacy-0_6_2"
+                },
+                {
+                    "event": "include",
+                    "plugin": "current"
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 0,
+                    "registered": [],
+                    "initialized": false
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 1,
+                    "registered": [
+                        "0.6.2"
+                    ],
+                    "initialized": false
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 2,
+                    "registered": [
+                        "0.6.2"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 20,
+                    "registered": [
+                        "0.6.2"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 30,
+                    "registered": [
+                        "0.6.2"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": "last",
+                    "registered": [
+                        "0.6.2"
+                    ],
+                    "initialized": true
+                }
+            ],
+            "php_diagnostics": []
+        },
+        "L-0.6.5 then current": {
+            "active_plugins": [
+                "fx-legacy-0_6_5/fx-legacy-0_6_5.php",
+                "fx-current/fx-current.php"
+            ],
+            "loader_files_included": [
+                "legacy-0_6_5"
+            ],
+            "version_constant": "0.6.5",
+            "registered": {
+                "0.6.5": "legacy-0_6_5"
+            },
+            "winner": {
+                "version": "0.6.5",
+                "copy": "legacy-0_6_5"
+            },
+            "initialized": true,
+            "unmet_minimums": {
+                "fx-current": "0.6.6"
+            },
+            "slugged_functions": [
+                "tangible_ddd_initialize_0_6_5",
+                "tangible_ddd_register_0_6_5"
+            ],
+            "class_origin": {
+                "Tangible_DDD_Versions": "legacy-0_6_5",
+                "TangibleDDD\\Application\\Process\\ProcessRunner": "legacy-0_6_5",
+                "TangibleDDD\\Application\\Outbox\\OutboxConfig": "legacy-0_6_5",
+                "TangibleDDD\\Infra\\Consumers\\ConsumerRegistry": "legacy-0_6_5",
+                "TangibleDDD\\Infra\\Persistence\\OutboxRepository": "legacy-0_6_5",
+                "TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher": "legacy-0_6_5",
+                "TangibleDDD\\WordPress\\Admin\\Dashboard\\AdminPage": "legacy-0_6_5"
+            },
+            "function_origin": {
+                "tangible_ddd_self_consume": "legacy-0_6_5",
+                "TangibleDDD\\WordPress\\install_tables": "legacy-0_6_5",
+                "TangibleDDD\\WordPress\\SelfConsumer\\di": "legacy-0_6_5"
+            },
+            "self_consumer": "built:Symfony\\Component\\DependencyInjection\\ContainerBuilder",
+            "wp_ddd_command": true,
+            "trace": [
+                {
+                    "event": "include",
+                    "plugin": "legacy-0_6_5"
+                },
+                {
+                    "event": "include",
+                    "plugin": "current"
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 0,
+                    "registered": [],
+                    "initialized": false
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 1,
+                    "registered": [
+                        "0.6.5"
+                    ],
+                    "initialized": false
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 2,
+                    "registered": [
+                        "0.6.5"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 20,
+                    "registered": [
+                        "0.6.5"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": 30,
+                    "registered": [
+                        "0.6.5"
+                    ],
+                    "initialized": true
+                },
+                {
+                    "event": "plugins_loaded",
+                    "priority": "last",
+                    "registered": [
+                        "0.6.5"
+                    ],
+                    "initialized": true
+                }
+            ],
+            "php_diagnostics": []
+        }
+    }
+}
