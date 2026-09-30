@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\TransactionFailed;
@@ -119,6 +120,63 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
     // the connection is usable afterwards
     $boundary->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'b']));
     self::assertSame(['b'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows'));
+  }
+
+  /**
+   * Postgres aborts the transaction on any statement error (25P02). If the
+   * work swallows that error, COMMIT answers with the ROLLBACK tag and no
+   * error, so DBAL's commit() does not throw. The boundary must still report
+   * failure (register 3.2 / C13).
+   */
+  public function test_work_that_swallows_a_statement_error_is_a_transaction_failure_and_persists_nothing(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+    $boundary = new DbalTransactionBoundary($this->db);
+
+    try {
+      $result = $boundary->run(function () {
+        $this->db->insert('sf_tx_rows', ['id' => 'a']);
+        try {
+          $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+        } catch (UniqueConstraintViolationException) {
+          // carry on: the classic "insert, catch the duplicate" pattern
+        }
+        return 'ok';
+      });
+      self::fail('expected TransactionFailed, got ' . var_export($result, true));
+    } catch (TransactionFailed $e) {
+      self::assertNotNull($e->getPrevious(), 'previous = the aborted-transaction driver error');
+    }
+
+    self::assertFalse($this->db->isTransactionActive());
+    self::assertSame(['dup'], $this->secondConnection()->fetchFirstColumn('SELECT id FROM sf_tx_rows'));
+    // the connection is usable afterwards
+    $boundary->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'b']));
+    self::assertSame(['b', 'dup'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows ORDER BY id'));
+  }
+
+  public function test_savepoint_mode_rolls_back_to_its_savepoint_when_the_inner_work_swallowed_an_error(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+    $boundary = new DbalTransactionBoundary($this->db, NestedPolicy::Savepoint);
+
+    $this->db->beginTransaction();
+    $this->db->insert('sf_tx_rows', ['id' => 'outer']);
+    try {
+      $boundary->run(function () {
+        $this->db->insert('sf_tx_rows', ['id' => 'inner']);
+        try {
+          $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+        } catch (UniqueConstraintViolationException) {
+        }
+      });
+      self::fail('expected TransactionFailed');
+    } catch (TransactionFailed) {
+    }
+
+    self::assertSame(1, $this->db->getTransactionNestingLevel(), 'the outer transaction is not ours to end');
+    // ROLLBACK TO SAVEPOINT recovered the outer transaction: it is usable and commits its own row
+    $this->db->insert('sf_tx_rows', ['id' => 'outer2']);
+    $this->db->commit();
+    self::assertSame(['dup', 'outer', 'outer2'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows ORDER BY id'));
   }
 
   public function test_before_commit_hook_runs_inside_the_transaction_and_its_failure_rolls_back(): void {
