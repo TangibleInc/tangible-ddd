@@ -14,6 +14,7 @@ use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITableNames;
 use TangibleDDD\Runtime\Lock\LockKey;
+use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
 use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\RuntimeLeakDetected;
 use TangibleDDD\Runtime\RuntimeReset;
@@ -119,6 +120,30 @@ final class HostAndResetTest extends TestCase {
     $this->expectException(RuntimeLeakDetected::class);
     $this->expectExceptionMessage('lock');
     RuntimeReset::betweenMessages();
+  }
+
+  public function test_a_lock_leak_is_force_released_so_the_next_reset_is_clean(): void {
+    $backend = new InMemoryProcessLock();
+    $lock = new ReentrantProcessLock($backend, static fn () => null);
+    RuntimeReset::guardLock($lock);
+    $key = new LockKey('acme', '', 7);
+    $lock->acquire($key, 0.0);
+    $lock->acquire($key, 0.0);
+
+    try {
+      RuntimeReset::betweenMessages();
+      self::fail('expected RuntimeLeakDetected');
+    } catch (RuntimeLeakDetected $e) {
+      self::assertStringContainsString('held 2 time(s)', $e->getMessage());
+    }
+
+    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $backend->heldCount(), 'the backend lock was released too');
+
+    RuntimeReset::betweenMessages(); // no throw: the leak is not sticky
+
+    $lock->acquire($key, 0.0);
+    self::assertSame(2, $backend->acquireCount(), 'a later acquire goes to the backend again');
   }
 
   public function test_runtime_reset_runs_every_resetter_even_when_one_throws(): void {

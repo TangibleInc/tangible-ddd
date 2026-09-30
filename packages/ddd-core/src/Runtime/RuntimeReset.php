@@ -20,6 +20,12 @@ use TangibleDDD\Runtime\Lock\IProcessLock;
  * RuntimeLeakDetected if anything leaked (an open `Correlation::peek()`, a
  * guarded lock with heldCount() > 0, or a resetter that threw). A leak is a
  * bracket bug and fails loudly; the next message still starts clean.
+ * "Cleans" includes locks: a leaked guarded lock is recorded, then
+ * IProcessLock::forceReleaseAll() drops it (backend lock released, per-key
+ * counts cleared), so the leak is reported once, the next reset is quiet,
+ * and the next acquire() of that key reaches the backend again rather than
+ * trusting a session lock a reconnect may have dropped. A resetter that
+ * keeps throwing is reported on every reset (it is not "cleaned").
  *
  * Lifetime: registrations are boot-time and survive every reset. It never
  * touches HostDefaults or ConsumerRegistry.
@@ -52,7 +58,13 @@ final class RuntimeReset {
     foreach (self::$locks as $lock) {
       $held = $lock->heldCount();
       if ($held !== 0) {
-        $leaks[] = sprintf('process lock %s still held %d time(s)', get_class($lock), $held);
+        $leaks[] = sprintf('process lock %s still held %d time(s); force-released', get_class($lock), $held);
+        try {
+          $lock->forceReleaseAll();
+        } catch (\Throwable $e) {
+          // Contract says never; an adapter that does must not stop the reset.
+          $leaks[] = sprintf('force release of %s threw: %s', get_class($lock), $e->getMessage());
+        }
       }
     }
 

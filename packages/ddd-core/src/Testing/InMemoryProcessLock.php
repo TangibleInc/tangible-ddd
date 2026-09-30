@@ -66,6 +66,12 @@ final class InMemoryProcessLock implements IProcessLock {
     return count($this->mine);
   }
 
+  public function forceReleaseAll(): int {
+    $n = count($this->mine);
+    $this->mine = [];
+    return $n;
+  }
+
   public function holdElsewhere(LockKey $k): void {
     $this->elsewhere[$k->id()] = true;
   }

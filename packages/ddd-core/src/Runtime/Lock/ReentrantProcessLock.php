@@ -75,4 +75,20 @@ final class ReentrantProcessLock implements IProcessLock {
     }
     return $n;
   }
+
+  public function forceReleaseAll(): int {
+    $dropped = $this->heldCount();
+    $held = $this->held;
+    $this->held = [];
+    $this->tickets = [];
+
+    foreach ($held as $id => $entry) {
+      try {
+        $this->inner->release($entry['handle']);
+      } catch (\Throwable $e) {
+        Log::write($this->log, sprintf('[ddd lock] backend release failed for %s during force release (bug): %s', $id, $e->getMessage()));
+      }
+    }
+    return $dropped;
+  }
 }

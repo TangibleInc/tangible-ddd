@@ -151,6 +151,7 @@ final class ProcessLockTest extends TestCase {
         throw new \RuntimeException('connection gone');
       }
       public function heldCount(): int { return 0; }
+      public function forceReleaseAll(): int { return 0; }
     };
     $logged = [];
     $lock = new ReentrantProcessLock($inner, static function (string $msg) use (&$logged) { $logged[] = $msg; });
@@ -160,6 +161,61 @@ final class ProcessLockTest extends TestCase {
 
     self::assertSame(0, $lock->heldCount());
     self::assertCount(1, $logged);
+    self::assertStringContainsString('connection gone', $logged[0]);
+  }
+
+  public function test_in_memory_lock_force_release_all_drops_every_held_key(): void {
+    $lock = new InMemoryProcessLock();
+    $lock->acquire(new LockKey('acme', '', 1), 0.0);
+    $lock->acquire(new LockKey('acme', '', 2), 0.0);
+    $lock->holdElsewhere(new LockKey('acme', '', 3));
+
+    self::assertSame(2, $lock->forceReleaseAll());
+    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->forceReleaseAll(), 'idempotent');
+
+    $this->expectException(LockNotAcquired::class);
+    $lock->acquire(new LockKey('acme', '', 3), 0.0); // another connection's lock is untouched
+  }
+
+  public function test_reentrant_wrapper_force_release_all_releases_the_backend_once_per_key(): void {
+    $backend = new InMemoryProcessLock();
+    $lock = new ReentrantProcessLock($backend, static function () {});
+    $a = new LockKey('acme', '', 1);
+    $h1 = $lock->acquire($a, 0.0);
+    $lock->acquire($a, 0.0);
+    $lock->acquire(new LockKey('acme', '', 2), 0.0);
+
+    self::assertSame(3, $lock->forceReleaseAll(), 'returns the outstanding acquisitions it dropped');
+    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $backend->heldCount());
+    self::assertSame([], $backend->releaseBugs());
+
+    $lock->release($h1); // a stale handle from before the force release: logged, ignored
+    self::assertSame([], $backend->releaseBugs());
+
+    $lock->acquire($a, 0.0);
+    self::assertSame(1, $lock->heldCount());
+    self::assertSame(1, $backend->heldCount(), 'the next acquire reaches the backend again');
+  }
+
+  public function test_reentrant_wrapper_force_release_all_never_throws_when_the_backend_does(): void {
+    $inner = new class implements IProcessLock {
+      public function acquire(LockKey $k, float $timeoutSeconds): \TangibleDDD\Runtime\Lock\LockHandle {
+        return new \TangibleDDD\Runtime\Lock\LockHandle($k, 'x');
+      }
+      public function release(\TangibleDDD\Runtime\Lock\LockHandle $h): void {
+        throw new \RuntimeException('connection gone');
+      }
+      public function heldCount(): int { return 0; }
+      public function forceReleaseAll(): int { return 0; }
+    };
+    $logged = [];
+    $lock = new ReentrantProcessLock($inner, static function (string $msg) use (&$logged) { $logged[] = $msg; });
+    $lock->acquire(new LockKey('acme', '', 1), 1.0);
+
+    self::assertSame(1, $lock->forceReleaseAll());
+    self::assertSame(0, $lock->heldCount());
     self::assertStringContainsString('connection gone', $logged[0]);
   }
 

@@ -33,4 +33,16 @@ interface IProcessLock {
 
   /** Outstanding acquisitions on this instance (for the worker-reset guard). */
   public function heldCount(): int;
+
+  /**
+   * Release every lock still held through THIS instance and forget the
+   * handles; returns how many outstanding acquisitions were dropped (0 when
+   * clean). Called by RuntimeReset::betweenMessages() after it has recorded
+   * a lock leak, so a leak fails loudly once but is not sticky: the next
+   * message boundary is clean and the next acquire() reaches the backend
+   * again. Never throws (a failed backend release is logged as a bug, as in
+   * release()). Locks held by other connections are untouched. Handles
+   * issued before the call become stale; releasing one is ignored.
+   */
+  public function forceReleaseAll(): int;
 }
