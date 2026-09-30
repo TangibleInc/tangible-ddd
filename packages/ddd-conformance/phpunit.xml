@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ddd-conformance: host-agnostic scenarios (register section 4).
+
+  Groups: one group per host (mem, pdo, wp, sf) on each concrete host class,
+  and one group per stable scenario id (e.g. cmd.commit-atomic) on each
+  scenario method. Run one host with the group option set to mem; run one
+  scenario on every host with the group option set to its id.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnSkippedTests="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="conformance">
+            <directory suffix="Test.php">tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+</phpunit>
