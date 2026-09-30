@@ -283,12 +283,17 @@ if (!function_exists('tangible_ddd_initialize_0_6_6')) {
                     }
                     return;
                 }
-                // TangibleDDD\ → ddd-src/
+                // TangibleDDD\ → packages/ddd-core/src/, then packages/ddd-wp/src/
+                // (one PSR-4 prefix over two directories; each file lives in
+                // exactly one of them, register 1.1).
                 if (str_starts_with($class, 'TangibleDDD\\')) {
-                    $relative = substr($class, strlen('TangibleDDD\\'));
-                    $file     = $path . '/ddd-src/' . str_replace('\\', '/', $relative) . '.php';
-                    if (file_exists($file)) {
-                        require_once $file;
+                    $relative = str_replace('\\', '/', substr($class, strlen('TangibleDDD\\'))) . '.php';
+                    foreach (['/packages/ddd-core/src/', '/ddd-src/'] as $dir) {
+                        $file = $path . $dir . $relative;
+                        if (file_exists($file)) {
+                            require_once $file;
+                            return;
+                        }
                     }
                 }
             },
@@ -305,7 +310,7 @@ if (!function_exists('tangible_ddd_initialize_0_6_6')) {
         //     definition) and guards itself with WP_CLI, so also left to autoload.
         //     Order: db.php first (no deps); others depend on db helpers.
         $procedural = [
-            'ddd-src/Domain/Shared/assert.php',
+            'packages/ddd-core/src/Domain/Shared/assert.php',
             'ddd-wordpress/db.php',
             'ddd-wordpress/tables.php',
             'ddd-wordpress/migrations.php',

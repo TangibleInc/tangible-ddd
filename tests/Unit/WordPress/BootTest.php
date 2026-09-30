@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Tests\Unit\WordPress;
 
-require_once __DIR__ . '/../../../ddd-src/Application/Process/LongProcessCatalog.php';
+require_once __DIR__ . '/../../../packages/ddd-core/src/Application/Process/LongProcessCatalog.php';
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Process\LongProcessCatalog;

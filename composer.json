@@ -29,7 +29,7 @@
     },
     "autoload": {
         "psr-4": {
-            "TangibleDDD\\": ["ddd-src/", "packages/ddd-core/src/"]
+            "TangibleDDD\\": ["packages/ddd-core/src/", "ddd-src/"]
         },
         "files": [
             "tangible-ddd.php"

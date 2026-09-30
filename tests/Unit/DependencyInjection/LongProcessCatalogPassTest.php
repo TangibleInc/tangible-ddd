@@ -2,9 +2,9 @@
 
 namespace TangibleDDD\Tests\Unit\DependencyInjection;
 
-require_once __DIR__ . '/../../../ddd-src/Application/Process/LongProcessCatalog.php';
-require_once __DIR__ . '/../../../ddd-src/Infra/DependencyInjection/LongProcessCatalogPass.php';
-require_once __DIR__ . '/../../../ddd-src/Infra/DependencyInjection/DDDCompilerPasses.php';
+require_once __DIR__ . '/../../../packages/ddd-core/src/Application/Process/LongProcessCatalog.php';
+require_once __DIR__ . '/../../../packages/ddd-core/src/Infra/DependencyInjection/LongProcessCatalogPass.php';
+require_once __DIR__ . '/../../../packages/ddd-core/src/Infra/DependencyInjection/DDDCompilerPasses.php';
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
