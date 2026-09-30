@@ -19,9 +19,22 @@ services:
   TangibleDDD\Infra\IDDDConfig:
     alias: TangibleDDD\Infra\Config
 
-  # Auto-register operational command handlers (interfaces/abstracts are skipped).
-  TangibleDDD\Application\CommandHandlers\:
-    resource: '../../ddd-src/Application/CommandHandlers/'
-    exclude: '../../ddd-src/Application/CommandHandlers/ICommandHandler.php'
+  # The operational command handlers, listed explicitly (report B6): a
+  # relative resource directory breaks whenever the handlers change package.
+  # Public so the naming-convention resolver can fetch them; unshared, as
+  # before. Guarded by SelfConsumerContainerTest.
+  TangibleDDD\Application\CommandHandlers\DiscardDeadLetterHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\PurgeOutboxHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\ReplayDeadLetterHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\RetryDeliveryHandler:
     public: true
     shared: false
