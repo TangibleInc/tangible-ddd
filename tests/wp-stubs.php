@@ -20,7 +20,18 @@ if (!class_exists('wpdb')) {
     public function suppress_errors(bool $suppress = true): bool { return false; }
     public function prepare(string $query, ...$args): string { return $query; }
     public function esc_like(string $text): string { return addcslashes($text, '_%\\'); }
-    public function get_var(?string $query = null, int $x = 0, int $y = 0) { return null; }
+    /**
+     * Named locks behave like an uncontended MySQL: GET_LOCK and RELEASE_LOCK
+     * return '1'. Returning null here used to be read as "acquired" by a
+     * ProcessRunner bug (NULL = error, never acquisition); tests that want an
+     * errored or contended lock override this method.
+     */
+    public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+      if ($query !== null && preg_match('/\b(GET_LOCK|RELEASE_LOCK)\s*\(/i', $query)) {
+        return '1';
+      }
+      return null;
+    }
     public function get_row(?string $query = null, string $output = 'OBJECT', int $y = 0) { return null; }
     public function get_results(?string $query = null, string $output = 'OBJECT'): array { return []; }
     public function get_col(?string $query = null, int $x = 0): array { return []; }
