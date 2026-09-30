@@ -19,7 +19,9 @@ declare(strict_types=1);
 /** @var \Composer\Autoload\ClassLoader $loader */
 $loader = require dirname(__DIR__) . '/vendor/autoload.php';
 
-if (!interface_exists(\TangibleDDD\Application\Commands\ITransactionalCommand::class)) {
+// Probe by file, not interface_exists(): a failed autoload is remembered by
+// Composer's ClassLoader as a missing class and would stay missing.
+if (!is_file(dirname(__DIR__) . '/vendor/tangible/ddd-core/src/Application/Commands/ITransactionalCommand.php')) {
   $legacy = dirname(__DIR__, 3) . '/ddd-src/';
   if (!is_dir($legacy)) {
     fwrite(STDERR, "ddd-conformance bootstrap: ddd-core lacks the 0.6 classes and no monorepo ddd-src/ was found at $legacy.\n");
