@@ -274,10 +274,10 @@ if (!function_exists('tangible_ddd_initialize_0_6_6')) {
         // (a) Prepend autoloader — winner's classes beat consumer psr-4 maps.
         spl_autoload_register(
             static function (string $class) use ($path): void {
-                // TangibleDDD\WordPress\ → ddd-wordpress/
+                // TangibleDDD\WordPress\ → packages/ddd-wp/wordpress/
                 if (str_starts_with($class, 'TangibleDDD\\WordPress\\')) {
                     $relative = substr($class, strlen('TangibleDDD\\WordPress\\'));
-                    $file     = $path . '/ddd-wordpress/' . str_replace('\\', '/', $relative) . '.php';
+                    $file     = $path . '/packages/ddd-wp/wordpress/' . str_replace('\\', '/', $relative) . '.php';
                     if (file_exists($file)) {
                         require_once $file;
                     }
@@ -288,7 +288,7 @@ if (!function_exists('tangible_ddd_initialize_0_6_6')) {
                 // exactly one of them, register 1.1).
                 if (str_starts_with($class, 'TangibleDDD\\')) {
                     $relative = str_replace('\\', '/', substr($class, strlen('TangibleDDD\\'))) . '.php';
-                    foreach (['/packages/ddd-core/src/', '/ddd-src/'] as $dir) {
+                    foreach (['/packages/ddd-core/src/', '/packages/ddd-wp/src/'] as $dir) {
                         $file = $path . $dir . $relative;
                         if (file_exists($file)) {
                             require_once $file;
