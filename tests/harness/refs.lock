@@ -1,0 +1,16 @@
+# Pinned inputs of the hermetic test harness (report F-10). Shell-sourceable.
+# Change a pin deliberately, in its own commit, with the reason.
+
+# WordPress core downloaded into WP_TESTS_ABSPATH (the version F measured green).
+WP_VERSION=7.1.2
+
+# Runner image: PHP 8.2 (the floor) with mysqli and wp-cli.
+WP_CLI_IMAGE=wordpress:cli-php8.2@sha256:b99fac444f68b8d41b23c6496c7c036082d86a2f6a2b669217d0987a06ef775f
+
+# Gating database server (register section 2). MariaDB is not claimed.
+MYSQL_IMAGE=mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+
+# Integration host plugin for the framework suite (tests/Integration/bootstrap.php).
+# 04418d5 is the datastream master commit the MySQL 8.0 baseline ran against.
+DATASTREAM_URL=git@github.com:TangibleInc/tangible-datastream.git
+DATASTREAM_REF=04418d5231e13f9b9c68e62f7fbbf5b5f60109ac

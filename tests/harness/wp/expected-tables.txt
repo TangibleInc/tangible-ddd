@@ -1,0 +1,24 @@
+# Tables that must exist before the WP integration suite starts (report F-11).
+# {prefix} is the WordPress table prefix (wptests_). Checked by db.php
+# assert-tables against information_schema, independently of the installer.
+
+# WordPress core (proves `wp core install` ran against this database)
+{prefix}options
+{prefix}posts
+
+# tangible-ddd framework tables for the integration host consumer
+# (ddd-wordpress/tables.php install_tables(), consumer prefix tangible_datastream)
+{prefix}tangible_datastream_integration_outbox
+{prefix}tangible_datastream_integration_dlq
+{prefix}tangible_datastream_long_processes
+{prefix}tangible_datastream_command_audit
+{prefix}tangible_datastream_touches
+{prefix}tangible_datastream_behaviour_workflows
+{prefix}tangible_datastream_behaviour_workflows_meta
+{prefix}tangible_datastream_behaviour_workflow_items
+
+# Integration host domain tables (datastream activation)
+{prefix}tangible_datastream_subscriptions
+{prefix}tangible_datastream_captured_events
+{prefix}tangible_datastream_destinations
+{prefix}tangible_datastream_delivery_log
