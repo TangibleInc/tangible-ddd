@@ -10,6 +10,7 @@ use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
+use TangibleDDD\Infra\Exceptions\LockingException;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use Throwable;
@@ -389,15 +390,34 @@ final class ProcessRunner {
 
   /**
    * Serialize accumulate/save per process via MySQL named lock.
-   * Lock timeout → throw so ActionScheduler retries the delivery.
    */
   private function with_process_lock(int $process_id, callable $fn): void {
+    $this->with_named_lock('ddd_process_' . $process_id, $fn);
+  }
+
+  /**
+   * Run $fn holding the MySQL named lock $name.
+   *
+   * Only a definite acquisition ('1') enters. GET_LOCK returns '0' on
+   * timeout (contended) and NULL on error; both mean "not acquired": $fn
+   * does not run, no RELEASE_LOCK is issued, and LockingException
+   * propagates. The wake is NOT re-queued here: Action Scheduler records
+   * the failed action, which an operator can see and retry in the AS admin.
+   *
+   * GET_LOCK is re-entrant per connection (MySQL 5.7+); every acquisition
+   * is balanced by its own release.
+   *
+   * @throws LockingException
+   */
+  private function with_named_lock(string $name, callable $fn): void {
     global $wpdb;
-    $name = 'ddd_process_' . $process_id;
     $acquired = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $name));
 
-    if ((string) $acquired === '0') {
-      throw new \RuntimeException("Could not acquire process lock $name — delivery will be retried.");
+    if ($acquired === null || (string) $acquired !== '1') {
+      $reason = $acquired === null
+        ? 'GET_LOCK returned NULL' . (!empty($wpdb->last_error) ? " ({$wpdb->last_error})" : ' (lock query error)')
+        : 'GET_LOCK timed out after 5s (lock held elsewhere)';
+      throw new LockingException("Could not acquire lock $name: $reason. Nothing ran; the action fails and can be retried.");
     }
 
     try {
