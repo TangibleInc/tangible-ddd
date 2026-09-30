@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Infra\Consumers;
 
+use TangibleDDD\Infra\IConsumerIdentity;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
@@ -16,7 +17,7 @@ use TangibleDDD\Infra\IDDDConfig;
  * attaches; after that, an exact repeat is idempotent and a conflicting
  * replacement fails so module config and bridged host services cannot split.
  *
- * Read through consumers() (ddd-wordpress/hooks.php), which applies the
+ * On WordPress, read through consumers() (ddd-wp's hooks.php), which applies the
  * `tangible_ddd_consumers` filter — relabel, hide, or inject there, not here.
  */
 final class ConsumerRegistry {
@@ -27,7 +28,12 @@ final class ConsumerRegistry {
   /** @var array<string, array{host_prefix: string, handle: ConsumerHandle}> namespace root => module route */
   private static array $modules = [];
 
-  public static function add(IDDDConfig $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): ConsumerHandle {
+  /**
+   * Register a top-level consumer. Takes the portable IConsumerIdentity
+   * (register 3.1, widened in wave 2); every WordPress consumer passes its
+   * IDDDConfig, which extends it.
+   */
+  public static function add(IConsumerIdentity $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): ConsumerHandle {
     $existing = self::$consumers[$config->prefix()] ?? null;
     if ($existing !== null && self::has_modules_for($config->prefix())) {
       if (!$existing->matches_registration($config, $di_getter, $label, $namespace_root)) {
@@ -55,7 +61,11 @@ final class ConsumerRegistry {
     return self::$consumers[$prefix];
   }
 
-  /** Runtime factory seam for module containers that share their host identity. */
+  /**
+   * Runtime factory seam for module containers that share their host identity.
+   *
+   * @throws NotAWordPressConsumer when that consumer registered only an identity.
+   */
   public static function config_for(string $prefix): IDDDConfig {
     return self::consumer($prefix)->config();
   }
@@ -117,7 +127,7 @@ final class ConsumerRegistry {
     }
 
     $handle = new ConsumerHandle(
-      $host->config(),
+      $host->identity(),
       $di_getter,
       $host->label(),
       $root,

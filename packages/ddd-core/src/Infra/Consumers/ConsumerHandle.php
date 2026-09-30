@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Infra\Consumers;
 
+use TangibleDDD\Infra\IConsumerIdentity;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
@@ -14,6 +15,11 @@ use TangibleDDD\Infra\IDDDConfig;
  *
  * The getter stays uncalled until container(); registration happens during
  * plugin bootstrap, before it is safe or cheap to build containers.
+ *
+ * Wave 2 (register 1.4, ruling #56): stores the portable IConsumerIdentity
+ * (was IDDDConfig). identity() is the portable read; config() returns the
+ * identity when it is an IDDDConfig and otherwise throws
+ * NotAWordPressConsumer. The property keeps its historical name.
  */
 final class ConsumerHandle {
 
@@ -21,7 +27,7 @@ final class ConsumerHandle {
   private $di_getter;
 
   public function __construct(
-    private readonly IDDDConfig $config,
+    private readonly IConsumerIdentity $config,
     callable $di_getter,
     private readonly ?string $custom_label = null,
     private readonly ?string $custom_namespace_root = null,
@@ -76,7 +82,22 @@ final class ConsumerHandle {
     return $this->config->version();
   }
 
+  /** The portable consumer identity (prefix, version) every host registers. */
+  public function identity(): IConsumerIdentity {
+    return $this->config;
+  }
+
+  /**
+   * The WordPress-flavoured config.
+   *
+   * @throws NotAWordPressConsumer when the consumer registered an identity
+   *   that is not an IDDDConfig (a non-WordPress host).
+   */
   public function config(): IDDDConfig {
+    if (!$this->config instanceof IDDDConfig) {
+      throw NotAWordPressConsumer::for_identity($this->config);
+    }
+
     return $this->config;
   }
 
@@ -87,7 +108,7 @@ final class ConsumerHandle {
    *   share its config and runtime services.
    */
   public function matches_registration(
-    IDDDConfig $config,
+    IConsumerIdentity $config,
     callable $di_getter,
     ?string $label = null,
     ?string $namespace_root = null,

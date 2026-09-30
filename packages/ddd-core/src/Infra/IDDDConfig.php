@@ -7,8 +7,14 @@ namespace TangibleDDD\Infra;
  *
  * Each consuming plugin generates a Config class implementing this interface
  * with their specific prefix. All framework services depend on this interface.
+ *
+ * Wave 2 (register 1.4, X6): extends the portable IConsumerIdentity, whose
+ * prefix()/version() it already declared with the same signatures, so every
+ * existing implementation satisfies both unchanged. Portable core code types
+ * against IConsumerIdentity; the table/hook/as_group/option helpers below are
+ * the WordPress flavour. No method is added here (rule R3).
  */
-interface IDDDConfig {
+interface IDDDConfig extends IConsumerIdentity {
   /**
    * The plugin prefix (e.g., 'tgbl_cred').
    */
