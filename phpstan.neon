@@ -1,0 +1,31 @@
+# CI static analysis for the package itself (report F-9). Level 0 is the
+# existing level (phpstan-deadcode.neon); ratchet from here, never down.
+# phpstan-deadcode.neon stays a manual cross-consumer sweep, not CI.
+#
+#   vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=1G
+#
+# phpstan-baseline.neon records the findings present when the gate was
+# introduced (wave 1, on 0.6.6 code). CI fails on any new finding; fix an
+# entry and regenerate the baseline with --generate-baseline, never add to it
+# by hand.
+
+includes:
+  - phpstan-baseline.neon
+
+parameters:
+  level: 0
+  phpVersion: 80200
+
+  paths:
+    - ddd-src
+    - ddd-wordpress
+    - tangible-ddd.php
+
+  # Symbol discovery only: WordPress and WP-CLI stubs, and Action Scheduler's
+  # procedural API, which ddd-wordpress calls but does not bundle.
+  scanFiles:
+    - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+    - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+    - vendor/woocommerce/action-scheduler/functions.php
+
+  reportUnmatchedIgnoredErrors: true

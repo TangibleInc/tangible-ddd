@@ -1,0 +1,55 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: ddd-src/Application/DataTransferObjects/Collections/BaseDTOCollection.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: ddd-src/Domain/DataRendering/TangibleFieldsRenderer.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: ddd-src/Domain/Events/IntegrationEvent.php
+
+		-
+			message: '#^Class TangibleDDD\\Domain\\Shared\\JsonLifecycleValue has an uninitialized readonly property \$init_state\. Assign it in the constructor\.$#'
+			identifier: property.uninitializedReadonly
+			count: 1
+			path: ddd-src/Domain/Shared/JsonLifecycleValue.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: ddd-src/Domain/Shared/JsonLifecycleValue.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: ddd-src/Domain/Shared/ValueObject.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 3
+			path: ddd-src/Infra/Shared/TypedList.php
+
+		-
+			message: '#^Regex pattern is invalid\: No ending delimiter ''/'' found in pattern\: /\^\\d\{4\}\-\\d\{2\}\-\\d\{2\}\000$#'
+			identifier: regexp.pattern
+			count: 1
+			path: ddd-wordpress/Admin/Dashboard/Query/DeadLetterQuery.php
+
+		-
+			message: '#^Regex pattern is invalid\: No ending delimiter ''/'' found in pattern\: /\^\\d\{4\}\-\\d\{2\}\-\\d\{2\}\000$#'
+			identifier: regexp.pattern
+			count: 1
+			path: ddd-wordpress/Admin/Dashboard/Query/OutboxQuery.php

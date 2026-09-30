@@ -23,7 +23,9 @@
         "wp-phpunit/wp-phpunit": "^7.0",
         "yoast/phpunit-polyfills": "^4.0",
         "phpstan/phpstan": "^2.2",
-        "tomasvotruba/unused-public": "^2.2"
+        "tomasvotruba/unused-public": "^2.2",
+        "php-stubs/wordpress-stubs": "^6.9",
+        "php-stubs/wp-cli-stubs": "^2.12"
     },
     "autoload": {
         "psr-4": {
