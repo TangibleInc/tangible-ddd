@@ -48,7 +48,7 @@ final class DashboardArtifactsTest extends TestCase
 
     public function test_reference_interface_is_split_without_inline_runtime_code(): void
     {
-        $root = dirname(__DIR__, 3) . '/ddd-wordpress/Admin/Dashboard';
+        $root = dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/Admin/Dashboard';
         $template = file_get_contents($root . '/template.php');
         $styles = file_get_contents($root . '/assets/dashboard.css');
         $script = file_get_contents($root . '/assets/dashboard.js');
@@ -114,7 +114,7 @@ final class DashboardArtifactsTest extends TestCase
 
     public function test_trace_island_owns_rows_and_drawer_on_vendored_preact(): void
     {
-        $root = dirname(__DIR__, 3) . '/ddd-wordpress/Admin/Dashboard';
+        $root = dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/Admin/Dashboard';
         $script = file_get_contents($root . '/assets/dashboard.js');
         $island = file_get_contents($root . '/assets/trace-island.js');
         $styles = file_get_contents($root . '/assets/dashboard.css');

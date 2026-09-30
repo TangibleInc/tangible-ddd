@@ -13,7 +13,7 @@ use const TangibleDDD\WordPress\DDD_SCHEMA_VERSION;
 // migrations.php is a procedural ddd-wordpress file; load it directly for the
 // pure-logic test (no WP/DB needed for ddd_pending_migrations).
 if (!function_exists('TangibleDDD\\WordPress\\ddd_pending_migrations')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/migrations.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/migrations.php';
 }
 
 /**

@@ -62,7 +62,7 @@ final class AdminPage
             return;
         }
 
-        $base = 'ddd-wordpress/Admin/Dashboard/assets/';
+        $base = 'packages/ddd-wp/wordpress/Admin/Dashboard/assets/';
         $pluginFile = $this->frameworkPath . '/tangible-ddd.php';
         $version = defined('TANGIBLE_DDD_VERSION') ? (string) TANGIBLE_DDD_VERSION : 'dev';
 
@@ -133,7 +133,7 @@ final class AdminPage
 
     public function render(): void
     {
-        require $this->frameworkPath . '/ddd-wordpress/Admin/Dashboard/template.php';
+        require $this->frameworkPath . '/packages/ddd-wp/wordpress/Admin/Dashboard/template.php';
     }
 
     /** @return array<string, string> */

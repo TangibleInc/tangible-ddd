@@ -30,7 +30,7 @@ require_once __DIR__ . '/../../Fakes/Sidecar/Tangible/LMS/Extension/SuperTrace/D
 require_once __DIR__ . '/../../Fakes/Sidecar/Tangible/LMS/Extension/SuperTrace/Application/IntegrationListeners/RecordTraceWhenTraceRecorded.php';
 require_once __DIR__ . '/../../Fakes/Sidecar/Tangible/LMS/Extension/SuperTrace/Application/Process/SuperTraceProcess.php';
 
-$moduleFacade = __DIR__ . '/../../../ddd-wordpress/modules.php';
+$moduleFacade = __DIR__ . '/../../../packages/ddd-wp/wordpress/modules.php';
 if (is_file($moduleFacade)) {
     require_once $moduleFacade;
 }
