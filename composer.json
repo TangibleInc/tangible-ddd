@@ -41,7 +41,8 @@
             "packages/ddd-wp/wordpress/self/"
         ],
         "files": [
-            "tangible-ddd.php"
+            "tangible-ddd.php",
+            "packages/ddd-core/src/Domain/Shared/assert.php"
         ]
     },
     "autoload-dev": {
