@@ -1,0 +1,94 @@
+# CI for the package extraction (register section 8 wave 1, report F-8).
+# The legacy phpunit.yml runs only on master, v3-ddd and release/**.
+name: extraction
+
+on:
+  push:
+    branches: [ 'extraction/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extraction-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wp-unit:
+    name: wp-unit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '8.2', '8.4' ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Install dependencies
+        # --no-scripts: the post-install hook clones datastream over SSH, which
+        # the unit suite does not need.
+        run: composer install --prefer-dist --no-progress --no-interaction --no-scripts
+      - name: Unit suite
+        run: vendor/bin/phpunit
+
+  wp-integration:
+    name: wp-integration (PHP 8.2, MySQL 8.0)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ddd
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pddd"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Check datastream access
+        # The integration host is a private repository. The harness clones it
+        # at the SHA pinned in tests/harness/refs.lock.
+        env:
+          DATASTREAM_READ_TOKEN: ${{ secrets.DATASTREAM_READ_TOKEN }}
+        run: |
+          if [ -z "$DATASTREAM_READ_TOKEN" ]; then
+            echo "::error::secret DATASTREAM_READ_TOKEN (read access to TangibleInc/tangible-datastream) is not configured"
+            exit 1
+          fi
+      - name: Harness wp-integration
+        env:
+          DDD_MYSQL_HOST: 127.0.0.1
+          DDD_MYSQL_PORT: '3306'
+          DDD_MYSQL_USER: root
+          DDD_MYSQL_PASSWORD: ddd
+          DDD_DATASTREAM_SRC: https://x-access-token:${{ secrets.DATASTREAM_READ_TOKEN }}@github.com/TangibleInc/tangible-datastream.git
+        run: tests/harness/run.sh wp-integration
+
+  static:
+    name: static (phpstan level 0, manifests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Validate manifests
+        run: |
+          composer validate --strict
+          for manifest in packages/*/composer.json; do
+            composer validate --strict --no-check-lock "$manifest"
+          done
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction --no-scripts
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=1G --no-progress

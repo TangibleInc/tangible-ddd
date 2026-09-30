@@ -1,0 +1,36 @@
+{
+    "name": "tangible/ddd-symfony",
+    "description": "Symfony host for tangible/ddd-core: bundle, Doctrine DBAL stores on Postgres, Messenger relay and delivery, advisory-lock processes, console operations.",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Tangible",
+            "email": "dev@tangible.one"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../ddd-core",
+            "options": {
+                "symlink": false
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "tangible/ddd-core": "self.version",
+        "doctrine/dbal": "^4",
+        "symfony/messenger": "^7.4",
+        "symfony/framework-bundle": "^7.4"
+    },
+    "require-dev": {
+        "league/tactician": "^2.0-rc1"
+    },
+    "autoload": {
+        "psr-4": {
+            "TangibleDDD\\Symfony\\": "src/"
+        }
+    }
+}

@@ -102,6 +102,70 @@ class LoaderIdentityTest extends TestCase
         }
     }
 
+    /**
+     * The PHP floor, stated once per artifact, must agree everywhere.
+     *
+     * The locked Symfony 7.4 graph and PHPUnit 11 already need 8.2 (register
+     * X2, report F-1), so `>=8.1` in the manifest and `Requires PHP: 8.1` in
+     * the header claimed a floor nothing could run on. The plugin header is
+     * what WordPress enforces at activation; composer.json is what Composer
+     * enforces at install. Each packages/* manifest is a separately
+     * installable artifact and carries the same floor (register section 2).
+     */
+    public function test_the_php_floor_agrees_across_header_and_every_manifest(): void
+    {
+        preg_match('/^\s*\*\s*Requires PHP:\s*(\S+)/m', $this->source, $m);
+        $this->assertSame(self::PHP_FLOOR, $m[1] ?? '(no Requires PHP header)', 'Plugin header Requires PHP.');
+
+        foreach ($this->manifests() as $rel => $manifest) {
+            $this->assertSame(
+                '>=' . self::PHP_FLOOR,
+                $manifest['require']['php'] ?? '(no php requirement)',
+                "{$rel} must require php >=" . self::PHP_FLOOR . ' (register section 2).'
+            );
+        }
+    }
+
+    /**
+     * No manifest may pin a version that disagrees with the loader identity.
+     *
+     * Composer takes the root version from the VCS tag, and each package
+     * resolves siblings through `self.version`, so a stale `version` field in
+     * any manifest would silently shadow the tag. Either leave it out (the
+     * default) or keep it equal to the plugin header.
+     */
+    public function test_no_manifest_declares_a_version_other_than_the_header(): void
+    {
+        foreach ($this->manifests() as $rel => $manifest) {
+            if (!array_key_exists('version', $manifest)) {
+                $this->addToAssertionCount(1);
+                continue;
+            }
+            $this->assertSame(
+                $this->header_version(),
+                $manifest['version'],
+                "{$rel} declares a version that disagrees with the plugin header."
+            );
+        }
+    }
+
+    private const PHP_FLOOR = '8.2';
+
+    /** @return array<string, array<string, mixed>> repo-relative path => decoded manifest */
+    private function manifests(): array
+    {
+        $root = dirname(__DIR__, 3);
+        $paths = array_merge([$root . '/composer.json'], glob($root . '/packages/*/composer.json') ?: []);
+
+        $out = [];
+        foreach ($paths as $path) {
+            $decoded = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+            $out[substr($path, strlen($root) + 1)] = $decoded;
+        }
+
+        return $out;
+    }
+
     public function test_the_winner_loads_the_module_facade_after_the_host_hooks(): void
     {
         // THE RELEASE PIN — bump this with every tag. This literal is the

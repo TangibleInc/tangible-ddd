@@ -1,0 +1,31 @@
+{
+    "name": "tangible/ddd-core",
+    "description": "Host-neutral DDD runtime: CQRS over Tactician, domain events, outbox, processes and ports, with in-memory doubles and a PDO default.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Tangible",
+            "email": "dev@tangible.one"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "league/tactician": "^2.0-rc1",
+        "psr/container": "^1.1|^2.0",
+        "psr/log": "^1|^2|^3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0",
+        "symfony/dependency-injection": "^7.4"
+    },
+    "suggest": {
+        "ext-pdo": "Required by the TangibleDDD\\Defaults\\Pdo adapter set, which runs over a PDO connection the host already owns.",
+        "symfony/dependency-injection": "Required only by the DI bridge TangibleDDD\\Infra\\DependencyInjection (DDDCompilerPasses, LongProcessCatalogPass)."
+    },
+    "autoload": {
+        "psr-4": {
+            "TangibleDDD\\": "src/"
+        }
+    }
+}
