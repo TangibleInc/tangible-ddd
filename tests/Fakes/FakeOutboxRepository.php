@@ -34,8 +34,20 @@ final class FakeOutboxRepository implements IOutboxRepository {
 
   private int $next_id = 1;
 
+  /**
+   * Test clock (unix seconds). Null = the real time(). Mirrors the real
+   * repository: write() stamps scheduled_at = now + delay (absolute UTC) and
+   * fetch_pending() only returns rows whose scheduled_at has passed.
+   */
+  public ?int $now = null;
+
+  private function now(): int {
+    return $this->now ?? time();
+  }
+
   public function write(IIntegrationEvent $event, string $correlation_id, ?string $command_id = null): string {
     $event_id = 'evt_' . $this->next_id++;
+    $delay_seconds = max(0, $event->delay());
 
     $this->entries[] = new OutboxEntry(
       id: count($this->entries) + 1,
@@ -50,8 +62,8 @@ final class FakeOutboxRepository implements IOutboxRepository {
       sequence: 0,
       command_id: $command_id,
       payload: $event->integration_payload(),
-      delay_seconds: $event->delay(),
-      scheduled_at: gmdate('Y-m-d H:i:s'),
+      delay_seconds: $delay_seconds,
+      scheduled_at: gmdate('Y-m-d H:i:s', $this->now() + $delay_seconds),
       is_unique: $event->is_unique(),
       status: 'pending',
       attempts: 0,
@@ -61,7 +73,7 @@ final class FakeOutboxRepository implements IOutboxRepository {
       locked_by: null,
       last_error: null,
       error_history: null,
-      created_at: gmdate('Y-m-d H:i:s'),
+      created_at: gmdate('Y-m-d H:i:s', $this->now()),
       processed_at: null,
       blog_id: 1,
     );
@@ -74,9 +86,13 @@ final class FakeOutboxRepository implements IOutboxRepository {
     if (in_array('*', $paused, true)) {
       return [];
     }
+    $now = gmdate('Y-m-d H:i:s', $this->now());
     return array_values(array_filter(
       $this->entries,
-      fn(OutboxEntry $e) => $e->status === 'pending' && !in_array($e->event_type, $paused, true)
+      fn(OutboxEntry $e) => $e->status === 'pending'
+        && $e->scheduled_at <= $now
+        && ($e->next_attempt_at === null || $e->next_attempt_at <= $now)
+        && !in_array($e->event_type, $paused, true)
     ));
   }
 
