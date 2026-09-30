@@ -16,7 +16,7 @@ namespace TangibleDDD\Runtime\Delivery;
  * Error behaviour: never throws for well-formed input.
  * Lifetime: process-static after boot; not reset between messages.
  * Implementations: SubscriptionRegistry (in-process; pdo, mem), sf's
- * compile-time map, wp's add_action-backed transitional registry (wave 2).
+ * compile-time map, wp's hook-backed transitional registry (wave 2).
  */
 interface ISubscriptionRegistry {
 

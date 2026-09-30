@@ -6,7 +6,6 @@ namespace TangibleDDD\Runtime\Delivery;
 
 use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\Commands\ICommand;
-use TangibleDDD\Application\EventHandlers\IntegrationListener;
 use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessRunner;
@@ -40,7 +39,7 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * from_event(); \LogicException for registerProcess() without a process
  * entry, and at construction for a ProcessRunner that does not implement
  * IProcessEntry yet (the 0.6 runner keeps its ignition dedup inside its own
- * add_action closure, so wrapping it here would lose bug-2 protection).
+ * hook closure, so wrapping it here would lose bug-2 protection).
  *
  * Lifetime: boot time; registering the same listener or process twice is
  * idempotent (the registry ignores duplicate ids).
@@ -152,7 +151,11 @@ final class SubscriptionRegistrar {
       ];
     }
 
-    if ($listener instanceof IntegrationListener) {
+    // 0.6 IntegrationListener shape, matched by its protected hooks rather
+    // than by class: that class moves to ddd-wp in wave 2, and core must not
+    // name a wp FQCN. From wave 2 it extends IntegrationTranslator and takes
+    // the branch above.
+    if (method_exists($listener, 'get_event_class') && method_exists($listener, 'get_command')) {
       $event_class = new \ReflectionMethod($listener, 'get_event_class');
       $get_command = new \ReflectionMethod($listener, 'get_command');
       return [
@@ -162,7 +165,7 @@ final class SubscriptionRegistrar {
     }
 
     throw new \InvalidArgumentException(sprintf(
-      '%s is not a listener: expected event_class() + translate() or an IntegrationListener',
+      '%s is not a listener: expected event_class() + translate(), or get_event_class() + get_command()',
       get_class($listener)
     ));
   }

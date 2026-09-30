@@ -12,7 +12,8 @@ use TangibleDDD\Runtime\NoTransactionBoundary;
 
 /**
  * The portable transaction middleware (register 1.4, 3.2). The legacy
- * `TransactionMiddleware(?wpdb)` becomes a wp subclass of this in wave 2.
+ * `TransactionMiddleware` (whose constructor takes the WordPress connection)
+ * becomes a wp subclass of this in wave 2 (rule R2).
  *
  * Wraps ONLY ITransactionalCommand in ITransactionBoundary::run(); everything
  * else passes through. Return values pass through unchanged (D11).

@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  * a rejection (`relay.invalid-acceptance`) and never marks the row accepted.
  *
  * Connection rules: sharesConnectionWith() returns true when submit writes
- * through the same connection as the store (AS on $wpdb, pdo jobs table,
+ * through the same connection as the store (AS on the WordPress connection, pdo jobs table,
  * Doctrine transport on the domain DBAL connection); the relay then runs
  * submit + accept in ONE transaction, so relay failures are DB errors only.
  */

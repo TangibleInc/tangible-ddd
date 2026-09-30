@@ -22,7 +22,7 @@ namespace TangibleDDD\Runtime;
  * Connection rules: the boundary wraps the SAME connection the domain
  * repositories and the outbox store use. It never opens, closes or
  * reconfigures a connection. pdo requires PDO::ERRMODE_EXCEPTION and refuses
- * construction otherwise; wp checks every wpdb result; sf wraps the DBAL
+ * construction otherwise; wp checks every WordPress query result; sf wraps the DBAL
  * connection and flushes the ORM before commit when configured.
  *
  * Lifetime: one instance per connection, shared by every command.
