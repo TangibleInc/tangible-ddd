@@ -250,7 +250,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     return;
   }
   $s->set('tangible_ddd.command.relay', RelayCommand::class)
-    ->args([service('tangible_ddd.relay'), $config['relay']['batch_size'], $config['relay']['idle_sleep_seconds']])
+    ->args([service('tangible_ddd.relay'), $config['relay']['batch_size'], $config['relay']['idle_sleep_seconds'], $logger])
     ->tag('console.command', ['command' => 'ddd:relay']);
   $s->set('tangible_ddd.command.schema_dump', SchemaDumpCommand::class)
     ->args([$prefix])

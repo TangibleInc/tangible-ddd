@@ -147,9 +147,54 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertFalse($a->retryLater($claimA, 'late', $afterExpiry));
     self::assertFalse($a->deadLetter($claimA, 'late'));
 
+    // B's re-claim of A's expired lease counted as one attempt.
     $row = $this->db->fetchAssociative('SELECT status, transport_ref, attempts, claim_token FROM ddd_outbox WHERE event_id = ?', ['e1']);
-    self::assertSame(['status' => 'accepted', 'transport_ref' => 'msg-9', 'attempts' => 0, 'claim_token' => null], $row);
+    self::assertSame(['status' => 'accepted', 'transport_ref' => 'msg-9', 'attempts' => 1, 'claim_token' => null], $row);
     self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_dlq'));
+  }
+
+  /**
+   * A submission that kills the process (fatal, OOM, SIGKILL) never writes an
+   * outcome; its lease just expires. Each such re-claim counts as an attempt,
+   * so the row cannot be re-claimed forever.
+   */
+  public function test_reclaiming_an_expired_lease_counts_an_attempt(): void {
+    $store = new DbalPostgresOutboxStore($this->db);
+    $store->append($this->record('e1'));
+    [$first] = $store->claim(1, $this->t0, 60);
+    self::assertSame(0, $first->attempts);
+
+    [$second] = $store->claim(1, $this->t0->modify('+61 seconds'), 60);
+
+    self::assertSame(1, $second->attempts);
+    self::assertStringContainsString('lease expired', (string) $this->db->fetchOne("SELECT last_error FROM ddd_outbox WHERE event_id = 'e1'"));
+    // an unleased row (first claim, or after retryLater) is not counted
+    self::assertTrue($store->retryLater($second, 'broker down', $this->t0->modify('+61 seconds')));
+    [$third] = $store->claim(1, $this->t0->modify('+62 seconds'), 60);
+    self::assertSame(2, $third->attempts);
+  }
+
+  public function test_a_row_whose_lease_expires_max_attempts_times_is_dead_lettered_at_claim(): void {
+    $store = new DbalPostgresOutboxStore($this->db);
+    $store->appendFact($this->record('crashy'), 'App\\WidgetRegistered');
+    $store->append($this->record('fine', due: $this->t0->modify('+1 second')));
+
+    $t = $this->t0;
+    for ($i = 0; $i < 5; $i++) { // max_attempts = 5: claims 2..5 count attempts 1..4
+      $ids = array_map(static fn ($c) => $c->event_id, $store->claim(1, $t, 60));
+      self::assertSame(['crashy'], $ids, "claim #$i");
+      $t = $t->modify('+61 seconds');
+    }
+
+    // the 6th claim would be attempt 5 = max_attempts: dead-lettered, not handed out
+    $ids = array_map(static fn ($c) => $c->event_id, $store->claim(2, $t, 60));
+
+    self::assertSame(['fine'], $ids, 'the crashing row is no longer handed out');
+    self::assertSame('dlq', $this->rowStatus('crashy'));
+    $dlq = $this->db->fetchAssociative('SELECT error, attempts, event_class FROM ddd_dlq WHERE event_id = ?', ['crashy']);
+    self::assertStringContainsString('lease expired', $dlq['error']);
+    self::assertSame(5, $dlq['attempts']);
+    self::assertSame('App\\WidgetRegistered', $dlq['event_class']);
   }
 
   public function test_an_expired_lease_nobody_reclaimed_still_matches(): void {

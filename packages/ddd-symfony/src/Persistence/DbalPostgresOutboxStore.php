@@ -28,7 +28,9 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  *     UPDATE ... SET claim_token, lease_until
  *     WHERE id IN (SELECT id ... FOR UPDATE SKIP LOCKED LIMIT n) RETURNING *
  *   Rows are due (`due_at <= now`, `next_attempt_at <= now`), lease-free and
- *   not paused. With a DbalRelayPauseStore the pause check is part of the
+ *   not paused. Re-claiming a row whose lease EXPIRED counts one attempt
+ *   (its holder died without an outcome); once attempts reach max_attempts
+ *   the row is dead-lettered at claim instead of being handed out again. With a DbalRelayPauseStore the pause check is part of the
  *   statement; any other IRelayPauseStore is applied afterwards and the
  *   paused claims are handed back. Refuses to run inside an open transaction
  *   (NestedTransactionRejected): it must not silently join, and commit with,
@@ -43,6 +45,8 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * docs/extraction/wave2-symfony-adapters-change-requests.md.
  */
 final class DbalPostgresOutboxStore implements IOutboxStore {
+
+  public const LEASE_EXPIRED_ERROR = 'lease expired without an outcome (submitter crashed or was killed?)';
 
   private readonly string $outbox;
   private readonly string $dlq;
@@ -142,10 +146,14 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
       }
     }
 
+    // The fenced claim. The locked id set comes from a CTE rather than
+    // `WHERE id IN (...)` only so the statement can see whether each row still
+    // held an (expired) lease: that re-claim counts as an attempt, because the
+    // previous holder died without writing an outcome (fatal, OOM, SIGKILL).
+    $params['expired'] = self::LEASE_EXPIRED_ERROR;
     $rows = $this->connection->fetchAllAssociative(
-      "UPDATE {$this->outbox} SET claim_token = :token, lease_until = :lease
-       WHERE id IN (
-         SELECT id FROM {$this->outbox}
+      "WITH picked AS (
+         SELECT id, (claim_token IS NOT NULL) AS reclaimed FROM {$this->outbox}
          WHERE status = 'pending'
            AND due_at <= :now
            AND next_attempt_at <= :now
@@ -155,7 +163,14 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
          LIMIT :limit
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING *",
+       UPDATE {$this->outbox} AS o SET
+         claim_token = :token,
+         lease_until = :lease,
+         attempts = o.attempts + CASE WHEN picked.reclaimed THEN 1 ELSE 0 END,
+         last_error = CASE WHEN picked.reclaimed THEN :expired ELSE o.last_error END
+       FROM picked
+       WHERE o.id = picked.id
+       RETURNING o.*",
       $params,
       $types
     );
@@ -165,6 +180,12 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
     $claims = [];
     foreach ($rows as $row) {
       $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, $this->recordOf($row), (int) $row['attempts']);
+      if ($claim->attempts >= $claim->record->max_attempts) {
+        // Its lease expired max_attempts times: stop re-claiming it forever.
+        $this->moveToDlq($claim, sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts), 0);
+        $this->logger->error("[ddd outbox] {$claim->event_id} dead-lettered at claim: its lease expired {$claim->attempts} times without an outcome");
+        continue;
+      }
       if ($this->pauses !== null && !$this->pauses instanceof DbalRelayPauseStore
         && $this->pauses->isPaused($claim->record->event_type, $now)) {
         $this->unclaim($claim);
@@ -203,12 +224,18 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
   }
 
   public function deadLetter(Claim $c, string $error): bool {
-    return $this->connection->transactional(function (Connection $conn) use ($c, $error): bool {
+    return $this->moveToDlq($c, $error, 1);
+  }
+
+  /** @param int $countAttempt 1 when this outcome is itself a failed attempt, 0 when claim() already counted it */
+  private function moveToDlq(Claim $c, string $error, int $countAttempt): bool {
+    return $this->connection->transactional(function (Connection $conn) use ($c, $error, $countAttempt): bool {
       $row = $conn->fetchAssociative(
-        "UPDATE {$this->outbox} SET status = 'dlq', attempts = attempts + 1, last_error = ?, claim_token = NULL, lease_until = NULL
+        "UPDATE {$this->outbox} SET status = 'dlq', attempts = attempts + ?, last_error = ?, claim_token = NULL, lease_until = NULL
          WHERE event_id = ? AND claim_token = ? AND status = 'pending'
          RETURNING *",
-        [$error, $c->event_id, $c->claimToken]
+        [$countAttempt, $error, $c->event_id, $c->claimToken],
+        [ParameterType::INTEGER]
       );
       if ($row === false) {
         $this->logger->warning("[ddd outbox] lease lost on deadLetter of {$c->event_id}; result discarded");
