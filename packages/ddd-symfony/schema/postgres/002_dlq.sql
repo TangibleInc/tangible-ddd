@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS {{prefix}}ddd_dlq (
     command_id         VARCHAR(64)  NULL,
     payload            TEXT         NOT NULL,
     payload_signature  VARCHAR(64)  NULL,
+    signature_json     TEXT         NULL,
     is_unique          BOOLEAN      NOT NULL DEFAULT FALSE,
     max_attempts       INTEGER      NOT NULL DEFAULT 5,
     due_at             TIMESTAMPTZ  NOT NULL,

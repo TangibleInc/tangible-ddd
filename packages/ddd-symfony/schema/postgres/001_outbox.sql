@@ -7,6 +7,10 @@
 -- next_attempt_at only. A claim writes claim_token + lease_until; accept,
 -- retryLater and deadLetter are fenced on (event_id, claim_token).
 -- payload is JSON text, not jsonb: jsonb rejects \u0000 (report E F11).
+-- payload_signature is sha256 of the canonical is_unique signature (the match
+-- key for cancelling duplicates); signature_json keeps the signature itself.
+-- event_class is the fact's PHP class, so delivery can hydrate it and match
+-- marker-interface subscriptions (D2); NULL for writers that do not know it.
 
 CREATE TABLE IF NOT EXISTS {{prefix}}ddd_outbox (
     id                 BIGSERIAL    PRIMARY KEY,
@@ -19,8 +23,9 @@ CREATE TABLE IF NOT EXISTS {{prefix}}ddd_outbox (
     command_id         VARCHAR(64)  NULL,
     payload            TEXT         NOT NULL,
     payload_signature  VARCHAR(64)  NULL,
+    signature_json     TEXT         NULL,
     is_unique          BOOLEAN      NOT NULL DEFAULT FALSE,
-    status             VARCHAR(16)  NOT NULL DEFAULT 'pending',
+    status            VARCHAR(16)  NOT NULL DEFAULT 'pending',
     attempts           INTEGER      NOT NULL DEFAULT 0,
     max_attempts       INTEGER      NOT NULL DEFAULT 5,
     due_at             TIMESTAMPTZ  NOT NULL,
