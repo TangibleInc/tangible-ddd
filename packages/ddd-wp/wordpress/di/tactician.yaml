@@ -84,19 +84,19 @@ services:
   # Naming Convention Mapping
   # ============================================
   tactician.command_to_handler_mapping:
-    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MapByNamingConvention
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention
     arguments:
       - '@tactician.class_name_inflector'
       - '@tactician.method_name_inflector'
 
   tactician.query_to_handler_mapping:
-    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MapByNamingConvention
+    class: League\Tactician\Handler\Mapping\MapByNamingConvention
     arguments:
       - '@tactician.class_name_inflector'
       - '@tactician.method_name_inflector'
 
   tactician.class_name_inflector:
-    class: TangibleDDD\WordPress\DI\HandlerClassNameInflector
+    class: TangibleDDD\Application\CQRS\HandlerClassNameInflector
 
   tactician.method_name_inflector:
-    class: League\Tactician\Handler\Mapping\MapByNamingConvention\MethodName\Handle
+    class: League\Tactician\Handler\Mapping\MethodName\Handle
