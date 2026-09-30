@@ -30,6 +30,10 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  *   60 s x 2^(n-1) capped at 3600 s (OutboxConfig), deadLetter once attempts
  *   reach the record's max_attempts;
  * - a fenced write that matches 0 rows is a lost lease: logged, discarded.
+ *   On a shared connection a lost lease on accept ROLLS BACK the submission
+ *   as well (the Messenger insert), so the row's new holder is the only one
+ *   that delivers it. (The wave-1 conformance PortRelay commits it; the core
+ *   relay step must not: CR sf-3.)
  */
 final class Relay {
 
@@ -62,8 +66,17 @@ final class Relay {
       $claimed[] = $claim->event_id;
       try {
         $ok = $shared
-          ? $this->boundary->run(fn () => $this->submitAndAccept($claim))
+          ? $this->boundary->run(function () use ($claim): bool {
+            // A lost lease inside the shared transaction must roll the
+            // submission back too, or the row's new holder submits it again.
+            if (!$this->submitAndAccept($claim)) {
+              throw new LeaseLostOnAccept($claim->event_id);
+            }
+            return true;
+          })
           : $this->submitAndAccept($claim);
+      } catch (LeaseLostOnAccept) {
+        $ok = false;
       } catch (\Throwable $e) {
         $attempts = $claim->attempts + 1;
         $final = $attempts >= $claim->record->max_attempts;
