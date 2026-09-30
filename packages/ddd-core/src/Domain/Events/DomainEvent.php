@@ -4,7 +4,7 @@ namespace TangibleDDD\Domain\Events;
 
 /**
  * Base class for domain events — the RAISABLE species. Validity is bounded
- * by the request: instances die pre-ActionScheduler, always.
+ * by the request: instances die before the queue hop, always.
  *
  * Consumer plugins extend this in their generated DomainEvent base,
  * providing the prefix() method.

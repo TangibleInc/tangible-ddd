@@ -8,7 +8,7 @@ use TangibleDDD\Domain\Events\IDomainEvent;
  * "Who reacted to this moment?" — the reactions ledger's whiteboard,
  * PublishedFacts' sibling for the handler side of a publication.
  *
- * The dispatcher opens a frame around each do_action; the framework's
+ * The dispatcher opens a frame around each hook dispatch; the framework's
  * action handlers record themselves (class + duration, error on throw)
  * into whatever frame is CURRENTLY open. Attribution is positional — a
  * stack, never the handler-side instance — because WordPressActionHandler
@@ -38,7 +38,7 @@ final class Reactions {
 
   /**
    * Attribute one handler run to the event currently dispatching.
-   * Outside any frame this is a silent no-op — a bare do_action replay
+   * Outside any frame this is a silent no-op — a bare hook replay
    * has no moment to write against.
    */
   public static function record(string $handler, int $duration_ms, ?\Throwable $error = null): void {

@@ -7,7 +7,7 @@ use TangibleDDD\Domain\Events\IDomainEvent;
 /**
  * Dispatches domain events to listeners.
  *
- * In WordPress, this fires do_action() hooks.
+ * In WordPress (ddd-wp's WordPressEventDispatcher), this fires action hooks.
  * Other platforms could implement pub/sub, event sourcing, etc.
  */
 interface IDomainEventDispatcher {

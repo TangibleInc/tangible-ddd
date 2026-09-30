@@ -8,7 +8,8 @@ use Attribute;
  * Mark a process step to always execute asynchronously.
  *
  * When the runner encounters a step with this attribute, it will
- * reschedule via ActionScheduler before executing the step.
+ * reschedule through the host's job queue (Action Scheduler on WordPress)
+ * before executing the step.
  *
  * Use for steps that are known to be resource-intensive.
  *

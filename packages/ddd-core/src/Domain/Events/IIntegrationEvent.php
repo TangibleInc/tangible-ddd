@@ -4,7 +4,7 @@ namespace TangibleDDD\Domain\Events;
 
 /**
  * The record contract: an event composed of reversible values, engineered so
- * instances exist on BOTH sides of the ActionScheduler hop.
+ * instances exist on BOTH sides of the queue hop (Action Scheduler on WordPress).
  *
  * SEVERED from IDomainEvent (0.2.0 partition): a class implementing ONLY this
  * interface cannot be raised — EventsUnitOfWork::record() types IDomainEvent.

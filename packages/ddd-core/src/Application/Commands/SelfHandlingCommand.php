@@ -32,7 +32,7 @@ use TangibleDDD\Application\CQRS\CommandBusAware;
  *
  * CONSUMER ROUTING: this base is STANDALONE — it deliberately does NOT
  * extend the framework's self-consumer `Command` base, whose container()
- * override pins `TangibleDDD\WordPress\SelfConsumer\di()`. That pin would
+ * override pins the WordPress self-consumer's di() (ddd-wp). That pin would
  * send a CONSUMER's self-handling command through the FRAMEWORK's bus and
  * resolve its handle() deps from a container where consumer services do not
  * exist. Instead, container() falls through to CommandBusAware's registry

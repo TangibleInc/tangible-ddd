@@ -31,7 +31,7 @@ interface IDDDConfig {
   public function hook(string $name): string;
 
   /**
-   * Generate a prefixed ActionScheduler group name.
+   * Generate a prefixed Action Scheduler group name.
    *
    * @param string $name Base group name (e.g., 'outbox')
    * @return string Prefixed group name (e.g., 'tgbl-cred-outbox')
