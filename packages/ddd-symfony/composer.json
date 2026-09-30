@@ -25,6 +25,9 @@
         "symfony/messenger": "^7.4",
         "symfony/framework-bundle": "^7.4"
     },
+    "require-dev": {
+        "league/tactician": "^2.0-rc1"
+    },
     "autoload": {
         "psr-4": {
             "TangibleDDD\\Symfony\\": "src/"

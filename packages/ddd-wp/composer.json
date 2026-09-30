@@ -27,6 +27,9 @@
         "symfony/yaml": "^7.4",
         "makinacorpus/query-builder": "^1.6"
     },
+    "require-dev": {
+        "league/tactician": "^2.0-rc1"
+    },
     "autoload": {
         "psr-4": {
             "TangibleDDD\\": "src/",

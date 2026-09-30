@@ -115,6 +115,22 @@ class PackageManifestTest extends TestCase
         $this->assertSame(['TangibleDDD\\Symfony\\' => 'src/'], $sf['autoload']['psr-4'] ?? null);
     }
 
+    public function test_adapter_packages_allow_the_tactician_rc_when_they_are_the_root(): void
+    {
+        // O20, verified in wave 1: Composer honours the RC stability flag of
+        // `^2.0-rc1` only in the ROOT manifest. As a transitive requirement of
+        // ddd-core it does not resolve under minimum-stability stable, so any
+        // root (TXP, a plain-PHP host, each adapter's own CI) must restate it.
+        // require-dev is inert when the adapter is installed as a dependency.
+        foreach (['packages/ddd-wp/composer.json', 'packages/ddd-symfony/composer.json'] as $rel) {
+            $this->assertSame(
+                '^2.0-rc1',
+                self::manifest($rel)['require-dev']['league/tactician'] ?? null,
+                "{$rel} must restate league/tactician ^2.0-rc1 in require-dev (O20)."
+            );
+        }
+    }
+
     public function test_sibling_packages_resolve_core_through_a_copying_path_repository(): void
     {
         // symlink:false copies files, so a package's own CI catches files
