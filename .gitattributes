@@ -1,0 +1,23 @@
+# Release artifact of tangible/ddd (register 1.1, 1.5; report F-15).
+# A dist archive carries the root files, loader/, packages/ddd-core and
+# packages/ddd-wp from one commit. Everything below is development-only.
+# Patterns are anchored and name the directory itself: git archive skips an
+# export-ignored directory as a whole. Guarded by ReleaseArtifactTest.
+
+/tests                      export-ignore
+/tools                      export-ignore
+/docs                       export-ignore
+/examples                   export-ignore
+/packages/ddd-symfony       export-ignore
+/packages/ddd-conformance   export-ignore
+/packages/*/tests           export-ignore
+
+/.github                    export-ignore
+/.claude                    export-ignore
+/phpunit.xml                export-ignore
+/phpunit.integration.xml    export-ignore
+/phpstan*.neon              export-ignore
+/deptrac.yaml               export-ignore
+/.gitattributes             export-ignore
+/.gitignore                 export-ignore
+/with-love-from-codex-for-opus.md export-ignore
