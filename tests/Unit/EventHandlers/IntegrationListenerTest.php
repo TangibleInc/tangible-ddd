@@ -35,6 +35,16 @@ class IntegrationListenerTest extends TestCase {
     $this->assertNull(\TangibleDDD\Application\Correlation\Correlation::peek(), 'drain scope closed — nothing bleeds into the worker');
   }
 
+  public function test_the_wp_listener_is_an_integration_translator_that_still_self_wires(): void {
+    global $_test_actions;
+
+    $listener = new FakeRecordingListener();
+
+    $this->assertInstanceOf(\TangibleDDD\Application\EventHandlers\IntegrationTranslator::class, $listener);
+    $this->assertSame(FakeResolvedEvent::class, $listener->event_class());
+    $this->assertArrayHasKey(FakeResolvedEvent::integration_action(), $_test_actions, 'the 0.6 constructor side effect is kept');
+  }
+
   public function test_null_command_is_a_no_op(): void {
     \TangibleDDD\WordPress\integration_listener(FakeResolvedEvent::class, fn($e) => null);
     do_action(FakeResolvedEvent::integration_action(), ['request_id' => 1, 'outcome' => 'accepted', 'resolved_at' => '2026-07-06T10:00:00+00:00']);

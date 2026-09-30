@@ -2,7 +2,6 @@
 
 namespace TangibleDDD\Application\EventHandlers;
 
-use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
@@ -14,14 +13,12 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * \Application\IntegrationListeners\ (eager boot constructs via the container,
  * so ctor injection is available to subclasses that need it — the happy path
  * needs nothing).
+ *
+ * Wave 2 (rule R2): the WordPress form, owned by ddd-wp. The translation
+ * contract lives in the core IntegrationTranslator; this subclass keeps the
+ * 0.6 constructor side effect of registering itself on the integration hook.
  */
-abstract class IntegrationListener {
-
-  /** @return class-string<IIntegrationEvent> */
-  abstract protected function get_event_class(): string;
-
-  /** Fact in, intention out. Null = no reaction. */
-  abstract protected function get_command(IIntegrationEvent $event): ?ICommand;
+abstract class IntegrationListener extends IntegrationTranslator {
 
   public function __construct() {
     \TangibleDDD\WordPress\integration_listener(
