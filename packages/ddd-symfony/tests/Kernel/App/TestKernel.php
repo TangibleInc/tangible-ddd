@@ -46,6 +46,11 @@ final class TestKernel extends Kernel {
     return $this->getProjectDir() . '/var/log';
   }
 
+  /** Keeps FrameworkBundle's generated config/reference.php out of the package's own config/. */
+  private function getConfigDir(): string {
+    return $this->getProjectDir() . '/var/test-config';
+  }
+
   protected function configureRoutes(RoutingConfigurator $routes): void {}
 
   protected function configureContainer(ContainerConfigurator $container): void {
