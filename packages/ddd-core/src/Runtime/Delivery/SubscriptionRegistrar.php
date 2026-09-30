@@ -41,6 +41,13 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * IProcessEntry yet (the 0.6 runner keeps its ignition dedup inside its own
  * hook closure, so wrapping it here would lose bug-2 protection).
  *
+ * Transitional (wave 1): the register 3.5 sketch is
+ * `__construct(ISubscriptionRegistry, ProcessRunner $runner, ?ContainerInterface)`.
+ * Until wave 2 makes ProcessRunner implement IProcessEntry, the runner
+ * parameter is `ProcessRunner|IProcessEntry|null` and a plain ProcessRunner
+ * is refused. Wave 2 narrows it to IProcessEntry and removes the
+ * LogicException branch (register change request filed with wave 1).
+ *
  * Lifetime: boot time; registering the same listener or process twice is
  * idempotent (the registry ignores duplicate ids).
  */
