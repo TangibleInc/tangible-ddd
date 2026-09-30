@@ -21,7 +21,7 @@ class AwaitTimeoutTest extends TestCase {
 
   protected function setUp(): void {
     // resume_on_event() takes a MySQL named lock via global $wpdb; the plain
-    // wp-stubs wpdb::get_var() returns null (treated as "acquired").
+    // wp-stubs wpdb::get_var() returns '1' for GET_LOCK/RELEASE_LOCK (acquired).
     $GLOBALS['wpdb'] = new \wpdb();
 
     $this->config = new FakeDDDConfig();

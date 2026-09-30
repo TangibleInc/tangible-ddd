@@ -10,6 +10,7 @@ use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
+use TangibleDDD\Infra\Exceptions\LockingException;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use Throwable;
@@ -164,15 +165,13 @@ final class ProcessRunner {
           }
 
           $event_id = $envelope->event_id !== null ? (string) $envelope->event_id : null;
-          if ($event_id !== null) {
-            if ($this->repository->has_ignition($process_class, $event_id)) {
-              return; // replay / redelivery — this fact already ignited its saga
-            }
-            $process->mark_ignited_by($event_id);
+          if ($event_id === null) {
+            $process->mark_source('event');
+            $this->start($process);
+            return;
           }
-          $process->mark_source('event');
 
-          $this->start($process);
+          $this->ignite($process, $process_class, $event_id);
         };
 
         $ctx !== null ? Correlation::within($ctx, $run) : $run();
@@ -197,6 +196,51 @@ final class ProcessRunner {
    * and timeouts create hops.
    */
   public function start(LongProcess $process): void {
+    $this->persist_start($process);
+    $this->run_started($process);
+  }
+
+  /**
+   * #[StartsOn] ignition: exactly one ignited process per
+   * (process_class, event_id), however many deliveries or workers.
+   *
+   * has_ignition() and the insert are one critical section under the named
+   * lock ddd_ign_ + md5(prefix|class|event_id): without it two workers
+   * delivering the same fact could both see "not ignited" and both insert.
+   * The loser returns quietly without running a step. The first step runs
+   * after the ignition lock is released, under the per-process lock like
+   * every other wake. Manual start() calls never pass through here and are
+   * never deduped.
+   *
+   * Out of scope (0.6.x, schema-free): a DLQ replay mints a new event id,
+   * so replaying an igniting fact still ignites a second process.
+   *
+   * @throws LockingException when the ignition lock is not acquired
+   */
+  private function ignite(LongProcess $process, string $process_class, string $event_id): void {
+    $name = 'ddd_ign_' . md5($this->config->prefix() . '|' . $process_class . '|' . $event_id);
+    $persisted = false;
+
+    $this->with_named_lock($name, function () use ($process, $process_class, $event_id, &$persisted) {
+      if ($this->repository->has_ignition($process_class, $event_id)) {
+        return; // redelivery / concurrent worker: this fact already ignited its saga
+      }
+      $process->mark_ignited_by($event_id);
+      $process->mark_source('event');
+      $this->persist_start($process);
+      $persisted = true;
+    });
+
+    if ($persisted) {
+      $this->run_started($process);
+    }
+  }
+
+  /**
+   * First half of start(): guards, ignition absorb, source, lifecycle and
+   * the insert. Runs no step.
+   */
+  private function persist_start(LongProcess $process): void {
     // Guards read the facade: "what am I inside?" is the ambient cause's kind.
     $cause = Correlation::peek()?->cause;
 
@@ -229,7 +273,10 @@ final class ProcessRunner {
     $steps = $this->create_process_steps($process);
     $process->initialize_lifecycle($correlation, $steps);
     $this->repository->save($process);
+  }
 
+  /** Second half of start(): the first step, in-band, inside the sealed bracket. */
+  private function run_started(LongProcess $process): void {
     $this->with_process($process, fn () => $this->run($process));
   }
 
@@ -389,15 +436,34 @@ final class ProcessRunner {
 
   /**
    * Serialize accumulate/save per process via MySQL named lock.
-   * Lock timeout → throw so ActionScheduler retries the delivery.
    */
   private function with_process_lock(int $process_id, callable $fn): void {
+    $this->with_named_lock('ddd_process_' . $process_id, $fn);
+  }
+
+  /**
+   * Run $fn holding the MySQL named lock $name.
+   *
+   * Only a definite acquisition ('1') enters. GET_LOCK returns '0' on
+   * timeout (contended) and NULL on error; both mean "not acquired": $fn
+   * does not run, no RELEASE_LOCK is issued, and LockingException
+   * propagates. The wake is NOT re-queued here: Action Scheduler records
+   * the failed action, which an operator can see and retry in the AS admin.
+   *
+   * GET_LOCK is re-entrant per connection (MySQL 5.7+); every acquisition
+   * is balanced by its own release.
+   *
+   * @throws LockingException
+   */
+  private function with_named_lock(string $name, callable $fn): void {
     global $wpdb;
-    $name = 'ddd_process_' . $process_id;
     $acquired = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)', $name));
 
-    if ((string) $acquired === '0') {
-      throw new \RuntimeException("Could not acquire process lock $name — delivery will be retried.");
+    if ($acquired === null || (string) $acquired !== '1') {
+      $reason = $acquired === null
+        ? 'GET_LOCK returned NULL' . (!empty($wpdb->last_error) ? " ({$wpdb->last_error})" : ' (lock query error)')
+        : 'GET_LOCK timed out after 5s (lock held elsewhere)';
+      throw new LockingException("Could not acquire lock $name: $reason. Nothing ran; the action fails and can be retried.");
     }
 
     try {

@@ -16,6 +16,9 @@ use TangibleDDD\Infra\IDDDConfig;
  *
  * External publishers can hook:
  * - filter `{$prefix}_outbox_publish_external` (bool $handled, OutboxEntry $entry, array $wrapped_payload)
+ *   The entry reaches the filter only once it is due: `$entry->scheduled_at`
+ *   (absolute UTC) already includes the declared delay. Hookers must not add
+ *   `$entry->delay_seconds` again.
  *
  * Transport can be overridden by:
  * - filter `{$prefix}_outbox_transport_for_entry` (string $transport, OutboxEntry $entry)
