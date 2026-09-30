@@ -8,7 +8,7 @@ use DateTimeInterface;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionParameter;
-use TangibleDDD\Application\EventHandlers\IntegrationListener;
+use TangibleDDD\Application\EventHandlers\IntegrationTranslator;
 use TangibleDDD\Domain\Events\IntegrationBehaviour;
 
 /**
@@ -33,8 +33,25 @@ use TangibleDDD\Domain\Events\IntegrationBehaviour;
  *
  *   $this->assertSame([], IntegrationConformance::event_violations(__DIR__ . '/../../src'),
  *     IntegrationConformance::describe(...));
+ *
+ * Wave 2 (register 1.4): this core form scans IntegrationTranslator
+ * subclasses, which includes every WordPress listener (they extend it). A
+ * host whose listener base declares a framework-owned constructor names that
+ * base in listener_bases(); the WordPress subclass WpIntegrationConformance
+ * (ddd-wp) does so for its self-registering base. No longer final, for that
+ * subclass only.
  */
-final class IntegrationConformance {
+class IntegrationConformance {
+
+  /**
+   * Framework listener bases whose own constructor is exempt from the
+   * thinness check (it is framework wiring, not a consumer dependency).
+   *
+   * @return list<class-string>
+   */
+  protected static function listener_bases(): array {
+    return [IntegrationTranslator::class];
+  }
 
   /** @return list<array{class: string, param: string, problem: string}> */
   public static function event_violations(string $src_dir): array {
@@ -115,12 +132,12 @@ final class IntegrationConformance {
 
     foreach (self::classes_in($src_dir) as $class) {
       $ref = new ReflectionClass($class);
-      if ($ref->isAbstract() || !$ref->isSubclassOf(IntegrationListener::class)) {
+      if ($ref->isAbstract() || !$ref->isSubclassOf(IntegrationTranslator::class)) {
         continue;
       }
 
       $ctor = $ref->getConstructor();
-      if ($ctor === null || $ctor->getDeclaringClass()->getName() === IntegrationListener::class) {
+      if ($ctor === null || in_array($ctor->getDeclaringClass()->getName(), static::listener_bases(), true)) {
         continue; // no own ctor — the happy path
       }
 
