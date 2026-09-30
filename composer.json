@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=8.1",
+        "php": ">=8.2",
         "symfony/dependency-injection": "^7.4",
         "league/tactician": "^2.0-rc1",
         "woocommerce/action-scheduler": "^3.9",

@@ -7,7 +7,7 @@
  * Author: Tangible
  * Author URI: https://tangible.one
  * License: MIT
- * Requires PHP: 8.1
+ * Requires PHP: 8.2
  *
  * Version-negotiation loader — mirrors Action Scheduler's multi-copy coexistence
  * pattern so that multiple WordPress plugins can each bundle a copy of tangible-ddd
