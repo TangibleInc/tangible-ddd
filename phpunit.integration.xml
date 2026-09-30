@@ -17,7 +17,9 @@
 
     <source>
         <include>
-            <directory suffix=".php">ddd-src</directory>
+            <directory suffix=".php">packages/ddd-core/src</directory>
+            <directory suffix=".php">packages/ddd-wp/src</directory>
+            <directory suffix=".php">packages/ddd-wp/wordpress</directory>
         </include>
     </source>
 </phpunit>

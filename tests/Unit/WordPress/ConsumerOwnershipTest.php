@@ -17,9 +17,9 @@ use function TangibleDDD\WordPress\consumers;
 // Procedural ddd-wordpress files; load directly (mirrors BootTest).
 // The registry classes live in ddd-src (PSR-4 autoloaded).
 if (!function_exists('TangibleDDD\\WordPress\\boot')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/hooks.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/tables.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/migrations.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/hooks.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/tables.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/migrations.php';
 }
 
 /**

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "fbf76d676599b21409632068c29f9d8a",
+    "content-hash": "8373b3f552c5a1e3910ab61b3eab8401",
     "packages": [
         {
             "name": "league/tactician",

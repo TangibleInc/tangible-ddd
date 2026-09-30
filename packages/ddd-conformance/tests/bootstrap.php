@@ -19,15 +19,16 @@ declare(strict_types=1);
 /** @var \Composer\Autoload\ClassLoader $loader */
 $loader = require dirname(__DIR__) . '/vendor/autoload.php';
 
-// Probe by file, not interface_exists(): a failed autoload is remembered by
-// Composer's ClassLoader as a missing class and would stay missing.
-if (!is_file(dirname(__DIR__) . '/vendor/tangible/ddd-core/src/Application/Commands/ITransactionalCommand.php')) {
-  $legacy = dirname(__DIR__, 3) . '/ddd-src/';
-  if (!is_dir($legacy)) {
-    fwrite(STDERR, "ddd-conformance bootstrap: ddd-core lacks the 0.6 classes and no monorepo ddd-src/ was found at $legacy.\n");
-    exit(1);
-  }
-  $loader->addPsr4('TangibleDDD\\', $legacy); // appended: ddd-core's src/ is consulted first
+// WAVE-2 ROUND-1 BRIDGE (replaces the wave-1 ddd-src/ bridge): the 0.6 classes
+// now live in ddd-core, except the split classes whose core half moves onto
+// the ports in round 2 and which sit in packages/ddd-wp/src/ until then
+// (OutboxConfig is the one the mem host constructs). Appended after
+// ddd-core's own map, so a class in ddd-core always wins; no WordPress
+// function file is loaded, so a path that reaches WordPress still fails
+// loudly. Remove once OutboxConfig's core form is in ddd-core.
+$wpSrc = dirname(__DIR__, 2) . '/ddd-wp/src/';
+if (is_dir($wpSrc)) {
+  $loader->addPsr4('TangibleDDD\\', $wpSrc);
 }
 
 if (function_exists('add_action') || function_exists('do_action') || class_exists('wpdb', false)) {

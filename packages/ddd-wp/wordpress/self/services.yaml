@@ -1,0 +1,40 @@
+# TangibleDDD self-consumer services.
+#
+# tangible-ddd consuming its OWN framework: imports the framework service
+# template, binds IDDDConfig to the self Config (prefix 'tangible_ddd'), and
+# auto-registers the framework-owned operational command handlers.
+imports:
+  - { resource: '../di/services.yaml' }
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: true
+
+  # Bind the framework's own config as the IDDDConfig (prefix 'tangible_ddd').
+  TangibleDDD\Infra\Config:
+    factory: ['TangibleDDD\Infra\Config', 'for_wordpress']
+
+  TangibleDDD\Infra\IDDDConfig:
+    alias: TangibleDDD\Infra\Config
+
+  # The operational command handlers, listed explicitly (report B6): a
+  # relative resource directory breaks whenever the handlers change package.
+  # Public so the naming-convention resolver can fetch them; unshared, as
+  # before. Guarded by SelfConsumerContainerTest.
+  TangibleDDD\Application\CommandHandlers\DiscardDeadLetterHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\PurgeOutboxHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\ReplayDeadLetterHandler:
+    public: true
+    shared: false
+
+  TangibleDDD\Application\CommandHandlers\RetryDeliveryHandler:
+    public: true
+    shared: false

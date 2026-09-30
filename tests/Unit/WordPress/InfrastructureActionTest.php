@@ -12,7 +12,7 @@ use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use function TangibleDDD\WordPress\infrastructure_action;
 
 if (!function_exists('TangibleDDD\\WordPress\\infrastructure_action')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/infrastructure-events.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/infrastructure-events.php';
 }
 
 /**

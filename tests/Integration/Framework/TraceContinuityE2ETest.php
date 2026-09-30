@@ -48,7 +48,7 @@ final class TraceContinuityE2ETest extends IntegrationTestCase
     {
         parent::setUpBeforeClass();
 
-        require_once dirname(__DIR__, 3) . '/ddd-wordpress/tables.php';
+        require_once dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/tables.php';
         \TangibleDDD\WordPress\install_outbox_tables(
             \Tangible\Datastream\WordPress\DI\di()->get(IDDDConfig::class)
         );

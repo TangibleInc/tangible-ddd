@@ -32,15 +32,15 @@ class SelfExecutingMiddlewareWiringTest extends TestCase {
   public static function chain_sources(): array {
     $root = dirname(__DIR__, 3);
 
-    require_once $root . '/ddd-wordpress/cli/class-ddd-command.php';
+    require_once $root . '/packages/ddd-wp/wordpress/cli/class-ddd-command.php';
     $command = (new \ReflectionClass(DDD_Command::class))->newInstanceWithoutConstructor();
     $method = new \ReflectionMethod(DDD_Command::class, 'get_templates');
     $method->setAccessible(true);
     $templates = $method->invoke($command, 'acme_orders', 'AcmeOrders', 'ACME_ORDERS_VERSION');
 
     return [
-      'di/tactician.yaml' => [Yaml::parseFile($root . '/ddd-wordpress/di/tactician.yaml')['services']],
-      'self/tactician.yaml' => [Yaml::parseFile($root . '/ddd-wordpress/self/tactician.yaml')['services']],
+      'di/tactician.yaml' => [Yaml::parseFile($root . '/packages/ddd-wp/wordpress/di/tactician.yaml')['services']],
+      'self/tactician.yaml' => [Yaml::parseFile($root . '/packages/ddd-wp/wordpress/self/tactician.yaml')['services']],
       'scaffolder template' => [Yaml::parse($templates['ddd-wordpress/di/tactician.yaml'])['services']],
     ];
   }

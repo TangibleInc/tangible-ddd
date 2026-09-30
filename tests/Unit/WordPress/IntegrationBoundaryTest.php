@@ -9,7 +9,7 @@ use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 use function TangibleDDD\WordPress\integration_action;
 
 if (!function_exists('TangibleDDD\\WordPress\\integration_action')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/integration-events.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/integration-events.php';
 }
 
 /**
