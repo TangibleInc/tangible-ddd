@@ -26,6 +26,9 @@ abstract class KernelTestBase extends KernelTestCase {
 
   protected Connection $db;
 
+  /** TestKernel variant this class boots. */
+  protected static string $variant = 'default';
+
   protected static function createKernel(array $options = []): KernelInterface {
     return new TestKernel('test', true, $options['variant'] ?? 'default');
   }
@@ -33,7 +36,7 @@ abstract class KernelTestBase extends KernelTestCase {
   protected function setUp(): void {
     WidgetRegisteredListener::$constructed = 0;
     CountRegistrations::$seen = [];
-    self::bootKernel();
+    self::bootKernel(['variant' => static::$variant]);
     $this->db = self::getContainer()->get('tangible_ddd.connection');
 
     PostgresDatabase::resetDddSchema($this->db);

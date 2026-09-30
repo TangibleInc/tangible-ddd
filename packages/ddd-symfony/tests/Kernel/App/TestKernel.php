@@ -88,11 +88,13 @@ final class TestKernel extends Kernel {
         'version' => '0.7.0-test',
       ],
       'connection' => 'default',
+      'transaction' => $this->variant === 'flush' ? ['entity_manager' => 'test.flusher'] : [],
     ]);
 
     $services = $container->services();
     $services->defaults()->autowire()->autoconfigure();
     $services->set('logger', NullLogger::class);
+    $services->set('test.flusher', RecordingFlusher::class)->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
       ->exclude(__DIR__ . '/{Commands,Events}/');
   }

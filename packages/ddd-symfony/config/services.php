@@ -85,7 +85,12 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
 
   // ── persistence (register 3.2, 3.4, 3.5) ─────────────────────────────────
   $s->set('tangible_ddd.transaction_boundary', DbalTransactionBoundary::class)
-    ->args([service('tangible_ddd.connection'), $config['transaction']['nested'] === 'savepoint' ? NestedPolicy::Savepoint : NestedPolicy::Reject, null, $logger]);
+    ->args([
+      service('tangible_ddd.connection'),
+      $config['transaction']['nested'] === 'savepoint' ? NestedPolicy::Savepoint : NestedPolicy::Reject,
+      $config['transaction']['entity_manager'] === null ? null : [service($config['transaction']['entity_manager']), 'flush'],
+      $logger,
+    ]);
   $s->alias(ITransactionBoundary::class, 'tangible_ddd.transaction_boundary');
 
   $s->set('tangible_ddd.relay_pauses', DbalRelayPauseStore::class)
