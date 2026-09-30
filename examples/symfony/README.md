@@ -114,6 +114,9 @@ tangible_ddd:
         dsn: null                           # default doctrine://<connection>?queue_name=ddd_facts&auto_setup=false
         failure_dsn: null
     facts: []                     # extra fact classes, only for rows written without a class
+    self_handling:
+        classes: []               # self-handling commands/queries NOT registered by resource loading
+        locate_all: false         # true: every class-named service is injectable into handle() (keeps them all compiled)
     process_entry: null           # IProcessEntry service id (the process runner arrives in wave 3)
     audit:
         sink: null                # IAuditSink service id (default NullAuditSink)
@@ -205,6 +208,14 @@ final class RenameTeam extends SelfHandlingCommand implements ITransactionalComm
 }
 ```
 
+The `handle()` locator is built at compile time from the `handle()` parameter
+types of the self-handling classes the bundle knows, like Symfony's controller
+argument locator, so unused private services are still removed. It knows the
+classes your resource loading registers (`App\: resource: ../src/`, the
+default): do not `exclude` your command directories, or list those classes in
+`tangible_ddd.self_handling.classes`. A `handle()` type the locator does not
+hold fails at dispatch with a "service not found" error.
+
 Facts are integration events (`IAnnouncesIntegration` + `IntegrationBehaviour`
 for self-publishers). Their consumer prefix comes from the namespace root, so no
 `prefix()` override is needed.
@@ -261,6 +272,13 @@ bin/console ddd:relay --time-limit=3600          # loop; supervisor restarts it
 bin/console ddd:relay --once --limit=100         # one step (cron, deploy hooks, tests)
 bin/console messenger:consume ddd_facts --time-limit=3600
 ```
+
+`ddd:relay` survives transient database errors: it logs the DBAL exception,
+backs off 1, 2, 4 ... 30 s and carries on; after 10 failed steps in a row (or
+at once with `--once`) it exits non-zero, and the supervisor restarts it. A
+row whose submission kills the process is not re-claimed forever: each
+re-claim of an expired lease counts one attempt, and at `max_attempts` the row
+goes to `ddd_dlq`.
 
 Handler failures retry through Messenger with the delivery budget; each retry
 runs only the subscribers the ledger has not recorded as delivered. The worker

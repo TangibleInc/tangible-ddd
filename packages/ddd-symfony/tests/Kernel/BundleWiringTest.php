@@ -17,6 +17,8 @@ use TangibleDDD\Symfony\Tests\Kernel\App\Events\WidgetRegistered;
 use TangibleDDD\Symfony\Tests\Kernel\App\Listeners\AnyWidgetFactListener;
 use TangibleDDD\Symfony\Tests\Kernel\App\Listeners\FlakyListener;
 use TangibleDDD\Symfony\Tests\Kernel\App\Listeners\WidgetRegisteredListener;
+use TangibleDDD\Symfony\Tests\Kernel\App\Persistence\UnusedReport;
+use TangibleDDD\Symfony\Tests\Kernel\App\Persistence\WidgetRepository;
 use TangibleDDD\Symfony\Tests\Kernel\App\TestKernel;
 
 final class BundleWiringTest extends KernelTestBase {
@@ -57,6 +59,11 @@ final class BundleWiringTest extends KernelTestBase {
 
     self::assertSame(['renamed' => 1], $result);
     self::assertSame('new', $this->db->fetchOne("SELECT name FROM app_widgets WHERE id = 'w1'"));
+  }
+
+  public function test_the_handle_locator_does_not_keep_unused_private_services_alive(): void {
+    self::assertFalse(self::getContainer()->has(UnusedReport::class), 'unused private services are removed');
+    self::assertTrue(self::getContainer()->has(WidgetRepository::class), 'handle() dependencies are kept');
   }
 
   public function test_a_command_dispatched_inside_an_open_transaction_is_rejected(): void {

@@ -12,6 +12,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\Queries\SelfHandlingQuery;
 use TangibleDDD\Application\QueryHandlers\IQueryHandler;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
@@ -113,6 +115,18 @@ final class TangibleDddBundle extends AbstractBundle {
           ->scalarPrototype()->end()
           ->info('Extra fact classes for resolving rows written without a class (normally not needed).')
         ->end()
+        ->arrayNode('self_handling')
+          ->addDefaultsIfNotSet()
+          ->info('Which self-handling commands/queries the handle() dependency locator is built from.')
+          ->children()
+            ->arrayNode('classes')
+              ->scalarPrototype()->end()
+              ->info('Extra SelfHandlingCommand/SelfHandlingQuery classes not registered by resource loading (those are found by autoconfiguration).')
+            ->end()
+            ->booleanNode('locate_all')->defaultFalse()
+              ->info('Expose every class-named service to handle() injection (round-1 behaviour; keeps all private services in the container).')->end()
+          ->end()
+        ->end()
         ->scalarNode('process_entry')->defaultNull()
           ->info('Service id of an IProcessEntry (the process runner, wave 3); needed once a process uses #[StartsOn]/#[Awaits].')->end()
         ->arrayNode('audit')
@@ -170,6 +184,9 @@ final class TangibleDddBundle extends AbstractBundle {
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IQueryHandler::class)->addTag(DddTags::QUERY_HANDLER);
+    $builder->setParameter('tangible_ddd.self_handling', $config['self_handling']);
+    $builder->registerForAutoconfiguration(SelfHandlingCommand::class)->addTag(DddTags::SELF_HANDLING);
+    $builder->registerForAutoconfiguration(SelfHandlingQuery::class)->addTag(DddTags::SELF_HANDLING);
     $translator = 'TangibleDDD\\Application\\EventHandlers\\IntegrationTranslator'; // core, wave-2 split
     if (class_exists($translator)) {
       $builder->registerForAutoconfiguration($translator)->addTag(DddTags::INTEGRATION_LISTENER);

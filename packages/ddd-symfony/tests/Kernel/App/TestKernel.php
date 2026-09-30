@@ -96,6 +96,8 @@ final class TestKernel extends Kernel {
     $services->set('logger', NullLogger::class);
     $services->set('test.flusher', RecordingFlusher::class)->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
-      ->exclude(__DIR__ . '/{Commands,Events}/');
+      // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
+      // autoconfiguration tags the self-handling ones for the handle() locator.
+      ->exclude(__DIR__ . '/Events/');
   }
 }

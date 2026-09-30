@@ -14,6 +14,13 @@ final class DddTags {
   public const QUERY_HANDLER = 'tangible_ddd.query_handler';
 
   /**
+   * SelfHandlingCommand / SelfHandlingQuery classes (autoconfigured when the
+   * app's resource loading registers them). They are messages, not services:
+   * the tag only tells HandlerLocatorPass which handle() signatures to read.
+   */
+  public const SELF_HANDLING = 'tangible_ddd.self_handling';
+
+  /**
    * Integration listeners (#[AsIntegrationListener], or IntegrationTranslator
    * subclasses once core ships it). Optional attribute `event`: the fact class
    * or marker; otherwise read from the listener's event_class().
