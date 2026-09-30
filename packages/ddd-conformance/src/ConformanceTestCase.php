@@ -6,6 +6,9 @@ namespace TangibleDDD\Conformance;
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
+use TangibleDDD\Application\Events\PublishedFacts;
+use TangibleDDD\Conformance\Fixtures\CreateWidget;
+use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
 /**
@@ -41,6 +44,20 @@ abstract class ConformanceTestCase extends TestCase {
   /** The wire form a relay would hand the delivery runner for $fact under $eventId. */
   protected static function wrap(IIntegrationEvent $fact, string $eventId, ?string $correlationId = null, int $sequence = 1): array {
     return IntegrationEnvelope::wrap($fact->integration_payload(), $correlationId ?? 'corr-' . $eventId, $sequence, $eventId);
+  }
+
+  /**
+   * Publish $fact the way application code does: a transactional command
+   * whose handler records it, committed through the host bus into the
+   * host outbox. Returns the outbox event id.
+   */
+  protected function publishFact(DomainEvent&IIntegrationEvent $fact): string {
+    $bus = $this->host->commandBus([CreateWidget::class => function () use ($fact): void {
+      $this->host->events()->record($fact);
+    }]);
+    $bus->handle(new CreateWidget('publish-' . spl_object_id($fact)));
+
+    return PublishedFacts::id_of($fact) ?? throw new \LogicException('The host bus did not publish the fact');
   }
 
   /** What $fn threw, or null. */
