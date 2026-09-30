@@ -28,9 +28,10 @@ use TangibleDDD\Application\Process\LongProcess;
  *   throws ConcurrentProcessModification. An unknown id throws
  *   ProcessStoreFailed.
  * - touch(): the fenced version bump the runner performs before each step
- *   dispatch (3.7); same errors as save(). (Addition to the 3.8 sketch.)
+ *   dispatch (3.7); same errors as save(). (UNRATIFIED addition to the 3.8
+ *   sketch; CR-5 in Runtime/API-CHANGE-REQUESTS.md.)
  * - versionOf(): the current version for the runner's fence, null for an
- *   unknown id. (Addition to the 3.8 sketch.)
+ *   unknown id. (UNRATIFIED addition; CR-5.)
  * - findWaitingFor(): ids only (E F14), of `suspended` processes waiting for
  *   the class; $awaitKey narrows keyed awaits (D3, wave 4).
  * - findStranded(): `running`/`scheduled` rows with no live intent past the

@@ -22,6 +22,9 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * Error behaviour: LockNotAcquired and store errors propagate, so the
  * delivery invoker records a failed attempt and the fact is retried for
  * this subscriber only.
+ *
+ * UNRATIFIED: a new port not in the register; see CR-3 in
+ * Runtime/API-CHANGE-REQUESTS.md.
  */
 interface IProcessEntry {
 

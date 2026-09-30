@@ -46,7 +46,7 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * Until wave 2 makes ProcessRunner implement IProcessEntry, the runner
  * parameter is `ProcessRunner|IProcessEntry|null` and a plain ProcessRunner
  * is refused. Wave 2 narrows it to IProcessEntry and removes the
- * LogicException branch (register change request filed with wave 1).
+ * LogicException branch (UNRATIFIED; CR-3 in Runtime/API-CHANGE-REQUESTS.md).
  *
  * Lifetime: boot time; registering the same listener or process twice is
  * idempotent (the registry ignores duplicate ids).

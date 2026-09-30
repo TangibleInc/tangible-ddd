@@ -17,6 +17,9 @@ namespace TangibleDDD\Runtime\Delivery;
  *
  * The delivery runner retries the fact while needsRetry(); each retry runs
  * only the subscribers that have not been delivered.
+ *
+ * UNRATIFIED: four lists where the register has {delivered, failed}; see
+ * CR-2 in Runtime/API-CHANGE-REQUESTS.md.
  */
 final class DeliveryOutcome {
 

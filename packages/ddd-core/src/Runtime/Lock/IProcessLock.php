@@ -23,6 +23,10 @@ namespace TangibleDDD\Runtime\Lock;
  * version-fenced (IProcessStore::save).
  *
  * Adapters need not be re-entrant; wrap them in ReentrantProcessLock.
+ *
+ * UNRATIFIED: forceReleaseAll() is beyond the register 3.7 sketch and is an
+ * obligation on every adapter (Postgres session lock, GET_LOCK); see CR-4 in
+ * Runtime/API-CHANGE-REQUESTS.md.
  */
 interface IProcessLock {
 

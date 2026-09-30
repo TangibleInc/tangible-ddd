@@ -7,6 +7,9 @@ namespace TangibleDDD\Runtime\Delivery;
 /**
  * Per-(subscriber, event_id) delivery ledger (register 3.5, 5.1).
  *
+ * UNRATIFIED: lastError(), markExhausted() and exhausted() extend the
+ * register's four methods; see CR-1 in Runtime/API-CHANGE-REQUESTS.md.
+ *
  * - delivered(): true once markDelivered() has committed for the pair.
  * - markFailed(): records the error and sets the attempt count to $attempt
  *   (the 1-based handler attempt that just failed).

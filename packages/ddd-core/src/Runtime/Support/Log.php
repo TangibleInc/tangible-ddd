@@ -10,7 +10,13 @@ namespace TangibleDDD\Runtime\Support;
  * Runtime classes take an optional `\Closure(string $message): void`; a host
  * adapts its PSR-3 logger with `fn (string $m) => $logger->warning($m)`.
  * Without one, messages go to PHP's error_log(), so nothing is ever silent.
- * (psr/log is not yet a dependency of this tree; see the api change request.)
+ *
+ * Known pending change: psr/log is not yet a dependency of this tree. Once
+ * packaging adds it to the root and ddd-core manifests, wave 2 changes the
+ * runtime constructors that take this closure (IntegrationDelivery,
+ * ReentrantProcessLock, InMemoryTransactionBoundary, LoggingSignalDispatcher)
+ * to `?Psr\Log\LoggerInterface`, and this class becomes the null-logger
+ * fallback. See Runtime/API-CHANGE-REQUESTS.md.
  *
  * @internal
  */

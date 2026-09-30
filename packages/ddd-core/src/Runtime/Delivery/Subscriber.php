@@ -22,6 +22,9 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * fired by IntegrationDelivery when this subscriber reaches its budget and
  * re-fired on later deliveries until it returns without throwing (then the
  * ledger's terminal marker stops it). It must be idempotent.
+ *
+ * UNRATIFIED: `onExhausted` is a fifth parameter beyond the register sketch;
+ * see CR-2 in Runtime/API-CHANGE-REQUESTS.md.
  */
 final class Subscriber {
 
