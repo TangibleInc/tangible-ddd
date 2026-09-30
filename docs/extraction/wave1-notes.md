@@ -33,3 +33,12 @@ Also accepted from the same file:
 - `wave1/packaging` merged (PHP 8.2 floor, symfony/yaml require, package manifests, CI on `extraction/**`, harness, loader baseline).
 - `wave1/core` merged by the coordinator after ratifying CR-1..CR-6.
 - `conformance` re-runs on top of the merged core.
+
+## Conformance change requests (ratified after the conformance round)
+
+- **CONF-1, CONF-2, CONF-3** accepted: wave 2 core ships the port-based core forms of `CorrelationMiddleware` (nesting guard, `Correlation::within(for_act)`, audit through `IAuditSink`/`IAuditPolicy`/`IActorProvider`/`IEnvironmentProvider`, no WP call on any path including "audit off"), `OutboxIntegrationEventBus` (over `IOutboxStore` + `IClock`, absolute UTC `due_at = now + delay()` set once, 0.6 stamps kept, optional `IFactObserver`), and the relay step (`OutboxProcessor::process_batch` core form over `IOutboxStore` + `ITransport` + `ITransactionBoundary` + `IClock`, with a test seam between submit and accept). Conformance then deletes its stand-ins (`ActBracketMiddleware`, `PortOutboxBus`, `PortRelay`) and runs the mem host on the real classes.
+- **CONF-4** ruled: `ITransport::submit()` returning null, `''` or `'0'` is always a rejection. Every transport must issue a reference. Docblock updated in wave 2.
+- **CONF-5** accepted: `Testing\InMemoryTransport(sharesConnection: true)` implements `InMemoryTransactional` and enlists in `InMemoryTransactionBoundary`.
+- The wave-1 `ddd-src/` autoload bridge in `packages/ddd-conformance/tests/bootstrap.php` is removed after the wave-2 move.
+
+Gate: all eight wave-1 criteria passed at `cfda615` (root 699 tests, core 182, conformance mem 26 with 1 intentional skip on CONF-5, harness wp-integration 27 tests on MySQL 8.0, hotfix diff clean).
