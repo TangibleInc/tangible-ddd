@@ -19,7 +19,9 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  *
  * `handle` is `\Closure(IIntegrationEvent $event, string $eventId): void`.
  * `onExhausted` (optional) is `\Closure(IIntegrationEvent $event, \Throwable $last): void`,
- * fired once by IntegrationDelivery when this subscriber reaches its budget.
+ * fired by IntegrationDelivery when this subscriber reaches its budget and
+ * re-fired on later deliveries until it returns without throwing (then the
+ * ledger's terminal marker stops it). It must be idempotent.
  */
 final class Subscriber {
 

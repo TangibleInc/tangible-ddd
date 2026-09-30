@@ -9,8 +9,11 @@ namespace TangibleDDD\Runtime\Delivery;
  *
  * - delivered: ran and succeeded in this call.
  * - skipped:   already delivered earlier (ledger hit), not run.
- * - failed:    threw in this call and is still under budget: retry the fact.
- * - exhausted: at or over budget (now or earlier); not run again.
+ * - failed:    threw in this call and is still under budget, OR is over
+ *              budget with its compensation still pending (the onExhausted
+ *              callback threw, now or on an earlier crash): retry the fact.
+ * - exhausted: over budget AND compensated (terminal ledger marker written,
+ *              now or earlier); neither handler nor callback runs again.
  *
  * The delivery runner retries the fact while needsRetry(); each retry runs
  * only the subscribers that have not been delivered.

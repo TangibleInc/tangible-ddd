@@ -229,21 +229,98 @@ final class IntegrationDeliveryTest extends TestCase {
     self::assertFalse($outcome->needsRetry());
   }
 
-  public function test_a_throwing_failure_callback_is_logged_and_never_propagates(): void {
-    $logged = [];
+  public function test_exhaustion_writes_the_terminal_marker_only_after_the_callback_succeeds(): void {
+    $markerSeenByCallback = null;
     $this->registry->add($this->stub(
-      'bad',
+      'charge',
       10,
       body: static function () { throw new \RuntimeException('x'); },
-      onExhausted: static function () { throw new \LogicException('failure command broke'); }
+      onExhausted: function () use (&$markerSeenByCallback) {
+        $markerSeenByCallback = $this->ledger->exhausted('charge', self::EVENT_ID);
+      }
     ));
 
-    $outcome = $this->delivery(1, static function (string $m) use (&$logged) { $logged[] = $m; })
-      ->deliver(OrderPlaced::class, $this->wrapped());
+    $this->delivery(budget: 1)->deliver(OrderPlaced::class, $this->wrapped());
+
+    self::assertFalse($markerSeenByCallback, 'the marker is written after the callback, not before');
+    self::assertTrue($this->ledger->exhausted('charge', self::EVENT_ID));
+  }
+
+  public function test_exhaustion_without_a_callback_is_marked_terminal(): void {
+    $this->registry->add($this->stub('bad', 10, body: static function () { throw new \RuntimeException('x'); }));
+
+    $outcome = $this->delivery(budget: 1)->deliver(OrderPlaced::class, $this->wrapped());
 
     self::assertSame(['bad'], $outcome->exhausted);
+    self::assertTrue($this->ledger->exhausted('bad', self::EVENT_ID));
+  }
+
+  public function test_a_throwing_failure_callback_is_retried_until_it_succeeds_and_fires_once_after(): void {
+    $logged = [];
+    $calls = 0;
+    $succeeded = 0;
+    $this->registry->add($this->stub(
+      'charge',
+      10,
+      body: static function () { throw new \RuntimeException('gateway down'); },
+      onExhausted: function (IIntegrationEvent $e, \Throwable $last) use (&$calls, &$succeeded) {
+        if (++$calls === 1) {
+          throw new \LogicException('failure command broke');
+        }
+        $succeeded++;
+      }
+    ));
+    $delivery = $this->delivery(1, static function (string $m) use (&$logged) { $logged[] = $m; });
+
+    $first = $delivery->deliver(OrderPlaced::class, $this->wrapped());
+
+    self::assertSame(['charge'], $first->failed, 'compensation pending: reported as failed, not exhausted');
+    self::assertSame([], $first->exhausted);
+    self::assertTrue($first->needsRetry());
+    self::assertFalse($this->ledger->exhausted('charge', self::EVENT_ID));
     self::assertCount(2, $logged, 'the handler failure, then the callback failure');
     self::assertStringContainsString('failure command broke', $logged[1]);
+
+    $second = $delivery->deliver(OrderPlaced::class, $this->wrapped());
+
+    self::assertSame(['charge'], $second->exhausted);
+    self::assertFalse($second->needsRetry());
+    self::assertSame(2, $calls);
+    self::assertSame(1, $succeeded);
+    self::assertCount(1, $this->ran, 'the handler itself is not re-run once over budget');
+    self::assertTrue($this->ledger->exhausted('charge', self::EVENT_ID));
+
+    $third = $delivery->deliver(OrderPlaced::class, $this->wrapped());
+
+    self::assertSame(['charge'], $third->exhausted);
+    self::assertSame(2, $calls, 'no further callback once the marker is written');
+  }
+
+  public function test_a_crash_between_mark_failed_and_the_callback_refires_compensation_on_next_delivery(): void {
+    // Simulate the crash: the last attempt's markFailed committed, the process
+    // died before onExhausted ran, so there is no terminal marker.
+    $this->ledger->markFailed('charge', self::EVENT_ID, 'gateway down', 3);
+
+    $fired = [];
+    $this->registry->add($this->stub(
+      'charge',
+      10,
+      body: static function () { throw new \RuntimeException('must not run'); },
+      onExhausted: function (IIntegrationEvent $e, \Throwable $last) use (&$fired) {
+        $fired[] = [get_class($e), $last->getMessage()];
+      }
+    ));
+
+    $outcome = $this->delivery(budget: 3)->deliver(OrderPlaced::class, $this->wrapped());
+
+    self::assertSame([], $this->ran, 'the handler is not re-run');
+    self::assertSame([[OrderPlaced::class, 'gateway down']], $fired, 'compensation re-fires with the recorded last error');
+    self::assertSame(['charge'], $outcome->exhausted);
+    self::assertTrue($this->ledger->exhausted('charge', self::EVENT_ID));
+    self::assertSame(3, $this->ledger->attempts('charge', self::EVENT_ID));
+
+    $this->delivery(budget: 3)->deliver(OrderPlaced::class, $this->wrapped());
+    self::assertCount(1, $fired);
   }
 
   public function test_subscriber_failures_are_logged_with_the_fact_identity(): void {

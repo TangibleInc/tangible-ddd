@@ -20,10 +20,21 @@ use TangibleDDD\Runtime\Support\Log;
  *
  * Per subscriber: success → markDelivered; a throw → markFailed with the
  * next attempt number, logged, and delivery CONTINUES with the next
- * subscriber. When a subscriber's attempts reach the budget it is
- * exhausted: its onExhausted callback fires exactly once (D1: the
- * failureCommand() of an IExternalEffectCommand) and it is never run again
- * for that fact. A throwing onExhausted is logged, never propagated.
+ * subscriber. When a subscriber's attempts reach the budget its handler is
+ * never run again for that fact, and its onExhausted compensation (D1: the
+ * failureCommand() of an IExternalEffectCommand) fires. Only after the
+ * callback returns is the terminal marker (IDeliveryLedger::markExhausted)
+ * written and the subscriber reported `exhausted`.
+ *
+ * Compensation is durable and retryable: a throwing onExhausted is logged
+ * (not propagated), the marker is NOT written, and the subscriber is
+ * reported `failed` so needsRetry() stays true. A crash between the final
+ * markFailed() and the marker leaves the same state. On every later
+ * delivery a pair with attempts >= budget and no marker re-fires the
+ * callback (with a DeliveryBudgetExhausted carrying the ledger's lastError)
+ * until it succeeds. The guarantee is at-least-once, effectively once after
+ * success: the callback must be idempotent (deterministic command id), since
+ * a crash after it returned but before the marker commits re-fires it.
  *
  * Each subscriber's command commits in its own transaction (the bus's
  * Transaction middleware); the invoker opens none.
@@ -96,9 +107,21 @@ final class IntegrationDelivery {
         continue;
       }
 
+      if ($this->ledger->exhausted($s->id, $eventId)) {
+        $exhausted[] = $s->id;
+        continue;
+      }
+
       $attempts = $this->ledger->attempts($s->id, $eventId);
       if ($attempts >= $this->budget) {
-        $exhausted[] = $s->id;
+        // Budget reached but no terminal marker: the compensation never
+        // completed (callback threw, or the process died after markFailed).
+        $last = new DeliveryBudgetExhausted($s->id, $eventId, $attempts, $this->ledger->lastError($s->id, $eventId));
+        if ($this->exhaust($s, $event, $eventId, $last)) {
+          $exhausted[] = $s->id;
+        } else {
+          $failed[] = $s->id;
+        }
         continue;
       }
 
@@ -112,9 +135,8 @@ final class IntegrationDelivery {
           $s->id, $eventClass, $eventId, $attempt, $this->budget, $e->getMessage()
         ));
 
-        if ($attempt >= $this->budget) {
+        if ($attempt >= $this->budget && $this->exhaust($s, $event, $eventId, $e)) {
           $exhausted[] = $s->id;
-          $this->exhaust($s, $event, $eventId, $e);
         } else {
           $failed[] = $s->id;
         }
@@ -128,17 +150,25 @@ final class IntegrationDelivery {
     return new DeliveryOutcome($delivered, $skipped, $failed, $exhausted);
   }
 
-  private function exhaust(Subscriber $s, IIntegrationEvent $event, string $eventId, \Throwable $last): void {
-    if ($s->onExhausted === null) {
-      return;
+  /**
+   * Runs the compensation, then writes the terminal marker. Returns false
+   * (marker NOT written, subscriber stays compensation-pending) when the
+   * callback threw; the throw is logged, not propagated, so the remaining
+   * subscribers still run. Ledger errors propagate.
+   */
+  private function exhaust(Subscriber $s, IIntegrationEvent $event, string $eventId, \Throwable $last): bool {
+    if ($s->onExhausted !== null) {
+      try {
+        ($s->onExhausted)($event, $last);
+      } catch (\Throwable $e) {
+        Log::write($this->log, sprintf(
+          '[ddd delivery] failure callback of %s for event %s threw; compensation stays pending and is retried: %s',
+          $s->id, $eventId, $e->getMessage()
+        ));
+        return false;
+      }
     }
-    try {
-      ($s->onExhausted)($event, $last);
-    } catch (\Throwable $e) {
-      Log::write($this->log, sprintf(
-        '[ddd delivery] failure callback of %s for event %s threw: %s',
-        $s->id, $eventId, $e->getMessage()
-      ));
-    }
+    $this->ledger->markExhausted($s->id, $eventId);
+    return true;
   }
 }

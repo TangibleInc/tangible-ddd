@@ -44,6 +44,39 @@ final class DeliveryDoublesTest extends TestCase {
     self::assertFalse($l->delivered('other', 'e'));
   }
 
+  public function test_ledger_exhausted_marker_is_terminal_and_per_pair(): void {
+    $l = new InMemoryDeliveryLedger();
+
+    self::assertFalse($l->exhausted('s', 'e'));
+    self::assertNull($l->lastError('s', 'e'));
+
+    $l->markFailed('s', 'e', 'boom', 3);
+    self::assertFalse($l->exhausted('s', 'e'), 'reaching the budget alone is not the terminal marker');
+
+    $l->markExhausted('s', 'e');
+    self::assertTrue($l->exhausted('s', 'e'));
+    self::assertFalse($l->delivered('s', 'e'));
+    self::assertSame(3, $l->attempts('s', 'e'), 'attempts survive the marker');
+    self::assertSame('boom', $l->lastError('s', 'e'), 'the last error survives the marker');
+    self::assertFalse($l->exhausted('s', 'other'));
+    self::assertFalse($l->exhausted('other', 'e'));
+
+    $l->markExhausted('s', 'e'); // idempotent
+    self::assertTrue($l->exhausted('s', 'e'));
+  }
+
+  public function test_ledger_exhausted_marker_rolls_back_with_the_boundary_snapshot(): void {
+    $l = new InMemoryDeliveryLedger();
+    $l->markFailed('s', 'e', 'boom', 1);
+    $snap = $l->snapshotState();
+
+    $l->markExhausted('s', 'e');
+    $l->restoreState($snap);
+
+    self::assertFalse($l->exhausted('s', 'e'));
+    self::assertSame(1, $l->attempts('s', 'e'));
+  }
+
   public function test_effect_journal_find_store_invalidate(): void {
     $j = new InMemoryEffectJournal();
     self::assertInstanceOf(IEffectJournal::class, $j);
