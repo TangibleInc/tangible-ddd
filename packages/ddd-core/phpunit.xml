@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ddd-core unit suite. Runs WITHOUT tests/wp-stubs.php: the bootstrap loads only
+  the root Composer autoloader, so any WordPress symbol reached from core code
+  fails loudly here.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="tests/Unit/bootstrap.php"
+         cacheDirectory="../../.phpunit.cache/ddd-core"
+         executionOrder="depends,defects"
+         failOnWarning="true"
+         failOnRisky="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="core-unit">
+            <directory suffix="Test.php">tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory suffix=".php">src/Runtime</directory>
+            <directory suffix=".php">src/Testing</directory>
+        </include>
+    </source>
+</phpunit>
