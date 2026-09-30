@@ -80,9 +80,28 @@ final class ClockTest extends TestCase {
     self::assertEqualsWithDelta(time() - 60, (new EnvOffsetClock())->now()->getTimestamp(), 2);
   }
 
-  public function test_env_offset_clock_rejects_garbage(): void {
+  public function test_env_offset_clock_accepts_a_negative_iso8601_duration(): void {
+    putenv('DDD_CLOCK_OFFSET=-P1D');
+    self::assertEqualsWithDelta(time() - 86400, (new EnvOffsetClock())->now()->getTimestamp(), 2);
+  }
+
+  public function test_env_offset_clock_rejects_garbage_at_construction(): void {
     putenv('DDD_CLOCK_OFFSET=tomorrow-ish');
     $this->expectException(\InvalidArgumentException::class);
-    (new EnvOffsetClock())->now();
+    new EnvOffsetClock();
+  }
+
+  public function test_env_offset_clock_rejects_a_malformed_iso8601_duration_at_construction(): void {
+    putenv('DDD_CLOCK_OFFSET=P1X');
+    $this->expectException(\InvalidArgumentException::class);
+    new EnvOffsetClock();
+  }
+
+  public function test_env_offset_clock_reads_the_offset_once_so_now_never_throws(): void {
+    putenv('DDD_CLOCK_OFFSET=3600');
+    $clock = new EnvOffsetClock();
+    putenv('DDD_CLOCK_OFFSET=tomorrow-ish');
+
+    self::assertEqualsWithDelta(time() + 3600, $clock->now()->getTimestamp(), 2);
   }
 }
