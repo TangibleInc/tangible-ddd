@@ -21,20 +21,20 @@
     "require": {
         "php": ">=8.2",
         "tangible/ddd-core": "self.version",
-        "league/tactician": "^2.0-rc1",
-        "psr/log": "^1|^2|^3",
         "doctrine/dbal": "^4",
-        "symfony/console": "^7.4",
+        "symfony/messenger": "^7.4",
         "symfony/doctrine-messenger": "^7.4",
-        "symfony/framework-bundle": "^7.4",
-        "symfony/messenger": "^7.4"
+        "symfony/framework-bundle": "^7.4"
     },
     "require-dev": {
+        "league/tactician": "^2.0-rc1",
         "doctrine/doctrine-bundle": "^2.13",
         "phpunit/phpunit": "^11.0",
+        "symfony/console": "^7.4",
         "symfony/security-core": "^7.4"
     },
     "suggest": {
+        "symfony/console": "Enables ddd:relay, ddd:schema:dump and the console-operator actor (D5); every Symfony app with bin/console has it.",
         "doctrine/doctrine-bundle": "Provides the named DBAL connections (tangible_ddd.connection) and the doctrine:// Messenger transport the relay shares a transaction with.",
         "symfony/security-core": "Enables SecurityUserActorProvider (D5): the audit actor is the authenticated user."
     },

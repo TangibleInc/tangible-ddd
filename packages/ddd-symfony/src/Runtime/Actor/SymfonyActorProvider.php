@@ -22,12 +22,12 @@ final class SymfonyActorProvider implements IActorProvider {
   public function __construct(
     private readonly ActorContext $context,
     private readonly SecurityUserActorProvider $security,
-    private readonly ConsoleOperatorActorProvider $console,
+    private readonly ?ConsoleOperatorActorProvider $console = null,
     private readonly IActorProvider $fallback = new SapiActorProvider(),
   ) {}
 
   public function current(): Actor {
-    foreach ([fn () => $this->context->get(), fn () => $this->security->resolve(), fn () => $this->console->resolve()] as $source) {
+    foreach ([fn () => $this->context->get(), fn () => $this->security->resolve(), fn () => $this->console?->resolve()] as $source) {
       try {
         $actor = $source();
       } catch (\Throwable) {
