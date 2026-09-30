@@ -44,6 +44,16 @@ use TangibleDDD\Runtime\Support\Log;
  * errors (from_payload) and ledger storage errors propagate: the fact is
  * retried as a whole by the host's delivery runner.
  *
+ * Compatibility edge (0.6 hosts): 0.6 hook closures, e.g. the ProcessRunner
+ * ignition closure, still run for payloads WITHOUT `__event_id` (a consumer
+ * firing the hook by hand, a hand-built payload), just without dedup. This invoker
+ * refuses them on purpose, because a ledger row needs the id. A host adapter
+ * that wraps legacy hooks MUST therefore route id-less payloads around the
+ * invoker: call the subscriber callbacks directly, unledgered, once each in
+ * the same priority order, and log that it did so. Otherwise an existing
+ * listener silently stops firing. (Wave-3 wp adapter brief item; see
+ * packages/ddd-core/src/Runtime/API-CHANGE-REQUESTS.md.)
+ *
  * A fact without a correlation id still runs in a Fact scope, rooted in a
  * fresh story, so every subscriber sees `Kind::Fact` as its cause.
  */
