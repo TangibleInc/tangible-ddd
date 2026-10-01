@@ -16,6 +16,9 @@ namespace TangibleDDD\Tests\Integration\Conformance\Support;
  * - throwOnNext($verb, $table): the next `INSERT INTO` / `UPDATE` of
  *   $table throws from inside wpdb (the audit sink failing on open, or
  *   after the domain commit on close).
+ * - nullNextProcessLock(): the next per-process GET_LOCK statement (the
+ *   one naming `ddd_process_<id>`) answers NULL, as a killed connection or
+ *   a lock-service error does; the shipped fail-closed check must refuse it.
  */
 final class WpdbFaults {
 
@@ -60,6 +63,12 @@ final class WpdbFaults {
     $message = substr(str_replace("'", '', $reason), 0, 120);
     $this->armed[] = static fn (string $sql): string => strtoupper(trim($sql)) === 'COMMIT'
       ? "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '$message'"
+      : $sql;
+  }
+
+  public function nullNextProcessLock(): void {
+    $this->armed[] = static fn (string $sql): string => str_contains($sql, 'GET_LOCK(') && str_contains($sql, "'ddd_process_")
+      ? 'SELECT NULL AS acquired'
       : $sql;
   }
 
