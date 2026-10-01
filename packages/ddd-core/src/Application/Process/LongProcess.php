@@ -139,6 +139,87 @@ abstract class LongProcess extends Aggregate {
     $this->updated_at = new DateTimeImmutable();
   }
 
+  /**
+   * The index routes of the current await (D3): what a store that indexes
+   * awaits per route (sf `process_waits`) writes, one row each, while the
+   * process is `suspended`. Empty otherwise, and for a pure alarm.
+   *
+   * @return list<\TangibleDDD\Runtime\Process\AwaitRoute>
+   */
+  public function await_routes(): array {
+    $mechanism = $this->await_mechanism;
+    if ($this->status !== 'suspended' || $mechanism === null) {
+      return [];
+    }
+    if ($mechanism instanceof IRoutedAwait) {
+      return $mechanism->routes();
+    }
+    $class = $mechanism->event_class();
+    return $class === '' ? [] : [new \TangibleDDD\Runtime\Process\AwaitRoute($class, '')];
+  }
+
+  /**
+   * A deterministic ref this process mints in its current step (D3, D13):
+   * a job id, a request ref, the key of the await that waits for the answer.
+   * uuid5 of (process class, process id, step index, $purpose), so a re-run
+   * of the step (crash resume, RetryStep) mints the same ref. Requires a
+   * persisted process (the runner persists before any step runs).
+   */
+  public function step_ref(string $purpose = ''): string {
+    if ($this->id === null) {
+      throw new \LogicException('step_ref() needs a persisted process (no id yet)');
+    }
+    $process = \TangibleDDD\Runtime\Ids\NameBasedUuid::v5(
+      \TangibleDDD\Runtime\Ids\DeterministicCommandId::PROCESS_NAMESPACE,
+      static::class . ':' . $this->id
+    );
+    return \TangibleDDD\Runtime\Ids\NameBasedUuid::v5($process, 'ref:' . $this->current_step_index() . ':' . $purpose);
+  }
+
+  /** Retries used by a step so far (RetryStep, D1). */
+  public function step_attempts(string $step_name): int {
+    return $this->steps?->attempts[$step_name] ?? 0;
+  }
+
+  /** @internal runner machinery: count one retry of $step_name */
+  public function record_step_attempt(string $step_name): void {
+    if ($this->steps !== null) {
+      $this->steps->attempts[$step_name] = ($this->steps->attempts[$step_name] ?? 0) + 1;
+    }
+  }
+
+  /**
+   * @internal runner machinery: the persisted source of the current step's
+   * resume argument (ResumeSource), when that step is re-run in a later wake.
+   */
+  public function resume_source(): ?array {
+    $source = $this->steps?->resume;
+    if ($source === null || ($source['step_index'] ?? null) !== $this->current_step_index()) {
+      return null; // none, or one left behind by an earlier step
+    }
+    return $source;
+  }
+
+  /** @internal runner machinery */
+  public function set_resume_source(?array $source): void {
+    if ($this->steps !== null) {
+      $this->steps->resume = $source === null ? null : ['step_index' => $this->current_step_index()] + $source;
+    }
+  }
+
+  /** The current await's alarm instant (UTC), fixed when the step suspended (D7). */
+  public function await_deadline(): ?DateTimeImmutable {
+    $at = $this->steps?->await_due_at;
+    return $at === null ? null : new DateTimeImmutable($at, new \DateTimeZone('UTC'));
+  }
+
+  /** @internal runner machinery */
+  public function set_await_deadline(?DateTimeImmutable $deadline): void {
+    if ($this->steps !== null) {
+      $this->steps->await_due_at = $deadline?->setTimezone(new \DateTimeZone('UTC'))->format(\DateTimeInterface::ATOM);
+    }
+  }
+
   public function payload(): ?JsonLifecycleValue {
     return $this->payload;
   }
@@ -289,6 +370,9 @@ abstract class LongProcess extends Aggregate {
     $this->waiting_for = $waiting_for;
     $this->match_criteria = $match_criteria;
     $this->await_mechanism = $await_mechanism;
+    if ($await_mechanism === null && $this->steps !== null) {
+      $this->steps->await_due_at = null; // the await (and its alarm) is over
+    }
     $this->updated_at = new DateTimeImmutable();
   }
 

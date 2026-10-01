@@ -23,8 +23,10 @@ use TangibleDDD\Runtime\Lock\IProcessLock;
 use TangibleDDD\Runtime\Lock\LockKey;
 use TangibleDDD\Runtime\Lock\LockNotAcquired;
 use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
+use TangibleDDD\Runtime\Process\AwaitRoute;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionResult;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
 use TangibleDDD\Runtime\Process\IProcessEntry;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\IStrandedScanner;
@@ -104,6 +106,28 @@ use Throwable;
  * - Step commands carry deterministic ids (DeterministicCommandId::forStep):
  *   a step re-run after a crash dispatches the same command ids.
  *
+ * Wave 4 (register section 8 wave 4 core; D1, D3, D7, D13):
+ *
+ * - D3 keyed awaits: AwaitEvent::keyed() / AwaitAll::keyed() on refs the
+ *   process mints (LongProcess::step_ref()); the suspending step's
+ *   checkpoint commits with its await. resume_with_outcome() looks up
+ *   (class, key) and (class, '') (plus the fact's IIntegrationEvent
+ *   ancestors on a store without IMatchesFactAncestry). Keyed awaits and
+ *   AwaitAny take the fact in every accepting process; 0.6-shaped awaits
+ *   (unkeyed AwaitEvent, extractor AwaitAll, consumer mechanisms) keep
+ *   first-wins (R1). AwaitAny: the first accepted branch resumes, a
+ *   cancellation branch compensates. An AwaitAll over an empty key set does
+ *   not suspend. IPrecheckAwait: register-then-check after the await
+ *   committed and the step dispatched.
+ * - D7 alarms: the Timeout intent is due at an absolute UTC instant fixed
+ *   once at suspension (IHasDeadline, else now + timeout_seconds), stored
+ *   as LongProcess::await_deadline(); AwaitAlarm waits for no fact.
+ * - D1 inside steps: #[RetryStep] re-runs a failed step through a durable
+ *   Continue intent before compensating (default 0 retries). A resumed
+ *   step's argument (the fact, the gather, the precheck value) is persisted
+ *   with the retry, and with an #[Async] post-await step's continuation
+ *   (ProcessSteps::$resume, ResumeSource), so the re-run receives it.
+ *
  * Constructor (R2): the 0.6.5 `(IDDDConfig, IProcessRepository)` call stays
  * valid; the repository became optional and the ports, the start mode and
  * the logger are optional trailing parameters. The config stays typed
@@ -131,6 +155,14 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
   /** @var mixed Transient - resume_argument() output from the mechanism that woke the process */
   private mixed $resume_argument = null;
+
+  /**
+   * The persistable source of $resume_argument (ResumeSource shape), or
+   * ['kind' => 'unpersistable'] when it cannot cross a wake; null when there
+   * is no resume argument. Persisted with a RetryStep retry or an #[Async]
+   * continuation of the resumed step, restored by continue_scheduled().
+   */
+  private ?array $resume_source = null;
 
   /** @var array<int, int> process id → last version this runner read or wrote */
   private array $versions = [];
@@ -417,6 +449,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           $process->advance(status: 'running', payload: $process->payload());
           $this->persist($process);
           $this->skip_async_once = true;
+          $this->restore_resume($process);
           $this->run($process);
         });
       },
@@ -430,61 +463,167 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * under it. Contention propagates (the delivery retries this subscriber).
    */
   public function resume_on_event(IIntegrationEvent $event): void {
-    $event_class = get_class($event);
+    $this->resume_with_outcome($event);
+  }
 
-    foreach ($this->store()->findWaitingFor($event_class) as $process_id) {
+  /**
+   * resume_on_event() with what it did (D3). Candidates are tried in id
+   * order. A keyed await or an AwaitAny takes the fact in every process
+   * that accepts it: a cancellation fact (AwaitAny::cancelledBy) reaches
+   * every process it cancels, and keyed awaits accept only their own key,
+   * so a keyed answer reaches exactly the process that minted the key. A
+   * 0.6-shaped await (unkeyed AwaitEvent, extractor-keyed AwaitAll, a
+   * consumer mechanism) keeps 0.6's first-wins: once one of them took the
+   * fact, the others do not (R1).
+   *
+   * Lookup: findWaitingFor(class) for an unkeyed fact; for a fact reporting
+   * an await key (IAwaitKeyed), findWaitingFor(class, key) plus the unkeyed
+   * rows findWaitingFor(class, ''), so a route-indexing store (sf) answers
+   * from its index and a column store (mem, pdo, wp, which ignore the key)
+   * returns its usual candidates. On a store without IMatchesFactAncestry
+   * the fact's IIntegrationEvent ancestors are looked up too (an AwaitAny
+   * row holds the branches' common ancestor); a row found only that way is
+   * considered only when it is an AwaitAny, so a 0.6 await on a parent
+   * class is not reached by a subclass fact there (R1, fix round 2).
+   * accepts() is the final filter.
+   */
+  public function resume_with_outcome(IIntegrationEvent $event): ResumeReport {
+    $resumed = [];
+    $accumulated = [];
+    $cancelled = [];
+    $first_taken = false; // a 0.6-shaped await already took this fact
+
+    foreach ($this->candidates($event) as $process_id => $exact) {
       try {
         $candidate = $this->store()->find($process_id);
       } catch (QuarantinedProcess) {
         continue; // undecodable row: quarantined by the store, the worker continues
       }
-      if ($candidate === null || !($candidate->await_mechanism()?->accepts($event) ?? false)) {
+      $await = $candidate?->await_mechanism();
+      if ($candidate === null || $candidate->status() !== 'suspended' || $await === null || !self::reachable($await, $exact) || !$await->accepts($event)) {
         continue;
       }
+      if ($first_taken && self::first_wins($await)) {
+        continue; // 0.6: only the first accepting process per fact (R1)
+      }
 
-      $resumed = false;
-      $this->with_process_lock($process_id, function () use ($process_id, $event, &$resumed): void {
+      $this->with_process_lock($process_id, function () use ($process_id, $exact, $event, &$resumed, &$accumulated, &$cancelled, &$first_taken): void {
         $process = $this->find($process_id); // re-read under the lock (C6, C7)
         if ($process === null || $process->status() !== 'suspended') {
           return;
         }
         $mechanism = $process->await_mechanism();
-        if ($mechanism === null || !$mechanism->accepts($event)) {
+        if ($mechanism === null || !self::reachable($mechanism, $exact) || !$mechanism->accepts($event)) {
           return;
         }
-        $resumed = true;
+        if (self::first_wins($mechanism)) {
+          if ($first_taken) {
+            return;
+          }
+          $first_taken = true;
+        }
 
-        $this->in_scope($process, function () use ($process, $event, $mechanism): void {
+        $this->in_scope($process, function () use ($process, $event, $mechanism, &$resumed, &$accumulated, &$cancelled): void {
+          $id = (int) $process->get_id();
           $updated = $mechanism->accumulate($event);
 
           if (!$updated->is_satisfied()) {
             // Partial arrival: persist the tally, stay suspended (the alarm stays).
             $process->update_await($updated);
             $this->persist($process);
+            $accumulated[] = $id;
             return;
           }
 
           $suspended_at = $process->current_step_index();
+          $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeoutKey($id, $suspended_at) : null;
+
+          $reason = $updated instanceof ICancellingAwait ? $updated->cancellation_reason($event) : null;
+          if ($reason !== null) {
+            // A cancellation branch: compensate, as a failed alarm does (see handle_timeout).
+            $process->advance(status: 'running', payload: $process->payload());
+            $process->begin_compensation($reason);
+            $this->persist($process, null, $alarm);
+            $cancelled[] = $id;
+            $this->execute_compensation($process);
+            return;
+          }
+
           $process->advance_step();
-          $this->resume_argument = $updated->resume_argument($event);
+          $this->take_resume($updated->resume_argument($event), ResumeSource::ofMechanism($updated, $event));
+          $this->stamp_resume($process);
           $process->advance(status: 'running', payload: $process->payload());
-          $this->persist($process, null, $mechanism->timeout_seconds() > 0
-            ? WakeupIntent::timeoutKey((int) $process->get_id(), $suspended_at)
-            : null);
+          $this->persist($process, null, $alarm);
+          $resumed[] = $id;
 
           try {
             $this->run($process);
           } finally {
-            $this->resume_argument = null;
+            $this->clear_resume();
           }
         });
       });
+    }
 
-      // Only resume first accepting process per event (key sets are disjoint by construction).
-      if ($resumed) {
-        return;
+    return new ResumeReport($resumed, $accumulated, $cancelled);
+  }
+
+  /**
+   * Does this await keep 0.6's first-wins on a fact? Unkeyed AwaitEvent,
+   * extractor-keyed AwaitAll and consumer mechanisms: yes (0.6 resumed only
+   * the first accepting process; R1). Keyed awaits and AwaitAny (whose
+   * cancellation facts must reach every process they cancel): no, every
+   * accepting process takes the fact.
+   */
+  private static function first_wins(IAwaitMechanism $mechanism): bool {
+    return match (true) {
+      $mechanism instanceof AwaitAny => false,
+      $mechanism instanceof AwaitEvent => $mechanism->await_key === null,
+      $mechanism instanceof AwaitAll => !$mechanism->is_keyed(),
+      default => true,
+    };
+  }
+
+  /**
+   * Candidate process ids for $event (see resume_with_outcome), in id
+   * order, each mapped to whether the store matched it on the fact's own
+   * class (true) or only through one of its ancestors (false).
+   *
+   * @return array<int, bool>
+   */
+  private function candidates(IIntegrationEvent $event): array {
+    $store = $this->store();
+    $class = get_class($event);
+    $key = AwaitRoute::keyOf($event);
+    $ids = $key === null
+      ? $store->findWaitingFor($class)
+      : [...$store->findWaitingFor($class, $key), ...$store->findWaitingFor($class, '')];
+    $found = array_fill_keys($ids, true);
+
+    if (!$store instanceof IMatchesFactAncestry) {
+      // An exact-match column store: an AwaitAny row holds the branches'
+      // common ancestor in `waiting_for`, so ask for each ancestor as well.
+      foreach ([...array_values(class_parents($event) ?: []), ...array_values(class_implements($event) ?: [])] as $ancestor) {
+        if (is_a($ancestor, IIntegrationEvent::class, true)) {
+          foreach ($store->findWaitingFor($ancestor) as $id) {
+            $found[$id] ??= false;
+          }
+        }
       }
     }
+
+    ksort($found);
+    return $found;
+  }
+
+  /**
+   * R1 on exact-match stores: a row found only through an ancestor of the
+   * fact is a candidate when it is an AwaitAny (whose `waiting_for` holds
+   * its branches' common ancestor). A 0.6-shaped await on a parent class
+   * stays unreached by a subclass fact, as on 0.6.
+   */
+  private static function reachable(IAwaitMechanism $mechanism, bool $exact): bool {
+    return $exact || $mechanism instanceof AwaitAny;
   }
 
   /**
@@ -518,13 +657,14 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $this->in_scope($process, function () use ($process, $mechanism): void {
           if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
             $process->advance_step();
-            $this->resume_argument = $mechanism->resume_argument(null);
+            $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+            $this->stamp_resume($process);
             $process->advance(status: 'running', payload: $process->payload());
             $this->persist($process);
             try {
               $this->run($process);
             } finally {
-              $this->resume_argument = null;
+              $this->clear_resume();
             }
             return;
           }
@@ -624,7 +764,11 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       if (($step_index !== null && $process->current_step_index() !== $step_index) || $this->version_of($process_id) !== $version) {
         return;
       }
-      $this->in_scope($process, fn () => $this->run($process));
+      $this->in_scope($process, function () use ($process): void {
+        // A repaired post-await step (ResumeStrandedProcess) gets its argument back from the row.
+        $this->restore_resume($process);
+        $this->run($process);
+      });
     });
   }
 
@@ -791,7 +935,71 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         (new ProcessFailed($process, $e->getMessage()))->dispatch($this->config);
       }
       throw $e;
+    } finally {
+      // A precheck or an empty gather sets it mid-run; never carry it into the next wake.
+      $this->clear_resume();
     }
+  }
+
+  private function take_resume(mixed $argument, ?array $source): void {
+    $this->resume_argument = $argument;
+    $this->resume_source = $source ?? ['kind' => 'unpersistable'];
+  }
+
+  private function clear_resume(): void {
+    $this->resume_argument = null;
+    $this->resume_source = null;
+  }
+
+  /**
+   * A continuation that re-runs a resumed step (a RetryStep retry, an
+   * #[Async] post-await step) gets the step's argument back from the row. A
+   * source that no longer decodes is logged; the step then runs without it
+   * and fails or copes on its own.
+   */
+  private function restore_resume(LongProcess $process): void {
+    $source = $process->is_compensating() ? null : $process->resume_source();
+    if ($source === null) {
+      return;
+    }
+    unset($source['step_index']);
+    try {
+      $this->take_resume(ResumeSource::restore($source), $source);
+    } catch (Throwable $e) {
+      Log::write($this->logger, sprintf(
+        '[%s process] process #%d: the persisted argument of step %s cannot be restored: %s',
+        $this->config->prefix(), (int) $process->get_id(), (string) $process->current_step_name(), $e->getMessage()
+      ), 'error');
+    }
+  }
+
+  /**
+   * The resuming save (a fact, an alarm PROCEED, a precheck hit, an empty
+   * gather) carries the post-await step's argument source, so a worker that
+   * dies inside that step leaves a row ResumeStrandedProcess can re-run with
+   * the same argument (WP8-10). The step's completion clears it. An
+   * unpersistable argument leaves none: the repaired re-run then gets null.
+   */
+  private function stamp_resume(LongProcess $process): void {
+    $persistable = $this->resume_source !== null && ($this->resume_source['kind'] ?? null) !== 'unpersistable';
+    $process->set_resume_source($persistable ? $this->resume_source : null);
+  }
+
+  /**
+   * Persist the in-memory resume source with the next save, for a re-run of
+   * the current step in a later wake. False when the argument cannot be
+   * persisted (the caller decides what that means).
+   */
+  private function keep_resume_for_rerun(LongProcess $process): bool {
+    if ($this->resume_source === null) {
+      $process->set_resume_source(null);
+      return true;
+    }
+    if (($this->resume_source['kind'] ?? null) === 'unpersistable') {
+      return false;
+    }
+    $process->set_resume_source($this->resume_source);
+    return true;
   }
 
   /**
@@ -817,6 +1025,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         return;
       }
       $skip_async = false;
+      $input_payload = $process->payload();
 
       try {
         $result = $this->execute_step($process, $method);
@@ -829,8 +1038,11 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
         if ($result->should_suspend()) {
           // F2: the await (and its timeout intent) commits before the
-          // step's commands dispatch.
-          $this->suspend_then_dispatch($process, $result, (string) $process->current_step_index(), false);
+          // step's commands dispatch. True = the await was already
+          // satisfied (an empty key set, or the precheck): carry on.
+          if ($this->suspend_then_dispatch($process, $result, (string) $process->current_step_index(), false)) {
+            continue;
+          }
           return;
         }
 
@@ -843,7 +1055,8 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         // Advance to next step
         $process->advance_step();
         $process->advance(status: 'running', payload: $result->payload);
-        $this->resume_argument = null; // Clear after first step post-resume
+        $this->clear_resume(); // Clear after first step post-resume
+        $process->set_resume_source(null);
         $this->persist($process);
 
         // Check resources after each step
@@ -856,7 +1069,10 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         // Wiring bug / lost ownership, not a business failure — don't compensate.
         throw $e;
       } catch (Throwable $e) {
-        // Enter compensation mode
+        // The step's retry policy first (D1; default 0 retries), then compensation.
+        if ($this->retry_step($process, $method, $input_payload, $e)) {
+          return;
+        }
         $this->enter_compensation($process, $e->getMessage());
         $this->execute_compensation($process);
         return;
@@ -954,16 +1170,85 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * compensation, and its timeout intent is cancelled with the save.
    */
   private function enter_compensation(LongProcess $process, string $message): void {
-    $cancel = null;
-    if ($process->status() === 'suspended') {
-      $mechanism = $process->await_mechanism();
-      if ($mechanism !== null && $mechanism->timeout_seconds() > 0) {
-        $cancel = WakeupIntent::timeoutKey((int) $process->get_id(), $process->current_step_index());
-      }
-      $process->advance(status: 'running', payload: $process->payload());
-    }
+    $cancel = $this->withdraw_await($process);
     $process->begin_compensation($message);
+    $process->set_resume_source(null);
     $this->persist($process, null, $cancel);
+  }
+
+  /**
+   * A process that had already persisted its suspension leaves `suspended`
+   * (status running, await gone). Returns the alarm key to cancel with the
+   * next save, if any.
+   */
+  private function withdraw_await(LongProcess $process): ?string {
+    if ($process->status() !== 'suspended') {
+      return null;
+    }
+    $mechanism = $process->await_mechanism();
+    $cancel = $mechanism !== null && $this->has_alarm($mechanism)
+      ? WakeupIntent::timeoutKey((int) $process->get_id(), $process->current_step_index())
+      : null;
+    $process->advance(status: 'running', payload: $process->payload());
+    return $cancel;
+  }
+
+  /** Does this await carry a Timeout intent (relative seconds or an absolute deadline)? */
+  private function has_alarm(IAwaitMechanism $mechanism): bool {
+    return $mechanism->timeout_seconds() > 0
+      || ($mechanism instanceof IHasDeadline && $mechanism->deadline() !== null);
+  }
+
+  /**
+   * RetryStep (D1 inside steps): when the failed step still has retries,
+   * withdraw its await (if it had suspended), persist the process
+   * `scheduled` at the same step with its input payload and, for a
+   * post-await step, the source of the fact (or gather) it was resumed with
+   * (ProcessSteps::$resume), and schedule the re-run as a Continue intent
+   * after the policy backoff, in one state change. The continuation restores
+   * the argument, so the retry receives what the first attempt received.
+   * False = no retry left (or none declared), or a resume argument that
+   * cannot be persisted (logged): compensate.
+   */
+  private function retry_step(LongProcess $process, ReflectionMethod $method, ?\TangibleDDD\Domain\Shared\JsonLifecycleValue $input_payload, Throwable $error): bool {
+    $attrs = $method->getAttributes(RetryStep::class);
+    if ($attrs === []) {
+      return false;
+    }
+    /** @var RetryStep $policy */
+    $policy = $attrs[0]->newInstance();
+    $step = $method->getName();
+    $used = $process->step_attempts($step);
+    if ($used >= $policy->attempts) {
+      return false;
+    }
+    if (!$this->keep_resume_for_rerun($process)) {
+      Log::write($this->logger, sprintf(
+        '[%s process] step %s of process #%d failed (%s) and is not retried: the argument it was resumed with cannot be persisted',
+        $this->config->prefix(), $step, (int) $process->get_id(), $error->getMessage()
+      ), 'error');
+      return false;
+    }
+
+    $cancel = $this->withdraw_await($process);
+    $process->record_step_attempt($step);
+    $process->advance(status: 'scheduled', payload: $input_payload);
+    $this->persist(
+      $process,
+      WakeupIntent::continuation(
+        $this->config->prefix(),
+        (int) $process->get_id(),
+        $process->current_step_index(),
+        $this->clock()->now()->modify('+' . $policy->backoff_seconds . ' seconds'),
+        'retry-' . ($used + 1),
+      ),
+      $cancel,
+    );
+    Log::write($this->logger, sprintf(
+      '[%s process] step %s of process #%d failed (%s); retry %d of %d in %d s',
+      $this->config->prefix(), $step, (int) $process->get_id(), $error->getMessage(), $used + 1, $policy->attempts, $policy->backoff_seconds
+    ), 'warning');
+    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1016,8 +1301,24 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * the process on: this copy is then stale and must not be written over
    * the newer state (ConcurrentProcessModification, not a business failure).
    */
-  private function suspend_then_dispatch(LongProcess $process, Result $result, string $step, bool $compensation): void {
-    $this->suspend_for_event($process, $result);
+  private function suspend_then_dispatch(LongProcess $process, Result $result, string $step, bool $compensation): bool {
+    $mechanism = $result->await;
+
+    if (!$compensation && $mechanism instanceof AwaitAll && $mechanism->expected() === []) {
+      // A dynamic key set that came out empty: nothing to wait for. Dispatch
+      // as a plain step (fenced) and carry on with the empty gather.
+      $this->fence($process);
+      $this->dispatch_commands($result, $process, $step, $compensation);
+      $process->record_checkpoint($result->checkpoint);
+      $process->advance_step();
+      $process->advance(status: 'running', payload: $result->payload);
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+      $this->stamp_resume($process);
+      $this->persist($process);
+      return true;
+    }
+
+    $this->suspend_for_event($process, $result, !$compensation);
 
     $id = (int) $process->get_id();
     $suspended_version = $this->versions[$id] ?? null;
@@ -1033,36 +1334,97 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       }
       throw $e;
     }
+
+    if ($compensation || !$process instanceof IPrecheckAwait) {
+      return false;
+    }
+    return $this->precheck($process, $mechanism, $suspended_version);
   }
 
   /**
-   * Suspend process waiting for an integration event; a timeout becomes a
-   * durable Timeout intent in the same state change.
+   * Register-then-check (D3): the await, its alarm and the checkpoint have
+   * committed and the step's commands have dispatched; if the process is
+   * still exactly as suspended (no fact moved it on during the dispatch),
+   * ask the process whether the awaited state already exists, and resume in
+   * place when it does.
    */
-  private function suspend_for_event(LongProcess $process, Result $result): void {
-    $mechanism = $result->await;
-
-    if (!$this->awaits_are_subscribed($mechanism->event_class())) {
-      throw new AwaitedEventNotRegistered($mechanism->event_class(), get_class($process));
+  private function precheck(LongProcess&IPrecheckAwait $process, IAwaitMechanism $mechanism, ?int $suspended_version): bool {
+    $id = (int) $process->get_id();
+    if ($suspended_version === null || $this->store()->versionOf($id) !== $suspended_version) {
+      return false; // a fact delivered during the dispatch already took the await
     }
+
+    $hit = $process->already_satisfied($mechanism);
+    if ($hit === null) {
+      return false;
+    }
+
+    $suspended_at = $process->current_step_index();
+    $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeoutKey($id, $suspended_at) : null;
+    $process->advance_step();
+    $process->advance(status: 'running', payload: $process->payload());
+    if ($hit->use_mechanism_argument) {
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+    } else {
+      $this->take_resume($hit->resume_argument, ResumeSource::ofValue($hit->resume_argument));
+    }
+    $this->stamp_resume($process);
+    $this->persist($process, null, $alarm);
+    return true;
+  }
+
+  /**
+   * Suspend process waiting for an integration event; an alarm becomes a
+   * durable Timeout intent in the same state change, due at the absolute
+   * instant fixed here (D7: the mechanism's deadline, else now + its
+   * timeout), and a forward step's checkpoint commits with it (D3).
+   */
+  private function suspend_for_event(LongProcess $process, Result $result, bool $forward = true): void {
+    $mechanism = $result->await;
+    $event_class = $mechanism->event_class();
+
+    if ($event_class !== '') {
+      foreach ($this->awaited_classes($mechanism) as $class) {
+        if (!$this->awaits_are_subscribed($class)) {
+          throw new AwaitedEventNotRegistered($class, get_class($process));
+        }
+      }
+    }
+
+    if ($forward) {
+      $process->record_checkpoint($result->checkpoint);
+    }
+    $process->set_resume_source(null); // a new await: the last resume is spent
 
     $process->advance(
       status: 'suspended',
       payload: $result->payload,
-      waiting_for: $mechanism->event_class(),
+      waiting_for: $event_class === '' ? null : $event_class,
       await_mechanism: $mechanism,
     );
 
-    $intent = $mechanism->timeout_seconds() > 0
-      ? WakeupIntent::timeout(
-          $this->config->prefix(),
-          (int) $process->get_id(),
-          $process->current_step_index(),
-          $this->clock()->now()->modify('+' . $mechanism->timeout_seconds() . ' seconds'),
-        )
+    $due = null;
+    if ($mechanism instanceof IHasDeadline && $mechanism->deadline() !== null) {
+      $due = $mechanism->deadline();
+    } elseif ($mechanism->timeout_seconds() > 0) {
+      $due = $this->clock()->now()->modify('+' . $mechanism->timeout_seconds() . ' seconds');
+    }
+    $process->set_await_deadline($due);
+
+    $intent = $due !== null
+      ? WakeupIntent::timeout($this->config->prefix(), (int) $process->get_id(), $process->current_step_index(), $due)
       : null;
 
     $this->persist($process, $intent);
+  }
+
+  /** @return list<string> every fact class the await can be woken by */
+  private function awaited_classes(IAwaitMechanism $mechanism): array {
+    if (!$mechanism instanceof IRoutedAwait) {
+      return [$mechanism->event_class()];
+    }
+    $classes = array_map(static fn (AwaitRoute $r) => $r->eventClass, $mechanism->routes());
+    return $classes === [] ? [$mechanism->event_class()] : array_values(array_unique($classes));
   }
 
   /**
@@ -1072,6 +1434,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * move while compensating.
    */
   private function schedule_continuation(LongProcess $process, ?string $discriminator = null): void {
+    // An #[Async] post-await step runs in the continuation: it keeps its argument.
+    if (!$process->is_compensating() && !$this->keep_resume_for_rerun($process)) {
+      Log::write($this->logger, sprintf(
+        '[%s process] process #%d: the argument of step %s cannot be persisted for its continuation; the step runs without it',
+        $this->config->prefix(), (int) $process->get_id(), (string) $process->current_step_name()
+      ), 'error');
+    }
     $process->advance(status: 'scheduled', payload: $process->payload());
 
     $this->persist($process, WakeupIntent::continuation(
