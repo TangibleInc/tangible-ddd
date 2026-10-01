@@ -9,7 +9,7 @@ This file was written by the wave-5 docs-housekeeping author on `wave5/docs-hous
 - Waves 1-4 are merged on `extraction/ddd-packages` and gated. The last wave-4 merge is `761aef5` (`wave4/sf-conf4`).
 - The house-style rename is merged at `1b5ffe3`. It covers 402 method and property names, listed in [naming/table.json](naming/table.json) and explained in [naming/naming.md](naming/naming.md). Every document written in wave 5 uses the new names. The register and the change-request files of waves 1-4 keep the names that applied when they were written. The table maps them, for example `insertIgnited` → `insert_ignited`, `findStranded` → `find_stranded`, `Drain::runOnce` → `run_once`, `IProcessLock::forceReleaseAll` → `release_all`, `takeDeadLetteredAtClaim` → `take_claim_dead_letters`, `failureCommand` → `failure_command`.
 - Wave 5 closes the library demands that the TXP process-kernel slice recorded, plus coordinator decisions. The demand lists are the rollups under `txp-slices/.docs/research/2026-10-01-process-kernel-{awaits,effects,wiring,workflows}-demands/` and `2026-10-01-tangible-ddd-kernel-demands/`: AW1-AW3, E1-E3, L9, L10, W1-W5 and P1-P2. P1 and P2 were already closed in wave 4 by sf-conf4 (CR sf-conf4-1 and -2).
-- Branches in flight while this was written: `wave5/core-correctness`, `wave5/sf-features`, `wave5/wp-redelivery-default` and this one. None had commits yet, so the docs below describe the code at `1b5ffe3`. For wave-5 behaviour they describe only the decisions the coordinator gave this author. The "Sync after the wave-5 merges" checklist lists what to finish.
+- Branches in flight while this was written: `wave5/core-correctness`, `wave5/sf-features`, `wave5/wp-redelivery-default` and this one. None of them was merged, so the docs below describe the code at `1b5ffe3`. For wave-5 behaviour they describe only the decisions the coordinator gave this author. The one exception is the wp redelivery opt-in names, read from that branch (below). The "Sync after the wave-5 merges" checklist lists what to finish.
 
 ## Register edits made in wave 5 (docs-housekeeping)
 
@@ -36,7 +36,13 @@ Every request in these files was merged and passed the wave-4 gate. They are rec
 
 ## Wave 5 decisions this author was given
 
-- **WordPress listener redelivery: one attempt by default, with an opt-in.** On wp, a DDD-registered listener (`integration_listener()`, `IntegrationListener`, `integration_action()`) that throws is not retried by default. That is 0.6 behaviour: one attempt, the error logged, the rest of the hook's callbacks still run. A listener that opts in gets the ledger budget of register 5.1 (5 attempts, 30 s × 2ⁿ, capped at 3600 s) through `{prefix}_ddd_redeliver`. Ignition and resume subscribers are unaffected. `wave5/wp-redelivery-default` implements this and names the opt-in. The docs below do not name an opt-in API, because none existed at `1b5ffe3`.
+- **WordPress listener redelivery: one attempt by default, with an opt-in.** On wp, a DDD-registered listener (`integration_listener()`, `IntegrationListener`, `integration_action()`) that throws is not retried by default. That is 0.6 behaviour: one attempt, the error logged, the rest of the hook's callbacks still run. A listener that opts in gets the ledger budget of register 5.1 (30 s × 2ⁿ, capped at 3600 s) through `{prefix}_ddd_redeliver`. Ignition and resume subscribers are unaffected. `wave5/wp-redelivery-default` implements this ([its change requests](wave5-wp-redelivery-default-change-requests.md), CR-RD-1 and CR-RD-2, read on that branch at `875bac5`):
+  - `#[TangibleDDD\WordPress\Retries(n)]` gives n + 1 attempts;
+  - else the option `{prefix}_ddd_delivery_attempts`;
+  - else `WpLedgeredDelivery::LISTENER_ATTEMPTS` (1);
+  - then the filter `tangible_ddd_delivery_attempts` has the last word.
+
+  The CHANGELOG, the README and the runbook use these names. They are the only names in the wave-5 docs that do not exist at `1b5ffe3`, and they resolve once that branch merges. That branch's packaging request 2 (a CHANGELOG bullet and a migration step) is covered by the CHANGELOG entry here, because this author owns `CHANGELOG.md` in wave 5.
 - The three 0.6.x bug fixes stay as frozen in register 6, and are mirrored onto `hotfix/0.6.7`, which is prepared and not released.
 
 ## Docs written in wave 5
@@ -56,7 +62,7 @@ Every class, method and command these documents name was checked against the sou
 When `wave5/core-correctness`, `wave5/sf-features` and `wave5/wp-redelivery-default` merge, the owner of the next docs round updates these places:
 
 1. The CHANGELOG "Wave 5" list: one line per demand closed (AW1-AW3, E1-E3, L9, L10, W1-W5), with its API.
-2. The CHANGELOG, README and runbook lines about the wp redelivery default: add the opt-in's real name.
+2. The CHANGELOG, README and runbook lines about the wp redelivery default: check `Retries`, the option and the filter against the merged code, and drop "lands with wave5/wp-redelivery-default".
 3. The Symfony guide sections on effects (E1 handler shape, E2 `recorded_at`), workflows (W1 reschedule, W3 `stale_start_seconds`, W5 operator source) and awaits (AW1 resuming event id, AW2 contention, AW3 unheard log), where those land.
 4. The register's section 4 and 8 cells for any new scenario id the wave-5 authors add.
 5. `docs/README.md` (not owned by this author): link the runbook and the three guides, and mark the 0.6.x status line as superseded.

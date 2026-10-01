@@ -107,7 +107,12 @@ final class ReserveStockOnOrderPlaced extends IntegrationListener {
 What 0.7 adds, once the consumer is at schema v8:
 
 - **Isolation.** Each DDD-registered callback runs behind a per-subscriber delivery ledger. If one listener throws, the error is logged and recorded, and the rest of the hook's callbacks still run. Raw `add_action` callbacks are outside this guarantee.
-- **Retries are opt-in.** By default a failing listener gets one attempt, as in 0.6. A listener that opts in is retried through `{prefix}_ddd_redeliver`: up to 5 attempts, backoff 30 s × 2ⁿ capped at 3600 s. The opt-in is being added in wave 5 (see the [CHANGELOG](CHANGELOG.md)). Opt in only when the command can run again for the same fact.
+- **Retries are opt-in.** By default a failing listener gets one attempt, as in 0.6. The ledger then marks it exhausted, and `wp ddd ops` lists it. A listener that declares `#[Retries(n)]` (`TangibleDDD\WordPress\Retries`) gets n + 1 attempts through `{prefix}_ddd_redeliver`, with backoff 30 s × 2ⁿ capped at 3600 s. The option `{prefix}_ddd_delivery_attempts` sets the number for a whole consumer, and the filter `tangible_ddd_delivery_attempts` has the last word. Process ignition and resume always keep 5 attempts. This lands in wave 5: see the [CHANGELOG](CHANGELOG.md). Opt in only when the command can run again for the same fact.
+
+  ```php
+  #[Retries(4)]                                   // 5 attempts in all
+  final class ReserveStockOnOrderPlaced extends IntegrationListener { /* ... */ }
+  ```
 - **The fact's identity.** Inside a listener, `Correlation::current_fact()` returns the `FactRef` (`event_id`, `event_class`, `correlation_id`) of the fact being delivered. Use it, or `Uuid::v5()`, to derive idempotency keys.
 
 `integration_listener()` and `integration_action()` remain the function forms.

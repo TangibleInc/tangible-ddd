@@ -70,7 +70,17 @@ These three 0.6.x bugs are fixed here. The same fixes, in a form that needs no s
 
   Relay pauses are read from both the new rows and the old option until the option drains. Outbox rows keep the status `completed`. Quarantined processes are `failed` with `quarantine_reason` set.
 - **WordPress delivery isolation**, once a consumer is at schema v8. Every callback registered through DDD (`integration_listener()`, `IntegrationListener`, `integration_action()`, and the process ignition and resume subscribers) now runs behind the per-subscriber delivery ledger. If one callback throws, it is logged, and the rest of the hook's callbacks still run. A callback the ledger already recorded as delivered is skipped when the fact comes again. Raw `add_action` callbacks on integration hooks are outside this guarantee. Hand-fired payloads without `__event_id` keep the 0.6 semantics.
-- **WordPress listener redelivery: one attempt by default (wave 5).** A DDD-registered listener that throws is not retried by default. That is the 0.6 behaviour: one attempt, the error logged and recorded in the ledger. A listener opts in to the handler budget: 5 attempts, backoff 30 s × 2ⁿ capped at 3600 s, through the new `{prefix}_ddd_redeliver` hook. Process ignition and resume are not listeners and are unaffected. `wave5/wp-redelivery-default` implements this and names the opt-in. The ddd-symfony and plain-PHP delivery budgets are unchanged (5 by default; `tangible_ddd.delivery.budget` on Symfony).
+- **WordPress listener redelivery: one attempt by default (wave 5).** A DDD-registered listener that throws is not retried by default, which is the 0.6 behaviour. The ledger records the pair as failed (attempt 1, with the error) and then exhausted, and its on-exhausted compensation runs once. `wp ddd ops` lists the pair against that listener's real budget. No `{prefix}_ddd_redeliver` is scheduled for it.
+  - "Listener" covers `integration_action()`, `integration_listener()` / `IntegrationListener`, and any `SubscriptionRegistrar` or custom subscriber.
+  - Process ignition, process resume and workflow ignition keep the budget of 5.
+  - A listener opts in to retries. The retries run through `{prefix}_ddd_redeliver`, with backoff 30 s × 2ⁿ capped at 3600 s. The opt-in is resolved per delivery, in this order:
+    1. `#[TangibleDDD\WordPress\Retries(n)]` on the listener class, method, function or closure gives n + 1 attempts;
+    2. else the option `{prefix}_ddd_delivery_attempts`, for the whole consumer;
+    3. else one attempt.
+
+    The filter `tangible_ddd_delivery_attempts` (`$attempts, $subscriber_id, $prefix`) then has the last word.
+  - This lands with `wave5/wp-redelivery-default` (CR-RD-1, CR-RD-2).
+  - The ddd-symfony and plain-PHP delivery budgets are unchanged: 5 by default, `tangible_ddd.delivery.budget` on Symfony.
 - A satisfied await cancels its timeout intent, so the projected Action Scheduler action is unscheduled. A copy of the action that still fires is a no-op.
 - `RetryDeliveryCommand` refuses a leased row, and any row that is not `pending` or `dlq`. 0.6 reset any row. Only the administration port's explicit `force` overrides the status check.
 - An expired relay lease that is claimed again counts as one relay attempt. A row whose submitter keeps dying is dead-lettered at claim once it reaches `max_attempts`, instead of being re-claimed forever. This applies on every host.
@@ -123,7 +133,7 @@ These items close the TXP process-kernel demands. Each gets its line above when 
 - E1 (effects get their dependencies through a handler class), E2 (an effect that was performed but never recorded is visible), E3 (which failure command ran);
 - L9 (`AggregateRootRepository` removal with event harvesting), L10 (a core conflict exception, 409);
 - W1 (a durable `reschedule()` for workflows on Symfony), W2 (behaviour config types registered at boot), W3 (`workflow.stale_start_seconds` and the transport redelivery timeout), W4 (deterministic ids for work-item commands), W5 (a workflow source in the Symfony operator view);
-- the opt-in name of the WordPress listener redelivery budget (see Changed).
+- the WordPress listener redelivery default and its `#[Retries]` opt-in (described under Changed).
 
 ### Supported combinations
 
@@ -147,7 +157,7 @@ These items close the TXP process-kernel demands. Each gets its line above when 
    - `ddd-wordpress/self/index.php` is kept as a forwarding shim.
 4. **Let the schema migrate.** Version 8 runs through the existing migration ledger on the next `install_tables()`, and it only adds tables and nullable columns. Intent rows are backfilled for pending Action Scheduler continuations and timeouts.
 5. **Check every delayed fact.** Delays now apply once (see Fixed). If you tuned a delay to the doubled behaviour, halve your compensation. tangible-cred's `EndpointAuthRefresh` and `BehaviourWorkflowReschedule` are the known cases, and the table under Fixed shows their new timing.
-6. **Decide which listeners should retry.** By default a failing listener runs once, as in 0.6, and it no longer aborts the other callbacks on its hook. Opt a listener in to the 5-attempt budget only if its command can run again for the same fact. On WordPress a retried listener sends its command again, and that command gets a new command id.
+6. **Decide which listeners should retry.** By default a failing listener runs once, as in 0.6, and it no longer aborts the other callbacks on its hook. Opt a listener in with `#[Retries(n)]`, or a whole consumer with the `{prefix}_ddd_delivery_attempts` option (see Changed), but only if its command can run again for the same fact. On WordPress a retried listener sends its command again, and that command gets a new command id.
 7. **Schedule the relay tick if you rely on it.** Action Scheduler still drives delivery. `wp ddd relay --once` from cron also re-projects wakeups whose actions went missing, and runs the stranded scan.
 8. **Stay inside what WordPress supports.**
    - Keyed awaits, `AwaitAny`, dynamic `AwaitAll`, external effects (D1) and fact-ignited workflows (D10) are not wired on WordPress, and a 0.6 winner could not decode their state after a rollback. Keep to `AwaitEvent` (with or without `timeout_seconds`) and extractor-keyed `AwaitAll`.

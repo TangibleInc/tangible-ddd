@@ -20,7 +20,7 @@ A rollback here means this: every plugin that bundles `tangible/ddd` 0.7 goes ba
 
 None of the following has a callback under 0.6. If any of it is still pending when the winner switches, Action Scheduler fails the action and the work is lost.
 
-1. **Pending `{prefix}_ddd_redeliver` actions.** These are handler retries of DDD-registered listeners. In 0.7 a WordPress listener gets one attempt by default, as in 0.6, so redeliveries exist only for listeners that opted in to the retry budget (wave 5). Leftover failed ledger pairs whose redelivery Action Scheduler lost also count.
+1. **Pending `{prefix}_ddd_redeliver` actions.** These are handler retries of DDD-registered listeners. In 0.7 a WordPress listener gets one attempt by default, as in 0.6. Redeliveries therefore exist only for listeners that opted in with `#[Retries(n)]` or the `{prefix}_ddd_delivery_attempts` option (wave 5), and for process ignition and resume subscribers, which keep 5 attempts. Leftover failed ledger pairs whose redelivery Action Scheduler lost also count.
 2. **Pending `{prefix}_ddd_wakeup` actions.** These are the ResumeRetry intents a contended wake schedules.
 3. **By-reference integration actions.** A fact whose Action Scheduler arguments would exceed 8000 bytes is scheduled as a pointer to its outbox row (`WpLargeEnvelope`). 0.6 cannot resolve the pointer. This only affects facts that 0.6 could not relay at all, because Action Scheduler refuses arguments that large.
 
