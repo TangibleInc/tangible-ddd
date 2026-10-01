@@ -9,6 +9,7 @@ use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
+use TangibleDDD\WordPress\Retries;
 
 /**
  * The wp ISubscriptionRegistry (register 3.5), fed by SubscriptionRegistrar
@@ -25,7 +26,10 @@ use TangibleDDD\Runtime\Delivery\Subscriber;
  * on a schema v8 consumer each subscriber is isolated and ledgered per
  * (subscriber id, event_id), retried through `{prefix}_ddd_redeliver` and
  * budgeted, with its on_exhausted compensation at the budget. Before v8 a
- * throwing callback aborts the rest of do_action, as in 0.6.
+ * throwing callback aborts the rest of do_action, as in 0.6. The budget is
+ * WpLedgeredDelivery::budget(): one attempt for a listener unless its
+ * consumer opts in or its class declares #[Retries]; process ignition and
+ * resume keep the core budget.
  *
  * Id-less payloads (wave1-notes): an envelope without `__event_id` (a hook
  * fired by hand, a hand-built payload) bypasses the ledger and is delivered
@@ -84,7 +88,7 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
 
       $ctx !== null ? Correlation::within($ctx, $run) : $run();
     };
-    $callback = WpLedgeredDelivery::bind($hook, $class, $s->id, $s->priority, $invoke, $s->on_exhausted);
+    $callback = WpLedgeredDelivery::bind($hook, $class, $s->id, $s->priority, $invoke, $s->on_exhausted, self::declared($s)?->attempts());
     add_action($hook, $callback, $s->priority, 1);
 
     $this->bound[$s->id] = ['sub' => $s, 'hook' => $hook, 'callback' => $callback, 'seq' => ++$this->seq];
@@ -98,6 +102,18 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
     usort($matching, static fn (array $a, array $b) => [$a['sub']->priority, $a['seq']] <=> [$b['sub']->priority, $b['seq']]);
 
     return array_map(static fn (array $e) => $e['sub'], $matching);
+  }
+
+  /**
+   * The #[Retries] of a SubscriptionRegistrar listener: its id is
+   * `listener:<class>` (register 3.5), so the class is read off the id.
+   */
+  private static function declared(Subscriber $s): ?Retries {
+    if (!str_starts_with($s->id, 'listener:')) {
+      return null;
+    }
+    $class = substr($s->id, strlen('listener:'));
+    return class_exists($class) ? Retries::of($class) : null;
   }
 
   private static function ceremony(Subscriber $s): string {

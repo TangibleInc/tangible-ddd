@@ -96,6 +96,21 @@ if (!class_exists('ActionScheduler', false) || !ActionScheduler::is_initialized(
     throw new RuntimeException('tangible-ddd integration bootstrap: Action Scheduler did not initialize.');
 }
 
+// ── Delivery budget of the conformance consumer ──────────────────────────────
+// A wp listener gets one attempt unless its consumer opts in (wave 5,
+// WpLedgeredDelivery::budget()). The shared ddd-conformance scenarios assert
+// the core budget on every host, so their consumer (`ddd_conformance`, the
+// conformance-wp run, which boots through this file) opts in to it, as a
+// consumer that wants retries does.
+add_filter(
+    \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::ATTEMPTS_FILTER,
+    static fn (int $attempts, string $subscriber, string $prefix): int => $prefix === 'ddd_conformance'
+        ? \TangibleDDD\Runtime\Delivery\IntegrationDelivery::DEFAULT_BUDGET
+        : $attempts,
+    10,
+    3
+);
+
 // ── Autoload integration test base classes ───────────────────────────────────
 // The vendor autoload maps TangibleDDD\Tests\ → the parent plugin's tests/ dir.
 // Integration base classes live in this worktree's tests/Integration/, so we

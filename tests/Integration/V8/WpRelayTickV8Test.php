@@ -109,7 +109,13 @@ final class WpRelayTickV8Test extends V8TestCase {
     self::assertNull($report->stranded);
   }
 
+  /** These tests need listener retries: opt the consumer in to the core budget (the wp default is one attempt). */
+  private function retryListeners(): void {
+    update_option($this->config->option(WpLedgeredDelivery::ATTEMPTS_OPTION), WpLedgeredDelivery::BUDGET, false);
+  }
+
   public function test_the_operator_view_lists_every_layer_against_its_budget(): void {
+    $this->retryListeners();
     $this->append('e1000000-0000-4000-8000-000000000002');
     $this->wpdb->query("UPDATE `{$this->table('integration_outbox')}` SET attempts = 2, last_error = 'transport down'");
     (new \TangibleDDD\WordPress\Adapter\WpDeliveryLedger($this->config->prefix()))->mark_failed('ddd8it/listener:x', 'e1000000-0000-4000-8000-000000000002', 'boom', 3);
@@ -134,6 +140,7 @@ final class WpRelayTickV8Test extends V8TestCase {
   }
 
   public function test_the_tick_restores_a_lost_redelivery(): void {
+    $this->retryListeners();
     $down = 1;
     integration_action(V8Fact::class, static function () use (&$down): void {
       if ($down-- > 0) {
@@ -153,6 +160,7 @@ final class WpRelayTickV8Test extends V8TestCase {
   }
 
   public function test_the_pre_rollback_drain_runs_every_pending_redelivery_to_an_end(): void {
+    $this->retryListeners();
     $down = 2;
     $runs = 0;
     integration_action(V8Fact::class, static function () use (&$down, &$runs): void {

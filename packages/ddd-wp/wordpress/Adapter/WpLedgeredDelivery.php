@@ -36,11 +36,11 @@ use TangibleDDD\Runtime\SystemClock;
  *   scheduled at now + IntegrationDelivery::backoff_seconds(attempt), which
  *   re-runs only the DDD subscribers of that hook through the same gate
  *   (redeliver()); raw callbacks never run twice;
- * - at the budget (5): its on_exhausted compensation (when it has one) and
- *   then the terminal marker; a throwing compensation stays pending and is
- *   re-fired on a later delivery; a fact that no longer decodes is marked
- *   exhausted without it ('compensation skipped: undecodable', as core
- *   IntegrationDelivery::poisoned());
+ * - at the budget (budget()): its on_exhausted compensation (when it has
+ *   one) and then the terminal marker; a throwing compensation stays
+ *   pending and is re-fired on a later delivery; a fact that no longer
+ *   decodes is marked exhausted without it ('compensation skipped:
+ *   undecodable', as core IntegrationDelivery::poisoned());
  * - a `failed` pair whose subscriber is not bound when the redelivery runs
  *   (removed, context-only, closure id changed: WP8-9) spends one attempt
  *   per redelivery and is exhausted at the budget without a compensation;
@@ -60,13 +60,39 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * `{prefix}_ddd_redeliver` has no callback under 0.6: pending redeliveries
  * are lost on rollback unless `wp ddd drain --before-rollback` ran first.
+ *
+ * Budgets (wave 5 coordinator decision; budget()): a listener (every DDD
+ * subscriber that is not a process ignition or resume) gets ONE attempt,
+ * the 0.6 behaviour: its first throw is recorded as exhausted with the
+ * error in last_error, its compensation fires once, and nothing repeats
+ * the side effect. A consumer opts its listeners into retries with the
+ * option `{prefix}_ddd_delivery_attempts`, a listener with #[Retries(n)],
+ * and the filter `tangible_ddd_delivery_attempts` has the last word.
+ * Process ignition, process resume and workflow ignition subscribers keep
+ * the core budget (BUDGET, 5): they are idempotent by design.
  */
 final class WpLedgeredDelivery {
 
+  /** The core budget, kept by the process ignition and resume subscribers. */
   public const BUDGET = IntegrationDelivery::DEFAULT_BUDGET;
 
-  /** @var array<string, array<string, array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure}>> hook => id => entry */
+  /** A listener's attempts unless its consumer or the listener opts in (0.6: no retry). */
+  public const LISTENER_ATTEMPTS = 1;
+
+  /** Per consumer: `{prefix}_ddd_delivery_attempts` (via IDDDConfig::option()). */
+  public const ATTEMPTS_OPTION = 'ddd_delivery_attempts';
+
+  /** apply_filters(ATTEMPTS_FILTER, int $attempts, string $subscriber_id, string $prefix): int */
+  public const ATTEMPTS_FILTER = 'tangible_ddd_delivery_attempts';
+
+  /** Subscriber ids of the process kernel: `[{prefix}/](ignition|resume|workflow-ignition):…`. */
+  private const KERNEL_ID = '~^(?:[a-z0-9_]+/)?(?:ignition|resume|workflow-ignition):~';
+
+  /** @var array<string, array<string, array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure, attempts: ?int}>> hook => id => entry */
   private static array $bound = [];
+
+  /** @var array<string, int> subscriber id => attempts its #[Retries] declares */
+  private static array $declared = [];
 
   private static int $seq = 0;
 
@@ -140,8 +166,9 @@ final class WpLedgeredDelivery {
    *
    * @param \Closure(mixed ...$params): void $invoke the 0.6 callback body (receives do_action's params)
    * @param (\Closure(IIntegrationEvent, \Throwable): void)|null $onExhausted
+   * @param int|null $attempts the attempts the listener declares (#[Retries]); null = the consumer's
    */
-  public static function bind(string $hook, string $eventClass, string $subscriberId, int $priority, \Closure $invoke, ?\Closure $onExhausted = null): \Closure {
+  public static function bind(string $hook, string $eventClass, string $subscriberId, int $priority, \Closure $invoke, ?\Closure $onExhausted = null, ?int $attempts = null): \Closure {
     self::$bound[$hook][$subscriberId] = [
       'id' => $subscriberId,
       'priority' => $priority,
@@ -149,7 +176,13 @@ final class WpLedgeredDelivery {
       'event' => $eventClass,
       'invoke' => $invoke,
       'onExhausted' => $onExhausted,
+      'attempts' => $attempts,
     ];
+    if ($attempts !== null) {
+      self::$declared[$subscriberId] = $attempts;
+    } else {
+      unset(self::$declared[$subscriberId]);
+    }
 
     return static function (mixed ...$params) use ($hook, $subscriberId): void {
       $entry = self::$bound[$hook][$subscriberId] ?? null;
@@ -228,17 +261,19 @@ final class WpLedgeredDelivery {
    * @param array<string, mixed> $wrapped
    */
   private static function spendUnbound(WpDeliveryLedger $ledger, string $hook, string $eventClass, string $eventId, array $wrapped): void {
+    $prefix = (string) self::prefix_of($hook, $eventClass);
     foreach ($ledger->failures($eventId) as $id => $attempts) {
       if (isset(self::$bound[$hook][$id])) {
         continue;
       }
       $attempt = $attempts + 1;
+      $budget = self::budget($prefix, $id);
       $reason = sprintf('subscriber %s is not bound on %s in this request (removed, registered only in some contexts, or its closure id changed)', $id, $hook);
       try {
-        if ($attempt >= self::BUDGET) {
+        if ($attempt >= $budget) {
           $ledger->mark_failed_with($id, $eventId, $reason, $attempt, null);
           $ledger->mark_exhausted_because($id, $eventId, "$reason; exhausted without a compensation");
-          Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s while unbound; no compensation ran', $id, self::BUDGET, $hook, $eventId), 'error');
+          Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s while unbound; no compensation ran', $id, $budget, $hook, $eventId), 'error');
           continue;
         }
         $ledger->mark_failed_with($id, $eventId, $reason, $attempt, self::redeliveryArgs($hook, $eventClass, $wrapped));
@@ -246,9 +281,47 @@ final class WpLedgeredDelivery {
         Log::write(null, sprintf('[ddd delivery] could not count the unbound subscriber %s on event %s: %s', $id, $eventId, $e->getMessage()), 'error');
         continue;
       }
-      Log::write(null, sprintf('[ddd delivery] %s (attempt %d/%d)', $reason, $attempt, self::BUDGET), 'warning');
+      Log::write(null, sprintf('[ddd delivery] %s (attempt %d/%d)', $reason, $attempt, $budget), 'warning');
       self::scheduleRedelivery($hook, $eventClass, $eventId, $wrapped, $attempt);
     }
+  }
+
+  /**
+   * The delivery budget of $subscriberId on consumer $prefix: how many
+   * attempts it gets before it is exhausted (and its compensation fires).
+   *
+   * - process ignition, process resume, workflow ignition: BUDGET (5),
+   *   whatever the consumer sets;
+   * - a listener: the attempts its #[Retries] declares when it is bound in
+   *   this request, else the option `{prefix}_ddd_delivery_attempts` when
+   *   it holds a positive int, else LISTENER_ATTEMPTS (1); then the filter
+   *   `tangible_ddd_delivery_attempts` ($attempts, $subscriber_id,
+   *   $prefix). Never below 1.
+   */
+  public static function budget(string $prefix, string $subscriberId): int {
+    if (preg_match(self::KERNEL_ID, $subscriberId) === 1) {
+      return self::BUDGET;
+    }
+    $attempts = self::$declared[$subscriberId] ?? self::consumer_attempts($prefix);
+    if (function_exists('apply_filters')) {
+      $attempts = apply_filters(self::ATTEMPTS_FILTER, $attempts, $subscriberId, $prefix);
+    }
+    return max(1, self::positive($attempts) ?? 1);
+  }
+
+  private static function consumer_attempts(string $prefix): int {
+    if (!function_exists('get_option')) {
+      return self::LISTENER_ATTEMPTS;
+    }
+    return self::positive(get_option(self::configFor($prefix)->option(self::ATTEMPTS_OPTION), null)) ?? self::LISTENER_ATTEMPTS;
+  }
+
+  /** A positive int from an option or filter value, else null. */
+  private static function positive(mixed $value): ?int {
+    if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+      return (int) $value >= 1 ? (int) $value : null;
+    }
+    return null;
   }
 
   /** The DDD subscriber ids bound on $hook, in registration order. @return list<string> */
@@ -264,6 +337,7 @@ final class WpLedgeredDelivery {
   /** @internal test seam */
   public static function reset_for_tests(): void {
     self::$bound = [];
+    self::$declared = [];
     self::$seq = 0;
     self::$idlessNoted = [];
     self::$redeliveryScheduled = [];
@@ -279,7 +353,7 @@ final class WpLedgeredDelivery {
    * Action Scheduler action of the fact (the 0.6 behaviour: an operator
    * retries it).
    *
-   * @param array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure} $entry
+   * @param array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure, attempts: ?int} $entry
    * @param array<string, mixed> $wrapped
    */
   private static function gateSafely(IDeliveryLedger $ledger, string $hook, array $entry, string $eventId, array $wrapped): void {
@@ -297,7 +371,7 @@ final class WpLedgeredDelivery {
   }
 
   /**
-   * @param array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure} $entry
+   * @param array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure, attempts: ?int} $entry
    * @param array<string, mixed> $wrapped
    */
   private static function gate(IDeliveryLedger $ledger, string $hook, array $entry, string $eventId, array $wrapped): void {
@@ -306,11 +380,12 @@ final class WpLedgeredDelivery {
       return;
     }
 
+    $budget = self::budget((string) self::prefix_of($hook, $entry['event']), $id);
     $attempts = $ledger->attempts($id, $eventId);
-    if ($attempts >= self::BUDGET) {
+    if ($attempts >= $budget) {
       // Budget reached, compensation never completed: re-fire it.
       $last = new DeliveryBudgetExhausted($id, $eventId, $attempts, $ledger->last_error($id, $eventId));
-      if (!self::exhaust($ledger, $hook, $entry, $eventId, $wrapped, $last)) {
+      if (!self::exhaust($ledger, $hook, $entry, $eventId, $wrapped, $last, $budget)) {
         self::scheduleRedelivery($hook, $entry['event'], $eventId, $wrapped, $attempts);
       }
       return;
@@ -329,9 +404,9 @@ final class WpLedgeredDelivery {
       }
       Log::write(null, sprintf(
         '[ddd delivery] subscriber %s failed on %s event %s (attempt %d/%d): %s',
-        $id, $hook, $eventId, $attempt, self::BUDGET, $e->getMessage()
+        $id, $hook, $eventId, $attempt, $budget, $e->getMessage()
       ));
-      if ($attempt < self::BUDGET || !self::exhaust($ledger, $hook, $entry, $eventId, $wrapped, $e)) {
+      if ($attempt < $budget || !self::exhaust($ledger, $hook, $entry, $eventId, $wrapped, $e, $budget)) {
         self::scheduleRedelivery($hook, $entry['event'], $eventId, $wrapped, $attempt);
       }
       return;
@@ -344,7 +419,7 @@ final class WpLedgeredDelivery {
    * @param array{id: string, onExhausted: ?\Closure, event: string} $entry
    * @param array<string, mixed> $wrapped
    */
-  private static function exhaust(IDeliveryLedger $ledger, string $hook, array $entry, string $eventId, array $wrapped, \Throwable $last): bool {
+  private static function exhaust(IDeliveryLedger $ledger, string $hook, array $entry, string $eventId, array $wrapped, \Throwable $last, int $budget): bool {
     if ($entry['onExhausted'] !== null) {
       try {
         $class = $entry['event'];
@@ -356,7 +431,7 @@ final class WpLedgeredDelivery {
         $ledger instanceof WpDeliveryLedger
           ? $ledger->mark_exhausted_because($entry['id'], $eventId, $reason)
           : $ledger->mark_exhausted($entry['id'], $eventId);
-        Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s; %s', $entry['id'], self::BUDGET, $hook, $eventId, $reason), 'error');
+        Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s; %s', $entry['id'], $budget, $hook, $eventId, $reason), 'error');
         return true;
       }
       try {
@@ -370,7 +445,7 @@ final class WpLedgeredDelivery {
       }
     }
     $ledger->mark_exhausted($entry['id'], $eventId);
-    Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s', $entry['id'], self::BUDGET, $hook, $eventId), 'error');
+    Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s', $entry['id'], $budget, $hook, $eventId), 'error');
     return true;
   }
 

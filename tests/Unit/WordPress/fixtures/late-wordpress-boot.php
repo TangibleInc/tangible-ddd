@@ -19,7 +19,15 @@
  * Mode `options-only` (argv[3]) defines only get_option: 0.6.5's
  * from_options() needed nothing else.
  *
- * argv: <repo root> <scaffold dir> [full|options-only]
+ * Mode `stubs-first` defines the same stubs BEFORE vendor/autoload.php (a
+ * bootstrap that stubs add_action first and never fires plugins_loaded):
+ * the loader then defers the winner's initializer to plugins_loaded, so
+ * hooks.php is never included, and only the unbooted wiring the loader
+ * installs at its include time (packages/ddd-wp/wordpress/unbooted.php)
+ * gives the 0.6 constructors their WordPress ports. Step 1 reports
+ * describe the state right after autoload there.
+ *
+ * argv: <repo root> <scaffold dir> [full|options-only|stubs-first]
  */
 
 declare(strict_types=1);
@@ -27,6 +35,16 @@ declare(strict_types=1);
 [, $root, $scaffold] = $argv;
 $mode = $argv[3] ?? 'full';
 $report = ['mode' => $mode];
+
+// `stubs-first-foreign`: as stubs-first, but the wiring is installed for
+// another distribution's root, whose classes are not the ones loaded.
+$foreign = $mode === 'stubs-first-foreign';
+if ($foreign) {
+  $mode = 'stubs-first';
+}
+if ($mode === 'stubs-first') {
+  require __DIR__ . '/lms-wordpress-stubs.php';
+}
 
 require $root . '/vendor/autoload.php';
 
@@ -51,47 +69,32 @@ try {
 }
 
 // ── 2. the consumer bootstrap's WordPress stubs ─────────────────────────────
-// Declared conditionally, as LMS does, so PHP does not hoist them to compile
-// time (an unconditional top-level function exists before step 1 runs).
-$GLOBALS['__test_wp_options'] = [];
-if (!function_exists('get_option')) {
-  function get_option(string $option, mixed $default = false): mixed {
-    return array_key_exists($option, $GLOBALS['__test_wp_options']) ? $GLOBALS['__test_wp_options'][$option] : $default;
-  }
-}
-if ($mode === 'full' && !function_exists('add_action')) {
-  function apply_filters(string $hook, mixed $value, mixed ...$args): mixed {
-    foreach ($GLOBALS['__test_wp_filters'][$hook] ?? [] as $callback) {
-      $value = $callback($value, ...$args);
+if ($mode !== 'stubs-first') {
+  require __DIR__ . '/lms-wordpress-stubs.php';
+} else {
+  // The loader saw add_action, so it deferred registration and the winner's
+  // initializer to plugins_loaded:0/1, which never fires. Until the loader
+  // installs the unbooted wiring itself (wave 5 change request to
+  // packaging), do here what it will do at its include time.
+  $report['loader_wires'] = function_exists('TangibleDDD\\WordPress\\wire_unbooted');
+  if (!$report['loader_wires'] || $foreign) {
+    if ($foreign) {
+      // The loader already wired its own root at include time; model a
+      // process where only another distribution's wiring is installed.
+      HostDefaults::reset_for_tests();
     }
-    return $value;
+    require_once $root . '/packages/ddd-wp/wordpress/unbooted.php';
+    \TangibleDDD\WordPress\wire_unbooted($foreign ? sys_get_temp_dir() . '/another-tangible-ddd' : $root);
   }
-  function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool {
-    $GLOBALS['__test_wp_filters'][$hook][] = $callback;
-    return true;
+  $report['winner_initialized'] = Tangible_DDD_Versions::instance()->is_initialized();
+  if ($foreign) {
+    foreach ([IOutboxOptionsReader::class, \TangibleDDD\Runtime\Delivery\ISubscriptionRegistry::class] as $port) {
+      $impl = HostDefaults::get($port);
+      $report['ports'][$port] = $impl === null ? null : get_class($impl);
+    }
+    echo json_encode($report);
+    exit(0);
   }
-  function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool {
-    return add_filter($hook, $callback, $priority, $accepted_args);
-  }
-  function update_option(string $option, mixed $value, mixed $autoload = null): bool {
-    $GLOBALS['__test_wp_options'][$option] = $value;
-    return true;
-  }
-  function is_multisite(): bool {
-    return false;
-  }
-  function get_locale(): string {
-    return 'en_US';
-  }
-  class wpdb {
-    public string $prefix = 'wptests_';
-    /** @var list<string> */
-    public array $queries = [];
-    public function query(string $query) { $this->queries[] = $query; return true; }
-    public function prepare(string $query, ...$args): string { return $query; }
-    public function get_var(?string $query = null, int $x = 0, int $y = 0) { return null; }
-  }
-  $GLOBALS['wpdb'] = new wpdb();
 }
 
 // ── 3. the consumer container ────────────────────────────────────────────────
