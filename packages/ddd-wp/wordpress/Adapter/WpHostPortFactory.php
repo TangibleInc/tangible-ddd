@@ -11,6 +11,8 @@ use TangibleDDD\Infra\Persistence\OutboxRepository;
 use TangibleDDD\Infra\Persistence\ProcessRepository;
 use TangibleDDD\Runtime\Outbox\IOutboxAdministration;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
+use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
 use TangibleDDD\Runtime\Audit\IAuditSink;
 use TangibleDDD\Runtime\Audit\NullAuditSink;
 use TangibleDDD\Runtime\IFactObserver;
@@ -41,6 +43,8 @@ use function TangibleDDD\WordPress\command_audit_enabled;
  *   Doctrine) gets null, and its callers keep the 0.6 path (R3).
  * - IOutboxAdministration: WpdbOutboxAdministration for the prefix, for any
  *   consumer identity (the repair commands carry only a prefix).
+ * - IRelayPauseStore: WpRelayPauseStore (v8 pause rows + the 0.6 option).
+ * - IDeliveryLedger: WpDeliveryLedger for a migrated consumer, else null.
  *
  * Only IDDDConfig consumers have WordPress storage; for an identity-only
  * consumer every answer is null and the caller falls back.
@@ -77,6 +81,8 @@ final class WpHostPortFactory implements IHostPortFactory {
         ? new WpdbAuditSink($consumer)
         : new NullAuditSink(),
       IFactObserver::class => new TouchesFactObserver($consumer),
+      IRelayPauseStore::class => new WpRelayPauseStore($consumer),
+      IDeliveryLedger::class => WpSchema::isV8($consumer) ? new WpDeliveryLedger($consumer->prefix()) : null,
       IWakeupScheduler::class => WpSchema::isV8($consumer)
         ? new WpdbWakeupScheduler($consumer)
         : new ActionSchedulerWakeupScheduler($consumer),

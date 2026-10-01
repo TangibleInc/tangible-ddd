@@ -66,6 +66,13 @@ final class WpDeliveryV8Test extends V8TestCase {
     }, $priority);
   }
 
+  public function test_the_factory_serves_the_ledger_and_the_pause_store_to_a_migrated_consumer(): void {
+    self::assertInstanceOf(WpDeliveryLedger::class, HostDefaults::for(\TangibleDDD\Runtime\Delivery\IDeliveryLedger::class, $this->config));
+    self::assertInstanceOf(\TangibleDDD\WordPress\Adapter\WpRelayPauseStore::class, HostDefaults::for(\TangibleDDD\Runtime\Outbox\IRelayPauseStore::class, $this->config));
+    update_option($this->config->option('ddd_schema_version'), 7, false);
+    self::assertNull(HostDefaults::for(\TangibleDDD\Runtime\Delivery\IDeliveryLedger::class, $this->config));
+  }
+
   public function test_the_ledger_counts_attempts_and_never_downgrades_a_delivery(): void {
     $l = $this->ledger();
     self::assertSame([false, 0, null, false], [$l->delivered('s', 'e'), $l->attempts('s', 'e'), $l->lastError('s', 'e'), $l->exhausted('s', 'e')]);
