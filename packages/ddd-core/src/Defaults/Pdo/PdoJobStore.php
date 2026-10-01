@@ -53,6 +53,9 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
   private readonly IClock $clock;
   private readonly LoggerInterface $logger;
 
+  /** @var list<string>|null kind values claimDue() is limited to; null = every kind */
+  private ?array $claimKinds = null;
+
   public function __construct(
     private readonly IHostConnection $db,
     private readonly string $consumer,
@@ -69,6 +72,25 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
 
   public function connection(): IHostConnection {
     return $this->db;
+  }
+
+  /**
+   * A view of the same table whose claimDue() leases only rows of $kinds
+   * (wave3-pdo-compose CR-PC-1). DurableRuntime gives the drain's wakeup
+   * stage the wakeup kinds and PdoDeliveryWorker the `deliver` kind, so a
+   * deliver job is never handed to the process wake handler and a wakeup
+   * never to the delivery invoker. Everything else (schedule, cancel,
+   * submit, complete, retryLater) is unchanged and shares the connection.
+   *
+   * @throws \InvalidArgumentException when no kind is given
+   */
+  public function withClaimKinds(WakeKind ...$kinds): self {
+    if ($kinds === []) {
+      throw new \InvalidArgumentException('withClaimKinds() needs at least one WakeKind');
+    }
+    $view = clone $this;
+    $view->claimKinds = array_values(array_unique(array_map(static fn (WakeKind $k) => $k->value, $kinds)));
+    return $view;
   }
 
   // ── IWakeupScheduler ──────────────────────────────────────────────────────
@@ -102,15 +124,22 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
     $nowDb = Utc::toDb($now);
     $leaseUntil = $now->setTimezone(new \DateTimeZone('UTC'))->modify("+{$leaseSeconds} seconds");
 
+    $kindSql = '';
+    $kindParams = [];
+    if ($this->claimKinds !== null) {
+      $kindSql = ' AND kind IN (' . implode(', ', array_fill(0, count($this->claimKinds), '?')) . ')';
+      $kindParams = $this->claimKinds;
+    }
+
     $this->db->begin();
     try {
       $ids = array_map(static fn (array $r) => (int) $r['id'], $this->db->fetchAll(
         "SELECT id FROM `{$this->jobs}`
-         WHERE due_at <= ? AND next_attempt_at <= ? AND (claim_token IS NULL OR lease_until <= ?)
+         WHERE due_at <= ? AND next_attempt_at <= ? AND (claim_token IS NULL OR lease_until <= ?)$kindSql
          ORDER BY due_at, id
          LIMIT ?
          FOR UPDATE SKIP LOCKED",
-        [$nowDb, $nowDb, $nowDb, $limit]
+        [$nowDb, $nowDb, $nowDb, ...$kindParams, $limit]
       ));
       $rows = [];
       if ($ids !== []) {

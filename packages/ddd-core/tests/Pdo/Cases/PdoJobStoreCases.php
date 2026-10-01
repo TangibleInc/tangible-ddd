@@ -183,6 +183,28 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     self::assertFalse($jobs->hasLiveIntent(2));
   }
 
+  public function test_a_kind_filtered_view_claims_only_its_kinds_and_shares_the_table(): void {
+    $jobs = $this->jobs();
+    $store = $this->store();
+    $store->append(self::record('e1', '2026-10-01 11:00:00'));
+    [$claim] = $store->claim(1, $this->clock->now(), 60);
+    $jobs->submit($claim, ['__event_id' => 'e1'], self::utc('2026-10-01 11:00:00'));
+    $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 1, 0, self::utc('2026-10-01 10:00:00'))));
+
+    $wakeups = $jobs->withClaimKinds(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry);
+    $deliveries = $jobs->withClaimKinds(WakeKind::Deliver);
+
+    self::assertNotSame($jobs, $wakeups);
+    self::assertSame(['timeout:1:0'], self::keys($wakeups->claimDue($this->clock->now(), 10, 60)));
+    self::assertSame(['deliver:e1'], self::keys($deliveries->claimDue($this->clock->now(), 10, 60)));
+    self::assertSame([], $jobs->claimDue($this->clock->now(), 10, 60), 'the unfiltered store sees the same leased rows');
+    self::assertSame($jobs->connection(), $deliveries->connection());
+    self::assertTrue($deliveries->sharesConnectionWith($store));
+
+    $this->expectException(\InvalidArgumentException::class);
+    $jobs->withClaimKinds();
+  }
+
   // ── ITransport (deliver jobs) ─────────────────────────────────────────────
 
   public function test_submit_writes_one_deliver_job_at_the_absolute_due_time(): void {
