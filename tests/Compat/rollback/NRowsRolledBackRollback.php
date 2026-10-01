@@ -87,8 +87,9 @@ final class NRowsRolledBackRollback extends RollbackTestCase {
 
     // ── rollback: the legacy copy is the winner again ───────────────────────
     $migrated = $legacy->run('migrate');
-    self::assertSame(8, $migrated['installed'], "L-$version tolerates installed v8 > its own v{$migrated['legacy_schema']} (B18): nothing re-installed or downgraded");
-    self::assertSame(['installed' => 8], ['installed' => (int) get_option($this->config->option('ddd_schema_version'))]);
+    $current = \TangibleDDD\WordPress\DDD_SCHEMA_VERSION;
+    self::assertSame($current, $migrated['installed'], "L-$version tolerates installed v$current > its own v{$migrated['legacy_schema']} (B18): nothing re-installed or downgraded");
+    self::assertSame(['installed' => $current], ['installed' => (int) get_option($this->config->option('ddd_schema_version'))]);
 
     self::assertSame(1, $legacy->run('relay')['completed'], 'the 0.6 relay takes the pending N row only: the claimed row stays excluded (locked_until), the delayed one is not due');
     self::assertSame('completed', $this->outboxRow($pending)['status']);
