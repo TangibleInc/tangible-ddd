@@ -125,6 +125,19 @@ final class DbalOutboxAdministrationTest extends PostgresTestCase {
     $this->admin->retry('nope');
   }
 
+  public function test_retry_of_a_dead_lettered_row_removes_its_dlq_row(): void {
+    $this->deadLetter('dead');
+    $this->deadLetter('other');
+
+    $this->admin->retry('dead');
+
+    self::assertSame('pending', $this->statusOf('dead'));
+    self::assertSame(['other'], array_map(fn ($d) => $d->event_id, $this->admin->deadLetters(10)),
+      'the retried row leaves the DLQ; a later replay cannot reset it a second time');
+    self::assertSame(1, $this->admin->stats()['dead_letters']);
+    self::assertSame(1, $this->admin->stats()['dlq']);
+  }
+
   public function test_purge_deletes_old_accepted_rows_only_and_stats_count_by_status(): void {
     $this->append('old');
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
