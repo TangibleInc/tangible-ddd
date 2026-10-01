@@ -1,0 +1,99 @@
+# Wave 2 round 3: wp-conformance change requests
+
+Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owned paths: `tests/Integration/Conformance/**`, `tests/Unit/Abi/**`, `packages/ddd-wp/tests/**`, the `conformance-wp` block of `tests/harness/run.sh`, and this file. No ratified interface, frozen FQCN or persisted name was changed. Everything this branch adds is test code; the requests below are for other owners.
+
+## Status of the acceptance
+
+- `tests/harness/run.sh conformance-wp` runs 22 tests (17 shared scenario methods on four wp classes, 3 wp audit cases and 2 catalogue checks; 2 wave-3 scenarios skipped, see "Scenarios not due on wp in wave 2"). **11 of the 12 wave-2 wp ids pass.** `relay.invalid-acceptance` fails on a defect in the transitional `WpdbOutboxStore` (WPC-5). With WPC-5's patch applied in a scratch worktree, all 12 pass and the gate prints `check-due: 12 of 12 scenario ids due on wp by wave 2 passed`.
+- `vendor/bin/phpunit` (root): green except `tests/Unit/Loader/HarnessCliTest`'s data set `conformance-wp`, which pins the placeholder this task replaces (WPC-6).
+- `tests/harness/run.sh wp-integration`: green, unchanged (27 tests). Files under `tests/Integration/Conformance/` end in `Conformance.php`, so `phpunit.integration.xml` never loads them.
+
+## WPC-5 (defect, blocks `relay.invalid-acceptance`): `WpdbOutboxStore::deadLetter()` does not count the final attempt
+
+- **Owner.** wp (`packages/ddd-wp/wordpress/Adapter/WpdbOutboxStore.php`).
+- **Finding.** The relay dead-letters on the attempt that reaches `max_attempts`. That attempt never goes through `mark_failed()`, and `OutboxRepository::move_to_dlq()` copies the row's `attempts` as it stands. After 5 failed submissions the DLQ row and the outbox row say `attempts = 4`. The port contract and the mem double count all 5 (`InMemoryOutboxStore::deadLetter()` increments). The shared scenario asserts `DeadLetter::$attempts === 5`, and the wp run fails with `Failed asserting that 4 is identical to 5`. 0.6 fixed the same off-by-one for `last_error` (the `$final_error` argument) but not for `attempts`.
+- **Patch (verified).** Count the final attempt before moving the row. This runs on the same wpdb connection and needs no schema change:
+
+  ```php
+  public function deadLetter(Claim $c, string $error): bool {
+    $db = $GLOBALS['wpdb'];
+    $db->query($db->prepare(
+      "UPDATE `{$this->config->table('integration_outbox')}` SET attempts = attempts + 1, last_error = %s WHERE event_id = %s",
+      $error,
+      $c->event_id
+    ));
+    $this->repository->move_to_dlq($c->event_id, $error);
+    return true;
+  }
+  ```
+
+  Applied in a scratch worktree of this branch, `run.sh conformance-wp` went green with 12/12 due ids passing. The 0.6 relay form (`OutboxProcessor::legacy_batch()`) keeps writing the 0.6 count. Only the port-form store changes.
+- **Compatibility.** The DLQ `attempts` column now says how many relay attempts were made. The dashboard shows the number as is. No reader depends on the off-by-one.
+
+## WPC-6 (packaging): `HarnessCliTest` still pins `conformance-wp` as "not yet implemented"
+
+- **Owner.** packaging (`tests/Unit/Loader/HarnessCliTest.php`).
+- **Finding.** `later_waves()` lists `conformance-wp`, and the test runs `bash tests/harness/run.sh conformance-wp` expecting exit 2. That subcommand is now implemented, so the data set fails. Worse, it runs the real Docker harness from inside the unit suite: it exports HEAD, starts a throw-away MySQL 8.0 container and runs the conformance suite.
+- **Requested change.** Drop `'conformance-wp' => ['conformance-wp']` from `later_waves()` and pin the dispatch statically, the way the loader case does:
+
+  ```php
+  public function test_the_conformance_wp_subcommand_is_wired(): void {
+      $source = (string) file_get_contents(self::script());
+      $this->assertMatchesRegularExpression('/^\s*conformance-wp\) conformance_wp ;;$/m', $source);
+      $this->assertStringContainsString('tests/Integration/Conformance/phpunit.xml', $source);
+      $this->assertStringContainsString('tests/Integration/Conformance/bin/check-due.php', $source);
+  }
+  ```
+
+## WPC-4 (coordinator, after merging `wave2/conformance-cleanup`): declare the CR-CC-1 seams on `WpHostFixture`
+
+- **What.** `wave2/conformance-cleanup` adds the optional seams `TangibleDDD\Conformance\AuditSinkFaults` (`failNextAuditClose(string): void`) and `RecordsSignals` (`signals(): array`), and a shared `CommandScenarios::test_audit_sink_fails` that is skipped on hosts without them. `WpHostFixture` already has both methods with exactly those shapes, but cannot name the interfaces because they are not on this branch's base. After both merges, change the class line to
+
+  ```php
+  final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals {
+  ```
+
+  On a trial merge of both branches with that one line, the shared `test_audit_sink_fails` passes on wp: 23 tests, with only the WPC-5 failure and the 2 wave-3 skips.
+- **Until then.** `WpAuditConformance` carries `audit.sink-fails` on wp (`#[Group('audit.sink-fails')]`, `test_audit_sink_fails`), plus open-phase and error-path cases. `bin/check-due.php` passes an id when at least one wp test carrying it passed and none failed, so the shared copy being skipped on `WpCommandConformance` does not fail the gate. After WPC-4, both copies run.
+- **Compatibility.** Additive.
+
+## WPC-1 (wp, wave 3): ship an Action Scheduler `ITransport`
+
+- **Finding.** ddd-wp has no `ITransport` in wave 2. Its relay is still the 0.6 `OutboxProcessor(config, IOutboxRepository, OutboxConfig, IOutboxPublisher)` form, and `IOutboxPublisher::publish()` returns no reference, so CONF-4 ("every transport must issue a reference") cannot hold on wp. The conformance host therefore relays with the core port-form `OutboxProcessor` over `tests/Integration/Conformance/Support/ActionSchedulerTransport.php`.
+- **Request.** ddd-wp ships `TangibleDDD\WordPress\Adapter\ActionSchedulerTransport implements ITransport` with the fixture's semantics:
+  - `submit()` calls `as_schedule_single_action($dueAt, $record->integration_action, [$wrapped], $group)`. The absolute due time is kept even when it is already past, because Action Scheduler runs past-due actions at once. That keeps `delivery.delayed-once`'s "the retry kept the absolute due time" true, which `as_enqueue_async_action` (stamped "now") would not.
+  - The action id is the reference, and `0` becomes `'0'`, a rejection.
+  - `sharesConnectionWith()` returns true for the wpdb outbox store.
+  
+  Then `HostDefaults` can wire the port-form relay on wp.
+- **Compatibility.** New class. AS hook, args and group are the 0.6 ones, pinned by `GoldenDerivedNamesTest`.
+
+## WPC-2 (wp, wave 3): per-subscriber ledger on wp delivery
+
+- **Finding.** `WpHookSubscriptionRegistry` has no ledger before schema v8 (its docblock says so), yet `relay.replay-keeps-identity` is due on wp in wave 2, and it asserts that subscribers already in the ledger are skipped. The conformance host wraps each subscriber's handle in a ledger gate (`Support/LedgerGatedSubscriptions.php`) over `Testing\InMemoryDeliveryLedger`, inside the real `add_action` callback. Delivery is the real Action Scheduler action (`ActionScheduler::runner()->process_action()`), or `do_action` on the fact's hook. The gate behaves like `IntegrationDelivery`: skip when delivered, `markDelivered` on success, `markFailed` with the next attempt on a throw, and do_action continues.
+- **Request.** The wave-3 "per-callback invoker wrapping of DDD-registered callbacks" over `{prefix}_ddd_delivery_ledger` replaces the gate. The fixture then drops it and returns the wp ledger from `ledger()`.
+
+## WPC-3 (wp, wave 3): the transitional outbox adapters read the wall clock
+
+- **Finding.** `OutboxRepository` (under `WpdbOutboxStore`) and `WpdbOutboxAdministration` call `time()` / `gmdate()`. `WpdbOutboxStore::claim()` ignores both `$now` and `$leaseSeconds` (fixed 300 s). The `HostFixture` contract says every port reads the host `IClock`, and the relay and delivery scenarios advance it by up to 5 × 3601 s.
+- **Fixture bridge.** `tests/Integration/Conformance/Support/clock-functions.php` defines `time()` and `gmdate()` in `TangibleDDD\Infra\Persistence` and `TangibleDDD\WordPress\Adapter`, routed to the scenario clock (`ScenarioTime`, real time when no scenario is running). This is Symfony ClockMock's technique. The conformance bootstrap loads it before Composer's autoloader. The wp-integration suite never loads it.
+- **Request.** The wave-3 wp adapters take an `IClock` (constructor, else `HostDefaults::get(IClock::class)`) and honour `claim($now, $leaseSeconds)`. The shims can then go.
+
+## Scenarios not due on wp in wave 2
+
+| Id (wp wave) | Status on this branch |
+|---|---|
+| `relay.lease-fencing` (3) | skipped: no `claim_token` before v8; fixed 300 s lease; unfenced writes. `WpRelayConformance::whileLeased()` already asserts that a 0.6 `fetch_pending()` skips a leased row, for wave 3. |
+| `relay.pause-holders` (3) | skipped: no `IRelayPauseStore` on wp before v8 pause rows. The 0.6 option matches exact event types, not selector globs. `relayPauses()` throws `LogicException`. |
+| `relay.crash-after-submit` (3) | **passes** (shared `$wpdb` connection: submit and accept in one transaction) |
+| `delivery.double-delivery`, `delivery.subscriber-isolation` (3) | **pass** with the WPC-2 gate |
+| `worker.no-leak` (3) | **passes** (`ReentrantProcessLock(GetLockProcessLock)` guarded by `RuntimeReset`; `runnerTransients()` is null until a ProcessRunner is wired on the conformance host) |
+
+## ABI freeze tests (register section 8, wave 2 wp bullet), for reviewers
+
+All are under `tests/Unit/Abi` and run in the root suite.
+
+- **B14** `ProceduralSignatureSnapshotTest`. Static snapshots (nikic/php-parser) of every function and namespace constant under `ddd-wordpress/` at v0.6.0 and v0.6.2..v0.6.6. Each is compared with N's `packages/ddd-wp/wordpress/` under the B14 rule: same FQN; parameter names, types, by-ref and defaults kept; only optional parameters appended. N is also frozen in `fixtures/procedural/current.json`. `php tests/Unit/Abi/bin/generate-fixtures.php [--current]` regenerates the snapshots. It relies on `nikic/php-parser`, which comes in transitively through phpunit/phpstan in require-dev. If packaging wants it explicit, it belongs in root `require-dev` (`^5`).
+- **B9** `HistoricalScaffoldCompileTest`. The `wp ddd init` output of each tag (v0.6.3..v0.6.6 equal v0.6.2, see the manifest) compiles following that tag's `di/index.php`, and every public service resolves. A transactional command with an announcing event then runs through the scaffolded bus and returns its value.
+- **B15** `GoldenDerivedNamesTest`. Literal 0.6.6 names, observed on N's code paths. Not covered: `tangible_ddd_dashboard_consumer_accent` (dashboard-only filter).
+- **D F4** `ConsumerConfigShapeTest`. Verbatim, sha256-pinned copies of the cred, lms, quiz, certificates (`TangibleInc/tangible-certificates@1ca7ff5`) and datastream (`@04418d5`) `IDDDConfig` implementations load unchanged in separate processes and are accepted by `ConsumerRegistry`, the 0.6 constructors and `HostDefaults::for()`. `IDDDConfig` keeps exactly its eight methods.
