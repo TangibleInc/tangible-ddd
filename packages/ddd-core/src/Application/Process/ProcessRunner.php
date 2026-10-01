@@ -668,7 +668,9 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * The parked fact's wake (AW2): resume the one process it was parked for,
    * stale-safe (still `suspended` at the step it was parked at, and still
    * accepting the fact). Contention propagates: the drain re-queues the
-   * claimed intent on the wake budget.
+   * claimed intent on the wake budget. The R1 reachability guard is
+   * re-applied with the exactness the candidate lookup gives now, so a
+   * subclass fact still reaches only an AwaitAny on an exact-match store.
    */
   private function resume_parked(WakeupIntent $intent): void {
     $id = (int) $intent->process_id;
@@ -681,9 +683,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       if ($process === null || $process->status() !== 'suspended' || $process->current_step_index() !== $intent->step_index) {
         return; // resumed, cancelled or timed out meanwhile
       }
+      $exact = $this->candidates($event)[$id] ?? null;
+      if ($exact === null) {
+        return; // no longer waiting for this fact
+      }
       $first_taken = false;
       $resumed = $accumulated = $cancelled = [];
-      $this->resume_locked($id, true, $event, $event_id, $first_taken, $resumed, $accumulated, $cancelled);
+      $this->resume_locked($id, $exact, $event, $event_id, $first_taken, $resumed, $accumulated, $cancelled);
     });
   }
 

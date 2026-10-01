@@ -12,11 +12,20 @@ use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Application\Process\ProcessLockUnavailable;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Application\Process\ResumeSource;
 use TangibleDDD\Core\Tests\Unit\Fixtures\AcmeConfig;
+use TangibleDDD\Core\Tests\Unit\Fixtures\ArrayProcessRepository;
+use TangibleDDD\Runtime\Process\IProcessStore;
+use TangibleDDD\Runtime\Process\LegacyProcessStore;
+use TangibleDDD\Testing\InMemoryNamedLock;
+use TangibleDDD\Testing\StaticConsumerIdentity;
 use TangibleDDD\Core\Tests\Unit\Fixtures\JobFinished;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\AwaitingProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\CauseReadingProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\Journal;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\MemberJoined;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\ParentClassWaitProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\VipJoined;
 use TangibleDDD\Core\Tests\Unit\Fixtures\RecordingCommand;
 use TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger;
 use TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined;
@@ -41,6 +50,7 @@ use TangibleDDD\Testing\InMemoryTransactionBoundary;
 use TangibleDDD\Testing\InMemoryWakeupScheduler;
 
 require_once dirname(__DIR__) . '/Fixtures/Process/CoreProcesses.php';
+require_once dirname(__DIR__) . '/Fixtures/Process/Wave4Processes.php';
 require_once dirname(__DIR__) . '/Fixtures/Process/Wave5Processes.php';
 
 /**
@@ -99,9 +109,9 @@ final class ProcessRunnerWave5Test extends TestCase {
     HostDefaults::reset_for_tests();
   }
 
-  private function runner(IWakeupScheduler $wakeups): ProcessRunner {
+  private function runner(IWakeupScheduler $wakeups, ?IProcessStore $store = null): ProcessRunner {
     return new ProcessRunner(
-      new AcmeConfig(), null, $this->lock, $this->store, $wakeups, $this->registry, $this->boundary, $this->clock,
+      new AcmeConfig(), null, $this->lock, $store ?? $this->store, $wakeups, $this->registry, $this->boundary, $this->clock,
     );
   }
 
@@ -241,6 +251,28 @@ final class ProcessRunnerWave5Test extends TestCase {
     });
 
     self::assertCount(1, $this->retries());
+  }
+
+  public function test_a_parked_wake_keeps_the_r1_reachability_guard(): void {
+    // R1 on an exact-match (0.6 repository) store: a subclass fact never
+    // reaches a 0.6-shaped parent-class await, on the wake path as on delivery.
+    $repo = new ArrayProcessRepository();
+    $store = new LegacyProcessStore($repo, new StaticConsumerIdentity('acme'), new InMemoryNamedLock(), new RecordingLogger());
+    $runner = $this->runner($this->wakeups, $store);
+    $runner->register_event(MemberJoined::class);
+    $runner->register_event(VipJoined::class);
+    $p = new ParentClassWaitProcess();
+    $runner->start($p);
+    $id = (int) $p->get_id();
+    $step = $repo->find($id)->current_step_index();
+
+    $fact = ResumeSource::fact(new VipJoined(4), self::EVENT_ID);
+    $runner->wake(WakeupIntent::resume_fact('acme', $id, $step, $fact, $this->clock->now()));
+    self::assertSame('suspended', $repo->find($id)->status(), 'the subclass fact stays unheard');
+
+    $fact = ResumeSource::fact(new MemberJoined(4), self::OTHER_EVENT_ID);
+    $runner->wake(WakeupIntent::resume_fact('acme', $id, $step, $fact, $this->clock->now()));
+    self::assertSame('completed', $repo->find($id)->status());
   }
 
   public function test_a_scheduler_that_cannot_carry_facts_keeps_the_delivery_retry(): void {
