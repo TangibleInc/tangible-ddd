@@ -9,6 +9,8 @@ use Doctrine\DBAL\Driver\Connection as DriverConnection;
 use Doctrine\DBAL\Driver\Middleware;
 use Doctrine\DBAL\Driver\Middleware\AbstractConnectionMiddleware;
 use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
+use Doctrine\DBAL\Driver\Result;
+use Doctrine\DBAL\Driver\Statement;
 
 /**
  * DBAL driver middleware of the sf conformance fixture:
@@ -20,6 +22,8 @@ use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
  *   the driver COMMIT it inserts a row that violates a DEFERRABLE INITIALLY
  *   DEFERRED foreign key, so Postgres rejects the COMMIT itself (23503) and
  *   rolls the transaction back. Nothing in DBAL or the boundary is stubbed.
+ * - with StatementFaults, an armed statement is replaced by one the server
+ *   rejects (the process-lock acquire error of lock.acquire-error).
  */
 final class ScenarioSchemaMiddleware implements Middleware {
 
@@ -27,7 +31,7 @@ final class ScenarioSchemaMiddleware implements Middleware {
 
   private ?string $failNextCommit = null;
 
-  public function __construct(private readonly string $schema) {
+  public function __construct(private readonly string $schema, private readonly ?StatementFaults $faults = null) {
     if (!preg_match('/^[a-z0-9_]+$/', $schema)) {
       throw new \InvalidArgumentException("Schema name '$schema' must match [a-z0-9_]+");
     }
@@ -63,6 +67,14 @@ final class ScenarioSchemaMiddleware implements Middleware {
             parent::__construct($connection);
           }
 
+          public function prepare(string $sql): Statement {
+            return parent::prepare($this->middleware->rewrite($sql));
+          }
+
+          public function query(string $sql): Result {
+            return parent::query($this->middleware->rewrite($sql));
+          }
+
           public function commit(): void {
             $reason = $this->middleware->takeCommitFault();
             if ($reason !== null) {
@@ -77,6 +89,11 @@ final class ScenarioSchemaMiddleware implements Middleware {
         };
       }
     };
+  }
+
+  /** @internal */
+  public function rewrite(string $sql): string {
+    return $this->faults?->rewrite($sql) ?? $sql;
   }
 
   /** @internal */
