@@ -5,12 +5,44 @@ declare(strict_types=1);
 namespace TangibleDDD\Testing;
 
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
+use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
+use TangibleDDD\Runtime\Ops\IOperatorItemSource;
+use TangibleDDD\Runtime\Ops\Layer;
+use TangibleDDD\Runtime\Ops\OperatorItem;
 
-/** In-memory IDeliveryLedger. */
-final class InMemoryDeliveryLedger implements IDeliveryLedger, InMemoryTransactional {
+/**
+ * In-memory IDeliveryLedger. As an IOperatorItemSource it lists the
+ * undelivered (subscriber, event) pairs with at least one failed attempt,
+ * layer `delivery`, key `subscriber@event_id`.
+ */
+final class InMemoryDeliveryLedger implements IDeliveryLedger, InMemoryTransactional, IOperatorItemSource {
 
   /** @var array<string, array{delivered: bool, attempts: int, error: ?string, exhausted: bool}> */
   private array $rows = [];
+
+  /** @param string $consumer the prefix the operator items carry */
+  public function __construct(
+    private readonly string $consumer = '',
+    private readonly int $budget = IntegrationDelivery::DEFAULT_BUDGET,
+  ) {}
+
+  public function items(?Layer $layer, int $limit): array {
+    if ($layer !== null && $layer !== Layer::Delivery) {
+      return [];
+    }
+    $items = [];
+    foreach ($this->rows as $key => $row) {
+      if ($row['delivered'] || $row['attempts'] === 0) {
+        continue;
+      }
+      [$subscriber, $event] = explode("\0", $key, 2);
+      $items[] = new OperatorItem(
+        Layer::Delivery, $this->consumer, "$subscriber@$event", $row['attempts'], $this->budget,
+        $row['error'], null, ['redeliver'],
+      );
+    }
+    return array_slice($items, 0, max(0, $limit));
+  }
 
   public function delivered(string $subscriberId, string $eventId): bool {
     return $this->rows[self::key($subscriberId, $eventId)]['delivered'] ?? false;
