@@ -844,7 +844,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
       $step();
     } catch (\Throwable) {
       // tear_down never throws (HostFixture contract)
-      
+
     }
   }
 
