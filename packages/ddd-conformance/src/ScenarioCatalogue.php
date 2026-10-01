@@ -64,6 +64,76 @@ final class ScenarioCatalogue {
     'wakeup.post-commit'                      => [null, null, null, 4],
   ];
 
+  private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
+
+  /**
+   * The abstract scenario case (src/Scenarios) that declares each id up to
+   * wave 3, i.e. the class a host extends to run it. Wave-4 ids are added
+   * with their scenarios. CatalogueTest pins this map against reflection.
+   *
+   * @var array<string, class-string>
+   */
+  public const CASES = [
+    'cmd.commit-atomic'                       => self::S . 'CommandScenarios',
+    'cmd.commit-failure'                      => self::S . 'CommandScenarios',
+    'cmd.reaction-throws'                     => self::S . 'CommandScenarios',
+    'cmd.no-boundary'                         => self::S . 'CommandScenarios',
+    'cmd.nested-rejected'                     => self::S . 'CommandScenarios',
+    'cmd.guards-without-audit'                => self::S . 'CommandScenarios',
+    'cmd.return-value'                        => self::S . 'CommandScenarios',
+    'audit.sink-fails'                        => self::S . 'CommandScenarios',
+    'relay.crash-after-submit'                => self::S . 'RelayScenarios',
+    'relay.lease-fencing'                     => self::S . 'RelayScenarios',
+    'relay.invalid-acceptance'                => self::S . 'RelayScenarios',
+    'relay.pause-holders'                     => self::S . 'RelayScenarios',
+    'relay.replay-keeps-identity'             => self::S . 'RelayScenarios',
+    'delivery.double-delivery'                => self::S . 'DeliveryScenarios',
+    'delivery.subscriber-isolation'           => self::S . 'DeliveryScenarios',
+    'delivery.phase-order'                    => self::S . 'DeliveryScenarios',
+    'delivery.delayed-once'                   => self::S . 'DeliveryScenarios',
+    'worker.no-leak'                          => self::S . 'WorkerScenarios',
+    'relay.replay-keeps-identity.process'     => self::S . 'ProcessDeliveryScenarios',
+    'delivery.double-delivery.process'        => self::S . 'ProcessDeliveryScenarios',
+    'delivery.subscriber-isolation.process'   => self::S . 'ProcessDeliveryScenarios',
+    'delivery.phase-order.process'            => self::S . 'ProcessDeliveryScenarios',
+    'lock.contention'                         => self::S . 'LockScenarios',
+    'lock.acquire-error'                      => self::S . 'LockScenarios',
+    'lock.reentrant-balance'                  => self::S . 'LockScenarios',
+    'process.ignition-race'                   => self::S . 'ProcessScenarios',
+    'process.manual-start-in-drain'           => self::S . 'ProcessScenarios',
+    'process.timeout-vs-event'                => self::S . 'ProcessScenarios',
+    'process.await-before-dispatch'           => self::S . 'ProcessScenarios',
+    'process.intent-survives-queue-failure'   => self::S . 'ProcessScenarios',
+    'process.stale-wakeup'                    => self::S . 'ProcessScenarios',
+    'lock.namespace'                          => self::S . 'ConcurrencyScenarios',
+    'process.await-all-concurrent'            => self::S . 'ConcurrencyScenarios',
+    'relay.fresh-process-pickup'              => self::S . 'FreshProcessScenarios',
+    'relay.crash-after-commit'                => self::S . 'FreshProcessScenarios',
+    'process.crash-mid-step'                  => self::S . 'FreshProcessScenarios',
+    'process.fresh-process-resume'            => self::S . 'FreshProcessScenarios',
+    'process.start-from-web'                  => self::S . 'WebStartScenarios',
+  ];
+
+  /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
+  public static function scenarioCase(string $id): ?string {
+    return self::CASES[$id] ?? null;
+  }
+
+  /**
+   * The abstract cases $host extends to run every id due on it by $wave.
+   *
+   * @return list<class-string>
+   */
+  public static function casesFor(string $host, int $wave): array {
+    $cases = [];
+    foreach (self::dueBy($host, $wave) as $id) {
+      if (isset(self::CASES[$id])) {
+        $cases[self::CASES[$id]] = true;
+      }
+    }
+    return array_keys($cases);
+  }
+
   /** Ids that must pass on $host at the acceptance of $wave (cumulative), in table order. */
   public static function dueBy(string $host, int $wave): array {
     $col = self::column($host);
