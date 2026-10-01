@@ -111,38 +111,6 @@ deptrac:
         - type: classNameRegex
           value: '#^Doctrine\\#'
 
-  # Split-deferred classes (docs/extraction/wave2-move-table.md, status
-  # "split-deferred"): Command, InfrastructureEvent and ProcessRunner still
-  # live in packages/ddd-wp/src until their core halves land in wave 2 round 2,
-  # so these core files reach ddd-wp for now. Each entry is exact; deptrac
-  # reports an entry that no longer matches as an error, so the list must
-  # shrink to nothing as the round-2 moves merge. Nothing may be added here.
-  skip_violations:
-    TangibleDDD\Application\Commands\DiscardDeadLetterCommand:
-      - TangibleDDD\Application\Commands\Command
-      - TangibleDDD\WordPress\SelfConsumer\di()
-    TangibleDDD\Application\Commands\PurgeOutboxCommand:
-      - TangibleDDD\Application\Commands\Command
-      - TangibleDDD\WordPress\SelfConsumer\di()
-    TangibleDDD\Application\Commands\ReplayDeadLetterCommand:
-      - TangibleDDD\Application\Commands\Command
-      - TangibleDDD\WordPress\SelfConsumer\di()
-    TangibleDDD\Application\Commands\RetryDeliveryCommand:
-      - TangibleDDD\Application\Commands\Command
-      - TangibleDDD\WordPress\SelfConsumer\di()
-    TangibleDDD\Application\Infrastructure\FactDeliveredUnheard:
-      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
-    TangibleDDD\Application\Infrastructure\OutboxAttemptFailed:
-      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
-    TangibleDDD\Application\Infrastructure\OutboxDeadLettered:
-      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
-    TangibleDDD\Application\Infrastructure\ProcessFailed:
-      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
-    TangibleDDD\Application\Infrastructure\WorkflowFailed:
-      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
-    TangibleDDD\Runtime\Delivery\SubscriptionRegistrar:
-      - TangibleDDD\Application\Process\ProcessRunner
-
   ruleset:
     Core: ~
     CoreDiBridge:
