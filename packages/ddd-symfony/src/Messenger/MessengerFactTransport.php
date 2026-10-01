@@ -34,11 +34,21 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
  *   transaction, so the hand-off is exactly-once; the insert into
  *   messenger_messages joins that transaction as a savepoint, and its
  *   pg_notify is delivered on commit only.
+ * - Wave 5, several consumers: for every FactAudience (another consumer of
+ *   the app) whose compiled map hears the fact's class, a copy addressed to
+ *   it (IntegrationFactMessage::recipient()) goes to its own facts
+ *   transport, before the raiser's own message. Each consumer delivers its
+ *   copy to its own subscribers through its own ledger, so a fact reaches
+ *   every subscriber exactly once and a poison copy retries alone. A copy
+ *   on another connection is not in the relay transaction: a failed
+ *   submission after it was sent retries the fact, and the receiving
+ *   ledger absorbs the duplicate.
  */
 final class MessengerFactTransport implements ITransport {
 
   private readonly IClock $clock;
 
+  /** @param list<FactAudience> $audiences the app's other consumers (wave 5, cross-consumer delivery) */
   public function __construct(
     private readonly SenderInterface $sender,
     private readonly string $consumer,
@@ -46,6 +56,7 @@ final class MessengerFactTransport implements ITransport {
     private readonly ?string $busName = null,
     ?IClock $clock = null,
     private readonly ?Connection $senderConnection = null,
+    private readonly array $audiences = [],
   ) {
     $this->clock = $clock ?? new SystemClock();
   }
@@ -63,6 +74,16 @@ final class MessengerFactTransport implements ITransport {
     $delayMs = (int) floor(($dueAt->format('U.u') - $this->clock->now()->format('U.u')) * 1000);
     if ($delayMs > 0) {
       $stamps[] = new DelayStamp($delayMs);
+    }
+
+    // Wave 5: a copy for every other consumer that subscribes to the fact,
+    // first, so a failure retries the whole fact (each ledger absorbs repeats).
+    foreach ($this->audiences as $audience) {
+      if ($audience->subscriptions->hears($class)) {
+        $audience->sender->send(new Envelope(new IntegrationFactMessage(
+          $this->consumer, $c->event_id, $c->record->event_type, $class, $c->record->integration_action, $wrappedEnvelope, $audience->consumer,
+        ), $stamps));
+      }
     }
 
     $sent = $this->sender->send(new Envelope(new IntegrationFactMessage(

@@ -44,7 +44,10 @@ final class HandlerLocatorPass implements CompilerPassInterface {
   public function process(ContainerBuilder $container): void {
     $this->locate($container, DddTags::COMMAND_HANDLER, 'tangible_ddd.middleware.command_handler');
     $this->locate($container, DddTags::QUERY_HANDLER, 'tangible_ddd.middleware.query_handler');
-    $this->locate($container, DddTags::CONTINUES_WORKFLOW, 'tangible_ddd.wake_target'); // W1
+    $others = self::otherConsumers($container);
+    foreach (['tangible_ddd.wake_target', ...array_map(static fn (string $n) => "tangible_ddd.consumer.$n.wake_target", $others)] as $target) {
+      $this->locate($container, DddTags::CONTINUES_WORKFLOW, $target); // W1
+    }
 
     if (!$container->hasDefinition('tangible_ddd.middleware.self_executing')) {
       return;
@@ -68,6 +71,45 @@ final class HandlerLocatorPass implements CompilerPassInterface {
     ksort($refs);
     $container->getDefinition('tangible_ddd.middleware.self_executing')
       ->replaceArgument(0, ServiceLocatorTagPass::register($container, $refs));
+
+    // Wave 5: each other consumer's handle() locator has the same types, but a
+    // type the bundle binds per consumer (a port alias) resolves to its own service.
+    foreach ($others as $name) {
+      $middleware = "tangible_ddd.consumer.$name.middleware.self_executing";
+      if (!$container->hasDefinition($middleware)) {
+        continue;
+      }
+      $own = [];
+      foreach ($refs as $type => $ref) {
+        $target = self::aliasTarget($container, (string) $ref);
+        $mine = str_starts_with($target, 'tangible_ddd.') ? "tangible_ddd.consumer.$name." . substr($target, strlen('tangible_ddd.')) : null;
+        $own[$type] = $mine !== null && $container->hasDefinition($mine)
+          ? new Reference($mine, ContainerInterface::RUNTIME_EXCEPTION_ON_INVALID_REFERENCE)
+          : $ref;
+      }
+      $container->getDefinition($middleware)->replaceArgument(0, ServiceLocatorTagPass::register($container, $own));
+    }
+  }
+
+  /** @return list<string> the names of the non-primary consumers (wave 5) */
+  private static function otherConsumers(ContainerBuilder $container): array {
+    if (!$container->hasParameter('tangible_ddd.consumers')) {
+      return [];
+    }
+    $names = [];
+    foreach ((array) $container->getParameter('tangible_ddd.consumers') as $c) {
+      if (!($c['primary'] ?? true)) {
+        $names[] = (string) $c['name'];
+      }
+    }
+    return $names;
+  }
+
+  private static function aliasTarget(ContainerBuilder $container, string $id): string {
+    for ($i = 0; $i < 10 && $container->hasAlias($id); $i++) {
+      $id = (string) $container->getAlias($id);
+    }
+    return $id;
   }
 
   /** @return list<class-string> */

@@ -22,6 +22,7 @@ use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsDomainEventListener;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsIntegrationListener;
+use TangibleDDD\Symfony\DependencyInjection\Compiler\ConsumerAssignmentPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\DomainListenerPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\HandlerLocatorPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\MessengerHealthPass;
@@ -44,8 +45,11 @@ use TangibleDDD\Symfony\Workflow\IContinuesWorkflows;
  * its delivery handler; the worker reset; D5 actor providers; and the
  * `ddd:relay` / `ddd:schema:dump` commands.
  *
- * At boot it registers the one consumer (E S8) in ConsumerRegistry, so
- * `$command->send()` and `Event::prefix()` resolve by namespace.
+ * At boot it registers its consumers in ConsumerRegistry, so
+ * `$command->send()` and `Event::prefix()` resolve by namespace. One consumer
+ * (`consumer:`, E S8) is the default; wave 5 adds `consumers:` (several
+ * bounded-context consumers in one app, each with its own service set; see
+ * ConsumerSettings and ConsumerAssignmentPass).
  */
 final class TangibleDddBundle extends AbstractBundle {
 
@@ -59,7 +63,7 @@ final class TangibleDddBundle extends AbstractBundle {
     $definition->rootNode()
       ->children()
         ->arrayNode('consumer')
-          ->isRequired()
+          ->info('The one-consumer shorthand. Give either this or `consumers`.')
           ->children()
             ->scalarNode('prefix')->isRequired()->cannotBeEmpty()
               ->info('Stable [a-z0-9_]+ consumer prefix; names hooks, integration actions and ledger keys (e.g. "txp").')->end()
@@ -73,6 +77,39 @@ final class TangibleDddBundle extends AbstractBundle {
               ->end()
             ->end()
             ->scalarNode('label')->defaultNull()->end()
+          ->end()
+        ->end()
+        ->arrayNode('consumers')
+          ->info('Wave 5: several consumers in one app (reusable bounded-context bundles), name => settings; the first is the primary consumer, which keeps the tangible_ddd.* service ids. Each has its own outbox, relay, ledger, process store, wakeups and effect journal; services are assigned to the consumer whose namespace root contains their class (longest root wins).')
+          ->useAttributeAsKey('name')
+          ->arrayPrototype()
+            ->children()
+              ->scalarNode('prefix')->defaultNull()->info('[a-z0-9_]+ consumer prefix; default: the map key.')->end()
+              ->scalarNode('namespace_root')->defaultNull()->info('PHP namespace the consumer owns.')->end()
+              ->scalarNode('bundle')->defaultNull()->info('Or: a bundle class whose namespace the consumer owns.')->end()
+              ->scalarNode('version')->defaultValue(SymfonyConsumerConfig::DEFAULT_VERSION)
+                ->beforeNormalization()
+                  ->ifTrue(static fn ($v) => $v === null || $v === '')
+                  ->then(static fn () => SymfonyConsumerConfig::DEFAULT_VERSION)
+                ->end()
+              ->end()
+              ->scalarNode('label')->defaultNull()->end()
+              ->scalarNode('connection')->defaultNull()->info('DBAL connection name; default: tangible_ddd.connection.')->end()
+              ->scalarNode('connection_service')->defaultNull()->end()
+              ->scalarNode('table_prefix')->defaultNull()->info('Default: tangible_ddd.table_prefix for the primary consumer, none for the others.')->end()
+              ->scalarNode('schema')->defaultNull()->info('Postgres schema of the consumer\'s ddd tables (ddd:schema:dump --consumer=NAME creates it).')->end()
+              ->scalarNode('transport')->defaultNull()->info('Messenger facts transport; default: messenger.transport for the primary, {messenger.transport}_{prefix} for the others. Facts of other consumers this one subscribes to are routed here.')->end()
+              ->scalarNode('wakeup_transport')->defaultNull()->info('Default: messenger.wakeup_transport for the primary, {messenger.wakeup_transport}_{prefix} for the others.')->end()
+              ->arrayNode('delivery')
+                ->info('Overrides of tangible_ddd.delivery for this consumer.')
+                ->children()
+                  ->integerNode('budget')->min(1)->end()
+                  ->integerNode('retry_delay_ms')->min(0)->end()
+                  ->floatNode('retry_multiplier')->min(1.0)->end()
+                  ->integerNode('max_retry_delay_ms')->min(0)->end()
+                ->end()
+              ->end()
+            ->end()
           ->end()
         ->end()
         ->scalarNode('connection')->defaultValue('default')
@@ -202,46 +239,55 @@ final class TangibleDddBundle extends AbstractBundle {
       return;
     }
     $m = $config['messenger'];
-    $d = $config['delivery'];
     $connection = $config['connection'];
+    $failure = $m['failure_transport'] !== null && $m['failure_transport'] !== '' ? (string) $m['failure_transport'] : null;
 
-    $facts = [
-      'dsn' => $m['dsn'] ?? "doctrine://{$connection}?queue_name={$m['transport']}&auto_setup=false",
-      'retry_strategy' => [
-        'max_retries' => $d['budget'] - 1,
-        'delay' => $d['retry_delay_ms'],
-        'multiplier' => $d['retry_multiplier'],
-        'max_delay' => $d['max_retry_delay_ms'],
-      ],
-    ];
-    if (str_starts_with($facts['dsn'], 'doctrine://')) {
-      $facts['options'] = ['redeliver_timeout' => $m['redeliver_timeout_seconds']]; // W3
-    }
     $transports = [];
-    if ($m['failure_transport'] !== null && $m['failure_transport'] !== '') {
-      $facts['failure_transport'] = $m['failure_transport'];
-      $transports[$m['failure_transport']] = [
-        'dsn' => $m['failure_dsn'] ?? "doctrine://{$connection}?queue_name={$m['failure_transport']}&auto_setup=false",
+    if ($failure !== null) {
+      $transports[$failure] = [
+        'dsn' => $m['failure_dsn'] ?? "doctrine://{$connection}?queue_name={$failure}&auto_setup=false",
       ];
     }
-    $transports[$m['transport']] = $facts;
-    // Wakeups: the intent row owns retries (5.1 layer `wakeup`), so the handler
-    // never throws for a failed wake and Messenger must not retry on its own.
-    $wakeups = [
-      'dsn' => $m['wakeup_dsn'] ?? "doctrine://{$connection}?queue_name={$m['wakeup_transport']}&auto_setup=false",
-      'retry_strategy' => ['max_retries' => 0],
-    ];
-    if (isset($facts['failure_transport'])) {
-      $wakeups['failure_transport'] = $facts['failure_transport'];
+    // One facts and one wakeup transport per consumer (wave 5); consumers may share one.
+    foreach (ConsumerSettings::resolve($config) as $c) {
+      $d = $c['delivery'];
+      $facts = [
+        'dsn' => ($c['primary'] ? $m['dsn'] : null) ?? "doctrine://{$c['connection']}?queue_name={$c['transport']}&auto_setup=false",
+        'retry_strategy' => [
+          'max_retries' => $d['budget'] - 1,
+          'delay' => $d['retry_delay_ms'],
+          'multiplier' => $d['retry_multiplier'],
+          'max_delay' => $d['max_retry_delay_ms'],
+        ],
+      ];
+      if (str_starts_with($facts['dsn'], 'doctrine://')) {
+        $facts['options'] = ['redeliver_timeout' => $m['redeliver_timeout_seconds']]; // W3
+      }
+      // Wakeups: the intent row owns retries (5.1 layer `wakeup`), so the handler
+      // never throws for a failed wake and Messenger must not retry on its own.
+      $wakeups = [
+        'dsn' => ($c['primary'] ? $m['wakeup_dsn'] : null) ?? "doctrine://{$c['connection']}?queue_name={$c['wakeup_transport']}&auto_setup=false",
+        'retry_strategy' => ['max_retries' => 0],
+      ];
+      if ($failure !== null) {
+        $facts['failure_transport'] = $failure;
+        $wakeups['failure_transport'] = $failure;
+      }
+      $transports[$c['transport']] ??= $facts;
+      $transports[$c['wakeup_transport']] ??= $wakeups;
     }
-    $transports[$m['wakeup_transport']] = $wakeups;
 
     $builder->prependExtensionConfig('framework', ['messenger' => ['transports' => $transports]]);
   }
 
   public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void {
+    $consumers = ConsumerSettings::resolve($config);
+    $primary = $consumers[0];
     $builder->setParameter('tangible_ddd.config', $config);
-    $builder->setParameter('tangible_ddd.consumer', $config['consumer']);
+    $builder->setParameter('tangible_ddd.consumers', $consumers);
+    $builder->setParameter('tangible_ddd.consumer', $config['consumer'] ?? [
+      'prefix' => $primary['prefix'], 'namespace_root' => $primary['namespace_root'], 'version' => $primary['version'], 'label' => $primary['label'],
+    ]);
     $builder->setParameter('tangible_ddd.table_prefix', $config['table_prefix']);
     $builder->setParameter('tangible_ddd.facts', $config['facts']);
     $builder->setParameter('tangible_ddd.messenger.bus', $config['messenger']['bus']);
@@ -330,6 +376,7 @@ final class TangibleDddBundle extends AbstractBundle {
     $container->addCompilerPass(new SubscriptionMapPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     $container->addCompilerPass(new DomainListenerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     $container->addCompilerPass(new MessengerHealthPass(), PassConfig::TYPE_BEFORE_REMOVING);
+    $container->addCompilerPass(new ConsumerAssignmentPass(), PassConfig::TYPE_BEFORE_REMOVING, 10); // wave 5
   }
 
   public function boot(): void {
@@ -337,14 +384,17 @@ final class TangibleDddBundle extends AbstractBundle {
     if ($c === null || !$c->has('tangible_ddd.consumer_config')) {
       return;
     }
-    /** @var array{prefix: string, namespace_root: string, version: string, label: ?string} $consumer */
-    $consumer = $c->getParameter('tangible_ddd.consumer');
-    ConsumerRegistry::add(
-      $c->get('tangible_ddd.consumer_config'),
-      static fn () => $c->get('tangible_ddd.consumer_container'),
-      $consumer['label'],
-      trim($consumer['namespace_root'], '\\'),
-    );
+    /** @var list<array<string, mixed>> $consumers */
+    $consumers = $c->getParameter('tangible_ddd.consumers');
+    foreach ($consumers as $consumer) {
+      $container = ConsumerSettings::id($consumer, 'consumer_container');
+      ConsumerRegistry::add(
+        $c->get(ConsumerSettings::id($consumer, 'consumer_config')),
+        static fn () => $c->get($container),
+        $consumer['label'],
+        $consumer['namespace_root'],
+      );
+    }
     $c->get('tangible_ddd.runtime_reset')->install();
     // Pooled-DSN refusal for inband_start, and HostDefaults (signals, clock, logger).
     $c->get('tangible_ddd.host_defaults')->install();

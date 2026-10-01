@@ -106,13 +106,23 @@ final class TestKernel extends Kernel {
       ],
     ]);
 
-    $container->extension('tangible_ddd', [
-      'consumer' => [
-        'prefix' => 'sfk',
-        'namespace_root' => __NAMESPACE__,
-        // version_env: the README's env form, with the variable unset (resolves to null, L4).
-        'version' => $this->variant === 'version_env' ? '%env(default::DDD_SF_TEST_UNSET_VERSION)%' : '0.7.0-test',
+    // multi: two consumers (wave 5), the app and the Billing context in Postgres schema `billing`.
+    $consumers = $this->variant === 'multi' ? ['consumers' => [
+      'sfk' => ['namespace_root' => __NAMESPACE__, 'version' => '0.7.0-test'],
+      'bil' => [
+        'namespace_root' => 'TangibleDDD\\Symfony\\Tests\\Kernel\\Billing',
+        'schema' => 'billing',
+        'transport' => 'ddd_facts_bil',
+        'wakeup_transport' => 'ddd_wakeups_bil',
+        'delivery' => ['budget' => 2, 'retry_delay_ms' => 0],
       ],
+    ]] : ['consumer' => [
+      'prefix' => 'sfk',
+      'namespace_root' => __NAMESPACE__,
+      // version_env: the README's env form, with the variable unset (resolves to null, L4).
+      'version' => $this->variant === 'version_env' ? '%env(default::DDD_SF_TEST_UNSET_VERSION)%' : '0.7.0-test',
+    ]];
+    $container->extension('tangible_ddd', $consumers + [
       'connection' => 'default',
       'transaction' => match ($this->variant) {
         'flush' => ['entity_manager' => 'test.flusher'],
@@ -159,6 +169,9 @@ final class TestKernel extends Kernel {
       ->exclude(__DIR__ . '/Events/');
     if ($this->variant === 'orm') {
       $services->load(__NAMESPACE__ . '\\Orm\\', __DIR__ . '/Orm/{Commands,CommandHandlers}/');
+    }
+    if ($this->variant === 'multi') {
+      $services->load('TangibleDDD\\Symfony\\Tests\\Kernel\\Billing\\', \dirname(__DIR__) . '/Billing/{Commands,CommandHandlers,Listeners,Process}/');
     }
   }
 }

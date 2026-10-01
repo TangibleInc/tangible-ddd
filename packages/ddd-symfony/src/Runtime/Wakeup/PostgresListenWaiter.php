@@ -41,16 +41,21 @@ final class PostgresListenWaiter implements IRelayWaiter {
 
   private readonly LoggerInterface $logger;
 
-  private readonly string $channel;
+  /** @var list<string> */
+  private readonly array $channels;
 
+  /** @param string|list<string> $consumerPrefix one consumer, or several (wave 5: one relay loop for every consumer on the connection) */
   public function __construct(
     private readonly Connection $connection,
-    string $consumerPrefix,
+    string|array $consumerPrefix,
     ?LoggerInterface $logger = null,
     PoolerPolicy $pooler = PoolerPolicy::Warn,
   ) {
     $this->logger = $logger ?? new NullLogger();
-    $this->channel = PostgresNotifyRelayWakeup::channel($consumerPrefix);
+    $this->channels = array_values(array_unique(array_map(
+      static fn (string $p) => PostgresNotifyRelayWakeup::channel($p),
+      is_array($consumerPrefix) ? $consumerPrefix : [$consumerPrefix],
+    )));
 
     $why = ConnectionTopology::pooler($connection->getParams());
     if ($why !== null) {
@@ -67,7 +72,9 @@ final class PostgresListenWaiter implements IRelayWaiter {
     if ($this->listening && $this->listenedOn === $native) {
       return;
     }
-    $this->connection->executeStatement('LISTEN ' . $this->channel);
+    foreach ($this->channels as $channel) {
+      $this->connection->executeStatement('LISTEN ' . $channel);
+    }
     $this->listening = true;
     $this->listenedOn = $native;
   }
