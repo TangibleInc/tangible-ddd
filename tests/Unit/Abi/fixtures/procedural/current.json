@@ -1320,6 +1320,20 @@
                 }
             ]
         },
+        "TangibleDDD\\WordPress\\wire_unbooted": {
+            "file": "unbooted.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "root",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
         "TangibleDDD\\WordPress\\with_lock": {
             "file": "locking.php",
             "byRef": false,
