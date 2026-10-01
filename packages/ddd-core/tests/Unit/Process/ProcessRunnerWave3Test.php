@@ -429,6 +429,24 @@ final class ProcessRunnerWave3Test extends TestCase {
     self::assertSame(['open:4'], Journal::$steps);
   }
 
+  public function test_manual_starts_in_a_drain_are_never_deduped_and_the_starts_on_ignition_still_ignites_once(): void {
+    // process.manual-start-in-drain
+    Correlation::within((new TraceContext('c'))->for_fact(self::EVENT_ID), function (): void {
+      $this->runner->start(new IgnitedProcess(1));
+      $this->runner->start(new IgnitedProcess(1));
+    });
+    $this->runner->ignite(IgnitedProcess::class, new OrderPlaced(1), self::EVENT_ID);
+    $this->runner->ignite(IgnitedProcess::class, new OrderPlaced(1), self::EVENT_ID);
+
+    self::assertSame(3, $this->store->count());
+    self::assertNull($this->store->ignitionKeyOf(1));
+    self::assertNull($this->store->ignitionKeyOf(2));
+    self::assertNotNull($this->store->ignitionKeyOf(3));
+    foreach ([1, 2, 3] as $id) {
+      self::assertSame(self::EVENT_ID, $this->store->find($id)->ignited_by_event_id());
+    }
+  }
+
   // ── deferred start (sf default) ───────────────────────────────────────────
 
   public function test_a_deferred_start_persists_and_writes_a_continue_intent_without_locking(): void {
