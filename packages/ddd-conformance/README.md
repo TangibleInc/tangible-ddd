@@ -155,7 +155,7 @@ Each method runs one fresh php process against the per-test schema: a separate `
 
 ### `WorkItemHost` (wave 5, CR-W5C5-3; mem, pdo, wp, sf)
 
-`workflow.item-deterministic-id` (W4). `workflows()` and `work_items()`: the host's behaviour-workflow store and work-item ledger on the per-test schema. Separate from `WorkflowHost`, so a host without an ignition ledger (wp) can provide it; a fixture with both serves one `workflows()`. The scenario runs `Fixtures\Workflow\GrantWorkflow` (a core `WorkflowHandler`, behaviour `GrantConfig`, registered with `BaseBehaviourConfig::register_type()`) and dispatches `GrantAccess` through `HostFixture::command_bus()`, reading the command ids from `audit_trail()`.
+`workflow.item-deterministic-id` (W4). `workflows()` and `work_items()`: the host's behaviour-workflow store and work-item ledger on the per-test schema. Separate from `WorkflowHost`, so a host without an ignition ledger (wp) can provide it; a fixture with both serves one `workflows()`. The scenario runs `Fixtures\Workflow\GrantWorkflow` (a core `WorkflowHandler`, behaviour `GrantConfig`, registered with `BaseBehaviourConfig::register_type()`) and dispatches `GrantAccess` through `HostFixture::command_bus()`. The `GrantAccess` handler the scenario installs records each command id it runs under, and the dispatch order is asserted on that list. `audit_trail()` is checked only for naming no other `GrantAccess` id, because a host may keep one audit row per command id: wp's 0.6 `{prefix}_command_audit` has `UNIQUE command_id`, so a re-run under the same id adds no row (HC5-2; `tests/Mem/MemKeyedAuditWorkItemScenariosTest` pins this).
 
 ### `CrossConsumerHost` (wave 5, CR-W5C5-4; sf)
 
