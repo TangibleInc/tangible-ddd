@@ -68,7 +68,7 @@ final class MySqlNamedLock implements IProcessLock {
       throw new LockNotAcquired("GET_LOCK('$name') timed out after {$timeout}s for {$k->id()} (held by another session)");
     }
 
-    $token = 'mysql:' . (++$this->ticket) . ':' . $name;
+    $token = 'get_lock#' . (++$this->ticket) . '#' . $name;
     $this->held[$token] = $name;
     return new LockHandle($k, $token);
   }

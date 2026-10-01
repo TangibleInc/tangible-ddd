@@ -27,7 +27,7 @@ final class SchemaSql {
   public static function files(): array {
     $files = glob(self::directory() . '/*.sql') ?: [];
     sort($files);
-    return array_values($files);
+    return $files;
   }
 
   /**
