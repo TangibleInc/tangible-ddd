@@ -35,8 +35,8 @@ final class OutboxFactClassResolver implements IFactClassResolver {
   }
 
   /** The fact class an integration action names (the subscriber probe, AW3); null when unknown. */
-  public function class_for_action(string $action): ?string {
-    return $this->store->class_for_action($action) ?? $this->byAction()[$action] ?? null;
+  public function class_of_action(string $action): ?string {
+    return $this->store->class_of_action($action) ?? $this->byAction()[$action] ?? null;
   }
 
   /** @return array<string, string> */

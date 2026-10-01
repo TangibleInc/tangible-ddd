@@ -39,7 +39,7 @@ final class SubscriptionProbe implements ISubscriberProbe {
         return null;
       }
       foreach ($this->registries as $registry) {
-        $heard = $registry instanceof CompiledSubscriptionRegistry ? $registry->hears($class) : $registry->for($class) !== [];
+        $heard = $registry instanceof CompiledSubscriptionRegistry ? $registry->has_subscribers($class) : $registry->for($class) !== [];
         if ($heard) {
           return true;
         }

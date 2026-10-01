@@ -49,7 +49,7 @@ use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
  * D14: with an IRelayWakeup, every append pokes it for $wakeupConsumer on
  * the same connection (a transactional NOTIFY, delivered at COMMIT).
  *
- * AW3: class_for_action() answers the subscriber probe from the latest claims
+ * AW3: class_of_action() answers the subscriber probe from the latest claims
  * (no query), and note_unheard() marks an accepted row the relay found no
  * subscriber for (`unheard_at`, schema 010), for the operator view.
  */
@@ -66,7 +66,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
   private array $claimedClasses = [];
 
   /** @var array<string, string> integration_action → class, from the latest claims */
-  private array $claimedActions = [];
+  private array $claimed_actions = [];
 
   /** @var list<array{0: Claim, 1: string}> dead-lettered by claim() and not yet taken */
   private array $claim_dead_letters = [];
@@ -238,7 +238,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
       }
       $this->claimedClasses[$claim->event_id] = $row['event_class'] === null ? null : (string) $row['event_class'];
       if ($row['event_class'] !== null) {
-        $this->claimedActions[$claim->record->integration_action] = (string) $row['event_class'];
+        $this->claimed_actions[$claim->record->integration_action] = (string) $row['event_class'];
       }
       $claims[] = $claim;
     }
@@ -330,8 +330,8 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
   }
 
   /** The fact class of the latest claimed row with $action; null when no claim named one. */
-  public function class_for_action(string $action): ?string {
-    return $this->claimedActions[$action] ?? null;
+  public function class_of_action(string $action): ?string {
+    return $this->claimed_actions[$action] ?? null;
   }
 
   /** AW3: the relay delivered $eventId with no subscriber in any consumer. Idempotent. */

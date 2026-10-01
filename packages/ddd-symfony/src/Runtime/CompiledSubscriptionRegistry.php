@@ -44,7 +44,7 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * ResumeReport (LazyProcessEntry::resume_with_outcome()) and notes an
  * unheard fact (AW3); a listener's compensation notes which D1 failure
  * command it sent (E3). Ids, priorities and outcomes are unchanged.
- * hears() answers "does anything subscribe to this class" without building a
+ * has_subscribers() answers "does anything subscribe to this class" without building a
  * subscriber (the relay's SubscriptionProbe).
  */
 final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
@@ -68,7 +68,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
   ) {}
 
   /** True when a compiled spec or a boot-time subscriber takes $eventClass (by is_a); builds nothing. */
-  public function hears(string $eventClass): bool {
+  public function has_subscribers(string $eventClass): bool {
     foreach ($this->specs as $spec) {
       if (is_a($eventClass, $spec['event'], true)) {
         return true;

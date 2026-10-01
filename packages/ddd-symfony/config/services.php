@@ -375,7 +375,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     $s->set($id('subscriber_probe'), SubscriptionProbe::class)
       ->args([
         array_map(static fn (array $any) => service(ConsumerSettings::id($any, 'subscriptions')), $consumers),
-        inline_service(\Closure::class)->factory([\Closure::class, 'fromCallable'])->args([[service($id('fact_class_resolver')), 'class_for_action']]),
+        inline_service(\Closure::class)->factory([\Closure::class, 'fromCallable'])->args([[service($id('fact_class_resolver')), 'class_of_action']]),
       ]);
 
     // The core relay step (OutboxProcessor port form, CONF-3) behind the stable id.

@@ -44,7 +44,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
   public function process(ContainerBuilder $container): void {
     $this->locate($container, DddTags::COMMAND_HANDLER, 'tangible_ddd.middleware.command_handler');
     $this->locate($container, DddTags::QUERY_HANDLER, 'tangible_ddd.middleware.query_handler');
-    $others = self::otherConsumers($container);
+    $others = self::other_consumers($container);
     foreach (['tangible_ddd.wake_target', ...array_map(static fn (string $n) => "tangible_ddd.consumer.$n.wake_target", $others)] as $target) {
       $this->locate($container, DddTags::CONTINUES_WORKFLOW, $target); // W1
     }
@@ -81,7 +81,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
       }
       $own = [];
       foreach ($refs as $type => $ref) {
-        $target = self::aliasTarget($container, (string) $ref);
+        $target = self::alias_target($container, (string) $ref);
         $mine = str_starts_with($target, 'tangible_ddd.') ? "tangible_ddd.consumer.$name." . substr($target, strlen('tangible_ddd.')) : null;
         $own[$type] = $mine !== null && $container->hasDefinition($mine)
           ? new Reference($mine, ContainerInterface::RUNTIME_EXCEPTION_ON_INVALID_REFERENCE)
@@ -92,7 +92,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
   }
 
   /** @return list<string> the names of the non-primary consumers (wave 5) */
-  private static function otherConsumers(ContainerBuilder $container): array {
+  private static function other_consumers(ContainerBuilder $container): array {
     if (!$container->hasParameter('tangible_ddd.consumers')) {
       return [];
     }
@@ -105,7 +105,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
     return $names;
   }
 
-  private static function aliasTarget(ContainerBuilder $container, string $id): string {
+  private static function alias_target(ContainerBuilder $container, string $id): string {
     for ($i = 0; $i < 10 && $container->hasAlias($id); $i++) {
       $id = (string) $container->getAlias($id);
     }

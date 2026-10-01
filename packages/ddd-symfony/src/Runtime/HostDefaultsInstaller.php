@@ -33,14 +33,14 @@ use TangibleDDD\Symfony\Persistence\ConnectionTopology;
  */
 final class HostDefaultsInstaller {
 
-  /** @param array<string, class-string<BaseBehaviourConfig>> $behaviourTypes type => config class */
+  /** @param array<string, class-string<BaseBehaviourConfig>> $behaviour_types type => config class */
   public function __construct(
     private readonly IInfrastructureSignalDispatcher $signals,
     private readonly IClock $clock,
     private readonly Connection $connection,
     private readonly bool $inbandStart,
     private readonly ?LoggerInterface $logger = null,
-    private readonly array $behaviourTypes = [],
+    private readonly array $behaviour_types = [],
   ) {}
 
   public function install(): void {
@@ -61,7 +61,7 @@ final class HostDefaultsInstaller {
     }
     // W2: the compiled behaviour types, through core's static facade (which
     // writes to the host's registry once core provides one).
-    foreach ($this->behaviourTypes as $type => $class) {
+    foreach ($this->behaviour_types as $type => $class) {
       BaseBehaviourConfig::register_type((string) $type, $class);
     }
   }

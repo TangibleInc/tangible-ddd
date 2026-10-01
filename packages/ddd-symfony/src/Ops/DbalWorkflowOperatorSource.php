@@ -25,7 +25,7 @@ use TangibleDDD\Symfony\Persistence\Time;
  * - failed workflows (`ddd_behaviour_workflows.is_failed`): key
  *   `workflow:{id}`, no budget;
  * - ignition entries or start markers with no workflow that are older than
- *   $staleStartSeconds (`ddd_workflow_ignitions`; W3: the start died, and
+ *   $stale_start_seconds (`ddd_workflow_ignitions`; W3: the start died, and
  *   the next fact with the key restarts it): key `ignition:{dedup_key}`.
  *
  * No repair labels: a failed item or workflow has no library repair command
@@ -42,7 +42,7 @@ final class DbalWorkflowOperatorSource implements IOperatorItemSource {
     private readonly Connection $connection,
     private readonly string $consumer,
     string $tablePrefix = '',
-    private readonly int $staleStartSeconds = 900,
+    private readonly int $stale_start_seconds = 900,
     private readonly ?int $budget = null,
     private readonly ?IClock $clock = null,
   ) {
@@ -99,7 +99,7 @@ final class DbalWorkflowOperatorSource implements IOperatorItemSource {
   /** @return list<OperatorItem> */
   private function stale_starts(int $limit): array {
     // The igniter judges age by its clock (the ledger writes created_at with it), so this does too.
-    $cutoff = ($this->clock ?? new SystemClock())->now()->modify("-{$this->staleStartSeconds} seconds");
+    $cutoff = ($this->clock ?? new SystemClock())->now()->modify("-{$this->stale_start_seconds} seconds");
     $rows = $this->connection->fetchAllAssociative(
       "SELECT dedup_key, kind, event_id, created_at FROM {$this->ignitions}
         WHERE workflow_id IS NULL AND created_at <= ?
@@ -109,7 +109,7 @@ final class DbalWorkflowOperatorSource implements IOperatorItemSource {
     return array_map(fn (array $r) => new OperatorItem(
       Layer::Workflow, $this->consumer, 'ignition:' . $r['dedup_key'], 0, null,
       sprintf('%s ignition or start marker never got a workflow (older than %d s; event %s): the start died, the next fact with the key restarts it',
-        $r['kind'], $this->staleStartSeconds, $r['event_id'] ?? '-'),
+        $r['kind'], $this->stale_start_seconds, $r['event_id'] ?? '-'),
       Time::from_db((string) $r['created_at']),
     ), $rows);
   }
