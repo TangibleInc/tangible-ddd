@@ -29,12 +29,17 @@ use TangibleDDD\Conformance\SimulatedCrash;
 use TangibleDDD\Conformance\Support\RecordingOutboxStore;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
 use TangibleDDD\Infra\DDDConfig;
+use TangibleDDD\Infra\Persistence\BehaviourWorkflowRepository;
 use TangibleDDD\Infra\Persistence\OutboxRepository;
+use TangibleDDD\Infra\Persistence\WorkItemRepository;
 use TangibleDDD\Runtime\Delivery\DeliveryOutcome;
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
 use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
@@ -75,11 +80,11 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * column wp; section 8 waves 2 and 3): WordPress 7.1.2 on MySQL 8.0, inside
  * the WP integration bootstrap, with the real Action Scheduler.
  *
- * Every port is the FINAL schema v8 wp adapter, composed by
+ * Every port is the FINAL schema v9 wp adapter, composed by
  * Support\WpConformanceRuntime (see there for the list): fenced outbox,
  * v8 pause rows, the shipped ActionSchedulerTransport, the delivery ledger
  * behind WpLedgeredDelivery's per-callback gate, WpdbProcessStore,
- * WpdbWakeupScheduler and GetLockProcessLock. There are no fixture
+ * WpdbParkingScheduler and GetLockProcessLock. There are no fixture
  * stand-ins for ports and no clock shims: every adapter takes the host
  * IClock (WPC-1..3, shipped by wp-v8).
  *
@@ -109,10 +114,18 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * gate derives from it, carry that prefix. set_up() and tear_down() therefore
  * wipe everything under it (tables, options, Action Scheduler actions and
  * groups, hooks) instead of using ScenarioContext::unique_name(); set_up()
- * then installs the v8 schema fresh. Nothing is wrapped in a per-test
+ * then installs the v9 schema fresh. Nothing is wrapped in a per-test
  * transaction. tear_down() restores ddd-wp's HostDefaults.
+ *
+ * Wave 5 (CR-W5C5-1, CR-W5C5-3): wakeups are WpdbParkingScheduler (v9
+ * `fact` column, ICarriesFacts), what WpHostPortFactory serves at v9, so a
+ * contended fact resume is parked and `lock.acquire-error` takes its parked
+ * branch. WorkItemHost is the wp BehaviourWorkflowRepository and
+ * WorkItemRepository on the consumer's tables (W4); behaviour configs decode
+ * through BaseBehaviourConfig's fallback registry (wp provides no
+ * IBehaviourTypes, CR-W5HF-4).
  */
-final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, ProcessDecodeFaults {
+final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, ProcessDecodeFaults, WorkItemHost {
 
   private const WAKE_HOOKS = ['process_continue', 'await_timeout', 'ddd_wakeup'];
 
@@ -156,6 +169,9 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   private bool $up = false;
 
+  private ?BehaviourWorkflowRepository $workflows = null;
+  private ?WorkItemRepository $workItems = null;
+
   public function name(): string {
     return 'wp';
   }
@@ -188,6 +204,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->workers = $this->workerLocks = $this->connections = [];
     $this->starts = $this->awaits = [];
     $this->deliveredActions = [];
+    $this->workflows = $this->workItems = null;
 
     RuntimeReset::register('conformance.events', fn () => $this->rt->events->reset());
     RuntimeReset::guard($this->rt->lock);
@@ -529,6 +546,18 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   public function consumer_prefix(): string {
     return $this->config->prefix();
+  }
+
+  // ── WorkItemHost (CR-W5C5-3, W4) ─────────────────────────────────────────
+
+  /** The wp behaviour-workflow store on the consumer's `behaviour_workflows` tables. */
+  public function workflows(): IBehaviourWorkflowRepository {
+    return $this->workflows ??= new BehaviourWorkflowRepository($this->rt->events, $this->config);
+  }
+
+  /** The wp work-item ledger on the consumer's `behaviour_workflow_items` table. */
+  public function work_items(): IWorkItemRepository {
+    return $this->workItems ??= new WorkItemRepository($this->config);
   }
 
   public function lock_key(int $processId): LockKey {

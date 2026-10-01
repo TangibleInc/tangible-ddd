@@ -62,7 +62,7 @@ loader() {
 # conformance-wp: the shared ddd-conformance scenarios on the wp host
 # (tests/Integration/Conformance, WpHostFixture) inside the WP integration
 # bootstrap, on a fresh database. Then every scenario id due on wp by
-# DDD_CONFORMANCE_WAVE (default 4) must have PASSED: not skipped, not absent.
+# DDD_CONFORMANCE_WAVE (default 5) must have PASSED: not skipped, not absent.
 # The multi-process scenarios start fresh `php` children in the same
 # container (tests/Integration/Conformance/bin/fresh.php).
 conformance_wp() {
@@ -91,7 +91,7 @@ conformance_wp() {
   log "phpunit -c tests/Integration/Conformance/phpunit.xml"
   h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Conformance/phpunit.xml \
     --cache-directory /tmp/phpunit-cache --do-not-cache-result --log-junit /out/conformance-wp.xml || phpunit_rc=$?
-  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-4}" || gate_rc=$?
+  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-5}" || gate_rc=$?
   if [ "$phpunit_rc" -ne 0 ] || [ "$gate_rc" -ne 0 ]; then
     log "conformance-wp red on $DB_NAME (phpunit exit $phpunit_rc, check-due exit $gate_rc)"
     exit 1
@@ -105,7 +105,7 @@ conformance_wp() {
 #   1. the adapter suite (phpunit.pdo.xml, both prepare modes);
 #   2. the shared conformance scenarios on the pdo host, both prepare modes,
 #      a fresh database per test, then the per-id gate: every id due on pdo
-#      by DDD_CONFORMANCE_WAVE (default 4: 44 ids) must have PASSED in both modes;
+#      by DDD_CONFORMANCE_WAVE (default 5: 49 ids) must have PASSED in both modes;
 #   3. the two-process example: produce.php, then two drain.php runs with
 #      the clock past the 60 s timeout (DDD_CLOCK_OFFSET=120); the scripts
 #      assert the process completed and the stale timeout was a no-op.
@@ -161,7 +161,7 @@ core_pdo() {
 
   log "phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml"
   (cd "$H_EXPORT" && php vendor/bin/phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml --do-not-cache-result --log-junit "$junit") || conformance_rc=$?
-  (cd "$H_EXPORT" && php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php "$junit" "${DDD_CONFORMANCE_WAVE:-4}") || gate_rc=$?
+  (cd "$H_EXPORT" && php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php "$junit" "${DDD_CONFORMANCE_WAVE:-5}") || gate_rc=$?
 
   log "two-process example: produce.php, then two drain.php runs with DDD_CLOCK_OFFSET=120"
   (

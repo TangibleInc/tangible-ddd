@@ -11,14 +11,15 @@ use Doctrine\DBAL\ParameterType;
 use League\Tactician\CommandBus;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\PostgreSqlConnection;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
-use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\EventListener\StopWorkerOnMessageLimitListener;
 use Symfony\Component\Messenger\EventListener\StopWorkerOnTimeLimitListener;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
@@ -28,6 +29,8 @@ use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport as MessengerInMemoryTransport;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Events\DomainEventsPublishMiddleware;
@@ -43,11 +46,13 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
-use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\CrossConsumerHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\PostCommitWakeups;
 use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
@@ -65,9 +70,16 @@ use TangibleDDD\Conformance\Support\InterleavingProcessLock;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WebRequests;
 use TangibleDDD\Conformance\WorkerRun;
+use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\Shared\Uuid;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourTypes;
+use TangibleDDD\Domain\ValueObjects\Behaviours\IBehaviourTypes;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IAuditPolicy;
@@ -79,6 +91,10 @@ use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistry;
 use TangibleDDD\Runtime\DrainReport;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\RecordEffect;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
@@ -101,6 +117,7 @@ use TangibleDDD\Runtime\RuntimeLeakDetected;
 use TangibleDDD\Runtime\RuntimeReset;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Symfony\Lock\PostgresAdvisoryProcessLock;
+use TangibleDDD\Symfony\Messenger\FactAudience;
 use TangibleDDD\Symfony\Messenger\FactDeliveryIncomplete;
 use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
@@ -108,35 +125,35 @@ use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
-use TangibleDDD\Runtime\Effects\EffectMiddleware;
-use TangibleDDD\Runtime\Effects\EffectResult;
-use TangibleDDD\Runtime\Effects\IEffectJournal;
-use TangibleDDD\Runtime\Effects\RecordEffect;
-use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
+use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
 use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
+use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
-use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
-use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
-use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
-use TangibleDDD\Conformance\WorkflowHost;
-use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
+use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
+use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
+use TangibleDDD\Symfony\Persistence\ParkedFacts;
 use TangibleDDD\Symfony\Persistence\PoolerPolicy;
 use TangibleDDD\Symfony\Persistence\PostgresSchema;
 use TangibleDDD\Symfony\Runtime\Actor\ActorContext;
 use TangibleDDD\Symfony\Runtime\Actor\SecurityUserActorProvider;
 use TangibleDDD\Symfony\Runtime\Actor\SymfonyActorProvider;
+use TangibleDDD\Symfony\Runtime\CompiledSubscriptionRegistry;
 use TangibleDDD\Symfony\Runtime\DddRuntimeReset;
 use TangibleDDD\Symfony\Runtime\DddSignal;
 use TangibleDDD\Symfony\Runtime\Factory;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
 use TangibleDDD\Symfony\Runtime\SymfonySignalDispatcher;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresListenWaiter;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresNotifyRelayWakeup;
 use TangibleDDD\Symfony\Runtime\Wakeup\ProcessRunnerWakeTarget;
 use TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelay;
 use TangibleDDD\Symfony\Tests\Conformance\Support\CountingProcessLock;
@@ -151,9 +168,6 @@ use TangibleDDD\Symfony\Tests\Conformance\Support\SfProcessWorker;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SfWorkerPorts;
 use TangibleDDD\Symfony\Tests\Conformance\Support\StatementFaults;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SuppressibleRelayWakeup;
-use TangibleDDD\Symfony\Runtime\Wakeup\PostgresListenWaiter;
-use TangibleDDD\Symfony\Runtime\Wakeup\PostgresNotifyRelayWakeup;
-use TangibleDDD\Conformance\PostCommitWakeups;
 use TangibleDDD\Symfony\Tests\Conformance\Support\WorkerTask;
 use TangibleDDD\Symfony\Tests\Kernel\App\TestKernel;
 use TangibleDDD\Symfony\Tests\Support\PostgresDatabase;
@@ -188,7 +202,9 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  *   transport is consumed by a real Messenger Worker.
  * - Processes (ProcessHost): the core ProcessRunner built by
  *   Factory::process_runner() with the bundle default StartMode::Deferred,
- *   on DbalProcessStore, DbalWakeupScheduler and the core
+ *   on DbalProcessStore, DbalParkingScheduler (the bundle's
+ *   wakeup_scheduler: a contended fact resume is parked with its fact,
+ *   AW2; ParkedFacts gives it back at the wake) and the core
  *   ReentrantProcessLock over PostgresAdvisoryProcessLock. A drain
  *   (ProcessWorker::drain_once()) is what the sf workers do in one pass:
  *   `ddd:relay` (outbox step, then WakeupRelay: stranded scan and due
@@ -203,10 +219,19 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  *   clock's current instant.
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
+ * - Wave 5: EffectStateHost (the operator view lists UnrecordedEffects over
+ *   DbalEffectJournal next to the ledger and wakeup sources), WorkItemHost
+ *   (DbalBehaviourWorkflowRepository, DbalWorkItemRepository) and
+ *   CrossConsumerHost (a second consumer, OTHER, see there).
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost, PostCommitWakeups {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectStateHost, WorkflowHost, PostCommitWakeups, WorkItemHost, CrossConsumerHost {
 
   public const CONSUMER = 'sfc';
+
+  /** The second consumer of CrossConsumerHost: its prefix, table prefix and facts transport (queue). */
+  public const OTHER = 'sfb';
+  private const OTHER_TABLES = 'sfb_';
+  private const OTHER_FACTS = 'ddd_facts_sfb';
 
   /** register 5.3 step 5: the stranded threshold (the bundle default). */
   private const STRANDED_AFTER_SECONDS = 900;
@@ -250,6 +275,11 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private ?DbalWorkflowIgnitionLedger $workflowLedger = null;
   private ?DbalBehaviourWorkflowRepository $workflowRepository = null;
   private ?WorkflowIgniter $workflowIgniter = null;
+  private ?DbalWorkItemRepository $workItems = null;
+
+  /** The other consumer's subscription map: empty at compile time, so it hears a class only once a scenario subscribes. */
+  private CompiledSubscriptionRegistry $otherSubscriptions;
+  private ?DbalDeliveryLedger $otherLedger = null;
 
   /** @var array<int, SfWorkerPorts> */
   private array $ports = [];
@@ -453,7 +483,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
 
   /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
-  public function effect_journal(): IEffectJournal {
+  public function effect_journal(): DbalEffectJournal {
     return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
   }
 
@@ -546,6 +576,97 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** `tangible_ddd.workflow_repository`. */
   public function workflows(): IBehaviourWorkflowRepository {
     return $this->workflowRepository ??= new DbalBehaviourWorkflowRepository($this->events, $this->connection);
+  }
+
+  /** `tangible_ddd.work_item_repository` (WorkItemHost, CR-W5C5-3). */
+  public function work_items(): IWorkItemRepository {
+    return $this->workItems ??= new DbalWorkItemRepository($this->connection);
+  }
+
+  // ── CrossConsumerHost (CR-W5C5-4) ────────────────────────────────────────
+  //
+  // A second consumer of the same app, OTHER, as the bundle wires one: its
+  // compiled subscription map is a FactAudience of every worker's
+  // MessengerFactTransport, so relay_once() sends it a copy (addressed to
+  // it) of each fact its map subscribes to, on its own facts transport;
+  // its IntegrationFactHandler runs on its own ledger (tables `sfb_`).
+
+  public function other_subscriptions(): ISubscriptionRegistry {
+    $this->otherLedger();
+    return $this->otherSubscriptions;
+  }
+
+  public function other_ledger(): IDeliveryLedger {
+    return $this->otherLedger();
+  }
+
+  /**
+   * `messenger:consume ddd_facts_sfb` until the due copies are handled, in routing order.
+   *
+   * Due means Doctrine Messenger's available_at, which is wall clock (gmdate), not the
+   * fixture IClock. $eventClass is unused: the interface consumes every copy routed to OTHER.
+   */
+  public function deliver_routed(string $eventClass): array {
+    $due = (int) $this->connection->fetchOne(
+      'SELECT count(*) FROM messenger_messages WHERE queue_name = ? AND delivered_at IS NULL AND available_at <= ?',
+      [self::OTHER_FACTS, gmdate('Y-m-d H:i:s')],
+    );
+    if ($due === 0) {
+      return [];
+    }
+    $outcomes = [];
+    $events = new EventDispatcher();
+    $events->addSubscriber($this->reset);
+    $events->addSubscriber(new StopWorkerOnMessageLimitListener($due));
+    $events->addSubscriber(new StopWorkerOnTimeLimitListener(10));
+    $events->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $e) use (&$outcomes): void {
+      $outcomes[] = $e->getEnvelope()->last(HandledStamp::class)?->getResult();
+    });
+    $events->addListener(WorkerMessageFailedEvent::class, static function (WorkerMessageFailedEvent $e) use (&$outcomes): void {
+      $failure = $e->getThrowable();
+      $outcomes[] = $failure instanceof HandlerFailedException ? self::incomplete($failure)->outcome : throw $failure;
+    });
+    (new Worker([self::OTHER_FACTS => self::doctrineTransport($this->connection, self::OTHER_FACTS)], $this->otherBus(), $events))->run(['sleep' => 10_000]);
+    return $outcomes;
+  }
+
+  /** One redelivered copy of a fact the fixture's consumer raised, addressed to OTHER. */
+  public function deliver_other(string $eventClass, array $wrapped): DeliveryOutcome {
+    $message = new IntegrationFactMessage(
+      self::CONSUMER,
+      (string) ($wrapped['__event_id'] ?? ''),
+      $eventClass::name(),
+      $eventClass,
+      $eventClass::integration_action(),
+      $wrapped,
+      self::OTHER,
+    );
+    try {
+      $envelope = $this->otherBus()->dispatch(new Envelope($message));
+    } catch (HandlerFailedException $e) {
+      return self::incomplete($e)->outcome;
+    }
+    return $envelope->last(HandledStamp::class)?->getResult()
+      ?? throw new \LogicException('IntegrationFactHandler returned no outcome');
+  }
+
+  /** OTHER's ledger; its tables are created on first use, so scenarios without the seam pay nothing. */
+  private function otherLedger(): DbalDeliveryLedger {
+    if ($this->otherLedger === null) {
+      if ($this->ownsSchema) {
+        PostgresSchema::apply($this->connection, self::OTHER_TABLES);
+      }
+      $this->otherLedger = new DbalDeliveryLedger($this->connection, self::OTHER_TABLES);
+    }
+    return $this->otherLedger;
+  }
+
+  /** OTHER's delivery bus: its IntegrationFactHandler over its own map and ledger. */
+  private function otherBus(): MessageBus {
+    $delivery = Factory::delivery($this->otherSubscriptions, $this->otherLedger(), IntegrationDelivery::DEFAULT_BUDGET, $this->logger);
+    return new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
+      IntegrationFactMessage::class => [new IntegrationFactHandler($delivery, self::OTHER)],
+    ]))]);
   }
 
   /** `tangible_ddd.workflow_igniter`: core WorkflowIgniter(ledger, boundary, logger, clock). */
@@ -736,9 +857,18 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->ports[1]->wakeups;
   }
 
+  /**
+   * The bundle's `tangible_ddd.operator_view` on worker 1's connection: the
+   * core PortOperatorView with the sf ledger and wakeup sources and the
+   * core UnrecordedEffects over the effect journal (E2, EffectStateHost).
+   */
   public function operator_view(): IOperatorView {
     $w = $this->ports[1];
-    return new PortOperatorView($this->consumer, $w->administration, $w->processStore, $this->clock, []);
+    return new PortOperatorView($this->consumer, $w->administration, $w->processStore, $this->clock, [
+      new DbalLedgerOperatorSource($this->connection, self::CONSUMER),
+      new DbalWakeupOperatorSource($this->connection, self::CONSUMER),
+      new UnrecordedEffects($this->effect_journal(), self::CONSUMER, $this->clock),
+    ]);
   }
 
   public function consumer_prefix(): string {
@@ -938,6 +1068,9 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->workflowLedger = null;
     $this->workflowRepository = null;
     $this->workflowIgniter = null;
+    $this->workItems = null;
+    $this->otherSubscriptions = new CompiledSubscriptionRegistry([], new ServiceLocator([]));
+    $this->otherLedger = null;
     $this->provideHostDefaults();
 
     $this->composeWorker(1, $this->connection);
@@ -950,8 +1083,16 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->reset->install();
   }
 
-  /** What the bundle provides at boot (HostDefaultsInstaller): the sf signal dispatcher, the app clock and logger. */
+  /**
+   * What the bundle provides at boot (HostDefaultsInstaller, TangibleDddBundle::boot()):
+   * the sf signal dispatcher, the app clock and logger, and the behaviour
+   * type registry (`tangible_ddd.behaviour_types`, CR-W5CC-4) with the
+   * include-time registrations handed over.
+   */
   private function provideHostDefaults(): void {
+    $types = new BehaviourTypes();
+    HostDefaults::provide(IBehaviourTypes::class, $types);
+    BaseBehaviourConfig::hand_over_types($types);
     $events = new EventDispatcher();
     $events->addListener(DddSignal::class, function (DddSignal $s): void {
       $this->signals[] = $s->event;
@@ -979,9 +1120,11 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $outbox = new DbalPostgresOutboxStore($c, $pauses, '', $logger, $notify, self::CONSUMER);
     $facts = self::doctrineTransport($c, 'ddd_facts');
     $factSender = new FaultInjectingSender($facts, null, $clock);
-    $transport = new MessengerFactTransport($factSender, self::CONSUMER, new OutboxFactClassResolver($outbox), null, $clock, $c);
+    // CrossConsumerHost: OTHER is an audience of this consumer's relay, as the bundle wires every other consumer.
+    $audiences = [new FactAudience(self::OTHER, $this->otherSubscriptions, self::doctrineTransport($c, self::OTHER_FACTS))];
+    $transport = new MessengerFactTransport($factSender, self::CONSUMER, new OutboxFactClassResolver($outbox), null, $clock, $c, $audiences);
     $processStore = new DbalProcessStore($c, $clock, '', self::STRANDED_AFTER_SECONDS);
-    $wakeups = new DbalWakeupScheduler($c);
+    $wakeups = new DbalParkingScheduler($c); // the bundle's wakeup_scheduler (AW2, ICarriesFacts)
     $wakeTransport = self::doctrineTransport($c, 'ddd_wakeups');
     $wakeSender = new FaultInjectingSender($wakeTransport, $this->wakeFaults);
 
@@ -1233,7 +1376,8 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $delivery = Factory::delivery($w->subscriptions, $w->ledger, IntegrationDelivery::DEFAULT_BUDGET, $this->logger);
     return new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
       IntegrationFactMessage::class => [new IntegrationFactHandler($delivery, self::CONSUMER)],
-      ProcessWakeupMessage::class => [new ProcessWakeupHandler(new ProcessRunnerWakeTarget($w->runner), $w->wakeups, $this->clock, $this->logger)],
+      // The bundle's process_wake_target: ParkedFacts puts a parked fact back on the intent the message rebuilds (AW2).
+      ProcessWakeupMessage::class => [new ProcessWakeupHandler(new ParkedFacts($w->wakeups, new ProcessRunnerWakeTarget($w->runner)), $w->wakeups, $this->clock, $this->logger)],
     ]))]);
   }
 

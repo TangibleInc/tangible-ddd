@@ -23,6 +23,7 @@ use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\Fixtures\Codec\BlobAttached;
 use TangibleDDD\Conformance\Fixtures\Process\ChildPurged;
 use TangibleDDD\Conformance\Fixtures\Process\JobFinished;
@@ -55,6 +56,7 @@ use TangibleDDD\Conformance\Support\RecordingOutboxStore;
 use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Core\Tests\Pdo\Conformance\Support\ConformanceDatabase;
 use TangibleDDD\Core\Tests\Pdo\Conformance\Support\FaultInjectingTransport;
 use TangibleDDD\Core\Tests\Pdo\Conformance\Support\FreshProcessRunner;
@@ -66,6 +68,7 @@ use TangibleDDD\Core\Tests\Pdo\Conformance\Support\RoutedOutboxStore;
 use TangibleDDD\Core\Tests\Pdo\Conformance\Support\ScenarioConnection;
 use TangibleDDD\Defaults\Pdo\FactClassRecordingEventBus;
 use TangibleDDD\Defaults\Pdo\MySqlNamedLock;
+use TangibleDDD\Defaults\Pdo\PdoBehaviourWorkflowRepository;
 use TangibleDDD\Defaults\Pdo\PdoConnection;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryLedger;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryWorker;
@@ -74,14 +77,20 @@ use TangibleDDD\Defaults\Pdo\PdoJobStore;
 use TangibleDDD\Defaults\Pdo\PdoOperatorView;
 use TangibleDDD\Defaults\Pdo\PdoOutboxAdministration;
 use TangibleDDD\Defaults\Pdo\PdoOutboxStore;
+use TangibleDDD\Defaults\Pdo\PdoParkingJobStore;
 use TangibleDDD\Defaults\Pdo\PdoPauseStore;
 use TangibleDDD\Defaults\Pdo\PdoProcessStore;
 use TangibleDDD\Defaults\Pdo\PdoTransactionBoundary;
+use TangibleDDD\Defaults\Pdo\PdoWorkItemRepository;
 use TangibleDDD\Defaults\Pdo\SchemaCheck;
 use TangibleDDD\Defaults\Pdo\SchemaSql;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\Shared\Uuid;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourTypes;
+use TangibleDDD\Domain\ValueObjects\Behaviours\IBehaviourTypes;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
@@ -129,7 +138,13 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  * Wave 4 adds the EffectHost seam (EffectMiddleware over PdoEffectJournal,
  * where compose() puts it) and ProcessDecodeFaults (the `process_class`
  * and `quarantine_reason` columns); the audit policy is compose()'s
- * fallback, AttributeAuditPolicy.
+ * fallback, AttributeAuditPolicy. Wave 5 (CR-W5C5-1..3): the jobs table is
+ * compose()'s PdoParkingJobStore (ICarriesFacts, AW2), so a fact resume that
+ * cannot lock is parked with its fact and `lock.acquire-error` takes its
+ * parked branch; EffectStateHost (PdoOperatorView lists UnrecordedEffects
+ * over PdoEffectJournal, E2) and WorkItemHost (compose()'s
+ * PdoBehaviourWorkflowRepository and PdoWorkItemRepository, W4), with an
+ * IBehaviourTypes provided to HostDefaults as compose() provides one (W2).
  *
  * - Fresh schema per test: set_up() creates a database of its own
  *   (ScenarioContext::unique_name('pdo', 'ddd_w3_conf')), applies
@@ -163,7 +178,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *   connection (a second MySQL session) with its own adapter set, runner,
  *   ReentrantProcessLock and registry, over the same database.
  */
-final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, RelayRace, StatementErrors, EffectHost, ProcessDecodeFaults {
+final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, RelayRace, StatementErrors, EffectStateHost, ProcessDecodeFaults, WorkItemHost {
 
   public const CONSUMER_VERSION = '0.7.0-conformance';
 
@@ -195,7 +210,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   private RoutedOutboxStore $outbox;
   private RecordingOutboxStore $relayStore;
   private PdoOutboxAdministration $administration;
-  private PdoJobStore $jobs;
+  private PdoParkingJobStore $jobs;
   private FaultInjectingTransport $transport;
   private PdoDeliveryLedger $ledger;
   private PdoProcessStore $processStore;
@@ -209,6 +224,8 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   private OutboxConfig $outboxConfig;
   private WakeHandoffFaults $wakeFaults;
   private PdoEffectJournal $effectJournal;
+  private PdoBehaviourWorkflowRepository $workflows;
+  private PdoWorkItemRepository $workItems;
 
   /** A session that is neither worker: holds locks "elsewhere", runs RelayRace's competitor. */
   private ?\PDO $side = null;
@@ -284,7 +301,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     $this->outbox = new RoutedOutboxStore($this->outboxStore);
     $this->relayStore = new RecordingOutboxStore($this->outbox);
     $this->administration = new PdoOutboxAdministration($this->db, $this->tablePrefix, $this->clock);
-    $this->jobs = new PdoJobStore($this->db, $this->prefix, $this->tablePrefix, $this->clock, $this->logger);
+    $this->jobs = new PdoParkingJobStore($this->db, $this->prefix, $this->tablePrefix, $this->clock, $this->logger);
     $this->transport = new FaultInjectingTransport($this->jobs);
     $this->ledger = new PdoDeliveryLedger($this->db, $this->tablePrefix, $this->clock);
     $this->processStore = new PdoProcessStore($this->db, $this->tablePrefix, $this->clock, logger: $this->logger);
@@ -297,7 +314,10 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     $this->auditPort = new FaultInjectingAuditSink($this->audit);
     $this->wakeFaults = new WakeHandoffFaults();
     $this->effectJournal = new PdoEffectJournal($this->db, $this->tablePrefix, $this->clock);
+    $this->workflows = new PdoBehaviourWorkflowRepository($this->events, $this->db, $this->tablePrefix, $this->clock);
+    $this->workItems = new PdoWorkItemRepository($this->db, $this->tablePrefix, $this->clock);
 
+    HostDefaults::provide(IBehaviourTypes::class, new BehaviourTypes());
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
     HostDefaults::provide(IClock::class, $this->clock);
@@ -602,6 +622,18 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     );
   }
 
+  // ── WorkItemHost (CR-W5C5-3, W4) ─────────────────────────────────────────
+
+  /** compose()'s behaviour-workflow store on the fixture connection; configs decode through the provided IBehaviourTypes. */
+  public function workflows(): IBehaviourWorkflowRepository {
+    return $this->workflows;
+  }
+
+  /** compose()'s work-item ledger on the fixture connection. */
+  public function work_items(): IWorkItemRepository {
+    return $this->workItems;
+  }
+
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
 
   /** The class lives in `process_class` only (business_data holds constructor arguments, no class). */
@@ -691,9 +723,12 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   }
 
   public function live_intents(): array {
+    // The parked fact lives in the side table of schema 011 (ddd_job_facts).
     $rows = $this->db->fetch_all(
-      "SELECT kind, consumer, process_id, step_index, expected_status, due_at, idempotency_key
-         FROM `{$this->tablePrefix}ddd_jobs` WHERE kind <> 'deliver' ORDER BY id"
+      "SELECT j.kind, j.consumer, j.process_id, j.step_index, j.expected_status, j.due_at, j.idempotency_key, f.fact
+         FROM `{$this->tablePrefix}ddd_jobs` j
+         LEFT JOIN `{$this->tablePrefix}ddd_job_facts` f ON f.idempotency_key = j.idempotency_key
+        WHERE j.kind <> 'deliver' ORDER BY j.id"
     );
     return array_map(static fn (array $r) => new WakeupIntent(
       WakeKind::from((string) $r['kind']),
@@ -703,6 +738,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
       $r['expected_status'] === null ? null : (string) $r['expected_status'],
       self::utc((string) $r['due_at']),
       (string) $r['idempotency_key'],
+      $r['fact'] === null ? null : (array) json_decode((string) $r['fact'], true, 512, JSON_THROW_ON_ERROR),
     ), $rows);
   }
 
@@ -791,7 +827,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   /** Worker n > 1: a second MySQL session with its own adapter set over the same database. */
   private function buildWorker(): PdoProcessWorker {
     $db = $this->openConnection(primary: false);
-    $jobs = new PdoJobStore($db, $this->prefix, $this->tablePrefix, $this->clock, $this->logger);
+    $jobs = new PdoParkingJobStore($db, $this->prefix, $this->tablePrefix, $this->clock, $this->logger);
     return $this->composeWorker(
       new SubscriptionRegistry(),
       new ReentrantProcessLock(new MySqlNamedLock($db, $this->logger), $this->logger),

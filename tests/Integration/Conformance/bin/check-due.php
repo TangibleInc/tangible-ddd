@@ -10,7 +10,7 @@
  * skipped copy fails the id, except a provisional skip whose host seam does
  * not exist yet (Support\DueGate::PROVISIONAL_SKIPS, WPC-4).
  *
- *   php tests/Integration/Conformance/bin/check-due.php <junit.xml> [wave=4]
+ *   php tests/Integration/Conformance/bin/check-due.php <junit.xml> [wave=5]
  */
 
 declare(strict_types=1);
@@ -23,7 +23,7 @@ $root = dirname(__DIR__, 4);
 $loader = require $root . '/vendor/autoload.php';
 $loader->addPsr4('TangibleDDD\\Conformance\\', $root . '/packages/ddd-conformance/src/');
 
-[$junit, $wave] = [$argv[1] ?? '', (int) ($argv[2] ?? 4)];
+[$junit, $wave] = [$argv[1] ?? '', (int) ($argv[2] ?? 5)];
 if (!is_file($junit)) {
   fwrite(STDERR, "check-due: no JUnit log at '$junit'\n");
   exit(1);

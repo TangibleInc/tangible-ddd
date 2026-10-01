@@ -6,12 +6,18 @@ namespace TangibleDDD\Symfony\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Conformance\CrossConsumerHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\ScenarioCatalogue;
 use TangibleDDD\Conformance\ScenarioId;
+use TangibleDDD\Conformance\WorkItemHost;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
+use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
+use TangibleDDD\Symfony\Tests\Conformance\Support\SfWorkerPorts;
 
 /**
- * Pins the sf id lists of register section 8 (waves 2, 3 and 4) and proves
- * each id due by wave 4 has a scenario method on an sf host class that runs
+ * Pins the sf id lists of register section 8 (waves 2 to 5) and proves
+ * each id due by wave 5 has a scenario method on an sf host class that runs
  * the shared scenario unchanged: an sf class that redeclares a due id (to
  * skip it) fails here.
  */
@@ -49,6 +55,12 @@ final class SfCatalogueTest extends TestCase {
     'decode.unknown-class', 'effect.journal-reuse', 'wakeup.post-commit',
   ];
 
+  /** Register section 8, wave 5, sf (adds, CR-W5C5-1): AW2, AW1, E2, W4 and the cross-consumer id. */
+  private const SF_WAVE_5 = [
+    'lock.parked-answer', 'process.resume-contention-keeps-answer', 'process.resume-cause',
+    'effect.performed-not-recorded', 'workflow.item-deterministic-id', 'delivery.cross-consumer-once',
+  ];
+
   public const HOST_CLASSES = [
     SfCommandScenariosTest::class,
     SfRelayScenariosTest::class,
@@ -67,10 +79,18 @@ final class SfCatalogueTest extends TestCase {
     SfEffectScenariosTest::class,
     SfWorkflowScenariosTest::class,
     SfPostCommitWakeupScenariosTest::class,
+    SfParkedAnswerScenariosTest::class,
+    SfResumeCauseScenariosTest::class,
+    SfEffectStateScenariosTest::class,
+    SfWorkItemScenariosTest::class,
+    SfCrossConsumerScenariosTest::class,
   ];
 
   /** The wave-3 host classes (the first ten): they must still cover exactly cases_for('sf', 3). */
   private const WAVE_3_HOST_CLASSES = 10;
+
+  /** The wave-3 and wave-4 host classes (the first seventeen): they must still cover exactly cases_for('sf', 4). */
+  private const WAVE_4_HOST_CLASSES = 17;
 
   public function test_sf_waves_2_and_3_match_register_section_8(): void {
     self::assertSame([], ScenarioCatalogue::due_by('sf', 1));
@@ -95,10 +115,39 @@ final class SfCatalogueTest extends TestCase {
 
   public function test_every_case_due_on_sf_by_wave_4_has_an_sf_host_class(): void {
     $extended = [];
-    foreach (self::HOST_CLASSES as $class) {
+    foreach (array_slice(self::HOST_CLASSES, 0, self::WAVE_4_HOST_CLASSES) as $class) {
       $extended[] = (string) get_parent_class($class);
     }
     self::assertEqualsCanonicalizing(ScenarioCatalogue::cases_for('sf', 4), $extended);
+  }
+
+  public function test_sf_wave_5_matches_register_section_8(): void {
+    self::assertCount(6, self::SF_WAVE_5);
+    self::assertEqualsCanonicalizing(self::SF_WAVE_5, ScenarioCatalogue::first_due_at('sf', 5));
+    self::assertEqualsCanonicalizing([...self::SF_WAVE_2, ...self::SF_WAVE_3, ...self::SF_WAVE_4, ...self::SF_WAVE_5], ScenarioCatalogue::due_by('sf', 5));
+  }
+
+  public function test_every_case_due_on_sf_by_wave_5_has_an_sf_host_class(): void {
+    $extended = [];
+    foreach (self::HOST_CLASSES as $class) {
+      $extended[] = (string) get_parent_class($class);
+    }
+    self::assertEqualsCanonicalizing(ScenarioCatalogue::cases_for('sf', 5), $extended);
+  }
+
+  public function test_every_id_due_on_sf_by_wave_5_runs_the_shared_scenario(): void {
+    $this->assertRunsUnchanged([...self::SF_WAVE_2, ...self::SF_WAVE_3, ...self::SF_WAVE_4, ...self::SF_WAVE_5], 5);
+  }
+
+  /** The seams of the wave-5 ids, and the parking scheduler lock.acquire-error branches on (CR-W5CC-7). */
+  public function test_the_fixture_implements_the_wave_5_seams(): void {
+    $interfaces = class_implements(SfHostFixture::class);
+    self::assertContains(EffectStateHost::class, $interfaces, 'effect.performed-not-recorded (CR-W5C5-2)');
+    self::assertContains(WorkItemHost::class, $interfaces, 'workflow.item-deterministic-id (CR-W5C5-3)');
+    self::assertContains(CrossConsumerHost::class, $interfaces, 'delivery.cross-consumer-once (CR-W5C5-4)');
+    $type = (new \ReflectionProperty(SfWorkerPorts::class, 'wakeups'))->getType();
+    self::assertSame(DbalParkingScheduler::class, $type instanceof \ReflectionNamedType ? $type->getName() : null, 'the bundle\'s wakeup_scheduler');
+    self::assertTrue(is_subclass_of(DbalParkingScheduler::class, ICarriesFacts::class));
   }
 
   public function test_every_id_due_on_sf_by_wave_3_runs_the_shared_scenario(): void {

@@ -17,7 +17,7 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
-use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
+use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelay;
 
@@ -43,7 +43,7 @@ final class SfWorkerPorts {
     public readonly DbalDeliveryLedger $ledger,
     public readonly SubscriptionRegistry $subscriptions,
     public readonly DbalProcessStore $processStore,
-    public readonly DbalWakeupScheduler $wakeups,
+    public readonly DbalParkingScheduler $wakeups,
     public readonly DoctrineTransport $wakeTransport,
     public readonly FaultInjectingSender $wakeSender,
     public readonly WakeupRelay $wakeupRelay,
