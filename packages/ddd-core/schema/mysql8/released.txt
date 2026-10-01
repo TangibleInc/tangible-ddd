@@ -1,0 +1,11 @@
+# tangible/ddd-core schema/mysql8: shipped files and their digests (append-only, L5).
+# SchemaSql::digest(<file>) = sha256 of the file's statements, comments and
+# whitespace ignored. A shipped file never changes: a schema change is the next
+# numbered file plus its line here. tests/Pdo/Native/SchemaReleasedTest gates it.
+001_outbox.sql 4dfd61b65b42204726014bf72130d64efcfe8bdf47c6d8bd384653bc1a5cca19
+002_dlq.sql bc4657db99727ba4240e50028427be09b60693c31da7d89312eb0555b3fd4453
+003_relay_pauses.sql daa02f65c31f61bde15be6d2264f34b25ab2d854676a8fdb043169bd79a60cab
+004_delivery_ledger.sql 3da7d7d64a1b71d36f74d7cee77f80477c94127a3b2e58c9eb5d2e551dcb3e70
+005_processes.sql 9c95aef15210cca423a464a143c8f2b7e21c93869bc124b49f3db86a20f5ac3d
+006_jobs.sql 5c5a2ade87ae0325d4fb6a1f7515f4ff45221aaffd691fc7df29dd68be718cbf
+007_process_waits.sql dc41d265b6181198e0cac706fccc60cb5a3d46c3dbb173c224f4bd142d4a6585
