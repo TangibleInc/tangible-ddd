@@ -16,7 +16,6 @@ use TangibleDDD\Runtime\Delivery\SubscriptionRegistry;
 use TangibleDDD\Symfony\Messenger\FactDeliveryIncomplete;
 use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
-use TangibleDDD\Symfony\Runtime\RuntimeLog;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
 
@@ -38,7 +37,7 @@ final class IntegrationFactHandlerTest extends TestCase {
   }
 
   private function handler(int $budget = 5): IntegrationFactHandler {
-    $delivery = new IntegrationDelivery($this->registry, $this->ledger, $budget, RuntimeLog::argument(IntegrationDelivery::class, 'log', new NullLogger()));
+    $delivery = new IntegrationDelivery($this->registry, $this->ledger, $budget, new NullLogger());
     return new IntegrationFactHandler($delivery, 'txp');
   }
 

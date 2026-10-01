@@ -21,11 +21,11 @@ Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd
   `DbalProcessStore`, the reentrant `PostgresAdvisoryProcessLock`,
   `DbalWakeupScheduler` and the transaction boundary.
 - `tangible_ddd.process.inband_start` (the register's `ddd.process.inband_start`,
-  default `false`): `start()` persists the process and a `Continue` intent in the
-  caller's transaction and the first step runs in a worker. `true` runs the first
-  step in-band and is refused at boot on a pooled DSN. The persist-only start
-  needs a core `ProcessRunner` option (CR sfp-1); until core has it, a warning is
-  logged and `start()` stays in-band.
+  default `false`): the runner is built with `StartMode::Deferred`, so `start()`
+  persists the process and a `Continue` intent in the caller's transaction (also
+  inside a command), takes no process lock, and the first step runs in a worker.
+  `true` maps to `StartMode::InBand` (first step in-band, under the advisory lock)
+  and is refused at boot on a pooled DSN.
 - Workers: `bin/console ddd:relay` (outbox relay, wakeup projection, stranded
   scan, LISTEN wakeup) and `bin/console messenger:consume ddd_facts ddd_wakeups`,
   both on a **direct** (non-pooled) connection. `tangible_ddd.process.pooled_connection:
@@ -57,7 +57,18 @@ re-create their tables; each conformance test gets a fresh Postgres schema
 per-test transaction.
 
 The conformance host is `tests/Conformance/SfHostFixture.php`; the scenarios
-come from `tangible/ddd-conformance` (require-dev).
+come from `tangible/ddd-conformance` (require-dev). Since wave 3 it runs every
+id due on sf by wave 3 (15 + 23, pinned by `SfCatalogueTest`):
+
+- workers: worker 1 is the fixture's connection, worker 2 a second DBAL
+  connection (another advisory-lock session); `drainOnce()` is one pass of
+  `ddd:relay` plus `messenger:consume ddd_facts ddd_wakeups`;
+- fresh processes: `tests/Conformance/bin/fresh-process.php`, a separate `php`
+  process attached to the test's schema (killed with SIGKILL where a scenario
+  says so);
+- web requests: process-lock acquires go to a pooled-DSN lock with
+  `pooled_connection: refuse`, and the in-band boot refusal is the real
+  `TestKernel` boot.
 
 ### Sibling packages are copied, not linked
 

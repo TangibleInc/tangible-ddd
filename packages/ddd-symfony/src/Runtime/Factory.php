@@ -12,6 +12,7 @@ use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use Doctrine\DBAL\Connection;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Lock\IProcessLock;
@@ -28,15 +29,14 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 
 /**
- * Container factories for core runtime objects whose constructors the bundle
- * must not pin (the wave-2 logger switch; RuntimeLog).
+ * Container factories for the core runtime objects the bundle wires.
  *
  * @internal
  */
 final class Factory {
 
   public static function delivery(ISubscriptionRegistry $registry, IDeliveryLedger $ledger, int $budget, ?LoggerInterface $logger = null): IntegrationDelivery {
-    return new IntegrationDelivery($registry, $ledger, $budget, RuntimeLog::argument(IntegrationDelivery::class, 'log', $logger));
+    return new IntegrationDelivery($registry, $ledger, $budget, $logger);
   }
 
   /**
@@ -60,19 +60,19 @@ final class Factory {
   public static function processLock(Connection $connection, string $poolerPolicy = 'warn', ?LoggerInterface $logger = null): ReentrantProcessLock {
     $lock = new ReentrantProcessLock(
       new PostgresAdvisoryProcessLock($connection, $logger, PoolerPolicy::from($poolerPolicy)),
-      RuntimeLog::argument(ReentrantProcessLock::class, 'log', $logger),
+      $logger,
     );
     RuntimeReset::guardLock($lock);
     return $lock;
   }
 
   /**
-   * The core ProcessRunner on the sf ports. $inbandStart false (the sf
-   * default, X3/5.2) asks for start() = persist + Continue intent in the
-   * caller's transaction, first step in a worker; it is passed through the
-   * core constructor option named by startModeParameter(). A core runner
-   * without that option runs the first step in-band; that is logged as a
-   * warning at construction, never silent (CR sfp-1).
+   * The core ProcessRunner on the sf ports (register X3, 5.2; CR-W3C-1,
+   * W3C-R4). The sf default is StartMode::Deferred: start() persists the
+   * process and a Continue intent in the caller's transaction, takes no
+   * process lock and runs no step, so it is safe in a web request on a
+   * pooled connection; the first step runs in a worker. $inbandStart
+   * (`tangible_ddd.process.inband_start: true`) maps to StartMode::InBand.
    */
   public static function processRunner(
     IDDDConfig $consumer,
@@ -85,36 +85,16 @@ final class Factory {
     bool $inbandStart = false,
     ?LoggerInterface $logger = null,
   ): ProcessRunner {
-    $args = [
-      'config' => $consumer,
-      'repository' => null,
-      'lock' => $lock,
-      'store' => $store,
-      'wakeups' => $wakeups,
-      'subscriptions' => $subscriptions,
-      'boundary' => $boundary,
-      'clock' => $clock,
-    ];
-    $option = self::startModeParameter(ProcessRunner::class);
-    if ($option !== null) {
-      $args[$option] = $inbandStart;
-    } elseif (!$inbandStart) {
-      $logger?->warning(
-        '[ddd process] this ddd-core ProcessRunner has no start-mode option: start() runs the first step in-band, '
-        . 'not as persist + Continue intent (tangible_ddd.process.inband_start: false is not honoured until core ships CR sfp-1)'
-      );
-    }
-    return new ProcessRunner(...$args);
+    return new ProcessRunner(
+      $consumer, null, $lock, $store, $wakeups, $subscriptions, $boundary, $clock,
+      self::startMode($inbandStart),
+      $logger,
+    );
   }
 
-  /** The name of a ProcessRunner-style constructor's in-band start option, null when it has none. */
-  public static function startModeParameter(string $class): ?string {
-    foreach ((new \ReflectionClass($class))->getConstructor()?->getParameters() ?? [] as $param) {
-      if (in_array($param->getName(), ['inbandStart', 'inband_start'], true)) {
-        return $param->getName();
-      }
-    }
-    return null;
+  /** The bundle's start mode: Deferred unless `tangible_ddd.process.inband_start` is true. */
+  public static function startMode(bool $inbandStart): StartMode {
+    return $inbandStart ? StartMode::InBand : StartMode::Deferred;
   }
 
   /** @param array<string, int|float> $relay */

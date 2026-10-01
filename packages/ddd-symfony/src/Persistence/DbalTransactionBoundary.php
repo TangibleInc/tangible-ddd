@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Persistence;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use TangibleDDD\Runtime\ITransactionBoundary;
@@ -22,7 +23,10 @@ use TangibleDDD\Runtime\TransactionFailed;
  *   DBAL savepoint instead, for hosts whose tests wrap each test in a
  *   transaction.
  * - $work throwing: rollback, then the ORIGINAL exception is rethrown; a
- *   rollback failure is logged, never substituted.
+ *   rollback failure is logged, never substituted. Exception: when the
+ *   throw comes from a statement of an already aborted transaction (25P02
+ *   in its chain: the work had swallowed an earlier statement error), it is
+ *   TransactionFailed with the work's exception as previous, as below.
  * - BEGIN / COMMIT failure: TransactionFailed with the driver error as
  *   previous; nothing is committed and the connection is left outside any
  *   transaction.
@@ -88,6 +92,16 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
       }
     } catch (\Throwable $original) {
       $this->rollBackTo($outer, $original);
+      if (self::failedOnAbortedTransaction($original)) {
+        // The work swallowed a statement error, then failed on a later
+        // statement of the aborted transaction (an outbox append, say).
+        // The failure is the transaction, as with the probe below.
+        throw new TransactionFailed(
+          'Transaction aborted by an earlier statement error the work caught; nothing was committed: ' . $original->getMessage(),
+          0,
+          $original
+        );
+      }
       throw $original;
     }
 
@@ -121,6 +135,19 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
 
   public function isActive(): bool {
     return $this->connection->isTransactionActive();
+  }
+
+  /** Is 25P02 (in_failed_sql_transaction) anywhere in $e's chain? */
+  private static function failedOnAbortedTransaction(\Throwable $e): bool {
+    for ($t = $e; $t !== null; $t = $t->getPrevious()) {
+      if ($t instanceof DriverException && $t->getSQLState() === '25P02') {
+        return true;
+      }
+      if ($t instanceof \PDOException && ($t->errorInfo[0] ?? null) === '25P02') {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

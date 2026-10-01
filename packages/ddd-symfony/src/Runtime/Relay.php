@@ -15,28 +15,26 @@ use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 
 /**
  * The relay step of ddd-symfony: the CORE relay step,
- * `OutboxProcessor::process_batch()` in its port form (register 1.4, 3.4,
- * 3.5, 5.1; CONF-3), run once per call. `ddd:relay` calls runOnce().
+ * `OutboxProcessor::process_batch($limit)` in its port form (register 1.4,
+ * 3.4, 3.5, 5.1; CONF-3), run once per call. `ddd:relay` calls runOnce().
  *
  * What the core step does (not repeated here): claim() outside any
  * transaction with the lease OutboxConfig::lock_timeout_seconds; submit at
  * the record's ABSOLUTE due_at; submit + accept in ONE boundary transaction
- * when the transport shares the store's connection; a throw or a missing
- * reference retries with the 5.1 backoff and dead-letters at max_attempts;
- * the OutboxAttemptFailed / OutboxDeadLettered signals for the consumer.
+ * when the transport shares the store's connection, and a 0-row accept()
+ * rolls that submission back (CR sfc-1); a throw or a missing reference
+ * retries with the 5.1 backoff and dead-letters at max_attempts; the
+ * per-event-id outcome lists (CR sfc-4); the OutboxAttemptFailed /
+ * OutboxDeadLettered signals for the consumer.
  *
- * What this wrapper adds, without re-implementing the loop:
+ * What this wrapper adds:
  *
- * - runOnce($limit): the limit replaces OutboxConfig::batch_size for that step.
- * - A per-event-id RelayReport. The core step returns counts only, so the
- *   step runs over RelayOutcomes, a recording view of the store.
- * - CR sf-3: on a shared connection, a lost lease on accept rolls the
- *   submission back (RelayOutcomes throws LeaseLostOnAccept inside the
- *   transaction). The core step's follow-up retryLater/deadLetter for that
- *   claim is fenced too and matches 0 rows, so the row is reported `lost`.
+ * - runOnce($limit) passes $limit to process_batch() (CR sfc-3); null runs
+ *   OutboxConfig::batch_size.
  * - Expired-lease dead letters made at claim time by DbalPostgresOutboxStore
  *   (CR sf-8) appear in the report's deadLettered list and emit the same
  *   OutboxDeadLettered signal as a relay-side dead letter.
@@ -79,42 +77,39 @@ final class Relay {
   }
 
   public function runOnce(?int $limit = null): RelayReport {
-    $shared = $this->transport->sharesConnectionWith($this->outbox);
-    $outcomes = new RelayOutcomes($this->outbox, $shared, $this->logger);
-
     $processor = new OutboxProcessor(
       $this->consumer,
       null,
-      $this->configFor($limit ?? $this->config->batch_size),
+      $this->config,
       null,
       null,
       $this->logger,
       $this->clock,
-      $outcomes,
-      new RelayTransportView($this->transport, $this->outbox),
+      $this->outbox,
+      $this->transport,
       $this->boundary,
     );
     $processor->between_submit_and_accept($this->betweenSubmitAndAccept);
 
     try {
-      $processor->process_batch();
+      $result = $processor->process_batch($limit);
     } finally {
-      $this->signalClaimDeadLetters($outcomes);
+      $atClaim = $this->signalClaimDeadLetters();
     }
 
-    return $outcomes->report();
+    return RelayReport::of($result, $atClaim);
   }
 
-  private function configFor(int $limit): OutboxConfig {
-    if ($limit === $this->config->batch_size) {
-      return $this->config;
+  /** @return list<string> event ids the store dead-lettered at claim during this step */
+  private function signalClaimDeadLetters(): array {
+    if (!$this->outbox instanceof DbalPostgresOutboxStore) {
+      return [];
     }
-    return new OutboxConfig(...['batch_size' => max(0, $limit)] + get_object_vars($this->config));
-  }
-
-  private function signalClaimDeadLetters(RelayOutcomes $outcomes): void {
-    foreach ($outcomes->claimDeadLetters() as [$claim, $error]) {
+    $ids = [];
+    foreach ($this->outbox->takeDeadLetteredAtClaim() as [$claim, $error]) {
       (new OutboxDeadLettered(OutboxEntry::from_claim($claim, 'dlq', $error), $error))->dispatch($this->consumer);
+      $ids[] = $claim->event_id;
     }
+    return $ids;
   }
 }

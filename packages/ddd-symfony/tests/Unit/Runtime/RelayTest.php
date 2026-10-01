@@ -9,6 +9,7 @@ use Psr\Log\NullLogger;
 use TangibleDDD\Application\Infrastructure\OutboxAttemptFailed;
 use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Application\Outbox\OutboxConfig;
+use TangibleDDD\Infra\Services\ProcessingResult;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
@@ -217,6 +218,35 @@ final class RelayTest extends TestCase {
     self::assertSame(['a'], $report->lost);
     self::assertSame([], $report->retried, 'a lost lease is not a failed attempt');
     self::assertSame([], $transport->submissions, 'the submission rolled back with the failed accept (CR sf-3)');
+  }
+
+  public function test_the_report_is_the_core_step_outcome_by_event_id(): void {
+    $this->append('rejected');
+    $this->append('ok');
+    $transport = new InMemoryTransport();
+    $relay = $this->relay($transport);
+    $transport->rejectNext(); // the first submission: 'rejected'
+
+    $report = $relay->runOnce(10);
+
+    self::assertInstanceOf(ProcessingResult::class, $report->result, 'the core process_batch($limit) result (CR sfc-3, sfc-4)');
+    self::assertSame($report->result->claimed, $report->claimed);
+    self::assertSame($report->result->accepted, $report->accepted);
+    self::assertSame($report->result->retried, $report->retried);
+    self::assertSame($report->result->leaseLost, $report->lost);
+    self::assertSame(['ok'], $report->accepted);
+    self::assertSame(['rejected'], $report->retried);
+  }
+
+  public function test_the_limit_is_the_core_step_limit_not_a_copied_config(): void {
+    $this->append('a');
+    $this->append('b');
+    $relay = new Relay($this->outbox, new InMemoryTransport(), $this->boundary, $this->clock, new OutboxConfig(batch_size: 1), new NullLogger());
+
+    self::assertSame(['a', 'b'], $relay->runOnce(5)->claimed, 'runOnce(5) claims up to 5 whatever batch_size says');
+    $this->append('c');
+    $this->append('d');
+    self::assertSame(['c'], $relay->runOnce()->claimed, 'no limit: OutboxConfig::batch_size');
   }
 
   public function test_backoff_is_60s_doubling_capped_at_an_hour(): void {
