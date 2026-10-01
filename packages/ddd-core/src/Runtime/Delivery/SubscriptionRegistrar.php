@@ -6,6 +6,7 @@ namespace TangibleDDD\Runtime\Delivery;
 
 use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\Commands\ICommand;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\EventHandlers\IntegrationTranslator;
 use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 use TangibleDDD\Application\Process\Awaits;
@@ -90,11 +91,23 @@ final class SubscriptionRegistrar {
           static fn () => $command->send()
         );
       },
-      static function (IIntegrationEvent $event, \Throwable $last) use ($translate): void {
+      static function (IIntegrationEvent $event, \Throwable $last) use ($translate, $id): void {
         $command = $translate($event);
-        if ($command instanceof IExternalEffectCommand) {
-          $command->failureCommand($last)?->send();
+        if (!$command instanceof IExternalEffectCommand) {
+          return;
         }
+        $failure = $command->failureCommand($last);
+        if ($failure === null) {
+          return;
+        }
+        // D1: a re-fired compensation (crash before the ledger's terminal
+        // marker) repeats the same command id, uuid5(event_id,
+        // "{subscriber}#failure"), so the failure command can dedup on it.
+        $eventId = Correlation::current_fact()?->eventId ?? '';
+        DeterministicCommandId::within(
+          $eventId !== '' ? DeterministicCommandId::forFact($eventId, $id . '#failure') : null,
+          static fn () => $failure->send()
+        );
       },
     ));
   }

@@ -7,7 +7,12 @@ namespace TangibleDDD\Testing;
 use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 
-/** In-memory IEffectJournal; keeps an invalidation log for assertions. */
+/**
+ * In-memory IEffectJournal (D1); keeps an invalidation log for assertions.
+ * Enlist it in an InMemoryTransactionBoundary so an invalidate() inside a
+ * repair command rolls back with it. EffectMiddleware stores outside any
+ * transaction, so a stored entry survives a rolled-back record().
+ */
 final class InMemoryEffectJournal implements IEffectJournal, InMemoryTransactional {
 
   /** @var array<string, EffectResult> */
