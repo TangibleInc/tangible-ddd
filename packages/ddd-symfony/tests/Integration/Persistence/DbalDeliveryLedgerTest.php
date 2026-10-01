@@ -10,7 +10,6 @@ use TangibleDDD\Runtime\Delivery\SubscriptionRegistry;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use Psr\Log\NullLogger;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
-use TangibleDDD\Symfony\Runtime\RuntimeLog;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact;
 
@@ -86,8 +85,7 @@ final class DbalDeliveryLedgerTest extends PostgresTestCase {
         throw new \RuntimeException('b fails once');
       }
     }));
-    $delivery = new IntegrationDelivery($registry, new DbalDeliveryLedger($this->db), 5,
-      RuntimeLog::argument(IntegrationDelivery::class, 'log', new NullLogger()));
+    $delivery = new IntegrationDelivery($registry, new DbalDeliveryLedger($this->db), 5, new NullLogger());
     $wrapped = IntegrationEnvelope::wrap(['n' => 1], 'corr', 1, 'evt-1');
 
     $first = $delivery->deliver(PingFact::class, $wrapped);
