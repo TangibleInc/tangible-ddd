@@ -1,6 +1,6 @@
 # Using tangible-ddd 0.7 on Symfony 7.4 (ddd-symfony)
 
-How a Symfony app installs and configures `TangibleDddBundle`. TXP is the first such app. This guide describes the integration branch after waves 1-4 and the house-style rename. Wave 5 is still in progress: see [the CHANGELOG](../../CHANGELOG.md), "Still landing". Nothing is published, so the app consumes the packages through Composer path repositories.
+How a Symfony app installs and configures `TangibleDddBundle`. TXP is the first such app. This guide describes the integration branch after waves 1-5 (`dfa514a`); [the CHANGELOG](../../CHANGELOG.md) lists what each wave added. Nothing is published, so the app consumes the packages through Composer path repositories.
 
 What the bundle gives you, all on one Doctrine DBAL connection to Postgres 16:
 
@@ -11,7 +11,7 @@ What the bundle gives you, all on one Doctrine DBAL connection to Postgres 16:
 - a Messenger handler that delivers each fact to its subscribers in priority order: listeners, then process ignition, then resume. The ledger runs each subscriber at most once per fact, even when Messenger delivers the message twice;
 - compile-time discovery of listeners, processes and fact-ignited workflows (no constructor side effects), marker-interface subscriptions, worker reset, and audit actors;
 - long-running processes on a Postgres advisory lock, with keyed and any-of awaits and durable alarms (`ddd_wakeups`);
-- external effects with a result journal;
+- external effects with a result journal that tracks performed and recorded entries;
 - `LISTEN`/`NOTIFY` wakeup of the relay;
 - one operator view across every retry layer (sections 5-10).
 
@@ -135,6 +135,8 @@ bin/console ddd:schema:dump --prefix=     # or with an explicit prefix
 bin/console ddd:schema:dump --since=008   # only the files after 008: your next migration after an upgrade
 ```
 
+Wave 5 added two files: `010_delivery_notes.sql` (the `unheard_at` notes and the `failure_command` columns on the ledger) and `011_effect_states_and_facts.sql` (`ddd_effect_journal.recorded_at` and `ddd_wakeups.fact`). An app on the wave-4 schema migrates with `--since=009`. Without 011, the effect journal fails on `recorded_at`.
+
 Paste the output into a Doctrine migration (`$this->addSql(...)` per statement) or into your SQL migration tool. The statements are idempotent. The schema only grows: a shipped file is never edited, and every change is a new numbered file listed in `schema/postgres/released.txt` (L5). Then create the Messenger tables:
 
 ```bash
@@ -173,7 +175,8 @@ $receipt = (new AcceptInviteCommand($id))->send();   // DBAL transaction; the fa
 
 - A receipt is computed before the in-transaction reactions run, so it cannot carry what a reaction creates.
 - Aggregates with a uuid or another non-integer identity extend `AggregateRoot` (L2). Their repositories extend `AggregateRootRepository` and implement `aggregate_class()` and `persist()`.
-- `NotPermittedException` (L7) is the 403 family. `PersistenceConflict` is what a unique violation at the ORM flush is rethrown as (L8). `PersistenceConflict::find_in($e)` finds it in an exception chain.
+- `NotPermittedException` (L7) is the 403 family, and `ConflictException` (L10, `TangibleDDD\Domain\Exceptions`) is the 409 family. Both extend `BusinessConstraintException`, so an edge that already maps that class needs no change. `PersistenceConflict` is what a unique violation at the ORM flush is rethrown as (L8); it is a `ConflictException`, so it maps to 409. `PersistenceConflict::find_in($e)` finds it in an exception chain. It is no longer a `\RuntimeException`: a `catch (\RuntimeException)` around a save stops catching it, so check your catch blocks.
+- To delete an aggregate, call `AggregateRootRepository::remove($aggregate)` (L9). It checks the class as `save()` does, calls your `delete()`, then collects the aggregate's recorded events, so a "removed" fact reaches the outbox. `remove()` is final. A repository that already declares its own public `remove()` renames it to `delete()` (protected; the default throws `\LogicException`).
 - `#[Audit(false)]` and `#[Audit(parameters: false)]` on a command class, plus `#[Sensitive]` and `#[NotAudited]` on its properties, control the audit row.
 
 Self-handling commands get any service injected into `handle()` by type, private services included, and may return a value:
@@ -287,9 +290,44 @@ final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffec
 ```
 
 - **Keys.** Inside a process step, use `$this->step_ref('charge')`, which is stable across re-runs of the step. For a listener, derive the key from the fact in `translate()` (`Correlation::current_fact()->event_id`, section 9).
-- **Dependencies.** `perform()` and `record()` receive no services. `StripeGateway::client()` above stands for however your app reaches its client. A handler-class shape for effects (TXP demand E1) is landing in wave 5.
+- **Dependencies.** A self-contained `IExternalEffectCommand` receives no services: `StripeGateway::client()` above stands for however your app reaches its client. When `perform()` or `record()` needs injected services, use the handler-class shape below (E1).
 - **Failure command.** The core delivery invoker fires it, under a deterministic command id, when the listener's handler budget (`delivery.budget`) is spent. It never fires from a Messenger failure event. Inside a process step, the step's `#[RetryStep]` policy governs and the failure command is not used.
-- **Repair.** A repair command calls `IEffectJournal::invalidate($key, $reason)` (service `tangible_ddd.effect_journal`) in its own transaction, then re-dispatches. Only then does `perform()` run again.
+- **Repair.** A repair command calls `IEffectJournal::invalidate($key, $reason)` (service `tangible_ddd.effect_journal`) in its own transaction, then re-dispatches. Only then does `perform()` run again. From the console, `bin/console ddd:ops:effects:invalidate <key>... --reason=...` does the same for the primary consumer, each key in its own transaction; it exits 1 when a key has no live entry.
+
+**Handler-class effects (E1).** The command is data and implements `IEffectCommand` (`idempotency_key()`, `failure_command()`). A service implementing `IExternalEffectHandler` does the work. Your resource loading registers it, and the bundle autoconfigures it into the command handler locator, as it does an `ICommandHandler`. `EffectMiddleware` finds it through the same naming convention (`Commands\XCommand` → `CommandHandlers\XHandler`):
+
+```php
+namespace App\Billing\Commands;
+
+final class RefundChargeCommand implements IEffectCommand {
+  use CommandBusAware;
+  public function __construct(public readonly string $charge_id, public readonly int $amount) {}
+  public function idempotency_key(): string { return "refund:{$this->charge_id}"; }
+  public function failure_command(\Throwable $last): ?ICommand { return null; }
+}
+
+namespace App\Billing\CommandHandlers;
+
+/** @implements IExternalEffectHandler<RefundChargeCommand> */
+final class RefundChargeHandler implements IExternalEffectHandler {
+  public function __construct(private readonly StripeClient $stripe, private readonly RefundRepository $refunds) {}
+
+  public function perform(IEffectCommand $command): EffectResult {      // no transaction open here
+    assert($command instanceof RefundChargeCommand);
+    $refund = $this->stripe->refunds->create(['charge' => $command->charge_id], ['idempotency_key' => $command->idempotency_key()]);
+    return new EffectResult(['amount' => $command->amount], $refund->id);
+  }
+
+  public function record(IEffectCommand $command, EffectResult $result): void {   // inside the transaction
+    assert($command instanceof RefundChargeCommand);
+    $this->refunds->save(Refund::of($command->charge_id, (string) $result->external_ref));
+  }
+}
+```
+
+The parameters are typed `IEffectCommand` because PHP does not let an implementation narrow them, so assert your own class. An `IEffectCommand` without a handler service fails with `NoEffectHandler` before anything is performed or journaled.
+
+**Performed and recorded (E2).** Each `ddd_effect_journal` entry is `performed` once `perform()` returned and its result is stored, and `recorded` once `record()` committed (`recorded_at`, schema 011). A retry of a `performed` entry reuses the result and runs `record()` again. A retry of a `recorded` entry returns the journaled result and runs nothing. `ITracksEffectState::find_entry($key)` returns the `EffectEntry` with its `EffectState`. An entry performed more than 300 s ago and still not recorded is an item of the operator layer `effect` (`ddd:ops:list --layer=effect`, section 10). Its repair is `invalidate`.
 
 ## 7. Processes, keyed awaits and alarms (D3, D7)
 
@@ -330,7 +368,9 @@ final class ProvisionApp extends LongProcess {
 - **Register-then-check.** A process that implements `IPrecheckAwait` answers `already_satisfied($await)`, which runs after the await committed and the step's commands dispatched. Returning `PrecheckSatisfied::with($value)` resumes in place and cancels the alarm, so a fact that committed before the suspension is not missed.
 - **Alarms (D7).** `timeout_seconds`, `AwaitAny::until()`, `AwaitAlarm::at(new \DateTimeImmutable('2026-10-04T12:00:00Z'))` and `AwaitAlarm::after(25 * 3600)` (no fact, just time) each become one `timeout` row in `ddd_wakeups`. The row has an absolute UTC `due_at`, fixed at suspension. There is no upper bound and no chain of short timers, and a worker restart changes nothing. `on_timeout` is either `fail` (compensate the completed steps) or `proceed` (the next step receives `null`).
 - **Starting from a web request.** `start()` persists the process and a `Continue` intent in the caller's transaction, and the first step runs in a worker (`process.inband_start: false`, the default, `StartMode::Deferred`). A `#[StartsOn]` ignition runs its first step in the fact worker.
-- **Contention.** A contended wakeup is re-queued on its own intent budget (10 attempts, 2 s × 2ⁿ, capped at 300 s). A contended fact resume waits up to 5 s for the lock. After that it is a failed attempt of the resume subscriber, and so spends the delivery budget (TXP demand AW2, landing in wave 5). Keep step commands short, and give every keyed await an alarm.
+- **Contention.** A contended wakeup is re-queued on its own intent budget (10 attempts, 2 s × 2ⁿ, capped at 300 s). From the 10th failed attempt, a retryable failure such as lock contention is reported exhausted in `ddd:ops:list --layer=wakeup` and keeps being retried at the cap, so a wake is never dropped. A contended fact resume waits up to 5 s for the lock. After that the answer is **parked** (AW2): the bundle's `DbalParkingScheduler` stores the fact in a ResumeRetry intent (`ddd_wakeups.fact`, schema 011) and the resume subscriber is acked, so the answer spends no delivery budget and is never dead-lettered while its process waits. The wake re-reads the process under the lock and resumes it only if it still waits at that step for that fact. `ResumeReport::$deferred` holds the ids of the processes whose answer was parked. Keep step commands short, and give every keyed await an alarm.
+- **Which fact resumed this step (AW1).** In a step, `$this->resumed_by_event_id()` is the event id of the fact that resumed it: the answer of a keyed await, the fact that completed an `AwaitAll`, or a parked answer. It is null in the first step, after an alarm or a precheck, and in later steps. A `#[RetryStep]` re-run reads the same id from the row.
+- **Unheard answers (AW3).** A keyed answer that no suspended process takes is acked, logged at info level, and noted on its ledger pair (`unheard_at`, schema 010). It raises no error and no signal.
 - **Repairs.** `bin/console ddd:ops:stranded` lists stranded processes and exhausted wakeups. `--resume=<id>` re-runs the stranded step with the same deterministic command ids. `--fail=<id> --reason=...` fails it, and `--rearm=<key>` re-arms an exhausted intent. These dispatch core's `ResumeStrandedProcess` and `FailStrandedProcess`.
 
 ## 8. Workflows started by facts (D10)
@@ -431,9 +471,11 @@ bin/console ddd:ops:dlq:discard <DLQ id>
 bin/console ddd:ops:pause 'widget_*' --for=600   # pause relaying of matching event types
 bin/console ddd:ops:resume 'widget_*'
 bin/console ddd:ops:stranded --resume=42         # or --fail=42 --reason=..., --rearm=<intent key>
+bin/console ddd:ops:list --layer=effect          # effects performed over 300 s ago and not recorded (E2)
+bin/console ddd:ops:effects:invalidate <key>... --reason=...   # the effect repair: the next dispatch performs again
 ```
 
-`ddd:ops:list` names the command that carries out each repair. The `workflow` layer lists failed items, failed workflows and stale start markers (W5, see section 8).
+`ddd:ops:list` names the command that carries out each repair. The `workflow` layer lists failed items, failed workflows and stale start markers (W5, see section 8). The `effect` layer lists journal entries that were performed and never recorded (E2, section 6). The `relay` layer also lists accepted facts that no subscriber is wired for (`ddd_outbox.unheard_at`, AW3).
 
 ## 11. Tests in the app
 

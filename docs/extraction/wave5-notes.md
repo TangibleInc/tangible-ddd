@@ -66,3 +66,48 @@ When `wave5/core-correctness`, `wave5/sf-features` and `wave5/wp-redelivery-defa
 3. The Symfony guide sections on effects (E1 handler shape, E2 `recorded_at`), workflows (W1 reschedule, W3 `stale_start_seconds`, W5 operator source) and awaits (AW1 resuming event id, AW2 contention, AW3 unheard log), where those land.
 4. The register's section 4 and 8 cells for any new scenario id the wave-5 authors add.
 5. `docs/README.md` (not owned by this author): link the runbook and the three guides, and mark the 0.6.x status line as superseded.
+
+## Wave 5 closed
+
+Wave 5 is merged on `extraction/ddd-packages` at `dfa514a` (2026-10-01). The merges, in order:
+
+| Merge | Branch | What |
+|---|---|---|
+| `3fe61fd` | `wave5/core-correctness` | L9, L10, W2, W4, E1, E2, AW1, AW2 in core (CR-W5CC-1..8) |
+| `e23b9cd` | `wave5/docs-housekeeping` | the 0.7.0 CHANGELOG, the host guides, the rollback runbook, the three D3 register rows |
+| `c9e9a3d` | `wave5/sf-features` | W1, W3, W5, E3, AW3, multi-consumer configuration, sf schema 010 (CR-W5SF-1..9) |
+| `aae89ab` | `wave5/wp-redelivery-default` | one attempt by default for wp listeners, `#[Retries]`, `wire_unbooted()` (CR-RD-1..3) |
+| `9138f2c` | `wave5/test-hygiene` | per-test globals in `ProcessRunnerTest`, the scoped exclusion in `LoadDiagnosticsTest` (CR-W5TH-1 recorded) |
+| `0a017d6` | `wave5/conformance-5` | the six wave-5 ids and the seams `EffectStateHost`, `WorkItemHost`, `CrossConsumerHost` (CR-W5C5-1..5) |
+| `f1882c5` | `wave5/hosts-follow` | pdo schema 010/011, sf schema 011, wp schema v9, the parking schedulers, `ddd:ops:effects:invalidate`, the wp fresh-database fix (CR-W5HF-1..5) |
+| `f492527` | `wave5/hc5-2` | `workflow.item-deterministic-id` reads command ids from the handler (HC5-2) |
+| `0682b31` | `wave5/hc5-1` | sf retries a retryable wake at the cap after its budget (HC5-1) |
+| `dfa514a` | `wave5/hosts-conf5` | every wave-5 id wired on pdo, wp and sf; harness gates at wave 5 |
+
+### Rulings and outcomes
+
+- **CR-W5CC-1..8 were ratified as written** (the coordinator ruling recorded in the inputs of [wave5-conformance-5-change-requests.md](wave5-conformance-5-change-requests.md)). CR-W5SF-1..9, CR-RD-1..3, CR-W5C5-1..5 and CR-W5HF-1..5 are merged as written. The sf requests CR-W5SF-R1 (`PersistenceConflict` re-parented), CR-W5SF-R2 (the behaviour-type registry provided at boot) and CR-W5SF-R4 (E1, E2 and AW2 on sf) were done by hosts-follow. `EffectsInvalidateCommand` (CR-W5HF R2) merged at `packages/ddd-symfony/src/Console/Ops/`.
+- **HC5-1 and HC5-2 were fixed, not deferred.** Both merged before `wave5/hosts-conf5`, so the wave-5 due set is the catalogue's as written: mem 5 ids, pdo 5, wp 2, sf 6 (register section 8, "Wave 5").
+- **`wire_unbooted()` is an explicit test-bootstrap API.** CR-RD-3's loader line in `tangible-ddd.php` (packaging request 1) was not applied. A bootstrap that stubs WordPress requires `packages/ddd-wp/wordpress/unbooted.php` and calls `TangibleDDD\WordPress\wire_unbooted()` itself, as `tests/Unit/WordPress/fixtures/late-wordpress-boot.php` does.
+- **CR-RD request 4 is applied.** `NRowsRolledBackRollback` opts its consumer in through `WpLedgeredDelivery::ATTEMPTS_OPTION`, so the 7.3 rollback fixtures still leave a pending redelivery to drain.
+- **The two wp AW2 cells stay `-`.** They were set before wp schema v9 added the `fact` column. `WpdbParkingScheduler` parks answers in production at v9, and `WpParkedFactV9Test` covers it as a host test. Raising the cells is left to a later round.
+
+### Docs synced at the close (this section's round)
+
+The "Sync after the wave-5 merges" list above is done:
+
+1. CHANGELOG: the "in progress" framing and the "Still landing" list are gone. Every wave-5 item is under Changed or Added, marked "(wave 5)", and the migration notes cover v9, `TABLES_INSTALLED_ACTION`, `wire_unbooted()`, sf schema 010/011, pdo schema 010/011, `PersistenceConflict` and the final `remove()`. The scenario count is 53.
+2. The redelivery opt-in names (`Retries`, `ATTEMPTS_OPTION`, `ATTEMPTS_FILTER`, `LISTENER_ATTEMPTS`) are checked against the merged code.
+3. The Symfony guide covers E1 (handler shape), E2 (`recorded_at`, the `effect` layer), `ddd:ops:effects:invalidate`, AW1, AW2 (parked answers, retry at the cap), AW3 and `PersistenceConflict` as a 409.
+4. Register section 4 has the six wave-5 rows (53 ids, header wave range 1-5), and section 8 has a "Wave 5" entry. `ScenarioCatalogue`'s comments and the conformance README count match.
+5. `docs/README.md` links the CHANGELOG, the runbook, the guides and the register, and its status line describes 0.7.0.
+
+The rollback runbook also covers schema v9 and the parked answers a ResumeRetry intent carries, and its drain text no longer contradicts the one-attempt listener default.
+
+### Open after wave 5
+
+- **Root suite order dependence** (final gate defect 1): `ConsumerRegistry` is reset only in `setUp()` by some tests and only in `tearDown()` by `SelfConsumerRegistrationTest`, so some random seeds fail. CR-W5TH-1's fix and the switch to `executionOrder="depends,random"` follow.
+- **`phpstan.neon`** (final gate defect 2): `new static(...)` in `InMemoryWakeupScheduler::lenient()` since the class stopped being final.
+- `php tools/naming/inventory.php` overwrites the tracked historical `docs/extraction/naming/inventory.json` snapshot.
+- Optional requests still open: CR-W5SF-R3 (an `IReportsResume` port), CR-W5SF-R5 (a core `WakeKind::Workflow`), CR-W5HF R1 (the fact on `ProcessWakeupMessage`), R3 (fold `EffectHandlersPass` into `HandlerLocatorPass`), R6 (an `effect` layer on wp once it has a journal), CR-RD request 3 (move the conformance opt-in into `WpConformanceRuntime`), and per-gathered-key event ids for `AwaitAll` (CR-W5CC-8, "Not done").
+- The usage text at the top of `tests/harness/run.sh` still names wave 3 and wave 2 for `core-pdo` and `conformance-wp`.
