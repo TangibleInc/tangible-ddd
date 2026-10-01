@@ -48,8 +48,10 @@ use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
 use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
@@ -133,7 +135,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in set_up().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectStateHost, WorkflowHost {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectStateHost, WorkflowHost, WorkItemHost {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -167,6 +169,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected InMemoryEffectJournal $effect_journal;
   protected InMemoryWorkflowIgnitionLedger $ignitions;
   protected InMemoryWorkflowRepository $workflows;
+  protected InMemoryWorkItemRepository $work_items;
 
   /** @var array<int, MemProcessWorker> */
   protected array $workers = [];
@@ -237,6 +240,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->effect_journal = new InMemoryEffectJournal($this->clock);
     $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
     $this->workflows = new InMemoryWorkflowRepository();
+    $this->work_items = new InMemoryWorkItemRepository();
     $this->workers = [];
     $this->starts = [];
     $this->awaits = [];
@@ -251,6 +255,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->boundary->enlist($this->effect_journal);
     $this->boundary->enlist($this->ignitions);
     $this->boundary->enlist($this->workflows);
+    $this->boundary->enlist($this->work_items);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -662,6 +667,12 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   public function igniter(): WorkflowIgniter {
     return new WorkflowIgniter($this->ignitions, $this->boundary, $this->logger, $this->clock);
+  }
+
+  // ── WorkItemHost (CR-W5C5-3); workflows() is WorkflowHost's ─────────────
+
+  public function work_items(): IWorkItemRepository {
+    return $this->work_items;
   }
 
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────

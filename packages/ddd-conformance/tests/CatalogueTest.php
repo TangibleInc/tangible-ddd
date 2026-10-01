@@ -14,6 +14,7 @@ use TangibleDDD\Conformance\Mem\MemHostFixture;
 use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\RelayRace;
 use TangibleDDD\Conformance\ScenarioCatalogue;
@@ -112,6 +113,7 @@ final class CatalogueTest extends TestCase {
     'process.resume-contention-keeps-answer' => [5, 5, null, 5],
     'process.resume-cause'                   => [5, 5, 5, 5],
     'effect.performed-not-recorded'          => [5, 5, null, 5],
+    'workflow.item-deterministic-id'         => [5, 5, 5, 5],
   ];
 
   public function test_the_catalogue_has_the_44_register_ids_the_3_d3_ids_and_the_wave_5_ids(): void {
@@ -235,6 +237,7 @@ final class CatalogueTest extends TestCase {
     self::assertTrue(is_a(MemHostFixture::class, ProcessDecodeFaults::class, true), 'MemHostFixture implements ProcessDecodeFaults (decode.unknown-class)');
     // wave 5 (CR-W5C5-2..)
     self::assertTrue(is_a(MemHostFixture::class, EffectStateHost::class, true), 'MemHostFixture implements EffectStateHost (effect.performed-not-recorded)');
+    self::assertTrue(is_a(MemHostFixture::class, WorkItemHost::class, true), 'MemHostFixture implements WorkItemHost (workflow.item-deterministic-id)');
   }
 
   /** @return list<class-string> */

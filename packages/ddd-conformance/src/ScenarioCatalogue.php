@@ -74,6 +74,7 @@ final class ScenarioCatalogue {
     'process.resume-contention-keeps-answer'  => [5, 5, null, 5],
     'process.resume-cause'                    => [5, 5, 5, 5],
     'effect.performed-not-recorded'           => [5, 5, null, 5],
+    'workflow.item-deterministic-id'          => [5, 5, 5, 5],
   ];
 
   private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
@@ -140,6 +141,7 @@ final class ScenarioCatalogue {
     'process.resume-contention-keeps-answer'  => self::S . 'ParkedAnswerScenarios',
     'process.resume-cause'                    => self::S . 'ResumeCauseScenarios',
     'effect.performed-not-recorded'           => self::S . 'EffectStateScenarios',
+    'workflow.item-deterministic-id'          => self::S . 'WorkItemScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null for an unknown id. */
