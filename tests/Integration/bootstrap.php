@@ -42,6 +42,12 @@ ob_end_clean();
 // "Call to undefined function TangibleDDD\WordPress\dbDelta()".
 require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+// ddd-wp init. vendor/autoload.php above initialized the framework before
+// WordPress existed, so packages/ddd-wp/wordpress/hooks.php skipped its
+// HostDefaults wiring (no add_action yet). Run it now that WordPress is up,
+// exactly as the winner's initializer does inside a real request.
+\TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register();
+
 // ── Boot the datastream DI container (from .reference) ──────────────────────
 // This wires the command bus, middlewares, repositories, and all domain
 // infrastructure that the integration tests drive.

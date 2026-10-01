@@ -52,6 +52,12 @@ final class ConsumerCatalog
                 continue;
             }
             $key = (string) $prefix;
+            if ($key === 'tangible_ddd') {
+                // The self-consumer registers for command routing (wave 2);
+                // it is not a "registered consumer" for the legacy-discovery
+                // fallback below, and it is added after it as before.
+                continue;
+            }
             $out[$key] = new ConsumerDefinition(
                 $key,
                 $handle->label(),

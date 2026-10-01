@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Runtime\Lock;
 
+use Psr\Log\LoggerInterface;
 use TangibleDDD\Runtime\Support\Log;
 
 /**
@@ -25,11 +26,16 @@ final class ReentrantProcessLock implements IProcessLock {
   /** @var array<string, string> reentrant ticket → key id */
   private array $tickets = [];
 
-  /** @param (\Closure(string):void)|null $log */
+  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
   public function __construct(
     private readonly IProcessLock $inner,
-    private readonly ?\Closure $log = null,
+    private readonly LoggerInterface|\Closure|null $log = null,
   ) {}
+
+  /** The wrapped adapter (the runner uses it to avoid double-wrapping). */
+  public function inner(): IProcessLock {
+    return $this->inner;
+  }
 
   public function acquire(LockKey $k, float $timeoutSeconds): LockHandle {
     $id = $k->id();

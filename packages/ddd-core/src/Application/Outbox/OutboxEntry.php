@@ -66,4 +66,43 @@ final class OutboxEntry {
       blog_id: (int) ($row->blog_id ?? 1),
     );
   }
+
+  /**
+   * The 0.6 entry shape of a leased port record, for the infrastructure
+   * signals (OutboxDeadLettered, OutboxAttemptFailed, FactDeliveredUnheard)
+   * the core relay emits. Port records have no integer row id (null) and no
+   * relative delay (0; due_at is absolute). Times are UTC 'Y-m-d H:i:s'.
+   */
+  public static function from_claim(\TangibleDDD\Runtime\Outbox\Claim $claim, string $status = 'pending', ?string $last_error = null): self {
+    $r = $claim->record;
+    $json = json_encode($r->payload, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    return new self(
+      id: null,
+      event_id: $r->event_id,
+      event_type: $r->event_type,
+      integration_action: $r->integration_action,
+      message_kind: 'event',
+      transport: 'port',
+      queue: null,
+      payload_bytes: is_string($json) ? strlen($json) : 0,
+      correlation_id: (string) $r->correlation_id,
+      sequence: (int) ($r->sequence ?? 0),
+      command_id: $r->command_id,
+      payload: $r->payload,
+      delay_seconds: 0,
+      scheduled_at: $r->due_at->format('Y-m-d H:i:s'),
+      is_unique: $r->is_unique,
+      status: $status,
+      attempts: $claim->attempts,
+      max_attempts: $r->max_attempts,
+      next_attempt_at: null,
+      locked_until: $claim->leaseUntil->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+      locked_by: $claim->claimToken,
+      last_error: $last_error,
+      error_history: null,
+      created_at: '',
+      processed_at: null,
+      blog_id: $r->blog_id ?? 1,
+    );
+  }
 }
