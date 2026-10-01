@@ -6,10 +6,13 @@ namespace TangibleDDD\Symfony\Tests\Kernel;
 
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\Lock\LockKey;
+use TangibleDDD\Runtime\Ops\IOperatorView;
+use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Symfony\Lock\PostgresAdvisoryProcessLock;
+use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
 use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
 use TangibleDDD\Symfony\Persistence\ParkedFacts;
 use TangibleDDD\Symfony\Tests\Kernel\App\Commands\AnnounceCommand;
@@ -90,6 +93,62 @@ final class ParkedAnswerTest extends KernelTestBase {
     self::assertSame('completed', $this->process_status($pid), 'the parked answer resumed the process');
     self::assertCount(1, ToyPaymentGateway::$performed, 'the charge step ran with the answer');
     self::assertSame(0, $this->countRows('SELECT count(*) FROM ddd_wakeups'), 'the parked intent completed and the alarm was cancelled');
+  }
+
+  /**
+   * HC5-1 (register 5.1, WakeRetryPolicy): a parked answer held off past the
+   * wake budget is exhausted for the operator but still retried at the cap,
+   * so the process resumes once the lock is free; a wake is never dropped.
+   */
+  public function test_a_parked_answer_held_off_past_the_budget_is_kept_retrying_at_the_cap(): void {
+    $this->announce(new ToyRequested('team-x'));
+    $pid = (int) $this->db->fetchOne('SELECT id FROM ddd_processes WHERE process_class = ?', [ToyProvision::class]);
+    $job = (string) $this->db->fetchOne("SELECT widget_id FROM app_listener_runs WHERE listener = 'toy-order'");
+
+    $other = PostgresDatabase::connect();
+    $holder = new PostgresAdvisoryProcessLock($other);
+    $held = $holder->acquire(new LockKey('sfk', '', $pid), 0.0);
+    try {
+      $this->announce(new ToyJobFinished($job, true));
+      $key = (string) $this->db->fetchOne("SELECT idempotency_key FROM ddd_wakeups WHERE kind = 'resume_retry' AND process_id = ?", [$pid]);
+      self::assertNotSame('', $key, 'the answer is parked');
+
+      $budget = ProcessWakeupHandler::BUDGET;
+      for ($n = 1; $n <= $budget + 2; $n++) {
+        $this->clock()->advance('+' . (ProcessWakeupHandler::MAX_DELAY_SECONDS + 1) . ' seconds');
+        $this->drain();
+        $row = $this->db->fetchAssociative('SELECT attempts, exhausted_at, next_attempt_at FROM ddd_wakeups WHERE idempotency_key = ?', [$key]);
+        self::assertIsArray($row, "drain $n: the parked intent is kept");
+        self::assertSame($n, (int) $row['attempts'], "drain $n: the intent was claimed and retried");
+        self::assertSame('suspended', $this->process_status($pid));
+        if ($n < $budget) {
+          self::assertNull($row['exhausted_at'], "drain $n: within the budget");
+        } else {
+          self::assertNotNull($row['exhausted_at'], "drain $n: the budget is spent, the operator sees it");
+          self::assertNotNull($row['next_attempt_at'], "drain $n: still retried at the cap");
+        }
+      }
+
+      /** @var IOperatorView $view */
+      $view = self::getContainer()->get('test.operator_view');
+      $wakes = array_values(array_filter($view->list(Layer::Wakeup), static fn ($i) => $i->key === $key));
+      self::assertCount(1, $wakes, 'the operator view shows the exhausted wake while the lock is held');
+      self::assertSame($budget + 2, $wakes[0]->attempts);
+      self::assertSame($budget, $wakes[0]->budget);
+      self::assertSame(['rearm'], $wakes[0]->repairs);
+      self::assertStringContainsString('Lock', (string) $wakes[0]->last_error);
+    } finally {
+      $holder->release($held);
+      $other->close();
+    }
+
+    $this->clock()->advance('+' . (ProcessWakeupHandler::MAX_DELAY_SECONDS + 1) . ' seconds');
+    $this->drain();
+
+    self::assertSame('completed', $this->process_status($pid), 'the parked answer resumed the process at the cap');
+    self::assertCount(1, ToyPaymentGateway::$performed, 'the charge step ran once');
+    self::assertSame(0, $this->countRows('SELECT count(*) FROM ddd_wakeups'), 'the intent completed');
+    self::assertSame([], self::getContainer()->get('test.operator_view')->list(Layer::Wakeup), 'nothing left for the operator');
   }
 
   public function test_a_parked_intent_whose_fact_was_lost_is_never_woken_as_a_timeout(): void {

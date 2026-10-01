@@ -167,6 +167,36 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     self::assertSame('budget spent: lock busy', $listed['last_error']);
   }
 
+  public function test_an_intent_exhausted_with_a_retry_time_is_listed_and_still_claimed_at_it(): void {
+    $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
+
+    self::assertTrue($this->scheduler()->exhaust($w, 'lock busy', $this->t0, $this->t0->modify('+300 seconds')));
+
+    self::assertSame(['timeout:1:0'], array_map(static fn ($e) => $e['intent']->key, $this->scheduler()->exhausted(10)));
+    self::assertSame([], $this->scheduler()->claim_due($this->t0->modify('+299 seconds'), 10, 60));
+    [$again] = $this->scheduler()->claim_due($this->t0->modify('+300 seconds'), 10, 60);
+    self::assertSame(1, $again->attempts);
+
+    // A later exhaust keeps the first exhaustion time; one without a retry time ends the retries.
+    self::assertTrue($this->scheduler()->exhaust($again, 'wiring bug', $this->t0->modify('+300 seconds')));
+    self::assertSame([], $this->scheduler()->claim_due($this->t0->modify('+1 day'), 10, 60));
+    [$listed] = $this->scheduler()->exhausted(10);
+    self::assertEquals($this->t0, $listed['exhausted_at']);
+    self::assertSame(2, $listed['attempts']);
+  }
+
+  public function test_an_intent_retried_then_exhausted_is_never_claimed_again(): void {
+    $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
+    $this->scheduler()->retry_later($w, 'lock busy', $this->t0->modify('+2 seconds'));
+    [$w] = $this->scheduler()->claim_due($this->t0->modify('+2 seconds'), 10, 60);
+
+    self::assertTrue($this->scheduler()->exhaust($w, 'wiring bug'));
+
+    self::assertSame([], $this->scheduler()->claim_due($this->t0->modify('+1 day'), 10, 60));
+  }
+
   public function test_rearm_puts_an_exhausted_intent_back_in_line(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
     [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
