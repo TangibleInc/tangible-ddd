@@ -6,9 +6,11 @@ namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
 use Doctrine\DBAL\Connection;
 use TangibleDDD\Runtime\NestedTransactionRejected;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
+use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
 use TangibleDDD\Testing\RecordingRelayWakeup;
@@ -219,5 +221,46 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     $this->inTx(fn () => $this->scheduler(null, $wakeup)->schedule(WakeupIntent::continuation('acme', 1, 0, $this->t0)));
 
     self::assertSame(['acme'], $wakeup->pokes);
+  }
+
+  // ── AW2 (wave 5): the fact a parked resume carries ───────────────────────
+
+  /** @return array{class: string, payload: array<string, mixed>, event_id: string} */
+  private static function fact(): array {
+    return ['class' => 'App\\Events\\InviteAccepted', 'payload' => ['z' => 1, 'a' => ['n' => null, 'f' => 1.5]], 'event_id' => '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d51'];
+  }
+
+  public function test_a_parked_fact_comes_back_from_claim_due_unchanged(): void {
+    $intent = WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->t0);
+    $this->inTx(fn () => $this->scheduler()->schedule($intent));
+
+    [$claimed] = $this->scheduler()->claim_due($this->t0, 10, 60);
+
+    self::assertSame($intent->key, $claimed->intent->key);
+    self::assertSame(WakeKind::ResumeRetry, $claimed->intent->kind);
+    self::assertSame('suspended', $claimed->intent->expected_status);
+    self::assertSame(2, $claimed->intent->step_index);
+    self::assertSame(self::fact(), $claimed->intent->fact, 'class, payload (key order included) and event id round-trip');
+  }
+
+  public function test_an_intent_without_a_fact_stores_null(): void {
+    $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 2, $this->t0)));
+
+    self::assertNull($this->db->fetchOne('SELECT fact FROM ddd_wakeups'));
+    self::assertNull($this->scheduler()->claim_due($this->t0, 10, 60)[0]->intent->fact);
+  }
+
+  public function test_find_reads_one_intent_by_key_with_its_fact(): void {
+    $intent = WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->t0);
+    $this->inTx(fn () => $this->scheduler()->schedule($intent));
+
+    self::assertSame(self::fact(), $this->scheduler()->find($intent->key)?->fact);
+    self::assertNull($this->scheduler()->find('timeout:404:0'));
+  }
+
+  public function test_the_parking_scheduler_declares_that_it_carries_facts(): void {
+    self::assertNotInstanceOf(ICarriesFacts::class, $this->scheduler(), 'the base scheduler keeps the wave-3 delivery retry');
+    self::assertInstanceOf(ICarriesFacts::class, new DbalParkingScheduler($this->db));
+    self::assertInstanceOf(DbalWakeupScheduler::class, new DbalParkingScheduler($this->db));
   }
 }

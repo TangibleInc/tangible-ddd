@@ -33,8 +33,14 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * - complete() deletes the row; retry_later() counts an attempt, records the
  *   error, sets next_attempt_at and clears the lease. Both are fenced on
  *   (idempotency_key, claim_token): false means the lease was lost.
+ *
+ * Wave 5 (AW2, schema 011): the `fact` column keeps WakeupIntent::$fact, so
+ * schedule() stores it and claim_due() / find() return it. This class does
+ * not declare ICarriesFacts: the runner parks a contended fact resume only
+ * on DbalParkingScheduler, which the bundle wires (a scheduler built
+ * directly keeps the wave-3 delivery retry).
  */
-final class DbalWakeupScheduler implements IWakeupScheduler {
+class DbalWakeupScheduler implements IWakeupScheduler {
 
   private readonly string $table;
 
@@ -52,15 +58,24 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
 
   public function schedule(WakeupIntent $i): void {
     $this->assertInTransaction('schedule');
+    // The fact column (schema 011) is named only for an intent that carries
+    // a fact, so a host without it keeps scheduling every other intent.
+    $columns = 'idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at';
+    $params = [$i->key, $i->kind->value, $i->consumer, $i->process_id, $i->step_index, $i->expected_status, Time::to_db($i->due_at)];
+    $types = [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING,
+      $i->process_id === null ? ParameterType::NULL : ParameterType::INTEGER,
+      $i->step_index === null ? ParameterType::NULL : ParameterType::INTEGER,
+      ParameterType::STRING, ParameterType::STRING];
+    if ($i->fact !== null) {
+      $columns .= ', fact';
+      $params[] = self::fact_to_db($i);
+      $types[] = ParameterType::STRING;
+    }
     $inserted = $this->connection->executeStatement(
-      "INSERT INTO {$this->table} (idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (idempotency_key) DO NOTHING",
-      [$i->key, $i->kind->value, $i->consumer, $i->process_id, $i->step_index, $i->expected_status, Time::to_db($i->due_at)],
-      [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING,
-        $i->process_id === null ? ParameterType::NULL : ParameterType::INTEGER,
-        $i->step_index === null ? ParameterType::NULL : ParameterType::INTEGER,
-        ParameterType::STRING, ParameterType::STRING]
+      "INSERT INTO {$this->table} ($columns) VALUES (" . implode(', ', array_fill(0, count($params), '?')) . ')
+       ON CONFLICT (idempotency_key) DO NOTHING',
+      $params,
+      $types,
     );
     if ($inserted > 0) {
       $this->wakeup?->poke($i->consumer);
@@ -171,6 +186,12 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
     ) > 0;
   }
 
+  /** The stored intent with this key (its fact included), or null. Pending, leased or exhausted alike. */
+  public function find(string $idempotencyKey): ?WakeupIntent {
+    $row = $this->connection->fetchAssociative("SELECT * FROM {$this->table} WHERE idempotency_key = ?", [$idempotencyKey]);
+    return $row === false ? null : self::intent_from_row($row);
+  }
+
   /** @param array<string, mixed> $r */
   public static function intent_from_row(array $r): WakeupIntent {
     return new WakeupIntent(
@@ -181,7 +202,32 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       $r['expected_status'] === null ? null : (string) $r['expected_status'],
       Time::from_db((string) $r['due_at']),
       (string) $r['idempotency_key'],
+      self::fact_from_db($r['fact'] ?? null, (string) $r['idempotency_key']),
     );
+  }
+
+  private static function fact_to_db(WakeupIntent $i): string {
+    try {
+      return json_encode($i->fact, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+    } catch (\JsonException $e) {
+      throw new \RuntimeException("The fact of wakeup {$i->key} does not encode as JSON: " . $e->getMessage(), 0, $e);
+    }
+  }
+
+  /** @return array{class: string, payload: array<string, mixed>, event_id: string}|null */
+  private static function fact_from_db(mixed $value, string $key): ?array {
+    if ($value === null) {
+      return null;
+    }
+    try {
+      $fact = json_decode((string) $value, true, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+      throw new \RuntimeException("The fact of wakeup $key does not decode: " . $e->getMessage(), 0, $e);
+    }
+    if (!is_array($fact)) {
+      throw new \RuntimeException("The fact of wakeup $key is not a JSON object.");
+    }
+    return $fact;
   }
 
   private function assertInTransaction(string $op): void {

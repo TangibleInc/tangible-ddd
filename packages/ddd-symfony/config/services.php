@@ -79,14 +79,15 @@ use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
+use TangibleDDD\Symfony\Persistence\DbalParkingScheduler;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
-use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
 use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
 use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\EntityManagerSession;
+use TangibleDDD\Symfony\Persistence\ParkedFacts;
 use TangibleDDD\Symfony\Persistence\PoolerPolicy;
 use TangibleDDD\Symfony\Runtime\Actor\ActorContext;
 use TangibleDDD\Symfony\Runtime\Actor\ConsoleOperatorActorProvider;
@@ -253,7 +254,10 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     $s->set($id('process_store'), DbalProcessStore::class)
       ->args([service($id('connection')), service('tangible_ddd.clock'), $tables, $process['stranded_after_seconds']]);
 
-    $s->set($id('wakeup_scheduler'), DbalWakeupScheduler::class)
+    // AW2 (wave 5): ICarriesFacts, so a resume that cannot take the process
+    // lock is parked as a fact-carrying ResumeRetry instead of failing its
+    // delivery (schema 011 `fact`).
+    $s->set($id('wakeup_scheduler'), DbalParkingScheduler::class)
       ->args([service($id('connection')), $tables, $listen ? service($id('relay_wakeup')) : null]);
 
     $s->set($id('process_lock'), ReentrantProcessLock::class)
@@ -280,8 +284,13 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     $s->set($id('process_entry'), LazyProcessEntry::class)
       ->args([service_closure($c['primary'] && $config['process_entry'] !== null ? $config['process_entry'] : $id('process_runner'))]);
 
-    $s->set($id('process_wake_target'), ProcessRunnerWakeTarget::class)
-      ->args([service($id('process_runner'))]);
+    // The Messenger projection of an intent does not carry a parked fact;
+    // ParkedFacts reads it back from the intent row before the runner wakes.
+    $s->set($id('process_wake_target'), ParkedFacts::class)
+      ->args([
+        service($id('wakeup_scheduler')),
+        inline_service(ProcessRunnerWakeTarget::class)->args([service($id('process_runner'))]),
+      ]);
     // W1: workflow continuations share the wakeup intents; the rest go to the runner.
     $s->set($id('workflow_continuations'), WorkflowContinuations::class)
       ->args([service($id('wakeup_scheduler')), service($id('transaction_boundary')), service('tangible_ddd.clock'), $prefix]);
