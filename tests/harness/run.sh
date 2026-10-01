@@ -2,7 +2,7 @@
 # Hermetic test harness for tangible-ddd (register section 8, report F sections 5-6).
 #
 #   tests/harness/run.sh wp-integration   WP integration suite on MySQL 8.0 from an empty database
-#   tests/harness/run.sh loader           loader fixtures of register 7.2        (wave 2)
+#   tests/harness/run.sh loader           loader fixtures of register 7.2        (wave 2; lib/loader.sh)
 #   tests/harness/run.sh core-pdo         Defaults/Pdo suite + two-process drain  (wave 3)
 #   tests/harness/run.sh compat           compatibility fixtures 7.2 + 7.3        (wave 4)
 #   tests/harness/run.sh conformance-wp   conformance scenarios on WordPress      (wave 2)
@@ -17,7 +17,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: tests/harness/run.sh <subcommand>
   wp-integration   WordPress integration suite on MySQL 8.0, fresh database
-  loader           loader fixtures (not yet implemented)
+  loader           loader fixtures of register 7.2 on WordPress + MySQL 8.0 (all but jetpack-mixed)
   core-pdo         ddd-core Defaults/Pdo suite (not yet implemented)
   compat           compatibility fixtures (not yet implemented)
   conformance-wp   conformance scenarios on WordPress (not yet implemented)
@@ -55,8 +55,18 @@ wp_integration() {
   log "wp-integration green on $DB_NAME"
 }
 
+loader() {
+  # shellcheck source=lib/common.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
+  # shellcheck source=lib/loader.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/lib/loader.sh"
+  h_init
+  loader_main
+}
+
 case "${1:-}" in
   wp-integration) wp_integration ;;
-  loader|core-pdo|compat|conformance-wp) not_yet "$1" ;;
+  loader) loader ;;
+  core-pdo|compat|conformance-wp) not_yet "$1" ;;
   *) usage ;;
 esac

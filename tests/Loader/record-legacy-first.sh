@@ -8,6 +8,11 @@
 #   tests/Loader/record-legacy-first.sh           record (overwrite the baseline)
 #   tests/Loader/record-legacy-first.sh --check   re-run and diff against the baseline
 #
+# Historical since wave 2: the baseline records the 0.6.6 loader (where the
+# newer copy never loads, B1). The pass conditions are judged by
+# `tests/harness/run.sh loader`, whose probe records more than this baseline
+# does, so --check against the wave-1 recording reports the added keys.
+#
 # Environment: everything in tests/harness/lib/common.sh, plus
 #   DDD_LOADER_LEGACY   legacy tags to pair with today's copy (default "v0.6.2 v0.6.5":
 #                       the oldest in-window copy and the copy the shipped compiled

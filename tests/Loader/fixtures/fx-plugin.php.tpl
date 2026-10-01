@@ -6,10 +6,13 @@
  */
 
 // Include-time: the consumer's Composer autoloader runs tangible/ddd's
-// "files" entry (tangible-ddd.php), unless Composer's cross-vendor dedup has
-// already seen that file identifier (B1).
+// "files" entry (tangible-ddd.php up to 0.6.x, loader/tangible-ddd-<slug>.php
+// from 0.7.0), unless Composer's cross-vendor dedup has already seen that
+// file identifier (B1).
 $GLOBALS['fx_loader_trace'][] = ['event' => 'include', 'plugin' => '__LABEL__'];
 require __DIR__ . '/vendor/autoload.php';
+
+// __INCLUDE_TIME__
 
 // A consumer declares the minimum ddd it needs (Tangible_DDD_Versions API).
 add_action('plugins_loaded', static function (): void {
