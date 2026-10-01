@@ -28,10 +28,14 @@ parameters:
     - ddd-wordpress/self/index.php
 
   # Symbol discovery only: WordPress and WP-CLI stubs, and Action Scheduler's
-  # procedural API, which packages/ddd-wp calls but does not bundle.
+  # procedural API, which packages/ddd-wp calls but does not bundle. The
+  # ActionScheduler facade and store base class are there so the rollback
+  # drain can call ActionScheduler::runner() statically (WP8-6).
   scanFiles:
     - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
     - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
     - vendor/woocommerce/action-scheduler/functions.php
+    - vendor/woocommerce/action-scheduler/classes/abstracts/ActionScheduler.php
+    - vendor/woocommerce/action-scheduler/classes/abstracts/ActionScheduler_Store.php
 
   reportUnmatchedIgnoredErrors: true

@@ -2,14 +2,14 @@
 # Hermetic test harness for tangible-ddd (register section 8, report F sections 5-6).
 #
 #   tests/harness/run.sh wp-integration   WP integration suite on MySQL 8.0 from an empty database
-#   tests/harness/run.sh loader           loader fixtures of register 7.2        (wave 2; lib/loader.sh)
+#   tests/harness/run.sh loader           loader fixtures of register 7.2, all kinds (lib/loader.sh)
 #   tests/harness/run.sh core-pdo         Defaults/Pdo suite + two-process drain  (wave 3)
-#   tests/harness/run.sh compat           compatibility fixtures 7.2 + 7.3        (wave 4)
+#   tests/harness/run.sh compat           the wave-4 compatibility gate: CR-PK-5, artifact, 7.2, 7.3
 #   tests/harness/run.sh conformance-wp   conformance scenarios on WordPress      (wave 2)
 #
 # Environment knobs are documented in tests/harness/lib/common.sh. Pinned
 # inputs (WordPress, images, datastream SHA) are in tests/harness/refs.lock.
-# Exit codes: 0 green, 1 failure, 2 not yet implemented, 64 usage.
+# Exit codes: 0 green, 1 failure, 64 usage.
 
 set -euo pipefail
 
@@ -17,17 +17,12 @@ usage() {
   cat >&2 <<'EOF'
 usage: tests/harness/run.sh <subcommand>
   wp-integration   WordPress integration suite on MySQL 8.0, fresh database
-  loader           loader fixtures of register 7.2 on WordPress + MySQL 8.0 (all but jetpack-mixed)
+  loader           loader fixtures of register 7.2 on WordPress + MySQL 8.0 (every kind, no skips)
   core-pdo         ddd-core Defaults/Pdo: adapter suite, pdo conformance (both prepare modes, gated per id), two-process example
-  compat           compatibility fixtures (not yet implemented)
-  conformance-wp   conformance scenarios on WordPress + MySQL 8.0, fresh database (wave-2 wp ids gated)
+  compat           wave-4 compatibility gate: CR-PK-5 allowances expired, release artifact, every 7.2 case, 7.3 rollback fixtures
+  conformance-wp   conformance scenarios on WordPress + MySQL 8.0, fresh database (wp ids due by wave 3 gated)
 EOF
   exit 64
-}
-
-not_yet() {
-  printf 'run.sh: %s: not yet implemented\n' "$1" >&2
-  exit 2
 }
 
 wp_integration() {
@@ -192,11 +187,122 @@ core_pdo() {
   log "core-pdo green on MySQL $version"
 }
 
+# compat: the wave-4 compatibility gate (register section 8 wave 4; 7.2,
+# 7.3; CR-PK-5 in wave2-notes). Sections, all by default, in this order:
+#   allowances  tests/Compat/check-allowances.php: no CR-PK-5 transitional
+#               allowance remains (deptrac skips, phpstan-core scanning
+#               ddd-wp, the clean install's PENDING/SKIP)
+#   artifact    tests/Compat/release-artifact.sh: git archive of the ref
+#               ships no tests/docs/tools/ddd-symfony/ddd-conformance
+#   7.2         `run.sh loader` unnarrowed: every 7.2 case, 0 skipped
+#   7.3         the rollback fixtures (wp, wave 4): the WordPress suite at
+#               tests/Integration/Rollback/phpunit.xml of the ref, on a fresh
+#               database; absent is a failure, not a skip
+# DDD_COMPAT_SECTIONS picks a subset (for a partial local run; the gate runs
+# all). DDD_LOADER_CASES is refused: compat never narrows 7.2. With
+# DDD_DB_NAME set, the WordPress sections use <name>_l72 and <name>_r73.
+COMPAT_SECTIONS="allowances artifact 7.2 7.3"
+
+compat() {
+  local sections="${DDD_COMPAT_SECTIONS:-$COMPAT_SECTIONS}" s
+  if [ -n "${DDD_LOADER_CASES:-}" ]; then
+    printf 'run.sh compat: DDD_LOADER_CASES narrows the 7.2 cases; compat runs all of them (unset it)\n' >&2
+    exit 64
+  fi
+  for s in $sections; do
+    case " $COMPAT_SECTIONS " in
+      *" $s "*) ;;
+      *) printf 'run.sh compat: unknown compat section %s (known: %s)\n' "$s" "$COMPAT_SECTIONS" >&2; exit 64 ;;
+    esac
+  done
+
+  local root ref sha
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  ref="${DDD_HARNESS_REF:-HEAD}"
+  if [ "$ref" = WORKTREE ]; then
+    printf '[compat] DDD_HARNESS_REF=WORKTREE: allowances judge the working tree, the artifact judges HEAD\n' >&2
+    sha="$(git -C "$root" rev-parse HEAD)"
+  else
+    sha="$(git -C "$root" rev-parse --verify "$ref^{commit}")"
+  fi
+
+  local -a results=()
+  local failed=0 rc tree
+  for s in $sections; do
+    rc=0
+    case "$s" in
+      allowances)
+        if [ "$ref" = WORKTREE ]; then
+          php "$root/tests/Compat/check-allowances.php" "$root" || rc=$?
+        else
+          tree="$(mktemp -d "${TMPDIR:-/tmp}/ddd-compat.XXXXXX")"
+          GIT_INDEX_FILE="$tree/.index" git -C "$root" read-tree "$sha"
+          GIT_INDEX_FILE="$tree/.index" git -C "$root" checkout-index -a --prefix="$tree/src/"
+          php "$root/tests/Compat/check-allowances.php" "$tree/src" || rc=$?
+          rm -rf "$tree"
+        fi
+        ;;
+      artifact)
+        (cd "$root" && bash tests/Compat/release-artifact.sh "$sha") || rc=$?
+        ;;
+      7.2)
+        local log
+        log="$(mktemp "${TMPDIR:-/tmp}/ddd-compat-72.XXXXXX")"
+        DDD_DB_NAME="${DDD_DB_NAME:+${DDD_DB_NAME}_l72}" bash "${BASH_SOURCE[0]}" loader 2>&1 | tee "$log" || rc=$?
+        if [ "$rc" -eq 0 ] && ! grep -q -E 'loader: [0-9]+ passed, 0 failed, 0 skipped' "$log"; then
+          echo "FAIL 7.2: the loader run did not report every case passed with 0 skipped"
+          rc=1
+        fi
+        rm -f "$log"
+        ;;
+      7.3)
+        DDD_DB_NAME="${DDD_DB_NAME:+${DDD_DB_NAME}_r73}" bash "${BASH_SOURCE[0]}" _compat-rollback || rc=$?
+        ;;
+    esac
+    if [ "$rc" -eq 0 ]; then results+=("$s ok"); else results+=("$s FAILED"); failed=1; fi
+  done
+
+  local summary
+  summary="$(printf '%s, ' "${results[@]}")"
+  printf 'compat: %s\n' "${summary%, }"
+  [ "$failed" -eq 0 ] || exit 1
+}
+
+# 7.3 of compat: the wp-owned rollback fixtures inside the WP integration
+# bootstrap, on a fresh database, like conformance-wp.
+compat_rollback() {
+  # shellcheck source=lib/common.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
+  h_init
+
+  H_EXPORT="$H_WORK/tangible-ddd"
+  h_export "$H_EXPORT"
+  if [ ! -f "$H_EXPORT/tests/Integration/Rollback/phpunit.xml" ]; then
+    echo "FAIL 7.3: tests/Integration/Rollback/phpunit.xml is absent from the ref under test (the wp-owned rollback fixtures of register 7.3, wave 4)"
+    exit 1
+  fi
+  h_datastream "$H_EXPORT/.reference/tangible-datastream"
+  log "composer install in the export"
+  composer install -d "$H_EXPORT" --no-scripts --no-interaction --no-progress --quiet
+
+  h_mysql_up
+  h_db_create
+  h_wordpress
+
+  local plugin=/var/www/html/wp-content/plugins/tangible-ddd
+  h_run "$plugin" php -d memory_limit=1G /harness/wp/install-tables.php
+  log "phpunit -c tests/Integration/Rollback/phpunit.xml"
+  h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Rollback/phpunit.xml \
+    --cache-directory /tmp/phpunit-cache --do-not-cache-result --fail-on-skipped --fail-on-incomplete
+  log "7.3 rollback fixtures green on $DB_NAME"
+}
+
 case "${1:-}" in
   wp-integration) wp_integration ;;
   loader) loader ;;
   conformance-wp) conformance_wp ;;
   core-pdo) core_pdo ;;
-  compat) not_yet "$1" ;;
+  compat) compat ;;
+  _compat-rollback) compat_rollback ;;
   *) usage ;;
 esac

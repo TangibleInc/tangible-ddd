@@ -104,6 +104,35 @@ jobs:
           DDD_MYSQL_PASSWORD: ddd
         run: tests/harness/run.sh loader
 
+  core-pdo:
+    name: core-pdo (Defaults/Pdo, pdo conformance, two-process example; MySQL 8.0)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ddd
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pddd"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, posix
+          coverage: none
+      - name: Harness core-pdo
+        # Runs on the host PHP (the WordPress runner image has no pdo_mysql).
+        env:
+          DDD_MYSQL_HOST: 127.0.0.1
+          DDD_MYSQL_PORT: '3306'
+          DDD_MYSQL_USER: root
+          DDD_MYSQL_PASSWORD: ddd
+        run: tests/harness/run.sh core-pdo
+
   static:
     name: static (phpstan, deptrac, manifests, core clean install)
     runs-on: ubuntu-latest
@@ -129,3 +158,7 @@ jobs:
         run: vendor/bin/deptrac analyse --no-progress
       - name: ddd-core clean install
         run: tests/Compat/core-clean-install.sh
+      - name: CR-PK-5 transitional allowances expired
+        run: php tests/Compat/check-allowances.php
+      - name: Release artifact (git archive)
+        run: tests/Compat/release-artifact.sh HEAD

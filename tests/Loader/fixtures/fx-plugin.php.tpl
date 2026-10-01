@@ -8,9 +8,10 @@
 // Include-time: the consumer's Composer autoloader runs tangible/ddd's
 // "files" entry (tangible-ddd.php up to 0.6.x, loader/tangible-ddd-<slug>.php
 // from 0.7.0), unless Composer's cross-vendor dedup has already seen that
-// file identifier (B1).
+// file identifier (B1). A Jetpack-autoloaded fixture (LMS, quiz) requires
+// vendor/autoload_packages.php instead, as those plugins do (report D F13).
 $GLOBALS['fx_loader_trace'][] = ['event' => 'include', 'plugin' => '__LABEL__'];
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/vendor/__AUTOLOAD__';
 
 // __INCLUDE_TIME__
 

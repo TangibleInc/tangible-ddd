@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # `tests/harness/run.sh loader`: the register 7.2 load-order fixtures on a real
-# WordPress + MySQL 8.0 (wave 2: every case except load.jetpack-mixed).
-# Sourced by run.sh after lib/common.sh. Report F section 6.
+# WordPress + MySQL 8.0, every case (wave 4 adds load.jetpack-mixed and
+# load.compiled-containers; nothing is skipped, and a kind that never ran is a
+# failure). Sourced by run.sh after lib/common.sh. Report F section 6.
 #
 # Every copy is a real Composer install: each fixture plugin under
 # wp-content/plugins/fx-<label>/ requires tangible/ddd from a copying path
@@ -14,10 +15,17 @@
 #   DDD_LOADER_LEGACY      in-window legacy refs (default "v0.6.2 v0.6.4 v0.6.5 v0.6.6 hotfix/0.6.7")
 #   DDD_LOADER_NEGATIVE    pre-window ref (default v0.2.5)
 #   DDD_LOADER_PRELOAD     legacy ref whose plugin touches a class at include time (default v0.6.5)
+#   DDD_LOADER_COMPILED    legacy ref the compiled-container and Jetpack-legacy plugins bundle
+#                          (default v0.6.5, the copy the three shipped zips carry)
+#   DDD_LOADER_NEXT_VERSION  version of `next`, N re-versioned for load.jetpack-mixed
+#                          (default N's version with the patch number + 1)
 #   DDD_LOADER_CASES       only run case ids starting with one of these space-separated prefixes
-#   DDD_COMPILED_ZIPS      directory holding the shipped tangible-lms-0.12.0 / quiz-0.7.0 /
-#                          certificates-0.3.1 zips for load.compiled-containers (wave 4 owns
-#                          the full resolution check; without it the case is reported SKIP)
+#                          (a narrowed run does not check that every 7.2 kind ran)
+#
+# load.compiled-containers runs the committed fixture copies of the shipped
+# containers (tests/Loader/fixtures/compiled, made by
+# tests/Loader/bin/extract-compiled-container.php); the zips are not needed.
+# The Jetpack fixtures install automattic/jetpack-autoloader from Packagist.
 
 loader_label() {
   local ref="$1" label
@@ -50,9 +58,42 @@ loader_copy() {
   printf '%s' "$version"
 }
 
-# loader_plugin <plugin label> <copy label> <version> [include-time php]
+# loader_bump_copy <source copy> <new copy> <new version>: a second build of a
+# 0.7+ copy under another version (load.jetpack-mixed "different N builds"):
+# the plugin header, the constant, the register literal, the version-unique
+# loader entry (file and the root manifest's files entry) and the function
+# slugs move to <new version>; the code is otherwise the same commit.
+loader_bump_copy() {
+  local src="$H_WORK/copies/$1" dst="$H_WORK/copies/$2" to="$3" from
+  from="$(loader_header_version "$src")"
+  local from_slug="${from//[.-]/_}" to_slug="${to//[.-]/_}"
+  rm -rf "$dst"
+  cp -R "$src" "$dst"
+  [ -f "$dst/loader/tangible-ddd-$from_slug.php" ] || die "copy $1 has no loader/tangible-ddd-$from_slug.php to re-version"
+  mv "$dst/loader/tangible-ddd-$from_slug.php" "$dst/loader/tangible-ddd-$to_slug.php"
+  php -r '
+    [, $dir, $from, $to, $from_slug, $to_slug] = $argv;
+    foreach (["tangible-ddd.php", "composer.json", "loader/tangible-ddd-$to_slug.php"] as $f) {
+      $s = (string) file_get_contents("$dir/$f");
+      file_put_contents("$dir/$f", str_replace([$from, $from_slug], [$to, $to_slug], $s));
+    }
+  ' "$dst" "$from" "$to" "$from_slug" "$to_slug"
+  [ "$(loader_header_version "$dst")" = "$to" ] || die "re-versioning $1 to $to failed"
+  printf '%s' "$to"
+}
+
+# loader_plugin <plugin label> <copy label> <version> [include-time php] [composer|jetpack]
+# A jetpack plugin requires automattic/jetpack-autoloader (the version LMS
+# 0.12.0 and quiz 0.7.0 ship) and loads vendor/autoload_packages.php.
 loader_plugin() {
-  local label="$1" copy="$H_WORK/copies/$2" version="$3" include_time="${4:-}" plugin="$H_WORK/plugins/fx-$1"
+  local label="$1" copy="$H_WORK/copies/$2" version="$3" include_time="${4:-}" kind="${5:-composer}" plugin="$H_WORK/plugins/fx-$1"
+  local extra_require="" extra_config="" autoload=autoload.php
+  if [ "$kind" = jetpack ]; then
+    extra_require=',
+    "automattic/jetpack-autoloader": "^5.0"'
+    extra_config=', "allow-plugins": {"automattic/jetpack-autoloader": true}'
+    autoload=autoload_packages.php
+  fi
   mkdir -p "$plugin"
   cat > "$plugin/composer.json" <<JSON
 {
@@ -60,24 +101,25 @@ loader_plugin() {
   "require": {
     "tangible/ddd": "$version",
     "league/tactician": "^2.0-rc1",
-    "symfony/yaml": "^7.4"
+    "symfony/yaml": "^7.4"$extra_require
   },
   "repositories": [
     {"type": "path", "url": "$copy", "options": {"symlink": false, "versions": {"tangible/ddd": "$version"}}}
   ],
-  "config": {"platform": {"php": "8.2.0"}}
+  "config": {"platform": {"php": "8.2.0"}$extra_config}
 }
 JSON
-  log "composer install fx-$label (tangible/ddd $version)"
+  log "composer install fx-$label (tangible/ddd $version, $kind)"
   composer install -d "$plugin" --no-dev --no-interaction --no-progress --quiet
+  [ -f "$plugin/vendor/$autoload" ] || die "fx-$label: composer produced no vendor/$autoload"
   php -r '
-    [, $tpl, $out, $label, $version, $include] = $argv;
+    [, $tpl, $out, $label, $version, $include, $autoload] = $argv;
     file_put_contents($out, str_replace(
-      ["__LABEL__", "__VERSION__", "// __INCLUDE_TIME__"],
-      [$label, $version, $include === "" ? "// (no include-time code)" : $include],
+      ["__LABEL__", "__VERSION__", "// __INCLUDE_TIME__", "__AUTOLOAD__"],
+      [$label, $version, $include === "" ? "// (no include-time code)" : $include, $autoload],
       file_get_contents($tpl)
     ));
-  ' "$REPO_ROOT/tests/Loader/fixtures/fx-plugin.php.tpl" "$plugin/fx-$label.php" "$label" "$version" "$include_time"
+  ' "$REPO_ROOT/tests/Loader/fixtures/fx-plugin.php.tpl" "$plugin/fx-$label.php" "$label" "$version" "$include_time" "$autoload"
 }
 
 loader_selected() {
@@ -95,6 +137,7 @@ loader_main() {
   local legacy_refs="${DDD_LOADER_LEGACY:-v0.6.2 v0.6.4 v0.6.5 v0.6.6 hotfix/0.6.7}"
   local negative_ref="${DDD_LOADER_NEGATIVE:-v0.2.5}"
   local preload_ref="${DDD_LOADER_PRELOAD:-v0.6.5}"
+  local compiled_ref="${DDD_LOADER_COMPILED:-v0.6.5}"
   need php
 
   # ── Copies and fixture plugins ───────────────────────────────────────────
@@ -128,6 +171,35 @@ loader_main() {
   mkdir -p "$H_WORK/plugins/fx-needs"
   cp "$loader_dir/fixtures/fx-needs.php" "$H_WORK/plugins/fx-needs/fx-needs.php"
 
+  # load.jetpack-mixed: N and `next` (N re-versioned), each once behind the
+  # Jetpack Autoloader and once behind plain Composer, plus a Jetpack plugin
+  # bundling the compiled-container legacy copy (LMS 0.12.0's shape).
+  local next_version jetpack_legacy_pairs="" compiled_pairs="" compiled_copy compiled_version
+  next_version="${DDD_LOADER_NEXT_VERSION:-$(php -r '$v = explode(".", $argv[1]); $v[2] = (string) ((int) ($v[2] ?? 0) + 1); echo implode(".", array_slice($v, 0, 3));' "$n_version")}"
+  loader_bump_copy new next "$next_version" >/dev/null
+  log "next copy: $next_version (N re-versioned)"
+  loader_plugin next next "$next_version"
+  loader_plugin jp-new new "$n_version" "" jetpack
+  loader_plugin jp-next next "$next_version" "" jetpack
+
+  compiled_copy="$(loader_label "$compiled_ref")"
+  compiled_version="$(loader_copy "$compiled_copy" "$compiled_ref")"
+  loader_plugin "jp-$compiled_copy" "$compiled_copy" "$compiled_version" "" jetpack
+  jetpack_legacy_pairs="jp-$compiled_copy=$compiled_version"
+
+  # load.compiled-containers: the three shipped consumers' compiled
+  # containers (tests/Loader/fixtures/compiled), each in a plugin bundling
+  # the legacy copy the way its zip does.
+  local fixture kind
+  for fixture in lms-0_12_0=jetpack quiz-0_7_0=jetpack certificates-0_3_1=composer; do
+    kind="${fixture#*=}" fixture="${fixture%%=*}"
+    [ -f "$loader_dir/fixtures/compiled/$fixture/manifest.json" ] || die "no compiled-container fixture $fixture"
+    loader_plugin "cc-$fixture" "$compiled_copy" "$compiled_version" \
+      "\$fx_cc_label = '$fixture'; require __DIR__ . '/compiled/fixture.php'; // the shipped container, built lazily at boot" "$kind"
+    cp -R "$loader_dir/fixtures/compiled" "$H_WORK/plugins/fx-cc-$fixture/compiled"
+    compiled_pairs="$compiled_pairs cc-$fixture=$kind"
+  done
+
   # ── WordPress ────────────────────────────────────────────────────────────
   h_mysql_up
   h_db_create
@@ -149,6 +221,7 @@ loader_main() {
 
   # ── Cases ────────────────────────────────────────────────────────────────
   mkdir -p "$H_WORK/cases"
+  : > "$H_WORK/cases.log"
   local pass=0 fail=0 skip=0 id plugins debug late spec out
   local -a failed=()
   while IFS=$'\t' read -r id plugins debug late spec; do
@@ -165,7 +238,7 @@ loader_main() {
       h_run /var/www/html php -d memory_limit=1G -d display_errors=stderr -d log_errors=1 \
         -d error_log=/tmp/ddd-loader.log /usr/local/bin/wp eval-file /loader/probe.php \
       > "$out.json" 2> "$out.stderr" || true
-    if php "$loader_dir/assert-case.php" "$id" "$out.json" "$spec"; then
+    if php "$loader_dir/assert-case.php" "$id" "$out.json" "$spec" | tee -a "$H_WORK/cases.log"; then
       pass=$((pass + 1))
     else
       fail=$((fail + 1))
@@ -173,21 +246,23 @@ loader_main() {
       sed 's/^/    stderr: /' "$out.stderr" | head -20 >&2
     fi
   done < <(DDD_N_VERSION="$n_version" DDD_LEGACY="$legacy_pairs" DDD_NEGATIVE="$negative_pairs" \
-             DDD_PRELOAD="$preload_pairs" php "$loader_dir/cases.php")
+             DDD_PRELOAD="$preload_pairs" DDD_N_NEXT_VERSION="$next_version" \
+             DDD_JETPACK_LEGACY="$jetpack_legacy_pairs" DDD_COMPILED="$compiled_pairs" \
+             DDD_COMPILED_VERSION="$compiled_version" php "$loader_dir/cases.php")
   rm -f "$wp_content/mu-plugins/fx-late.php"
 
-  if loader_selected load.compiled-containers; then
-    # Register 7.2 load.compiled-containers needs the shipped consumer zips
-    # (LMS 0.12.0, quiz 0.7.0, certificates 0.3.1); wave 4 (wp) owns the full
-    # resolution check of every compiled service.
-    if [ -n "${DDD_COMPILED_ZIPS:-}" ]; then
-      die "load.compiled-containers with DDD_COMPILED_ZIPS is wave-4 work (wp); unset it for the wave-2 run"
-    fi
-    echo "SKIP load.compiled-containers: shipped zips not provided (DDD_COMPILED_ZIPS); full resolution is wave 4 (wp)"
-    skip=$((skip + 1))
+  # Every kind of register 7.2 ran (unless the run was narrowed on purpose):
+  # nothing is skipped from wave 4 on.
+  if [ -z "${DDD_LOADER_CASES:-}" ]; then
+    local kind_id
+    for kind_id in $LOADER_KINDS_7_2; do
+      if ! grep -q -E "^(PASS|FAIL) ${kind_id//./\\.}(\[|:| |$)" "$H_WORK/cases.log"; then
+        echo "FAIL ${kind_id}: no case of this register 7.2 kind ran"
+        fail=$((fail + 1))
+        failed+=("$kind_id")
+      fi
+    done
   fi
-  echo "SKIP load.jetpack-mixed: wave 4 (wp), register section 8"
-  skip=$((skip + 1))
 
   if [ "${DDD_KEEP_WORK:-0}" = 1 ]; then
     log "probe output per case kept in $H_WORK/cases"
@@ -199,3 +274,7 @@ loader_main() {
   fi
   [ "$pass" -gt 0 ] || die "no case ran (DDD_LOADER_CASES=${DDD_LOADER_CASES:-})"
 }
+
+# The case kinds of register 7.2; `run.sh loader` fails if one never ran.
+LOADER_KINDS_7_2="load.new-alone load.legacy-first load.new-first load.compiled-containers load.preloaded-class
+  load.plugin-active load.new-twice load.late load.min-unmet load.jetpack-mixed load.v0-2-negative"

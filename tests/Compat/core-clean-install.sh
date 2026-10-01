@@ -15,10 +15,10 @@
 #      symfony/dependency-injection is only suggested, X4);
 #   3. examples/plain-php/run.php exits 0 against that install.
 #
-# Two things wait on the core author's wave-2 round-2 work and are reported,
-# not failed, unless DDD_GATE=1 (the wave-2 gate run): a missing
-# examples/plain-php/run.php (SKIP), and core classes whose parent is a
-# split-deferred class still under packages/ddd-wp/src (PENDING).
+# Every check fails hard. The wave-2 allowances (a missing example and core
+# classes whose parent was still in ddd-wp, reported unless a gate flag was
+# set; CR-PK-5) expired with the round-2 splits and were removed in wave 4;
+# tests/Compat/check-allowances.php keeps them from coming back.
 #
 # The example runs from a directory holding a copy of examples/plain-php/
 # next to the clean vendor/, with DDD_AUTOLOAD pointing at
@@ -31,7 +31,6 @@
 #                     unignored files of the working tree; any other value is a
 #                     commit-ish exported through a temporary index)
 #   DDD_KEEP_WORK=1   keep the scratch directory
-#   DDD_GATE=1        fail on SKIP and PENDING too
 #
 # Needs php and composer on the host; no Docker, no database.
 
@@ -61,7 +60,7 @@ EXPORT="$WORK/export"
 mkdir -p "$EXPORT"
 if [ "$REF" = WORKTREE ]; then
   log "exporting the working tree (tracked + untracked, unignored)"
-  (cd "$REPO_ROOT" && git ls-files -z -co --exclude-standard -- packages/ddd-core packages/ddd-wp/src examples/plain-php |
+  (cd "$REPO_ROOT" && git ls-files -z -co --exclude-standard -- packages/ddd-core examples/plain-php |
     while IFS= read -r -d '' f; do
       [ -e "$f" ] || continue
       mkdir -p "$EXPORT/$(dirname "$f")"; cp -p "$f" "$EXPORT/$f"
@@ -110,18 +109,13 @@ else
 fi
 
 # 2. No WordPress after autoload; every core class declares.
-DDD_WP_SRC="$EXPORT/packages/ddd-wp/src" DDD_GATE="${DDD_GATE:-0}" \
-  php "$REPO_ROOT/tests/Compat/core-clean-install.php" "$PROJECT"
+php "$REPO_ROOT/tests/Compat/core-clean-install.php" "$PROJECT"
 
 # 3. The plain-PHP example.
 EXAMPLE="$EXPORT/examples/plain-php"
 if [ ! -f "$EXAMPLE/run.php" ]; then
-  if [ "${DDD_GATE:-0}" = 1 ]; then
-    echo "FAIL examples/plain-php/run.php is absent (DDD_GATE=1)"
-    exit 1
-  fi
-  echo "SKIP examples/plain-php/run.php is not in the export yet (core lands it in wave 2); re-check at the gate with DDD_GATE=1"
-  exit 0
+  echo "FAIL examples/plain-php/run.php is absent from the export"
+  exit 1
 fi
 
 RUN_DIR="$WORK/example"

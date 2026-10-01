@@ -17,11 +17,9 @@ parameters:
   paths:
     - packages/ddd-core/src
 
-  # Split-deferred classes (wave-2 move table, round 2) still live in ddd-wp;
-  # until their core halves land, core may name them. Remove each line when
-  # its class moves (the run reports an unmatched path otherwise).
-  scanDirectories:
-    - packages/ddd-wp/src
+  # No scanDirectories: the wave-2 allowance to see packages/ddd-wp/src
+  # (CR-PK-5) expired with the round-2 splits; tests/Compat/check-allowances.php
+  # fails if it returns.
 
   # Level-0 findings unrelated to symbol discovery are phpstan.neon's job
   # (and baselined there); this config only judges what core can see.
