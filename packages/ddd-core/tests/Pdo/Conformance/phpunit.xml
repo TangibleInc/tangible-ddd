@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The shared ddd-conformance scenarios on the pdo host (register section 4,
+  section 8 wave 3: the 37 pdo ids), on a real MySQL 8.
+
+    vendor/bin/phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml
+
+  Every scenario case runs twice: Native (PDO::ATTR_EMULATE_PREPARES =
+  false) and Emulated (true), register 3.3. Each TEST gets a fresh database
+  of its own (ddd_w3_conf_pdo_<hash>), dropped in tearDown; the server is
+  DDD_PDO_HOST (127.0.0.1), DDD_PDO_PORT (33306), DDD_PDO_USER (root),
+  DDD_PDO_PASSWORD (ddd). Groups: pdo, pdo-native, pdo-emulated, and the
+  scenario ids. bin/check-due.php turns a JUnit log into the per-id gate.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         cacheDirectory="../../../../../.phpunit.cache/ddd-core-pdo-conformance"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnSkippedTests="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="pdo-conformance">
+            <directory suffix="Test.php">.</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
