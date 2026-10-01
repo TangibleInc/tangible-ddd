@@ -62,7 +62,7 @@ loader() {
 # conformance-wp: the shared ddd-conformance scenarios on the wp host
 # (tests/Integration/Conformance, WpHostFixture) inside the WP integration
 # bootstrap, on a fresh database. Then every scenario id due on wp by
-# DDD_CONFORMANCE_WAVE (default 3) must have PASSED: not skipped, not absent.
+# DDD_CONFORMANCE_WAVE (default 4) must have PASSED: not skipped, not absent.
 # The multi-process scenarios start fresh `php` children in the same
 # container (tests/Integration/Conformance/bin/fresh.php).
 conformance_wp() {
@@ -91,7 +91,7 @@ conformance_wp() {
   log "phpunit -c tests/Integration/Conformance/phpunit.xml"
   h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Conformance/phpunit.xml \
     --cache-directory /tmp/phpunit-cache --do-not-cache-result --log-junit /out/conformance-wp.xml || phpunit_rc=$?
-  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-3}" || gate_rc=$?
+  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-4}" || gate_rc=$?
   if [ "$phpunit_rc" -ne 0 ] || [ "$gate_rc" -ne 0 ]; then
     log "conformance-wp red on $DB_NAME (phpunit exit $phpunit_rc, check-due exit $gate_rc)"
     exit 1
