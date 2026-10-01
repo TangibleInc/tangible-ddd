@@ -88,10 +88,17 @@ conformance_wp() {
 
   mkdir -p "$H_WORK/out"
   H_EXTRA_MOUNTS=(-v "$H_WORK/out:/out")
+  # The gate runs even when phpunit is red, so the per-id verdicts are
+  # always printed; the subcommand fails if either step failed.
+  local phpunit_rc=0 gate_rc=0
   log "phpunit -c tests/Integration/Conformance/phpunit.xml"
   h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Conformance/phpunit.xml \
-    --cache-directory /tmp/phpunit-cache --do-not-cache-result --log-junit /out/conformance-wp.xml
-  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-2}"
+    --cache-directory /tmp/phpunit-cache --do-not-cache-result --log-junit /out/conformance-wp.xml || phpunit_rc=$?
+  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-2}" || gate_rc=$?
+  if [ "$phpunit_rc" -ne 0 ] || [ "$gate_rc" -ne 0 ]; then
+    log "conformance-wp red on $DB_NAME (phpunit exit $phpunit_rc, check-due exit $gate_rc)"
+    exit 1
+  fi
   log "conformance-wp green on $DB_NAME"
 }
 

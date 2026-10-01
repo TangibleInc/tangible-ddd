@@ -6,13 +6,17 @@
  * test on a Wp*Conformance class, and fail on none. A green PHPUnit run with
  * a due scenario only skipped, renamed or missing is a failure here.
  *
+ * When an id is carried by more than one wp class, every copy must run: a
+ * skipped copy fails the id, except a provisional skip whose host seam does
+ * not exist yet (Support\DueGate::PROVISIONAL_SKIPS, WPC-4).
+ *
  *   php tests/Integration/Conformance/bin/check-due.php <junit.xml> [wave=2]
  */
 
 declare(strict_types=1);
 
 use TangibleDDD\Conformance\ScenarioCatalogue;
-use TangibleDDD\Conformance\ScenarioId;
+use TangibleDDD\Tests\Integration\Conformance\Support\DueGate;
 
 $root = dirname(__DIR__, 4);
 /** @var \Composer\Autoload\ClassLoader $loader */
@@ -31,37 +35,12 @@ if ($xml === false) {
   exit(1);
 }
 
-// One id may be carried by more than one wp class (e.g. a shared scenario
-// a host cannot run yet is skipped there and run by a wp-specific class).
-// An id passes when at least one wp test carrying it passed and none failed.
-/** @var array<string, array{passed: int, failed: int, skipped: int}> method name => counts on wp classes */
-$seen = [];
-foreach ($xml->xpath('//testcase') ?: [] as $case) {
-  $class = (string) $case['class'];
-  if (!str_contains($class, '\\Integration\\Conformance\\Wp')) {
-    continue;
-  }
-  $method = (string) $case['name'];
-  $outcome = match (true) {
-    isset($case->failure), isset($case->error) => 'failed',
-    isset($case->skipped) => 'skipped',
-    default => 'passed',
-  };
-  $seen[$method] ??= ['passed' => 0, 'failed' => 0, 'skipped' => 0];
-  $seen[$method][$outcome]++;
-}
-$outcomes = array_map(static fn (array $n) => match (true) {
-  $n['failed'] > 0 => 'failed',
-  $n['passed'] > 0 => 'passed',
-  default => 'skipped',
-}, $seen);
-
+$gate = DueGate::fromJUnit($xml);
 $due = ScenarioCatalogue::dueBy('wp', $wave);
 sort($due);
 $bad = 0;
 foreach ($due as $id) {
-  $method = ScenarioId::methodName($id);
-  $outcome = $outcomes[$method] ?? 'missing';
+  $outcome = $gate->verdict($id);
   printf("  %-8s %s\n", $outcome, $id);
   if ($outcome !== 'passed') {
     $bad++;
