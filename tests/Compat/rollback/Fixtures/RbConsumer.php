@@ -29,6 +29,7 @@ final class RbConsumer {
   public static function listen(callable $integrationAction): void {
     $integrationAction(RbNote::class, static function (array $payload): void {
       $text = (string) ($payload['text'] ?? '?');
+      $text = strlen($text) > 64 ? 'len' . strlen($text) : $text; // large facts (D6) journal their size
       if (get_option(self::LISTENER_DOWN_OPTION)) {
         RbJournal::mark("note:down:$text");
         throw new \RuntimeException("RbNote listener is down ($text)");
