@@ -845,6 +845,20 @@
                 }
             ]
         },
+        "TangibleDDD\\WordPress\\register_delivery_hooks": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
         "TangibleDDD\\WordPress\\register_event_handlers": {
             "file": "hooks.php",
             "byRef": false,
