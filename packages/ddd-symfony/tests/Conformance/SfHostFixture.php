@@ -43,10 +43,12 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
+use TangibleDDD\Conformance\EffectHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
 use TangibleDDD\Conformance\ProcessWorker;
@@ -67,7 +69,7 @@ use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
-use TangibleDDD\Runtime\Audit\AuditEverything;
+use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IAuditPolicy;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\Delivery\DeliveryOutcome;
@@ -106,7 +108,18 @@ use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\RecordEffect;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
+use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
+use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
+use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
@@ -137,6 +150,10 @@ use TangibleDDD\Symfony\Tests\Conformance\Support\SendFaults;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SfProcessWorker;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SfWorkerPorts;
 use TangibleDDD\Symfony\Tests\Conformance\Support\StatementFaults;
+use TangibleDDD\Symfony\Tests\Conformance\Support\SuppressibleRelayWakeup;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresListenWaiter;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresNotifyRelayWakeup;
+use TangibleDDD\Conformance\PostCommitWakeups;
 use TangibleDDD\Symfony\Tests\Conformance\Support\WorkerTask;
 use TangibleDDD\Symfony\Tests\Kernel\App\TestKernel;
 use TangibleDDD\Symfony\Tests\Support\PostgresDatabase;
@@ -187,12 +204,18 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost, PostCommitWakeups {
 
   public const CONSUMER = 'sfc';
 
   /** register 5.3 step 5: the stranded threshold (the bundle default). */
   private const STRANDED_AFTER_SECONDS = 900;
+
+  /** The worker number of the PostCommitWakeups relay worker (its own connection). */
+  private const RELAY_WORKER = 9;
+
+  /** `ddd:relay --sleep` of the PostCommitWakeups worker: short, but well above the 1 s wakeup bound. */
+  private const RELAY_POLL_SECONDS = 3.0;
 
   /** tangible_ddd.process.wakeup_lease_seconds default. */
   private const WAKE_LEASE_SECONDS = 300;
@@ -220,6 +243,13 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private LockCounter $locks;
   private ?PostgresAdvisoryProcessLock $webLock = null;
   private ?Connection $elsewhere = null;
+  private ?DbalEffectJournal $effectJournal = null;
+  private ?SuppressibleRelayWakeup $relayWakeup = null;
+  private ?PostgresListenWaiter $relayWaiter = null;
+  private float $relayIdleSince = 0.0;
+  private ?DbalWorkflowIgnitionLedger $workflowLedger = null;
+  private ?DbalBehaviourWorkflowRepository $workflowRepository = null;
+  private ?WorkflowIgniter $workflowIgniter = null;
 
   /** @var array<int, SfWorkerPorts> */
   private array $ports = [];
@@ -241,6 +271,15 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   /** @var list<string> subscriber failures of the last drain's delivery stage */
   private array $lastDeliveryFailures = [];
+
+  /**
+   * @param StartMode $startMode the bundle default (Deferred), or InBand
+   *   (`tangible_ddd.process.inband_start: true`) for a scenario that
+   *   assumes the first step runs inside start()
+   */
+  public function __construct(StartMode $startMode = StartMode::Deferred) {
+    $this->startMode = $startMode;
+  }
 
   public function hostName(): string {
     return 'sf';
@@ -283,6 +322,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   public function tearDown(): void {
+    $this->stopRelayWorker();
     if ($this->ready) {
       $this->ready = false;
       foreach ($this->ports as $w) {
@@ -366,7 +406,20 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── command pipeline ─────────────────────────────────────────────────────
 
   public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
-    $policy = $options->audit ? new AuditEverything() : new class implements IAuditPolicy {
+    return $this->bundleBus($handlers, $options, null);
+  }
+
+  /**
+   * The bundle's command bus (config/services.php): act bracket → [effect] →
+   * transaction → domain events → handler map. $effects is the bundle's
+   * `tangible_ddd.middleware.effect` (EffectHost only); commandBus() keeps
+   * the frozen HostFixture order without it.
+   *
+   * @param array<class-string, callable(object): mixed> $handlers
+   */
+  private function bundleBus(array $handlers, BusOptions $options, ?EffectMiddleware $effects): CommandBus {
+    // The bundle's default policy (D12); no conformance command carries #[Audit].
+    $policy = $options->audit ? new AttributeAuditPolicy() : new class implements IAuditPolicy {
       public function audits(object $command): bool {
         return false;
       }
@@ -377,7 +430,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     };
 
     $w = $this->ports[1];
-    return new CommandBus(
+    return new CommandBus(...array_values(array_filter([
       new CorrelationMiddleware(
         $this->consumer,
         $this->events,
@@ -387,12 +440,125 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         $policy,
         new PhpEnvironmentProvider(['host' => 'sf']),
       ),
+      $effects,
       new TransactionalCommandMiddleware($options->withBoundary ? $w->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
         new EventRouter($this->dispatcher, Factory::integrationBus($w->outbox, $this->clock, $this->consumer, $this->outboxConfig)),
       ),
       new HandlerMapMiddleware($handlers),
+    ])));
+  }
+
+  // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
+
+  /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
+  public function effectJournal(): IEffectJournal {
+    return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
+  }
+
+  // ── PostCommitWakeups (CR-W4C4-5) ────────────────────────────────────────
+
+  /**
+   * The `ddd:relay` worker, in steps: its own DBAL connection (worker
+   * RELAY_WORKER, a direct session like the production worker's), the
+   * bundle's Relay on it, and PostgresListenWaiter for the LISTEN half.
+   * The loop rule is RelayCommand's: run a pass; when it claimed nothing,
+   * wait on LISTEN for at most the poll interval, then run the next pass.
+   * The poll interval is measured from the moment the worker went idle.
+   * (A separate `ddd:relay` php process is covered by
+   * tests/Kernel/PostCommitWakeupTest and PostCommitPollFallbackTest.)
+   */
+  public function startRelayWorker(): void {
+    $this->worker(self::RELAY_WORKER);
+    $this->relayWaiter = new PostgresListenWaiter($this->ports[self::RELAY_WORKER]->connection, self::CONSUMER, $this->logger);
+    $this->relayPassUntilIdle();
+    $this->relayWaiter->listen(); // idle and listening before the scenario commits
+  }
+
+  public function relayUntilTransported(string $eventId, float $timeoutSeconds): ?float {
+    $waiter = $this->relayWaiter ?? throw new \LogicException('startRelayWorker() first');
+    $start = microtime(true);
+    while (true) {
+      // Idle: blocked in LISTEN until a NOTIFY arrives or the poll interval (from going idle) is up.
+      $remaining = $timeoutSeconds - (microtime(true) - $start);
+      if ($remaining <= 0) {
+        return null;
+      }
+      $poll = max(0.0, self::RELAY_POLL_SECONDS - (microtime(true) - $this->relayIdleSince));
+      $waiter->wait(min($poll, $remaining));
+      if (microtime(true) - $start > $timeoutSeconds) {
+        return null;
+      }
+      if ($this->relayPassUntilIdle($eventId)) {
+        return microtime(true) - $start;
+      }
+    }
+  }
+
+  public function wakeupArrives(float $timeoutSeconds): bool {
+    return ($this->relayWaiter ?? throw new \LogicException('startRelayWorker() first'))->wait($timeoutSeconds);
+  }
+
+  public function suppressNextWakeup(): void {
+    $this->relayWakeup?->suppressNext();
+  }
+
+  public function relayPollIntervalSeconds(): float {
+    return self::RELAY_POLL_SECONDS;
+  }
+
+  public function stopRelayWorker(): void {
+    if ($this->relayWaiter === null) {
+      return;
+    }
+    $this->relayWaiter = null;
+    try {
+      $this->ports[self::RELAY_WORKER]->connection->executeStatement('UNLISTEN *');
+    } catch (\Throwable) {
+    }
+  }
+
+  /**
+   * Relay passes until one claims nothing (as `ddd:relay` loops without
+   * waiting while there is work); then the worker is idle.
+   *
+   * @return bool whether $eventId was handed to the transport
+   */
+  private function relayPassUntilIdle(?string $eventId = null): bool {
+    $relay = $this->ports[self::RELAY_WORKER]->relay;
+    $transported = false;
+    do {
+      $report = $relay->runOnce();
+      $transported = $transported || ($eventId !== null && in_array($eventId, $report->accepted, true));
+    } while ($report->claimed !== []);
+    $this->relayIdleSince = microtime(true);
+    return $transported;
+  }
+
+  // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
+
+  /** `tangible_ddd.workflow_ignitions`, on the app clock as the bundle wires it (CR sf-b-1). */
+  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+    return $this->workflowLedger ??= new DbalWorkflowIgnitionLedger($this->connection, '', $this->clock);
+  }
+
+  /** `tangible_ddd.workflow_repository`. */
+  public function workflowRepository(): IBehaviourWorkflowRepository {
+    return $this->workflowRepository ??= new DbalBehaviourWorkflowRepository($this->events, $this->connection);
+  }
+
+  /** `tangible_ddd.workflow_igniter`: core WorkflowIgniter(ledger, boundary, logger, clock). */
+  public function workflowIgniter(): WorkflowIgniter {
+    return $this->workflowIgniter ??= new WorkflowIgniter($this->workflowIgnitionLedger(), $this->boundary(), $this->logger, $this->clock);
+  }
+
+  public function effectBus(array $handlers): CommandBus {
+    return $this->bundleBus(
+      // The bundle's terminal is SelfExecuting (RecordEffect is a SelfHandlingCommand); the handler map routes it to apply().
+      [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
+      new BusOptions(),
+      new EffectMiddleware($this->effectJournal(), $this->boundary()),
     );
   }
 
@@ -644,6 +810,23 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->wakeFaults->failNext($reason);
   }
 
+  // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
+
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    // sf stores the class in process_class only (business_data is the promoted constructor parameters).
+    $this->connection->executeStatement('UPDATE ddd_processes SET process_class = ? WHERE id = ?', [$missingClass, $processId], [ParameterType::STRING, ParameterType::INTEGER]);
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    $status = $this->connection->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
+    return $status === false ? null : (string) $status;
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    $reason = $this->connection->fetchOne('SELECT quarantine_reason FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
+    return $reason === false || $reason === null ? null : (string) $reason;
+  }
+
   // ── FreshProcesses (CR-W3CP-4) ───────────────────────────────────────────
 
   public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
@@ -749,6 +932,12 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->awaits = [];
     $this->ports = [];
     $this->workers = [];
+    $this->effectJournal = null;
+    $this->relayWakeup = null;
+    $this->relayWaiter = null;
+    $this->workflowLedger = null;
+    $this->workflowRepository = null;
+    $this->workflowIgniter = null;
     $this->provideHostDefaults();
 
     $this->composeWorker(1, $this->connection);
@@ -784,7 +973,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $clock = $this->clock;
     $boundary = new DbalTransactionBoundary($c, NestedPolicy::Reject, null, $logger);
     $pauses = new DbalRelayPauseStore($c);
-    $outbox = new DbalPostgresOutboxStore($c, $pauses, '', $logger);
+    // D14 as the bundle wires it (relay.listen: true): every append NOTIFYs in its transaction.
+    $this->relayWakeup ??= new SuppressibleRelayWakeup(new PostgresNotifyRelayWakeup($this->connection, $logger));
+    $notify = $n === 1 ? $this->relayWakeup : new PostgresNotifyRelayWakeup($c, $logger);
+    $outbox = new DbalPostgresOutboxStore($c, $pauses, '', $logger, $notify, self::CONSUMER);
     $facts = self::doctrineTransport($c, 'ddd_facts');
     $factSender = new FaultInjectingSender($facts, null, $clock);
     $transport = new MessengerFactTransport($factSender, self::CONSUMER, new OutboxFactClassResolver($outbox), null, $clock, $c);

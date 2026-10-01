@@ -9,7 +9,10 @@ use TangibleDDD\Application\Process\AwaitAlarm;
 use TangibleDDD\Application\Process\AwaitAll;
 use TangibleDDD\Application\Process\AwaitAny;
 use TangibleDDD\Application\Process\AwaitEvent;
+use TangibleDDD\Application\Process\ProcessSteps;
+use TangibleDDD\Runtime\Codec\LargeString;
 use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
+use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\LargeStringProcess;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\AppDestroyed;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\ChildGone;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\JobDone;
@@ -72,6 +75,23 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     self::assertSame('reserve', $found->current_step_name());
     self::assertInstanceOf(OrderPayload::class, $found->payload());
     self::assertSame(['hello', 3], [$found->payload()->note, $found->payload()->count]);
+  }
+
+  public function test_a_step_checkpoint_round_trips_and_is_readable_after_find(): void {
+    // D3 dynamic AwaitAll reads its checkpointed key set after a reload (process.await-all-dynamic).
+    $p = OrderProcess::started(7);
+    $p->steps()->record_checkpoint('reserve', new OrderPayload('children', 2));
+    $p->steps()->advance();
+    $id = $this->store()->insert($p);
+
+    $found = $this->store()->find($id);
+
+    self::assertNotNull($found);
+    $checkpoint = $found->steps()->checkpoint_for('reserve');
+    self::assertInstanceOf(OrderPayload::class, $checkpoint);
+    self::assertSame(['children', 2], [$checkpoint->note, $checkpoint->count]);
+    self::assertSame(['reserve' => 'release'], $found->steps()->compensations);
+    self::assertSame('charge', $found->current_step_name());
   }
 
   public function test_find_and_version_of_an_unknown_id_are_null(): void {
@@ -220,6 +240,55 @@ final class DbalProcessStoreTest extends PostgresTestCase {
 
     $this->expectException(QuarantinedProcess::class);
     $this->store()->find($id);
+  }
+
+  // ── D6: LargeString business data (CR-W4CE-5) ─────────────────────────────
+
+  private function largeStringProcess(LargeString $blob, ?LargeString $optional = null): LargeStringProcess {
+    $p = new LargeStringProcess($blob, $optional, 'big');
+    $p->initialize_lifecycle('corr-ls', new ProcessSteps(['begin'], []));
+    return $p;
+  }
+
+  public function test_a_one_megabyte_binary_large_string_round_trips_in_business_data(): void {
+    $bytes = random_bytes(1024 * 1024);
+    $id = $this->store()->insert($this->largeStringProcess(new LargeString($bytes)));
+
+    $found = $this->store()->find($id);
+
+    self::assertInstanceOf(LargeStringProcess::class, $found);
+    self::assertSame($bytes, $found->blob->value);
+    self::assertNull($found->optional);
+    self::assertSame('big', $found->label);
+    $stored = json_decode((string) $this->db->fetchOne('SELECT business_data FROM ddd_processes WHERE id = ?', [$id]), true);
+    self::assertTrue(LargeString::isEncoded($stored['blob']), 'stored in the LargeString wire form (base64, length, sha256)');
+  }
+
+  public function test_a_nullable_large_string_round_trips_when_set(): void {
+    $id = $this->store()->insert($this->largeStringProcess(new LargeString('a'), new LargeString("\x00\xff", 16)));
+
+    $found = $this->store()->find($id);
+
+    self::assertInstanceOf(LargeStringProcess::class, $found);
+    self::assertSame("\x00\xff", $found->optional?->value);
+    self::assertSame(16, $found->optional?->maxBytes);
+  }
+
+  public function test_a_corrupted_large_string_quarantines_the_row_with_its_reason(): void {
+    $id = $this->store()->insert($this->largeStringProcess(new LargeString('payload')));
+    $data = json_decode((string) $this->db->fetchOne('SELECT business_data FROM ddd_processes WHERE id = ?', [$id]), true);
+    $data['blob']['data'] = base64_encode('tampered');
+    $this->db->executeStatement('UPDATE ddd_processes SET business_data = ? WHERE id = ?', [json_encode($data), $id]);
+
+    try {
+      $this->store()->find($id);
+      self::fail('an undecodable row was returned');
+    } catch (QuarantinedProcess) {
+    }
+
+    $row = $this->db->fetchAssociative('SELECT status, quarantine_reason FROM ddd_processes WHERE id = ?', [$id]);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('LargeString length mismatch', (string) $row['quarantine_reason'], 'UndecodableLargeString::$quarantineReason');
   }
 
   public function test_broken_json_is_quarantined(): void {

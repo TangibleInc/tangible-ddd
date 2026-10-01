@@ -9,6 +9,8 @@ use TangibleDDD\Application\Process\IAwaitMechanism;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
+use TangibleDDD\Runtime\Codec\LargeString;
+use TangibleDDD\Runtime\Codec\UndecodableLargeString;
 
 /**
  * LongProcess ⇄ ddd_processes row, the same JSON shapes as the WordPress
@@ -17,6 +19,11 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * polymorphic {_class, _data}), so a process row reads the same on every
  * host. decode() throws \UnexpectedValueException for anything it cannot
  * rebuild; the store turns that into a quarantine (R5).
+ *
+ * D6 (CR-W4CE-5): a LargeString business-data field is stored as
+ * LargeString::toPayload() and revived by the constructor parameter's type;
+ * a corrupt one (UndecodableLargeString) quarantines the row with its
+ * quarantineReason. Process payloads are not scanned for LargeString.
  *
  * @internal
  */
@@ -64,7 +71,9 @@ final class ProcessRowCodec {
     try {
       $process = self::instantiate($class, self::json((string) $row['business_data']) ?? []);
 
-      $steps = $row['steps'] === null ? null : ProcessSteps::from_json(json_decode((string) $row['steps'], false, 512, JSON_THROW_ON_ERROR));
+      // Arrays, not stdClass: ProcessSteps::checkpoint_for() hands each stored
+      // checkpoint to JsonLifecycleValue::deserialize_polymorphic(?array).
+      $steps = $row['steps'] === null ? null : ProcessSteps::from_json(self::json((string) $row['steps']) ?? []);
       $payload = $row['payload'] === null ? null : JsonLifecycleValue::deserialize_polymorphic(self::json((string) $row['payload']));
       $criteria = $row['match_criteria'] === null ? null : self::json((string) $row['match_criteria']);
 
@@ -96,6 +105,8 @@ final class ProcessRowCodec {
         source: $row['source'] === null ? null : (string) $row['source'],
       );
       return $process;
+    } catch (UndecodableLargeString $e) {
+      throw new \UnexpectedValueException(sprintf('%s cannot be rebuilt: %s', $class, $e->quarantineReason), 0, $e);
     } catch (\UnexpectedValueException $e) {
       throw $e;
     } catch (\Throwable $e) {
@@ -109,10 +120,27 @@ final class ProcessRowCodec {
     $reflection = new \ReflectionClass($p);
     foreach ($reflection->getConstructor()?->getParameters() ?? [] as $param) {
       if ($param->isPromoted()) {
-        $data[$param->getName()] = $reflection->getProperty($param->getName())->getValue($p);
+        $value = $reflection->getProperty($param->getName())->getValue($p);
+        // D6: a LargeString is stored in its wire form (base64, length, sha256).
+        $data[$param->getName()] = $value instanceof LargeString ? $value->toPayload() : $value;
       }
     }
     return $data;
+  }
+
+  /**
+   * D6: a constructor parameter typed LargeString (nullable or not) is
+   * revived from its wire form. A corrupt one throws UndecodableLargeString;
+   * decode() turns its quarantineReason into the quarantine reason.
+   *
+   * @throws UndecodableLargeString
+   */
+  private static function revive(\ReflectionParameter $param, mixed $value): mixed {
+    $type = $param->getType();
+    if ($value !== null && $type instanceof \ReflectionNamedType && $type->getName() === LargeString::class) {
+      return LargeString::fromPayload($value);
+    }
+    return $value;
   }
 
   /** @param array<string, mixed> $data */
@@ -126,7 +154,7 @@ final class ProcessRowCodec {
     foreach ($constructor->getParameters() as $param) {
       $name = $param->getName();
       if (array_key_exists($name, $data)) {
-        $args[] = $data[$name];
+        $args[] = self::revive($param, $data[$name]);
       } elseif ($param->isDefaultValueAvailable()) {
         $args[] = $param->getDefaultValue();
       } else {

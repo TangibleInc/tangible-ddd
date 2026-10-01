@@ -11,6 +11,7 @@ use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
 use TangibleDDD\Runtime\NestedTransactionRejected;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
@@ -204,6 +205,13 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertSame(2, $third->attempts);
   }
 
+  public function test_the_store_reports_claim_dead_letters_through_the_core_port(): void {
+    $store = new DbalPostgresOutboxStore($this->db);
+
+    self::assertInstanceOf(IReportsClaimDeadLetters::class, $store);
+    self::assertSame(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, DbalPostgresOutboxStore::LEASE_EXPIRED_ERROR, 'the sf constant stays and is the core text');
+  }
+
   public function test_a_row_whose_lease_expires_max_attempts_times_is_dead_lettered_at_claim(): void {
     $store = new DbalPostgresOutboxStore($this->db);
     $store->appendFact($this->record('crashy'), 'App\\WidgetRegistered');
@@ -249,7 +257,8 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
 
       self::assertSame([], $report->claimed, 'not handed out');
       self::assertSame(['crashy'], $report->deadLettered);
-      self::assertCount(1, $signals->emitted);
+      self::assertSame(['crashy'], $report->result?->deadLetteredAtClaim, 'the core relay step reports it (CR-W4CE-9)');
+      self::assertCount(1, $signals->emitted, 'signalled once: by the core relay step, not again by the sf wrapper');
       self::assertInstanceOf(OutboxDeadLettered::class, $signals->emitted[0]['event']);
     } finally {
       HostDefaults::resetForTests();

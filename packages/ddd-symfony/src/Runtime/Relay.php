@@ -6,16 +6,13 @@ namespace TangibleDDD\Symfony\Runtime;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Application\Outbox\OutboxConfig;
-use TangibleDDD\Application\Outbox\OutboxEntry;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
-use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 
 /**
  * The relay step of ddd-symfony: the CORE relay step,
@@ -35,9 +32,11 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
  *
  * - runOnce($limit) passes $limit to process_batch() (CR sfc-3); null runs
  *   OutboxConfig::batch_size.
- * - Expired-lease dead letters made at claim time by DbalPostgresOutboxStore
- *   (CR sf-8) appear in the report's deadLettered list and emit the same
- *   OutboxDeadLettered signal as a relay-side dead letter.
+ * - Expired-lease dead letters made at claim time (CR sf-8, now the core
+ *   rule CR-PDO-6) are taken, logged and signalled by the core step itself
+ *   (DbalPostgresOutboxStore implements IReportsClaimDeadLetters,
+ *   CR-W4CE-9); this wrapper only adds ProcessingResult::$deadLetteredAtClaim
+ *   to the report's deadLettered list. It never signals them a second time.
  * - betweenSubmitAndAccept(): the core test seam, for conformance.
  */
 final class Relay {
@@ -91,25 +90,8 @@ final class Relay {
     );
     $processor->between_submit_and_accept($this->betweenSubmitAndAccept);
 
-    try {
-      $result = $processor->process_batch($limit);
-    } finally {
-      $atClaim = $this->signalClaimDeadLetters();
-    }
+    $result = $processor->process_batch($limit);
 
-    return RelayReport::of($result, $atClaim);
-  }
-
-  /** @return list<string> event ids the store dead-lettered at claim during this step */
-  private function signalClaimDeadLetters(): array {
-    if (!$this->outbox instanceof DbalPostgresOutboxStore) {
-      return [];
-    }
-    $ids = [];
-    foreach ($this->outbox->takeDeadLetteredAtClaim() as [$claim, $error]) {
-      (new OutboxDeadLettered(OutboxEntry::from_claim($claim, 'dlq', $error), $error))->dispatch($this->consumer);
-      $ids[] = $claim->event_id;
-    }
-    return $ids;
+    return RelayReport::of($result, $result->deadLetteredAtClaim);
   }
 }

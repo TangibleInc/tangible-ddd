@@ -39,6 +39,21 @@ Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd
   `APP_VERSION` unset) all mean `'0.0.0'`, both for the registered consumer and
   for the audit environment's `app` key (L4). Before wave 4 a null version was a
   `TypeError` at the first command.
+- `audit` (D12): the default `tangible_ddd.audit.policy` is core
+  `AttributeAuditPolicy` (it was `AuditEverything`), so `#[Audit(false)]` and
+  `#[Audit(parameters: false)]` on a command are honoured. `audit.not_audited`
+  and `audit.without_parameters` take class names, parents or marker
+  interfaces (matched with `instanceof`), for command families that cannot
+  carry the attribute. `audit.policy: <service id>` still replaces the policy;
+  bind it to `TangibleDDD\Runtime\Audit\AuditEverything` for the old behaviour.
+
+  ```yaml
+  tangible_ddd:
+    audit:
+      sink: App\Audit\DbalAuditSink
+      not_audited: [App\Jobs\Commands\HeartbeatCommand]
+      without_parameters: [App\Jobs\Commands\ProgressCommand]
+  ```
 
 ## Operator view (D9)
 
@@ -102,6 +117,14 @@ The same view is the `IOperatorView` service for a host's own admin page.
   fact; `DbalWorkflowIgnitionLedger` is the core `IWorkflowIgnitionLedger`.
 - **D14** outbox appends and wakeup intents `NOTIFY` in their transaction;
   `ddd:relay` waits in `LISTEN` and falls back to its poll interval.
+- **D6** a `LargeString` constructor parameter of a process is stored in its
+  wire form (base64, length, sha256) in `business_data` and revived by type; a
+  corrupt one quarantines the row (`failed`, `quarantine_reason` =
+  `UndecodableLargeString::$quarantineReason`). Fact payloads use core's
+  `IntegrationBehaviour` encoding and the 8 MiB outbox cap (`text`/`jsonb` fit).
+- **CR-PDO-6** `DbalPostgresOutboxStore` implements core
+  `IReportsClaimDeadLetters`: expired-lease re-claims count as attempts and
+  dead-letter at claim; the core relay step signals `OutboxDeadLettered` once.
 - `LongProcess` subclasses loaded as services are autoconfigured with
   `ddd.long_process`; `IReturningCommandHandler` with the command-handler tag (L1).
 
@@ -128,8 +151,8 @@ re-create their tables; each conformance test gets a fresh Postgres schema
 per-test transaction.
 
 The conformance host is `tests/Conformance/SfHostFixture.php`; the scenarios
-come from `tangible/ddd-conformance` (require-dev). Since wave 3 it runs every
-id due on sf by wave 3 (15 + 23, pinned by `SfCatalogueTest`):
+come from `tangible/ddd-conformance` (require-dev). Since wave 4 it runs every
+id due on sf by wave 4 (15 + 23 + 9, pinned by `SfCatalogueTest`):
 
 - workers: worker 1 is the fixture's connection, worker 2 a second DBAL
   connection (another advisory-lock session); `drainOnce()` is one pass of
@@ -139,7 +162,16 @@ id due on sf by wave 3 (15 + 23, pinned by `SfCatalogueTest`):
   says so);
 - web requests: process-lock acquires go to a pooled-DSN lock with
   `pooled_connection: refuse`, and the in-band boot refusal is the real
-  `TestKernel` boot.
+  `TestKernel` boot;
+- wave-4 seams: `EffectHost` (the bundle bus with `EffectMiddleware` over
+  `DbalEffectJournal`), `WorkflowHost` (`DbalWorkflowIgnitionLedger`,
+  `DbalBehaviourWorkflowRepository`, core `WorkflowIgniter`),
+  `ProcessDecodeFaults` (the `process_class` and `quarantine_reason` columns)
+  and `PostCommitWakeups` (every append NOTIFYs; the `ddd:relay` loop runs in
+  steps on its own connection with `PostgresListenWaiter` and a 3 s poll).
+  `decode.unknown-class` runs in-band (its opening assertion assumes the first
+  step runs inside `start()`); `SfDecodeDeferredStartTest` makes the same
+  claims under the default deferred start.
 
 ### Sibling packages are copied, not linked
 
