@@ -10,7 +10,7 @@ use TangibleDDD\Application\Infrastructure\AuditSinkFailed;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Runtime\Audit\AuditClose;
-use TangibleDDD\Runtime\Audit\AuditEverything;
+use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\AuditOpen;
 use TangibleDDD\Runtime\Audit\IActorProvider;
 use TangibleDDD\Runtime\Audit\IAuditPolicy;
@@ -48,7 +48,8 @@ use Throwable;
  *                        the consumer's command_audit table exists.
  *   IActorProvider       who acts (default: host, else Cli/System by SAPI)
  *   IAuditPolicy         whether to write, with or without parameters
- *                        (default: host, else AuditEverything)
+ *                        (default: host, else AttributeAuditPolicy:
+ *                        everything except #[Audit(false)] commands, D12)
  *   IEnvironmentProvider host context; `plugin` = the consumer's version is
  *                        appended (0.6 wrote {php, wp, plugin})
  *
@@ -65,6 +66,8 @@ use Throwable;
  * closed.
  */
 final class CorrelationMiddleware implements Middleware {
+
+  private ?AttributeAuditPolicy $default_policy = null;
 
   public function __construct(
     private readonly IDDDConfig $config,
@@ -192,7 +195,7 @@ final class CorrelationMiddleware implements Middleware {
   }
 
   private function policy(): IAuditPolicy {
-    return $this->policy ?? HostDefaults::get(IAuditPolicy::class) ?? new AuditEverything();
+    return $this->policy ?? HostDefaults::get(IAuditPolicy::class) ?? $this->default_policy ??= new AttributeAuditPolicy();
   }
 
   private function actor(): IActorProvider {
