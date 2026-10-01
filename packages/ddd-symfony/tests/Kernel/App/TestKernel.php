@@ -105,6 +105,8 @@ final class TestKernel extends Kernel {
         default => [],
       },
       'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
+      // no_listen: D14 off (no NOTIFY, ddd:relay polls), the "NOTIFY suppressed" case.
+      'relay' => $this->variant === 'no_listen' ? ['listen' => false] : [],
     ]);
 
     $services = $container->services();
