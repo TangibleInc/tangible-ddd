@@ -27,8 +27,8 @@ use TangibleDDD\Testing\StaticConsumerIdentity;
 
 /**
  * Wave 2 (wave1-notes "Logging"): the runtime classes take a PSR-3
- * LoggerInterface. The wave-1 closure form stays accepted for one round so
- * the conformance and symfony branches keep compiling (CR-SP-1).
+ * LoggerInterface. The wave-1 closure form was accepted for one round
+ * (CR-SP-1) and is removed in wave 3.
  */
 final class PsrLoggingTest extends TestCase {
 
@@ -56,10 +56,25 @@ final class PsrLoggingTest extends TestCase {
     self::assertSame(['via host'], $logger->messages());
   }
 
-  public function test_the_closure_form_still_works(): void {
-    $seen = [];
-    Log::write(static function (string $m) use (&$seen): void { $seen[] = $m; }, 'legacy');
-    self::assertSame(['legacy'], $seen);
+  /** Wave 3 (wave2-notes, CR-SP-1): the transitional closure arm is removed. */
+  public function test_the_closure_form_is_gone_from_every_runtime_logger(): void {
+    $parameters = [
+      [Log::class, 'write', 'sink'],
+      [ReentrantProcessLock::class, '__construct', 'log'],
+      [IntegrationDelivery::class, '__construct', 'log'],
+      [InMemoryTransactionBoundary::class, '__construct', 'log'],
+      [LoggingSignalDispatcher::class, '__construct', 'log'],
+    ];
+    foreach ($parameters as [$class, $method, $name]) {
+      $param = null;
+      foreach ((new \ReflectionMethod($class, $method))->getParameters() as $p) {
+        if ($p->getName() === $name) {
+          $param = $p;
+        }
+      }
+      self::assertNotNull($param, "$class::$method has \$$name");
+      self::assertSame('?' . LoggerInterface::class, (string) $param->getType(), "$class::$method(\$$name)");
+    }
   }
 
   public function test_reentrant_lock_logs_a_bad_release_through_psr3(): void {

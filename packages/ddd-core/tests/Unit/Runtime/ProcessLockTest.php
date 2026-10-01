@@ -153,11 +153,12 @@ final class ProcessLockTest extends TestCase {
       public function heldCount(): int { return 0; }
       public function forceReleaseAll(): int { return 0; }
     };
-    $logged = [];
-    $lock = new ReentrantProcessLock($inner, static function (string $msg) use (&$logged) { $logged[] = $msg; });
+    $logger = new \TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger();
+    $lock = new ReentrantProcessLock($inner, $logger);
 
     $h = $lock->acquire(new LockKey('acme', '', 1), 1.0);
     $lock->release($h);
+    $logged = $logger->messages();
 
     self::assertSame(0, $lock->heldCount());
     self::assertCount(1, $logged);
@@ -180,7 +181,7 @@ final class ProcessLockTest extends TestCase {
 
   public function test_reentrant_wrapper_force_release_all_releases_the_backend_once_per_key(): void {
     $backend = new InMemoryProcessLock();
-    $lock = new ReentrantProcessLock($backend, static function () {});
+    $lock = new ReentrantProcessLock($backend, new \Psr\Log\NullLogger());
     $a = new LockKey('acme', '', 1);
     $h1 = $lock->acquire($a, 0.0);
     $lock->acquire($a, 0.0);
@@ -210,17 +211,17 @@ final class ProcessLockTest extends TestCase {
       public function heldCount(): int { return 0; }
       public function forceReleaseAll(): int { return 0; }
     };
-    $logged = [];
-    $lock = new ReentrantProcessLock($inner, static function (string $msg) use (&$logged) { $logged[] = $msg; });
+    $logger = new \TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger();
+    $lock = new ReentrantProcessLock($inner, $logger);
     $lock->acquire(new LockKey('acme', '', 1), 1.0);
 
     self::assertSame(1, $lock->forceReleaseAll());
     self::assertSame(0, $lock->heldCount());
-    self::assertStringContainsString('connection gone', $logged[0]);
+    self::assertStringContainsString('connection gone', $logger->messages()[0]);
   }
 
   public function test_reentrant_wrapper_ignores_a_foreign_or_double_release(): void {
-    $lock = new ReentrantProcessLock(new InMemoryProcessLock(), static function () {});
+    $lock = new ReentrantProcessLock(new InMemoryProcessLock(), new \Psr\Log\NullLogger());
     $h = $lock->acquire(new LockKey('acme', '', 1), 1.0);
     $lock->release($h);
     $lock->release($h);

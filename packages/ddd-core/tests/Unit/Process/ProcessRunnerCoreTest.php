@@ -92,7 +92,7 @@ final class ProcessRunnerCoreTest extends TestCase {
   }
 
   private function deliver(string $class, array $payload, ?string $eventId = self::EVENT_ID, ?InMemoryDeliveryLedger $ledger = null): void {
-    (new IntegrationDelivery($this->registry, $ledger ?? new InMemoryDeliveryLedger(), 5, static fn () => null))
+    (new IntegrationDelivery($this->registry, $ledger ?? new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger()))
       ->deliver($class, IntegrationEnvelope::wrap($payload, 'corr-1', 1, $eventId));
   }
 

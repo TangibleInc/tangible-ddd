@@ -26,10 +26,10 @@ final class ReentrantProcessLock implements IProcessLock {
   /** @var array<string, string> reentrant ticket → key id */
   private array $tickets = [];
 
-  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
+  /** @param LoggerInterface|null $log PSR-3 logger; null: host logger, else error_log() */
   public function __construct(
     private readonly IProcessLock $inner,
-    private readonly LoggerInterface|\Closure|null $log = null,
+    private readonly ?LoggerInterface $log = null,
   ) {}
 
   /** The wrapped adapter (the runner uses it to avoid double-wrapping). */

@@ -72,8 +72,8 @@ final class TransactionBoundaryTest extends TestCase {
   }
 
   public function test_a_failed_rollback_is_logged_as_a_secondary_and_never_replaces_the_original(): void {
-    $logged = [];
-    $tx = new InMemoryTransactionBoundary(NestedPolicy::Reject, static function (string $m) use (&$logged) { $logged[] = $m; });
+    $logger = new \TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger();
+    $tx = new InMemoryTransactionBoundary(NestedPolicy::Reject, $logger);
     $tx->failNextRollback('connection lost');
     $original = new \DomainException('handler');
 
@@ -83,6 +83,7 @@ final class TransactionBoundaryTest extends TestCase {
     } catch (\DomainException $e) {
       self::assertSame($original, $e);
     }
+    $logged = $logger->messages();
     self::assertCount(1, $logged);
     self::assertStringContainsString('connection lost', $logged[0]);
   }

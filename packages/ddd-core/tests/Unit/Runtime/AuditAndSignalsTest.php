@@ -106,11 +106,12 @@ final class AuditAndSignalsTest extends TestCase {
   }
 
   public function test_signals_are_never_silent_by_default(): void {
-    $logged = [];
-    $d = new LoggingSignalDispatcher(static function (string $m) use (&$logged) { $logged[] = $m; });
+    $logger = new \TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger();
+    $d = new LoggingSignalDispatcher($logger);
     self::assertInstanceOf(IInfrastructureSignalDispatcher::class, $d);
 
     $d->emit($this->signal(), new StaticConsumerIdentity('acme'));
+    $logged = $logger->messages();
 
     self::assertCount(1, $logged);
     self::assertStringContainsString('acme', $logged[0]);

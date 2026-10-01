@@ -55,7 +55,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   }
 
   private function deliver(string $event_class, array $payload, int $budget = 5): \TangibleDDD\Runtime\Delivery\DeliveryOutcome {
-    return (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), $budget, static fn () => null))
+    return (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), $budget, new \Psr\Log\NullLogger()))
       ->deliver($event_class, IntegrationEnvelope::wrap($payload, 'corr', 1, self::EVENT_ID));
   }
 
@@ -205,7 +205,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   public function test_exhausted_external_effect_listener_dispatches_its_failure_command_once(): void {
     $this->registrar()->registerListener(new ChargeOnOrderListener());
     $ledger = new InMemoryDeliveryLedger();
-    $delivery = new IntegrationDelivery($this->registry, $ledger, 2, static fn () => null);
+    $delivery = new IntegrationDelivery($this->registry, $ledger, 2, new \Psr\Log\NullLogger());
     $wrapped = IntegrationEnvelope::wrap(['order_id' => 8, 'sku' => 's'], 'corr', 1, self::EVENT_ID);
 
     $delivery->deliver(OrderPlaced::class, $wrapped);
@@ -235,7 +235,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   public function test_a_listener_command_for_a_non_uuid_event_id_gets_no_hint(): void {
     $this->registrar()->registerListener(new ShipOrderListener());
 
-    (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, static fn () => null))
+    (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger()))
       ->deliver(OrderPlaced::class, IntegrationEnvelope::wrap(['order_id' => 1, 'sku' => 's'], 'corr', 1, 'evt-not-a-uuid'));
 
     self::assertSame([null], RecordingCommand::$hints);
