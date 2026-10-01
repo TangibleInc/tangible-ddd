@@ -22,7 +22,7 @@ vendor/bin/phpunit --list-groups                     # host groups + scenario id
 | `src/EffectHost.php`, `src/WorkflowHost.php`, `src/ProcessDecodeFaults.php`, `src/PostCommitWakeups.php` | The wave-4 optional seams (CR-W4C4-2..5, below) |
 | `src/EffectStateHost.php`, `src/WorkItemHost.php`, `src/CrossConsumerHost.php` | The wave-5 optional seams (CR-W5C5-2..4, below) |
 | `src/Scenarios/*Scenarios.php` | Abstract scenario cases. Each scenario method has `#[Group('<scenario id>')]` and is named `test_<id with . and - as _>` |
-| `src/ScenarioCatalogue.php` | The 53 ids with the wave each must pass per host (a copy of the register table's 47 ids plus the six wave-5 ids of CR-W5C5-1, pinned by `tests/CatalogueTest.php`), and `CASES`: the abstract case that declares each id |
+| `src/ScenarioCatalogue.php` | The 53 ids with the wave each must pass per host (a copy of the register's section 4 table, 53 ids including the six wave-5 ids of CR-W5C5-1, pinned by `tests/CatalogueTest.php`), and `CASES`: the abstract case that declares each id |
 | `src/Fixtures/`, `src/Fixtures/{Process,Effects,Workflow,Codec}/` | Commands, facts, the conformance processes, the D1 effect command, the D10 workflow and the D6 facts the scenarios use |
 | `src/Support/` | Helpers hosts may reuse |
 | `src/Mem/` | The mem host on the real ddd-core classes, and `MemSimulatedHostFixture` (the simulation, not a host) |

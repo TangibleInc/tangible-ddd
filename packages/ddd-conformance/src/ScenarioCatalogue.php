@@ -14,8 +14,8 @@ namespace TangibleDDD\Conformance;
  * `process.await-*` are change request CR-W4C4-1
  * (docs/extraction/wave4-conformance-4-change-requests.md), in the register
  * since wave 5. The six wave-5 ids are CR-W5C5-1
- * (docs/extraction/wave5-conformance-5-change-requests.md), pending their
- * register rows.
+ * (docs/extraction/wave5-conformance-5-change-requests.md), in the register
+ * since the wave-5 close-out. 53 ids in all.
  */
 final class ScenarioCatalogue {
 
@@ -60,7 +60,7 @@ final class ScenarioCatalogue {
     'process.fresh-process-resume'            => [null, 3, 3, 3],
     'process.start-from-web'                  => [null, null, null, 3],
     'process.alarm-long'                      => [4, 4, 4, 4],
-    // CR-W4C4-1 (not yet in the register table): D3 for TXP process-kernel
+    // CR-W4C4-1: D3 for TXP process-kernel
     'process.await-keyed-precheck'            => [4, 4, null, 4],
     'process.await-any-cancellation'          => [4, 4, null, 4],
     'process.await-all-dynamic'               => [4, 4, null, 4],

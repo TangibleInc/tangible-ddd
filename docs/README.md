@@ -3,7 +3,7 @@
 This index separates current operating contracts from the design records that
 produced them.
 
-- **CURRENT** describes supported behavior in the 0.6.x source tree.
+- **CURRENT** describes supported behavior in this source tree: 0.7.0 (unreleased, the package split and waves 1-5 of the extraction; see the [CHANGELOG](../CHANGELOG.md)). Documents written for 0.6.x are marked where they differ, and the 0.7 guides below supersede them for the runtime they cover.
 - **HISTORICAL** preserves an audit, migration handoff, build plan, or earlier
   specification. It may contain removed API names and must not be used as a
   copy-and-paste guide.
@@ -16,7 +16,12 @@ first; then the current documents below.
 
 | Document | Purpose |
 | --- | --- |
-| [Package README](../README.md) | Requirements, runtime model, capabilities, storage, and quick start |
+| [Package README](../README.md) | Requirements, runtime model, capabilities, storage, and quick start; "Using tangible-ddd 0.7" on WordPress |
+| [CHANGELOG](../CHANGELOG.md) | The 0.7.0 entry: the package split, fixes, behaviour changes, new APIs and the migration steps |
+| [Using 0.7 on Symfony](../examples/symfony/README.md) | Installing and configuring `TangibleDddBundle` (ddd-symfony) on Postgres 16 |
+| [Using 0.7 on plain PHP](../examples/plain-php-durable/README.md) | The PDO default over a connection the host owns (MySQL 8) |
+| [Rollback runbook](runbooks/rollback.md) | Rolling a WordPress site back from 0.7 to 0.6.x |
+| [Extraction contract register](extraction/contract-register.md) | The ports, scenarios and waves of the 0.7 extraction, with the wave notes it points to |
 | [This documentation map](README.md) | Status vocabulary and navigation |
 | [Wiring a consumer](wiring-a-consumer.md) | Complete top-level consumer, DI, middleware, table, and deployment contract |
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |

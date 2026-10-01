@@ -8,7 +8,7 @@ A rollback here means this: every plugin that bundles `tangible/ddd` 0.7 goes ba
 
 | Left behind by 0.7 | What 0.6 does with it |
 |---|---|
-| Schema version 8 (new tables `{prefix}_ddd_wakeups`, `{prefix}_ddd_delivery_ledger`, `{prefix}_ddd_relay_pauses`; nullable columns `ignition_key`, `quarantine_reason`, `version`, `start_path` on `long_processes`, and `claim_token` on the outbox) | Ignores it. 0.6 tolerates an installed schema newer than its own `DDD_SCHEMA_VERSION`. Leave the schema in place. Never drop the v8 columns. |
+| Schema version 8 (new tables `{prefix}_ddd_wakeups`, `{prefix}_ddd_delivery_ledger`, `{prefix}_ddd_relay_pauses`; nullable columns `ignition_key`, `quarantine_reason`, `version`, `start_path` on `long_processes`, and `claim_token` on the outbox) and schema version 9 (the nullable `fact` column on `{prefix}_ddd_wakeups`, which holds a parked answer) | Ignores them. 0.6 tolerates an installed schema newer than its own `DDD_SCHEMA_VERSION`, and it never reads `{prefix}_ddd_wakeups`. Leave the schema in place. Never drop the v8 or v9 columns. |
 | Outbox rows | Relays them. 0.7 keeps writing status `completed`, so the 0.6 purge and stats still see them. A row 0.7 wrote with a delay has an absolute `scheduled_at` and `delay_seconds = 0`, so 0.6 does not delay it a second time. |
 | An outbox row 0.7 had claimed (`claim_token`, `locked_until` and `locked_by` set) | Skips it until `locked_until` passes, then relays it. |
 | Pending wakeup intents (process continuations and await timeouts) | Fires them. 0.7 projects every intent to Action Scheduler when it schedules it, on the 0.6 hooks `{prefix}_process_continue` and `{prefix}_await_timeout` with the 0.6 arguments, future-dated to the due time. |
@@ -21,7 +21,7 @@ A rollback here means this: every plugin that bundles `tangible/ddd` 0.7 goes ba
 None of the following has a callback under 0.6. If any of it is still pending when the winner switches, Action Scheduler fails the action and the work is lost.
 
 1. **Pending `{prefix}_ddd_redeliver` actions.** These are handler retries of DDD-registered listeners. In 0.7 a WordPress listener gets one attempt by default, as in 0.6. Redeliveries therefore exist only for listeners that opted in with `#[Retries(n)]` or the `{prefix}_ddd_delivery_attempts` option (wave 5), and for process ignition and resume subscribers, which keep 5 attempts. Leftover failed ledger pairs whose redelivery Action Scheduler lost also count.
-2. **Pending `{prefix}_ddd_wakeup` actions.** These are the ResumeRetry intents a contended wake schedules.
+2. **Pending `{prefix}_ddd_wakeup` actions.** These are the ResumeRetry intents a contended wake schedules. At schema v9 they also carry **parked answers**: when a fact arrives for a suspended process whose lock is held, 0.7 stores the fact in the intent's `fact` column and marks the resume subscriber delivered, so the ledger will never redeliver that fact. The intent is then the only copy of the answer. If it is not drained, the waiting process never sees its answer under 0.6 or after the roll-forward, and only its alarm (if it has one) moves it on.
 3. **By-reference integration actions.** A fact whose Action Scheduler arguments would exceed 8000 bytes is scheduled as a pointer to its outbox row (`WpLargeEnvelope`). 0.6 cannot resolve the pointer. This only affects facts that 0.6 could not relay at all, because Action Scheduler refuses arguments that large.
 
 ## Before the switch
@@ -41,7 +41,7 @@ None of the following has a callback under 0.6. If any of it is still pending wh
    wp ddd drain --before-rollback --consumer=tgbl_cred --max-rounds=20
    ```
 
-   Each round does three things. It re-schedules redeliveries that Action Scheduler lost. It re-projects pending intents that have no action (a Timeout or Continue goes back onto its 0.6 hook, which 0.6 fires; a ResumeRetry goes onto `{prefix}_ddd_wakeup`). Then it runs every pending action on `{prefix}_ddd_redeliver` and `{prefix}_ddd_wakeup`, plus every by-reference integration action that is due. Rounds repeat until nothing is left, or until `--max-rounds` (default 10). A redelivery always ends delivered or exhausted, because every attempt spends its budget (5 by default). Each consumer prints a line like `[tgbl_cred] ran 12 actions in 3 rounds; 0 remain`.
+   Each round does three things. It re-schedules redeliveries that Action Scheduler lost. It re-projects pending intents that have no action (a Timeout or Continue goes back onto its 0.6 hook, which 0.6 fires; a ResumeRetry goes onto `{prefix}_ddd_wakeup`). Then it runs every pending action on `{prefix}_ddd_redeliver` and `{prefix}_ddd_wakeup`, plus every by-reference integration action that is due. Rounds repeat until nothing is left, or until `--max-rounds` (default 10). A redelivery always ends delivered or exhausted, because every attempt spends one attempt of the pair's budget: the declared budget for a listener that opted in, and 5 for process ignition and resume. A listener on the default single attempt is exhausted at its first failure and never has a redelivery to drain. A parked answer's wake that still meets a held lock is re-queued 2 s × 2ⁿ later (capped at 300 s), so it can survive a round; the next round runs it once it is due. After 10 failed wakes the intent is exhausted and shows in the `wakeup` layer of `wp ddd ops`, where `--rearm` queues it again. Each consumer prints a line like `[tgbl_cred] ran 12 actions in 3 rounds; 0 remain`.
 
    The command **fails while anything remains**. The count covers:
 
@@ -82,7 +82,7 @@ The winner is authoritative. `TANGIBLE_DDD_VERSION` and the dashboard can show a
 ## Roll forward again
 
 1. Restore the 0.7 builds and confirm the winner as above.
-2. Nothing migrates twice. Schema v8 is already installed, and the migration ledger skips it. 0.6 left no intent rows for the continuations and timeouts it scheduled, and the stranded scan handles that: it mints no intent while a 0.6-queued action for the process exists.
+2. Nothing migrates twice. Schema v8 and v9 are already installed, and the migration ledger skips them. 0.6 left no intent rows for the continuations and timeouts it scheduled, and the stranded scan handles that: it mints no intent while a 0.6-queued action for the process exists.
 3. Run one relay tick and check the operator view:
 
    ```sh
