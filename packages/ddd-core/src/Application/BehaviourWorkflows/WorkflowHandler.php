@@ -26,6 +26,10 @@ use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus;
  * - Abstract: apps implement scheduling + execute_one() behaviour logic.
  * - Uses work item ledger (behaviour_workflow_items) for per-item progress tracking.
  * - Supports forking: failed items can be spun off into a child workflow.
+ *
+ * Core form (register 1.4): no host call. Work items are not blog-stamped
+ * here (repositories stamp `blog_id`); an InvariantException is logged
+ * through PSR-3 (the host logger, else error_log).
  */
 abstract class WorkflowHandler implements ICommandHandler {
   use RescheduleAware;
@@ -102,7 +106,7 @@ abstract class WorkflowHandler implements ICommandHandler {
 
   /**
    * Schedule (or immediately run) the workflow to continue later.
-   * Consumers decide the mechanism (ActionScheduler, outbox, cron, etc).
+   * Consumers decide the mechanism (a job queue, outbox, cron, etc).
    */
   abstract protected function reschedule(BehaviourWorkflow $workflow, int $delay_seconds): void;
 
@@ -124,11 +128,11 @@ abstract class WorkflowHandler implements ICommandHandler {
       try {
         $result = $this->execute_step($workflow, $config, $previous);
       } catch (InvariantException $e) {
-        error_log(sprintf(
+        \TangibleDDD\Runtime\Support\Log::write(null, sprintf(
           '[ddd-workflow] InvariantException in execute_one for workflow %d: %s',
           $workflow->get_id(),
           $e->getMessage()
-        ));
+        ), 'error');
         $workflow->fail();
         $this->workflow_repo->save($workflow);
         return;
@@ -206,7 +210,8 @@ abstract class WorkflowHandler implements ICommandHandler {
       $item->workflow_id = $workflow_id;
       $item->behaviour_idx = $idx;
       $item->phase = $phase;
-      $item->blog_id = is_multisite() ? get_current_blog_id() : 1;
+      // The blog stamp is storage's job (register 1.4): the wp
+      // WorkItemRepository writes the current blog id on save.
       $this->item_repo->save($item);
     }
 
