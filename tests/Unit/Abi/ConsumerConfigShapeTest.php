@@ -48,6 +48,11 @@ final class ConsumerConfigShapeTest extends TestCase {
 
   protected function setUp(): void {
     $GLOBALS['wpdb'] = new \wpdb(); // prefix 'wp_'; four of the five call `global $wpdb` in table()
+    ConsumerRegistry::reset();
+  }
+
+  protected function tearDown(): void {
+    ConsumerRegistry::reset();
   }
 
   /** @return array<string, mixed> */

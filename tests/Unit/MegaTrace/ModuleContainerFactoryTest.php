@@ -23,6 +23,11 @@ use TangibleDDD\MegaTrace\Module\ModuleDefinition;
 
 final class ModuleContainerFactoryTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        ConsumerRegistry::reset();
+    }
+
     protected function tearDown(): void
     {
         ConsumerRegistry::reset();

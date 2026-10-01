@@ -27,6 +27,11 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * ProcessRunner keeps the wave-3 rule on it (a contended fact resume fails
  * the subscriber and the delivery retries it). A host or test that wants
  * the wave-5 parked-resume path (AW2) opts in with InMemoryParkingScheduler.
+ *
+ * Subclasses keep this constructor's signature, so lenient() can build them
+ * with `new static`.
+ *
+ * @phpstan-consistent-constructor
  */
 class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
 

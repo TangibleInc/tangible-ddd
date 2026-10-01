@@ -9,7 +9,13 @@
  * implementation inherits from a library interface, abstract class or trait
  * is recorded on that root, with the re-declaring classes as implementations.
  *
- * Usage: php tools/naming/inventory.php [--txp=/path/to/txp] [--out=path]
+ * Usage: php tools/naming/inventory.php [--txp=/path/to/txp] [--tag=v0.6.6] [--out=path]
+ *
+ * Without --out the JSON goes to stdout and the summary to stderr, so a run
+ * never touches the tree. --out=path writes the JSON to that file (parent
+ * directories created) and prints the summary to stdout. The tracked
+ * docs/extraction/naming/inventory.json is a historical snapshot (761aef5,
+ * before the rename); do not point --out at it.
  *
  * Call-site counts are name-matched (not type-resolved): every `->name(`,
  * `?->name(`, `::name(` for methods, `->name` / `::$name` for properties,
@@ -31,7 +37,7 @@ require $root . '/vendor/autoload.php';
 
 $opts = getopt('', ['txp::', 'out::', 'tag::']);
 $txp = rtrim($opts['txp'] ?? '/Users/titustc/tgbl/txp-slices', '/');
-$out = $opts['out'] ?? $root . '/docs/extraction/naming/inventory.json';
+$out = isset($opts['out']) && is_string($opts['out']) && $opts['out'] !== '' ? $opts['out'] : null;
 $tag = $opts['tag'] ?? 'v0.6.6';
 
 // Reflection on external (vendor) ancestors: load every package vendor tree
@@ -608,7 +614,16 @@ $doc = [
   'excluded' => $excluded,
 ];
 
-@mkdir(dirname($out), 0777, true);
-file_put_contents($out, json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
-fwrite(STDOUT, sprintf("[naming] %d entries (%d excluded) -> %s\n", count($rows), count($excluded), rel($root, $out)));
-foreach ($by_area as $a => $n) fwrite(STDOUT, "  $a: $n\n");
+$json = json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+if ($out === null) {
+  fwrite(STDOUT, $json);
+  $summary = STDERR;
+  $dest = 'stdout';
+} else {
+  @mkdir(dirname($out), 0777, true);
+  file_put_contents($out, $json);
+  $summary = STDOUT;
+  $dest = rel($root, $out);
+}
+fwrite($summary, sprintf("[naming] %d entries (%d excluded) -> %s\n", count($rows), count($excluded), $dest));
+foreach ($by_area as $a => $n) fwrite($summary, "  $a: $n\n");
