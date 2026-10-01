@@ -65,7 +65,7 @@ final class IntegrationTranslatorTest extends TestCase {
 
   public function test_the_registrar_takes_a_translator_through_its_public_pair(): void {
     $registry = new SubscriptionRegistry();
-    (new SubscriptionRegistrar($registry))->registerListener($this->translator());
+    (new SubscriptionRegistrar($registry))->register_listener($this->translator());
 
     $this->assertCount(1, $registry->for(UserJoined::class));
   }

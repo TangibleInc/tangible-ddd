@@ -51,7 +51,7 @@ require_once dirname(__DIR__) . '/Fixtures/Process/CoreProcesses.php';
  * Register section 8 wave 3 (core): the ProcessRunner behind the ports with
  * re-read under the lock, await before dispatch (F2), one-transaction state
  * changes, ResumeRetry on contention, the fenced touch before each step
- * dispatch, ignition through insertIgnited, the stranded scan and the
+ * dispatch, ignition through insert_ignited, the stranded scan and the
  * deferred start mode. All on the mem doubles.
  */
 final class ProcessRunnerWave3Test extends TestCase {
@@ -67,7 +67,7 @@ final class ProcessRunnerWave3Test extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     Correlation::reset();
     Journal::reset();
@@ -79,7 +79,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->boundary = new InMemoryTransactionBoundary();
     $this->store = new InMemoryProcessStore($this->clock);
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
-    $this->store->attachIntents($this->wakeups);
+    $this->store->attach_intents($this->wakeups);
     $this->boundary->enlist($this->store);
     $this->boundary->enlist($this->wakeups);
     $this->lock = new InMemoryProcessLock();
@@ -90,7 +90,7 @@ final class ProcessRunnerWave3Test extends TestCase {
   protected function tearDown(): void {
     RecordingCommand::$onSend = null;
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function runner(?IProcessLock $lock = null, ?StartMode $mode = null): ProcessRunner {
@@ -121,7 +121,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->register_event(UserJoined::class);
     $seen = [];
     RecordingCommand::$onSend = function (RecordingCommand $c) use (&$seen): void {
-      $seen[$c->label] = $this->store->statusOf(1);
+      $seen[$c->label] = $this->store->status_of(1);
     };
 
     $this->runner->start(new AskThenWaitProcess());
@@ -143,8 +143,8 @@ final class ProcessRunnerWave3Test extends TestCase {
 
     self::assertSame(['ask', 'thank'], Journal::$steps);
     self::assertSame(['ask', 'thank', 'ask-2'], RecordingCommand::labels());
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
+    self::assertSame(0, $this->lock->held_count());
   }
 
   public function test_a_command_failing_after_the_suspension_compensates_and_unregisters_the_await(): void {
@@ -163,8 +163,8 @@ final class ProcessRunnerWave3Test extends TestCase {
     // The failing step itself is not compensated (only completed steps are),
     // and the persisted await was withdrawn: the later fact finds nothing.
     self::assertSame(['ask'], Journal::$steps, 'compensated; a later fact does not resurrect it');
-    self::assertSame('failed', $this->store->statusOf($p->get_id()));
-    self::assertSame([], $this->store->findWaitingFor(UserJoined::class));
+    self::assertSame('failed', $this->store->status_of($p->get_id()));
+    self::assertSame([], $this->store->find_waiting_for(UserJoined::class));
   }
 
   // ── re-read under the lock, fence ─────────────────────────────────────────
@@ -183,8 +183,8 @@ final class ProcessRunnerWave3Test extends TestCase {
         return $this->inner->acquire($k, $t);
       }
       public function release(LockHandle $h): void { $this->inner->release($h); }
-      public function heldCount(): int { return $this->inner->heldCount(); }
-      public function forceReleaseAll(): int { return $this->inner->forceReleaseAll(); }
+      public function held_count(): int { return $this->inner->held_count(); }
+      public function release_all(): int { return $this->inner->release_all(); }
     };
   }
 
@@ -202,13 +202,13 @@ final class ProcessRunnerWave3Test extends TestCase {
     $lock->arm(static function () use ($store, $id): void {
       $other = $store->find($id);
       $other->complete();
-      $store->save($other, (int) $store->versionOf($id));
+      $store->save($other, (int) $store->version_of($id));
     });
 
     $runner->resume(new UserJoined(5));
 
     self::assertSame(['invite'], Journal::$steps, 'the re-read under the lock saw completed: no step');
-    self::assertSame('completed', $this->store->statusOf($id));
+    self::assertSame('completed', $this->store->status_of($id));
   }
 
   public function test_the_fenced_touch_aborts_before_the_steps_commands_dispatch(): void {
@@ -220,7 +220,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $store = $this->store;
     Journal::$onNote = static function (string $step) use ($store, $id): void {
       if ($step === 'greet') {
-        $store->touch($id, (int) $store->versionOf($id)); // the row moved under us mid-step
+        $store->touch($id, (int) $store->version_of($id)); // the row moved under us mid-step
       }
     };
 
@@ -231,8 +231,8 @@ final class ProcessRunnerWave3Test extends TestCase {
     }
 
     self::assertSame(['invite'], RecordingCommand::labels(), 'greet ran but its command was never dispatched');
-    self::assertNotSame('failed', $this->store->statusOf($id), 'lost ownership is not a business failure');
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertNotSame('failed', $this->store->status_of($id), 'lost ownership is not a business failure');
+    self::assertSame(0, $this->lock->held_count());
   }
 
   // ── one transaction per state change; timeouts ────────────────────────────
@@ -262,7 +262,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->deliver(UserJoined::class, ['user_id' => 2]);
 
     self::assertSame(['prepare', 'gather', 'undo_prepare'], Journal::$steps);
-    self::assertSame('failed', $this->store->statusOf($p->get_id()));
+    self::assertSame('failed', $this->store->status_of($p->get_id()));
   }
 
   public function test_fact_first_then_the_stale_timeout_is_a_noop(): void {
@@ -275,7 +275,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->wake(WakeupIntent::timeout('acme', $p->get_id(), 1, $this->clock->now()));
 
     self::assertSame(['prepare', 'gather', 'report'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_continuation_is_stale_safe(): void {
@@ -283,7 +283,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     (fn () => $this->max_execution_seconds = 0)->call($this->runner);
     $p = new TwoStepProcess(3);
     $this->runner->start($p);
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
 
     $this->runner->continue_scheduled($p->get_id(), 0);   // a step already passed
     self::assertSame(['reserve'], Journal::$steps);
@@ -291,7 +291,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->wake(WakeupIntent::continuation('acme', $p->get_id(), 1, $this->clock->now()));
     $this->runner->wake(WakeupIntent::continuation('acme', $p->get_id(), 1, $this->clock->now()));
     self::assertSame(['reserve', 'ship'], Journal::$steps, 'the duplicate continuation is a no-op');
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_async_step_runs_after_exactly_one_continuation(): void {
@@ -303,7 +303,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->wake($intent);
 
     self::assertSame(['before', 'after'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   // ── ResumeRetry on contention ─────────────────────────────────────────────
@@ -314,8 +314,8 @@ final class ProcessRunnerWave3Test extends TestCase {
     $p = new TimedGatherProcess(AwaitAll::TIMEOUT_FAIL);
     $this->runner->start($p);
     $id = $p->get_id();
-    $version = $this->store->versionOf($id);
-    $this->lock->holdElsewhere(new LockKey('acme', '', $id));
+    $version = $this->store->version_of($id);
+    $this->lock->hold_elsewhere(new LockKey('acme', '', $id));
 
     try {
       $this->runner->handle_timeout($id, 1);
@@ -323,21 +323,21 @@ final class ProcessRunnerWave3Test extends TestCase {
     } catch (LockingException) {
     }
 
-    self::assertSame($version, $this->store->versionOf($id), 'row unchanged');
+    self::assertSame($version, $this->store->version_of($id), 'row unchanged');
     $retries = $this->pendingOf(WakeKind::ResumeRetry);
     self::assertCount(1, $retries);
-    self::assertSame('suspended', $retries[0]->expectedStatus);
-    self::assertSame(1, $retries[0]->stepIndex);
-    self::assertEquals($this->clock->now()->modify('+2 seconds'), $retries[0]->dueAt, 'wake backoff 2 s × 2^0');
+    self::assertSame('suspended', $retries[0]->expected_status);
+    self::assertSame(1, $retries[0]->step_index);
+    self::assertEquals($this->clock->now()->modify('+2 seconds'), $retries[0]->due_at, 'wake backoff 2 s × 2^0');
 
-    $this->lock->releaseElsewhere(new LockKey('acme', '', $id));
+    $this->lock->release_elsewhere(new LockKey('acme', '', $id));
     $this->runner->wake($retries[0]);
 
     self::assertSame(['prepare', 'gather', 'undo_prepare'], Journal::$steps);
   }
 
   public function test_a_contended_in_band_start_is_re_queued_and_the_retry_runs_the_first_step_once(): void {
-    $this->lock->holdElsewhere(new LockKey('acme', '', 1));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', 1));
     try {
       $this->runner->start(new TwoStepProcess(4));
       self::fail('expected the lock failure to surface');
@@ -345,10 +345,10 @@ final class ProcessRunnerWave3Test extends TestCase {
     }
     self::assertSame([], Journal::$steps);
     [$retry] = $this->pendingOf(WakeKind::ResumeRetry);
-    self::assertSame('running', $retry->expectedStatus);
-    self::assertSame(1, $retry->retryVersion());
+    self::assertSame('running', $retry->expected_status);
+    self::assertSame(1, $retry->retry_version());
 
-    $this->lock->releaseElsewhere(new LockKey('acme', '', 1));
+    $this->lock->release_elsewhere(new LockKey('acme', '', 1));
     $this->runner->wake($retry);
     $this->runner->wake($retry);
 
@@ -359,7 +359,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     (fn () => $this->max_execution_seconds = 0)->call($this->runner);
     $p = new TwoStepProcess(3);
     $this->runner->start($p);
-    $this->lock->holdElsewhere(new LockKey('acme', '', $p->get_id()));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', $p->get_id()));
 
     try {
       $this->runner->continue_scheduled($p->get_id());
@@ -367,8 +367,8 @@ final class ProcessRunnerWave3Test extends TestCase {
     }
 
     [$retry] = $this->pendingOf(WakeKind::ResumeRetry);
-    self::assertSame('scheduled', $retry->expectedStatus);
-    $this->lock->releaseElsewhere(new LockKey('acme', '', $p->get_id()));
+    self::assertSame('scheduled', $retry->expected_status);
+    $this->lock->release_elsewhere(new LockKey('acme', '', $p->get_id()));
     (fn () => $this->max_execution_seconds = 25)->call($this->runner);
     $this->runner->wake($retry);
     self::assertSame(['reserve', 'ship'], Journal::$steps);
@@ -378,7 +378,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->register_event(UserJoined::class);
     $p = new TimedGatherProcess();
     $this->runner->start($p);
-    $this->lock->holdElsewhere(new LockKey('acme', '', $p->get_id()));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', $p->get_id()));
 
     try {
       $this->runner->wake(WakeupIntent::timeout('acme', $p->get_id(), 1, $this->clock->now()));
@@ -394,15 +394,15 @@ final class ProcessRunnerWave3Test extends TestCase {
     $p = new AwaitingProcess(5);
     $this->runner->start($p);
     $ledger = new InMemoryDeliveryLedger();
-    $this->lock->holdElsewhere(new LockKey('acme', '', $p->get_id()));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', $p->get_id()));
 
     $first = $this->deliver(UserJoined::class, ['user_id' => 5], $ledger);
     self::assertNotEmpty($first->failed, 'the resume subscriber failed; the fact is retried for it');
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
 
-    $this->lock->releaseElsewhere(new LockKey('acme', '', $p->get_id()));
+    $this->lock->release_elsewhere(new LockKey('acme', '', $p->get_id()));
     $this->deliver(UserJoined::class, ['user_id' => 5], $ledger);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_wake_refuses_a_deliver_intent(): void {
@@ -413,7 +413,7 @@ final class ProcessRunnerWave3Test extends TestCase {
   // ── ignition ──────────────────────────────────────────────────────────────
 
   public function test_ignition_contention_after_the_insert_is_re_queued_and_a_redelivery_does_not_ignite_twice(): void {
-    $this->lock->holdElsewhere(new LockKey('acme', '', 1));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', 1));
 
     try {
       $this->runner->ignite(IgnitedProcess::class, new OrderPlaced(4), self::EVENT_ID);
@@ -423,7 +423,7 @@ final class ProcessRunnerWave3Test extends TestCase {
 
     self::assertSame(1, $this->store->count());
     self::assertSame([], Journal::$steps);
-    $this->lock->releaseElsewhere(new LockKey('acme', '', 1));
+    $this->lock->release_elsewhere(new LockKey('acme', '', 1));
     [$retry] = $this->pendingOf(WakeKind::ResumeRetry);
     $this->runner->wake($retry);
     self::assertSame(['open:4'], Journal::$steps);
@@ -439,9 +439,9 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->ignite(IgnitedProcess::class, new OrderPlaced(1), self::EVENT_ID);
 
     self::assertSame(3, $this->store->count());
-    self::assertNull($this->store->ignitionKeyOf(1));
-    self::assertNull($this->store->ignitionKeyOf(2));
-    self::assertNotNull($this->store->ignitionKeyOf(3));
+    self::assertNull($this->store->ignition_key_of(1));
+    self::assertNull($this->store->ignition_key_of(2));
+    self::assertNotNull($this->store->ignition_key_of(3));
     foreach ([1, 2, 3] as $id) {
       self::assertSame(self::EVENT_ID, $this->store->find($id)->ignited_by_event_id());
     }
@@ -456,10 +456,10 @@ final class ProcessRunnerWave3Test extends TestCase {
     $runner->start($p);
 
     self::assertSame([], Journal::$steps, 'no step runs in the request');
-    self::assertSame(0, $this->lock->acquireCount(), 'no lock is taken');
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    self::assertSame(0, $this->lock->acquisitions(), 'no lock is taken');
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
     [$intent] = $this->pendingOf(WakeKind::Continue);
-    self::assertSame("continue:{$p->get_id()}:0", $intent->idempotencyKey);
+    self::assertSame("continue:{$p->get_id()}:0", $intent->key);
 
     $runner->wake($intent);
     self::assertSame(['reserve', 'ship'], Journal::$steps);
@@ -471,7 +471,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->start(new TwoStepProcess(2));
 
     self::assertSame([], Journal::$steps);
-    self::assertSame('scheduled', $this->store->statusOf(1));
+    self::assertSame('scheduled', $this->store->status_of(1));
   }
 
   public function test_a_deferred_start_commits_with_the_callers_transaction(): void {
@@ -507,7 +507,7 @@ final class ProcessRunnerWave3Test extends TestCase {
     $runner = $this->runner(mode: StartMode::Deferred);
     $scheduled = new TwoStepProcess(1);
     $runner->start($scheduled);
-    foreach ($this->wakeups->claimDue($this->clock->now(), 10, 60) as $w) {
+    foreach ($this->wakeups->claim_due($this->clock->now(), 10, 60) as $w) {
       $this->wakeups->complete($w); // the intent is gone, the row stays scheduled
     }
     $running = new TwoStepProcess(2);
@@ -517,14 +517,14 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->store->save($copy, 1);
     $this->clock->advance('+16 minutes');
 
-    $report = $this->runner->scanStranded($this->clock->now());
+    $report = $this->runner->scan_stranded($this->clock->now());
 
     self::assertSame([$scheduled->get_id()], $report->requeued);
     self::assertCount(1, $report->reported);
-    self::assertSame($running->get_id(), $report->reported[0]->processId);
+    self::assertSame($running->get_id(), $report->reported[0]->process_id);
     [$intent] = $this->pendingOf(WakeKind::Continue);
-    self::assertSame($scheduled->get_id(), $intent->processId);
-    self::assertSame([], $this->runner->scanStranded($this->clock->now())->requeued, 'a live intent is not stranded');
+    self::assertSame($scheduled->get_id(), $intent->process_id);
+    self::assertSame([], $this->runner->scan_stranded($this->clock->now())->requeued, 'a live intent is not stranded');
 
     $this->runner->wake($intent);
     self::assertSame(['reserve', 'ship'], Journal::$steps);
@@ -537,10 +537,10 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->runner->start($p);
 
     self::assertSame([
-      DeterministicCommandId::forStep('acme', $p->get_id(), 0, 0),
-      DeterministicCommandId::forStep('acme', $p->get_id(), 1, 0),
+      DeterministicCommandId::for_step('acme', $p->get_id(), 0, 0),
+      DeterministicCommandId::for_step('acme', $p->get_id(), 1, 0),
     ], RecordingCommand::$hints);
     self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', RecordingCommand::$hints[0]);
-    self::assertNotSame(RecordingCommand::$hints[0], DeterministicCommandId::forStep('other', $p->get_id(), 0, 0));
+    self::assertNotSame(RecordingCommand::$hints[0], DeterministicCommandId::for_step('other', $p->get_id(), 0, 0));
   }
 }

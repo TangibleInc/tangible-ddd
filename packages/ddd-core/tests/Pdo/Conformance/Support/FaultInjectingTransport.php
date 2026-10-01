@@ -20,7 +20,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  *   relay runs submit + accept in one transaction on this shared connection,
  *   so its TransportRejected rolls the job back with it: nothing is held.
  *
- * sharesConnectionWith() looks through the fixture's own store decorators
+ * shares_connection() looks through the fixture's own store decorators
  * (RecordingOutboxStore, RoutedOutboxStore) to the PdoOutboxStore, so the
  * relay sees the same answer the production composition gives.
  */
@@ -57,7 +57,7 @@ final class FaultInjectingTransport implements ITransport {
     return $ref;
   }
 
-  public function sharesConnectionWith(IOutboxStore $store): bool {
+  public function shares_connection(IOutboxStore $store): bool {
     while (true) {
       if ($store instanceof RecordingOutboxStore) {
         $store = $store->inner();
@@ -67,6 +67,6 @@ final class FaultInjectingTransport implements ITransport {
         break;
       }
     }
-    return $this->inner->sharesConnectionWith($store);
+    return $this->inner->shares_connection($store);
   }
 }

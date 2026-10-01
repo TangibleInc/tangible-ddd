@@ -45,8 +45,8 @@ final class InMemoryProcessStoreTest extends TestCase {
     $id = $this->store->insert($p);
 
     self::assertSame($id, $p->get_id());
-    self::assertSame(1, $this->store->versionOf($id));
-    self::assertNull($this->store->ignitionKeyOf($id));
+    self::assertSame(1, $this->store->version_of($id));
+    self::assertNull($this->store->ignition_key_of($id));
     self::assertInstanceOf(FulfilmentProcess::class, $this->store->find($id));
   }
 
@@ -70,11 +70,11 @@ final class InMemoryProcessStoreTest extends TestCase {
 
   public function test_insert_ignited_dedups_on_process_class_and_event_id(): void {
     $first = $this->process();
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($first, FulfilmentProcess::class, self::EVENT));
-    self::assertSame(IgnitionKey::for(self::EVENT, FulfilmentProcess::class), $this->store->ignitionKeyOf($first->get_id()));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($first, FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionKey::for(self::EVENT, FulfilmentProcess::class), $this->store->ignition_key_of($first->get_id()));
 
     $loser = $this->process();
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($loser, FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($loser, FulfilmentProcess::class, self::EVENT));
     self::assertNull($loser->get_id(), 'the loser is not persisted');
     self::assertSame(1, $this->store->count());
   }
@@ -83,8 +83,8 @@ final class InMemoryProcessStoreTest extends TestCase {
     $a = $this->process();
     $b = new OnboardingProcess();
 
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($a, FulfilmentProcess::class, self::EVENT));
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($b, OnboardingProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($a, FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($b, OnboardingProcess::class, self::EVENT));
   }
 
   public function test_manual_starts_are_never_deduped(): void {
@@ -98,12 +98,12 @@ final class InMemoryProcessStoreTest extends TestCase {
     $this->store->insert($b);
 
     self::assertSame(2, $this->store->count());
-    self::assertNull($this->store->ignitionKeyOf($a->get_id()));
+    self::assertNull($this->store->ignition_key_of($a->get_id()));
     self::assertSame(self::EVENT, $this->store->find($b->get_id())->ignited_by_event_id());
 
     // a later #[StartsOn] ignition of that class by the same fact still ignites once
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
   }
 
   public function test_save_is_version_fenced(): void {
@@ -139,7 +139,7 @@ final class InMemoryProcessStoreTest extends TestCase {
     $this->store->insert($this->process('suspended', OrderPlaced::class));
     $this->store->insert($this->process('running', UserJoined::class));
 
-    self::assertSame([$waiting], $this->store->findWaitingFor(UserJoined::class));
+    self::assertSame([$waiting], $this->store->find_waiting_for(UserJoined::class));
   }
 
   public function test_find_stranded_reports_old_running_and_scheduled_rows(): void {
@@ -149,12 +149,12 @@ final class InMemoryProcessStoreTest extends TestCase {
     $this->clock->advance('PT16M');
     $fresh = $this->store->insert($this->process('running'));
 
-    $stranded = $this->store->findStranded($this->clock->now());
+    $stranded = $this->store->find_stranded($this->clock->now());
 
-    self::assertSame([$old_running, $old_scheduled], array_map(static fn ($s) => $s->processId, $stranded));
+    self::assertSame([$old_running, $old_scheduled], array_map(static fn ($s) => $s->process_id, $stranded));
     self::assertSame('running', $stranded[0]->status);
-    self::assertSame(FulfilmentProcess::class, $stranded[0]->processClass);
-    self::assertNotContains($fresh, array_map(static fn ($s) => $s->processId, $stranded));
+    self::assertSame(FulfilmentProcess::class, $stranded[0]->process_class);
+    self::assertNotContains($fresh, array_map(static fn ($s) => $s->process_id, $stranded));
   }
 
   public function test_find_stranded_skips_a_row_with_a_live_intent(): void {
@@ -170,31 +170,31 @@ final class InMemoryProcessStoreTest extends TestCase {
     ));
     $this->clock->advance('PT16M');
 
-    self::assertSame([$bare], array_map(static fn ($s) => $s->processId, $store->findStranded($this->clock->now())));
+    self::assertSame([$bare], array_map(static fn ($s) => $s->process_id, $store->find_stranded($this->clock->now())));
 
     // Completing the intent makes the row stranded again.
-    $claimed = $intents->claimDue($this->clock->now(), 10, 60);
+    $claimed = $intents->claim_due($this->clock->now(), 10, 60);
     $intents->complete($claimed[0]);
-    self::assertSame([$covered, $bare], array_map(static fn ($s) => $s->processId, $store->findStranded($this->clock->now())));
+    self::assertSame([$covered, $bare], array_map(static fn ($s) => $s->process_id, $store->find_stranded($this->clock->now())));
   }
 
   public function test_intents_can_be_attached_after_construction(): void {
     $boundary = new InMemoryTransactionBoundary();
     $intents = new \TangibleDDD\Testing\InMemoryWakeupScheduler($boundary);
     $id = $this->store->insert($this->process('running'));
-    $this->store->attachIntents($intents);
+    $this->store->attach_intents($intents);
     $boundary->run(fn () => $intents->schedule(
       \TangibleDDD\Runtime\Scheduling\WakeupIntent::timeout('acme', $id, 0, $this->clock->now())
     ));
     $this->clock->advance('PT16M');
 
-    self::assertSame([], $this->store->findStranded($this->clock->now()));
+    self::assertSame([], $this->store->find_stranded($this->clock->now()));
   }
 
   public function test_an_undecodable_row_is_quarantined_as_failed_and_the_worker_continues(): void {
     $bad = $this->store->insert($this->process());
     $good = $this->store->insert($this->process());
-    $this->store->corruptClassForTests($bad, 'Gone\\RemovedProcess');
+    $this->store->corrupt_class($bad, 'Gone\\RemovedProcess');
 
     try {
       $this->store->find($bad);
@@ -202,8 +202,8 @@ final class InMemoryProcessStoreTest extends TestCase {
     } catch (QuarantinedProcess $e) {
       self::assertStringContainsString('Gone\\RemovedProcess', $e->getMessage());
     }
-    self::assertSame('failed', $this->store->statusOf($bad));
-    self::assertNotNull($this->store->quarantineReasonOf($bad));
+    self::assertSame('failed', $this->store->status_of($bad));
+    self::assertNotNull($this->store->quarantine_reason_of($bad));
     self::assertNotNull($this->store->find($good));
   }
 
@@ -213,13 +213,13 @@ final class InMemoryProcessStoreTest extends TestCase {
 
     try {
       $tx->run(function () {
-        $this->store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT);
+        $this->store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT);
         throw new \RuntimeException('first step failed to persist');
       });
     } catch (\RuntimeException) {
     }
 
     self::assertSame(0, $this->store->count());
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
   }
 }

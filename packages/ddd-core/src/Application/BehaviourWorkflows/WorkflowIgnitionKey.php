@@ -14,9 +14,9 @@ final class WorkflowIgnitionKey {
 
   /**
    * One workflow per igniting fact: uuid5(event_id, kind), the same value
-   * as ddd-symfony's DbalWorkflowIgnitionLedger::keyForFact().
+   * as ddd-symfony's DbalWorkflowIgnitionLedger::fact_key().
    */
-  public static function forFact(string $eventId, string $kind): string {
+  public static function for_fact(string $eventId, string $kind): string {
     return NameBasedUuid::v5($eventId, $kind);
   }
 
@@ -28,7 +28,7 @@ final class WorkflowIgnitionKey {
    * been started" (WorkflowIgniter): uuid5(START_NAMESPACE, 'start:' . key),
    * 36 characters whatever the length of $dedupKey.
    */
-  public static function startMarker(string $dedupKey): string {
+  public static function start_marker(string $dedupKey): string {
     return NameBasedUuid::v5(self::START_NAMESPACE, 'start:' . $dedupKey);
   }
 
@@ -36,7 +36,7 @@ final class WorkflowIgnitionKey {
    * One workflow per $scope per UTC minute (a cron entry's tick):
    * "{scope}:{Y-m-d\TH:i}Z". Two ticks in one minute share it.
    */
-  public static function perMinute(string $scope, \DateTimeImmutable $at): string {
+  public static function per_minute(string $scope, \DateTimeImmutable $at): string {
     return $scope . ':' . $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i') . 'Z';
   }
 }

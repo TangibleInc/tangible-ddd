@@ -45,15 +45,15 @@ use TangibleDDD\Runtime\SystemClock;
  *   Claim::$attempts includes it. A re-claimed row whose attempts reach its
  *   max_attempts is dead-lettered inside the claim's transaction (DLQ row,
  *   status `dlq`, lease cleared) and not handed out;
- *   takeDeadLetteredAtClaim() reports it to the relay step. A row whose
- *   lease was released by an outcome (retryLater) is not a re-claim.
- * - accept() / retryLater() / deadLetter(): fenced on (event_id,
+ *   take_claim_dead_letters() reports it to the relay step. A row whose
+ *   lease was released by an outcome (retry_later) is not a re-claim.
+ * - accept() / retry_later() / dead_letter(): fenced on (event_id,
  *   claim_token, status `pending`); 0 rows = lease lost → false, logged,
  *   nothing thrown. An expired lease nobody re-claimed still matches.
- *   deadLetter() inserts the DLQ row and sets `dlq` in one transaction (or
+ *   dead_letter() inserts the DLQ row and sets `dlq` in one transaction (or
  *   inside the ambient one when the relay already opened it).
  *
- * pdo addition (not on the port): appendFact() / eventClassOf() keep the
+ * pdo addition (not on the port): append_fact() / event_class_of() keep the
  * fact's PHP class for the delivery job, as ddd-symfony does (CR sf-1).
  */
 final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
@@ -63,11 +63,11 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
   private readonly IClock $clock;
   private readonly LoggerInterface $logger;
 
-  /** The fact class withFactClass() scopes onto plain append() calls. */
+  /** The fact class with_event_class() scopes onto plain append() calls. */
   private ?string $scopedClass = null;
 
   /** @var list<array{0: Claim, 1: string}> rows claim() dead-lettered since the last take */
-  private array $deadLetteredAtClaim = [];
+  private array $claim_dead_letters = [];
 
   public function __construct(
     private readonly IHostConnection $db,
@@ -88,7 +88,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
   }
 
   public function append(OutboxRecord $r): void {
-    $this->appendFact($r, $this->scopedClass);
+    $this->append_fact($r, $this->scopedClass);
   }
 
   /**
@@ -101,7 +101,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
    * @param callable():T $work
    * @return T
    */
-  public function withFactClass(string $eventClass, callable $work): mixed {
+  public function with_event_class(string $eventClass, callable $work): mixed {
     $previous = $this->scopedClass;
     $this->scopedClass = $eventClass;
     try {
@@ -112,7 +112,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
   }
 
   /** append() plus the fact's PHP class. @throws OutboxWriteFailed */
-  public function appendFact(OutboxRecord $r, ?string $eventClass): void {
+  public function append_fact(OutboxRecord $r, ?string $eventClass): void {
     try {
       $columns = OutboxRows::columns($r, $eventClass);
 
@@ -127,16 +127,16 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
       $columns += [
         'status' => 'pending',
         'next_attempt_at' => $columns['due_at'],
-        'created_at' => Utc::toDb($this->clock->now()),
+        'created_at' => Utc::to_db($this->clock->now()),
       ];
-      $this->db->execute(OutboxRows::insertSql($this->outbox, $columns), array_values($columns));
+      $this->db->execute(OutboxRows::insert_sql($this->outbox, $columns), array_values($columns));
     } catch (\Throwable $e) {
       throw new OutboxWriteFailed("Outbox append of {$r->event_id} failed: " . $e->getMessage(), 0, $e);
     }
   }
 
   public function claim(int $limit, \DateTimeImmutable $now, int $leaseSeconds): array {
-    if ($this->db->inTransaction()) {
+    if ($this->db->in_transaction()) {
       throw new NestedTransactionRejected('IOutboxStore::claim() must run outside any open transaction.');
     }
     if ($limit <= 0) {
@@ -144,7 +144,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
     }
 
     $token = bin2hex(random_bytes(16));
-    $nowDb = Utc::toDb($now);
+    $nowDb = Utc::to_db($now);
     $leaseUntil = $now->setTimezone(new \DateTimeZone('UTC'))->modify("+{$leaseSeconds} seconds");
 
     [$pauseSql, $pauseParams] = $this->sqlPauseFilter($now);
@@ -159,7 +159,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
     try {
       $ids = [];
       for ($p = 0; $p < $maxPages && count($ids) < $limit; $p++) {
-        $candidates = $this->db->fetchAll(
+        $candidates = $this->db->fetch_all(
           "SELECT id, event_type FROM `{$this->outbox}`
            WHERE status = 'pending'
              AND due_at <= ?
@@ -175,7 +175,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
           if (count($ids) >= $limit) {
             break;
           }
-          if ($filterInPhp && $this->pauses->isPaused((string) $c['event_type'], $now)) {
+          if ($filterInPhp && $this->pauses->is_paused((string) $c['event_type'], $now)) {
             continue;
           }
           $ids[] = (int) $c['id'];
@@ -192,7 +192,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
         // Remember which rows still held an (expired) lease: re-claiming one is
         // an attempt (CR-PDO-6). The rows are locked, so this cannot change.
         $reclaimed = [];
-        foreach ($this->db->fetchAll("SELECT id FROM `{$this->outbox}` WHERE id IN ($in) AND claim_token IS NOT NULL", $ids) as $r) {
+        foreach ($this->db->fetch_all("SELECT id FROM `{$this->outbox}` WHERE id IN ($in) AND claim_token IS NOT NULL", $ids) as $r) {
           $reclaimed[(int) $r['id']] = true;
         }
         // MySQL evaluates SET left to right: attempts and last_error read the OLD claim_token.
@@ -202,9 +202,9 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
              last_error = CASE WHEN claim_token IS NOT NULL THEN ? ELSE last_error END,
              claim_token = ?, lease_until = ?
            WHERE id IN ($in)",
-          [self::LEASE_EXPIRED_ERROR, $token, Utc::toDb($leaseUntil), ...$ids]
+          [self::LEASE_EXPIRED_ERROR, $token, Utc::to_db($leaseUntil), ...$ids]
         );
-        foreach ($this->db->fetchAll("SELECT * FROM `{$this->outbox}` WHERE id IN ($in) ORDER BY due_at, id", $ids) as $row) {
+        foreach ($this->db->fetch_all("SELECT * FROM `{$this->outbox}` WHERE id IN ($in) ORDER BY due_at, id", $ids) as $row) {
           $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, OutboxRows::record($row), (int) $row['attempts']);
           if (isset($reclaimed[(int) $row['id']]) && $claim->attempts >= $claim->record->max_attempts) {
             $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
@@ -223,14 +223,14 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
     foreach ($deadLettered as [$claim, $error]) {
       $this->logger->error("[ddd outbox] {$claim->event_id} dead-lettered at claim: its lease expired {$claim->attempts} times without an outcome");
-      $this->deadLetteredAtClaim[] = [$claim, $error];
+      $this->claim_dead_letters[] = [$claim, $error];
     }
     return $claims;
   }
 
-  public function takeDeadLetteredAtClaim(): array {
-    $taken = $this->deadLetteredAtClaim;
-    $this->deadLetteredAtClaim = [];
+  public function take_claim_dead_letters(): array {
+    $taken = $this->claim_dead_letters;
+    $this->claim_dead_letters = [];
     return $taken;
   }
 
@@ -245,43 +245,43 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
       "UPDATE `{$this->outbox}` SET status = 'dlq', attempts = ?, last_error = ?, claim_token = NULL, lease_until = NULL WHERE id = ?",
       [$attempts, $error, (int) $row['id']]
     );
-    $columns = array_combine(OutboxRows::SHARED, OutboxRows::sharedValues($row)) + [
+    $columns = array_combine(OutboxRows::SHARED, OutboxRows::shared_values($row)) + [
       'error' => $error,
       'attempts' => $attempts,
-      'dead_lettered_at' => Utc::toDb($this->clock->now()),
+      'dead_lettered_at' => Utc::to_db($this->clock->now()),
     ];
-    $this->db->execute(OutboxRows::insertSql($this->dlq, $columns), array_values($columns));
+    $this->db->execute(OutboxRows::insert_sql($this->dlq, $columns), array_values($columns));
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
     return $this->fenced(
       "UPDATE `{$this->outbox}` SET status = 'accepted', transport_ref = ?, accepted_at = ?, claim_token = NULL, lease_until = NULL
        WHERE event_id = ? AND claim_token = ? AND status = 'pending'",
-      [$transportRef, Utc::toDb($this->clock->now()), $c->event_id, $c->claimToken],
+      [$transportRef, Utc::to_db($this->clock->now()), $c->event_id, $c->token],
       $c,
       'accept'
     );
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
     return $this->fenced(
       "UPDATE `{$this->outbox}` SET attempts = attempts + 1, next_attempt_at = ?, last_error = ?, claim_token = NULL, lease_until = NULL
        WHERE event_id = ? AND claim_token = ? AND status = 'pending'",
-      [Utc::toDb($nextAt), $error, $c->event_id, $c->claimToken],
+      [Utc::to_db($nextAt), $error, $c->event_id, $c->token],
       $c,
-      'retryLater'
+      'retry_later'
     );
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
-    $own = !$this->db->inTransaction();
+  public function dead_letter(Claim $c, string $error): bool {
+    $own = !$this->db->in_transaction();
     if ($own) {
       $this->db->begin();
     }
     try {
-      $row = $this->db->fetchOne(
+      $row = $this->db->fetch_one(
         "SELECT * FROM `{$this->outbox}` WHERE event_id = ? AND claim_token = ? AND status = 'pending' FOR UPDATE",
-        [$c->event_id, $c->claimToken]
+        [$c->event_id, $c->token]
       );
       if ($row === null) {
         if ($own) {
@@ -305,9 +305,9 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
     }
   }
 
-  /** The fact class a writer stored with appendFact(); null when unknown. */
-  public function eventClassOf(string $eventId): ?string {
-    $class = $this->db->fetchOne("SELECT event_class FROM `{$this->outbox}` WHERE event_id = ?", [$eventId])['event_class'] ?? null;
+  /** The fact class a writer stored with append_fact(); null when unknown. */
+  public function event_class_of(string $eventId): ?string {
+    $class = $this->db->fetch_one("SELECT event_class FROM `{$this->outbox}` WHERE event_id = ?", [$eventId])['event_class'] ?? null;
     return $class === null ? null : (string) $class;
   }
 
@@ -316,7 +316,7 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
     if (!$this->pauses instanceof PdoPauseStore || $this->pauses->connection() !== $this->db) {
       return [null, []];
     }
-    $patterns = $this->pauses->activePatterns($now);
+    $patterns = $this->pauses->patterns($now);
     if ($patterns === []) {
       return ['', []];
     }
@@ -335,8 +335,8 @@ final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
   private function rollBackQuietly(): void {
     try {
-      if ($this->db->inTransaction()) {
-        $this->db->rollBack();
+      if ($this->db->in_transaction()) {
+        $this->db->rollback();
       }
     } catch (\Throwable $e) {
       $this->logger->error('[ddd outbox] rollback failed: ' . $e->getMessage());

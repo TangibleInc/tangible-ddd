@@ -36,12 +36,12 @@ final class RedactorExtensionTest extends TestCase {
   private const PEM = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n";
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 

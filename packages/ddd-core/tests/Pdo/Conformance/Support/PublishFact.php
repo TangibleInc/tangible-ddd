@@ -8,7 +8,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Commands\ITransactionalCommand;
 
 /**
- * The fresh process's "one committed command" (FreshProcesses::publishInFreshProcess):
+ * The fresh process's "one committed command" (FreshProcesses::publish_fresh):
  * an application command, as a raw-PHP host declares one, whose handler
  * records the fact. It is an ICommand so DurableRuntime::compose()'s
  * handler array maps it (the scenario fixture CreateWidget is only an

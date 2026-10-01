@@ -14,10 +14,10 @@ use TangibleDDD\Runtime\SystemClock;
  * IDeliveryLedger on `{prefix}ddd_delivery_ledger` (register 3.5, 5.1,
  * CR-1): one row per (subscriber_id, event_id).
  *
- * - markFailed() sets attempts to the 1-based attempt that failed and
+ * - mark_failed() sets attempts to the 1-based attempt that failed and
  *   stores last_error; it never touches exhausted_at.
- * - markDelivered() sets delivered_at and clears last_error; attempts stay.
- * - markExhausted() sets exhausted_at once (idempotent; the first marker is
+ * - mark_delivered() sets delivered_at and clears last_error; attempts stay.
+ * - mark_exhausted() sets exhausted_at once (idempotent; the first marker is
  *   kept).
  *
  * Every write is a single upsert on the host connection, so it commits or
@@ -38,7 +38,7 @@ final class PdoDeliveryLedger implements IDeliveryLedger {
     return ($this->row($subscriberId, $eventId)['delivered_at'] ?? null) !== null;
   }
 
-  public function markDelivered(string $subscriberId, string $eventId): void {
+  public function mark_delivered(string $subscriberId, string $eventId): void {
     $now = $this->now();
     $this->db->execute(
       "INSERT INTO `{$this->table}` (subscriber_id, event_id, attempts, delivered_at, updated_at) VALUES (?, ?, 0, ?, ?)
@@ -47,7 +47,7 @@ final class PdoDeliveryLedger implements IDeliveryLedger {
     );
   }
 
-  public function markFailed(string $subscriberId, string $eventId, string $error, int $attempt): void {
+  public function mark_failed(string $subscriberId, string $eventId, string $error, int $attempt): void {
     $now = $this->now();
     $this->db->execute(
       "INSERT INTO `{$this->table}` (subscriber_id, event_id, attempts, last_error, updated_at) VALUES (?, ?, ?, ?, ?)
@@ -60,12 +60,12 @@ final class PdoDeliveryLedger implements IDeliveryLedger {
     return (int) ($this->row($subscriberId, $eventId)['attempts'] ?? 0);
   }
 
-  public function lastError(string $subscriberId, string $eventId): ?string {
+  public function last_error(string $subscriberId, string $eventId): ?string {
     $error = $this->row($subscriberId, $eventId)['last_error'] ?? null;
     return $error === null ? null : (string) $error;
   }
 
-  public function markExhausted(string $subscriberId, string $eventId): void {
+  public function mark_exhausted(string $subscriberId, string $eventId): void {
     $now = $this->now();
     $this->db->execute(
       "INSERT INTO `{$this->table}` (subscriber_id, event_id, attempts, exhausted_at, updated_at) VALUES (?, ?, 0, ?, ?)
@@ -80,13 +80,13 @@ final class PdoDeliveryLedger implements IDeliveryLedger {
 
   /** @return array<string, mixed>|null */
   private function row(string $subscriberId, string $eventId): ?array {
-    return $this->db->fetchOne(
+    return $this->db->fetch_one(
       "SELECT attempts, delivered_at, last_error, exhausted_at FROM `{$this->table}` WHERE subscriber_id = ? AND event_id = ?",
       [$subscriberId, $eventId]
     );
   }
 
   private function now(): string {
-    return Utc::toDb($this->clock->now());
+    return Utc::to_db($this->clock->now());
   }
 }

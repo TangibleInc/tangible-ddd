@@ -20,7 +20,7 @@ final class ChargeCard implements IExternalEffectCommand {
     throw new \RuntimeException("gateway down for order {$this->order_id}");
   }
 
-  public function idempotencyKey(): string {
+  public function idempotency_key(): string {
     return "charge:{$this->order_id}";
   }
 
@@ -30,7 +30,7 @@ final class ChargeCard implements IExternalEffectCommand {
 
   public function record(EffectResult $r): void {}
 
-  public function failureCommand(\Throwable $last): ?ICommand {
+  public function failure_command(\Throwable $last): ?ICommand {
     return new RecordingCommand('charge-failed', ['order_id' => $this->order_id, 'error' => $last->getMessage()]);
   }
 }

@@ -10,6 +10,6 @@ namespace TangibleDDD\Testing;
  * rollback, which is how mem doubles model "same connection" atomicity.
  */
 interface InMemoryTransactional {
-  public function snapshotState(): mixed;
-  public function restoreState(mixed $state): void;
+  public function snapshot(): mixed;
+  public function restore(mixed $state): void;
 }

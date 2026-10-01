@@ -12,7 +12,7 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * the fact class it waits for and the await key ('' = unkeyed).
  * LongProcess::await_routes() lists them; a store that indexes awaits per
  * route (sf `process_waits`) writes one row per route, and
- * IProcessStore::findWaitingFor($class, $key) matches them. A store that
+ * IProcessStore::find_waiting_for($class, $key) matches them. A store that
  * indexes only the `waiting_for` column stays correct, because the runner
  * filters every candidate through IAwaitMechanism::accepts().
  *
@@ -24,12 +24,12 @@ final class AwaitRoute {
 
   public function __construct(
     /** @var class-string<IIntegrationEvent> */
-    public readonly string $eventClass,
-    public readonly string $awaitKey = '',
+    public readonly string $event_class,
+    public readonly string $await_key = '',
   ) {}
 
   /** The await key a fact reports (IAwaitKeyed), null when it reports none. */
-  public static function keyOf(IIntegrationEvent $event): ?string {
+  public static function key_of(IIntegrationEvent $event): ?string {
     if (!$event instanceof IAwaitKeyed) {
       return null;
     }

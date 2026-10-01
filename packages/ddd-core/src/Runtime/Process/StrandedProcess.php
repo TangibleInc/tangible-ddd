@@ -8,10 +8,10 @@ namespace TangibleDDD\Runtime\Process;
 final class StrandedProcess {
 
   public function __construct(
-    public readonly int $processId,
-    public readonly string $processClass,
+    public readonly int $process_id,
+    public readonly string $process_class,
     public readonly string $status,
-    public readonly int $stepIndex,
-    public readonly \DateTimeImmutable $updatedAt,
+    public readonly int $step_index,
+    public readonly \DateTimeImmutable $updated_at,
   ) {}
 }

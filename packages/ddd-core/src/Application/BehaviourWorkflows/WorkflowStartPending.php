@@ -15,10 +15,10 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
  */
 final class WorkflowStartPending extends \RuntimeException {
 
-  public function __construct(public readonly string $dedupKey, public readonly int $workflowId) {
+  public function __construct(public readonly string $key, public readonly int $workflow_id) {
     parent::__construct(sprintf(
       'workflow #%d (ignition key %s) ignited but its start has not completed; retry later',
-      $workflowId, $dedupKey
+      $workflow_id, $key
     ));
   }
 }

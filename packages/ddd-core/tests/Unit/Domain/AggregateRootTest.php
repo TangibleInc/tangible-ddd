@@ -69,7 +69,7 @@ final class AggregateRootTest extends TestCase {
     $repo = new class ($uow) extends AggregateRootRepository {
       /** @var list<IRecordsDomainEvents> */
       public array $persisted = [];
-      protected function get_aggregate_class(): string { return Team::class; }
+      protected function aggregate_class(): string { return Team::class; }
       protected function persist(IRecordsDomainEvents $aggregate): void { $this->persisted[] = $aggregate; }
     };
 
@@ -83,7 +83,7 @@ final class AggregateRootTest extends TestCase {
 
   public function test_aggregate_root_repository_rejects_another_class(): void {
     $repo = new class (new EventsUnitOfWork()) extends AggregateRootRepository {
-      protected function get_aggregate_class(): string { return Team::class; }
+      protected function aggregate_class(): string { return Team::class; }
       protected function persist(IRecordsDomainEvents $aggregate): void {}
     };
 

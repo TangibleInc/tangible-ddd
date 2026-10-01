@@ -61,7 +61,7 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
   /** Append a fact, relay it by hand (claim + submit + accept), return its event id. */
   private function relayed(string $eventId, int $orderId, ?string $class = OrderPlaced::class, string $due = '2026-10-01 12:00:00'): string {
     $store = $this->store();
-    $store->appendFact(self::record($eventId, $due, ['payload' => ['order_id' => $orderId, 'sku' => 'tea'], 'event_type' => OrderPlaced::name()]), $class);
+    $store->append_fact(self::record($eventId, $due, ['payload' => ['order_id' => $orderId, 'sku' => 'tea'], 'event_type' => OrderPlaced::name()]), $class);
     $claims = $store->claim(10, self::utc($due), 60);
     foreach ($claims as $claim) {
       (new PdoTransactionBoundary($this->db))->run(function () use ($store, $claim): void {
@@ -77,20 +77,20 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
 
     $worker = $this->worker();
     self::assertInstanceOf(IDeliveryWorker::class, $worker);
-    self::assertSame(1, $worker->runDue($this->clock->now(), 10));
+    self::assertSame(1, $worker->run_due($this->clock->now(), 10));
 
     self::assertSame(['listener:a@7', 'listener:b@7'], $this->calls);
     self::assertTrue($this->ledger->delivered('listener:a', 'e1'));
     self::assertTrue($this->ledger->delivered('listener:b', 'e1'));
     self::assertSame(0, $this->countRows('ddd_jobs'));
-    self::assertSame(0, $worker->runDue($this->clock->now(), 10), 'nothing left to deliver');
+    self::assertSame(0, $worker->run_due($this->clock->now(), 10), 'nothing left to deliver');
   }
 
   public function test_a_failing_subscriber_is_retried_alone_with_the_handler_backoff(): void {
     $this->relayed('e1', 7);
     $this->failures['listener:a'] = 1;
 
-    self::assertSame(1, $this->worker()->runDue($this->clock->now(), 10));
+    self::assertSame(1, $this->worker()->run_due($this->clock->now(), 10));
 
     $job = $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:e1']);
     self::assertNotNull($job, 'the fact stays queued while a subscriber failed');
@@ -100,8 +100,8 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
     self::assertNull($job['claim_token']);
     self::assertSame(['listener:a@7', 'listener:b@7'], $this->calls);
 
-    self::assertSame(0, $this->worker()->runDue(self::utc('2026-10-01 12:00:29'), 10), 'not before the backoff');
-    self::assertSame(1, $this->worker()->runDue(self::utc('2026-10-01 12:00:30'), 10));
+    self::assertSame(0, $this->worker()->run_due(self::utc('2026-10-01 12:00:29'), 10), 'not before the backoff');
+    self::assertSame(1, $this->worker()->run_due(self::utc('2026-10-01 12:00:30'), 10));
     self::assertSame(['listener:a@7', 'listener:b@7', 'listener:a@7'], $this->calls, 'only the failed subscriber re-runs');
     self::assertSame(0, $this->countRows('ddd_jobs'));
   }
@@ -112,7 +112,7 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
 
     $now = $this->clock->now();
     for ($i = 0; $i < IntegrationDelivery::DEFAULT_BUDGET; $i++) {
-      self::assertSame(1, $this->worker()->runDue($now, 10));
+      self::assertSame(1, $this->worker()->run_due($now, 10));
       $now = $now->modify('+2 hours');
     }
 
@@ -129,10 +129,10 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
     $this->relayed('later', 4, due: '2026-10-01 13:00:00');
     (new PdoTransactionBoundary($this->db))->run(fn () => $this->jobs->schedule(WakeupIntent::timeout('acme', 5, 0, self::utc('2026-10-01 11:00:00'))));
 
-    self::assertSame(2, $this->worker()->runDue($this->clock->now(), 2));
+    self::assertSame(2, $this->worker()->run_due($this->clock->now(), 2));
     self::assertSame(['listener:a@1', 'listener:b@1', 'listener:a@2', 'listener:b@2'], $this->calls);
-    self::assertSame(1, $this->worker()->runDue($this->clock->now(), 10));
-    self::assertSame(0, $this->worker()->runDue($this->clock->now(), 0));
+    self::assertSame(1, $this->worker()->run_due($this->clock->now(), 10));
+    self::assertSame(0, $this->worker()->run_due($this->clock->now(), 0));
 
     self::assertNotNull($this->row('ddd_jobs', 'idempotency_key = ?', ['timeout:5:0']), 'a wakeup is not a delivery');
     self::assertNull($this->row('ddd_jobs', 'idempotency_key = ?', ['timeout:5:0'])['claim_token']);
@@ -142,7 +142,7 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
   public function test_a_job_without_a_recorded_class_resolves_it_from_the_event_type_map(): void {
     $this->relayed('e1', 7, class: null);
 
-    self::assertSame(1, $this->worker([OrderPlaced::name() => OrderPlaced::class])->runDue($this->clock->now(), 10));
+    self::assertSame(1, $this->worker([OrderPlaced::name() => OrderPlaced::class])->run_due($this->clock->now(), 10));
 
     self::assertSame(['listener:a@7', 'listener:b@7'], $this->calls);
     self::assertSame(0, $this->countRows('ddd_jobs'));
@@ -152,7 +152,7 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
     $this->relayed('e1', 7, class: null);
     $this->relayed('e2', 8, class: 'App\\GoneFact');
 
-    self::assertSame(2, $this->worker()->runDue($this->clock->now(), 10));
+    self::assertSame(2, $this->worker()->run_due($this->clock->now(), 10));
 
     self::assertSame([], $this->calls);
     foreach (['e1', 'e2'] as $id) {
@@ -165,13 +165,13 @@ abstract class PdoDeliveryWorkerCases extends OutboxTestCase {
   public function test_a_hydration_failure_counts_against_every_subscriber_and_retries_the_job(): void {
     $this->registry->add(new Subscriber('listener:p', 10, PoisonFact::class, static function (): void {}));
     $store = $this->store();
-    $store->appendFact(self::record('poison', extra: ['payload' => ['id' => 1], 'event_type' => PoisonFact::name()]), PoisonFact::class);
+    $store->append_fact(self::record('poison', extra: ['payload' => ['id' => 1], 'event_type' => PoisonFact::name()]), PoisonFact::class);
     [$claim] = $store->claim(1, $this->clock->now(), 60);
     (new PdoTransactionBoundary($this->db))->run(function () use ($store, $claim): void {
       $store->accept($claim, $this->jobs->submit($claim, IntegrationEnvelope::wrap($claim->record->payload, null, 1, 'poison'), $claim->record->due_at));
     });
 
-    self::assertSame(1, $this->worker()->runDue($this->clock->now(), 10));
+    self::assertSame(1, $this->worker()->run_due($this->clock->now(), 10));
 
     self::assertSame(1, $this->ledger->attempts('listener:p', 'poison'));
     $job = $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:poison']);

@@ -59,17 +59,17 @@ final class RoutedOutboxStore implements IOutboxStore, IReportsClaimDeadLetters 
     return $this->store()->accept($c, $transportRef);
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
-    return $this->store()->retryLater($c, $error, $nextAt);
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+    return $this->store()->retry_later($c, $error, $nextAt);
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
-    return $this->store()->deadLetter($c, $error);
+  public function dead_letter(Claim $c, string $error): bool {
+    return $this->store()->dead_letter($c, $error);
   }
 
-  public function takeDeadLetteredAtClaim(): array {
+  public function take_claim_dead_letters(): array {
     $store = $this->store();
-    return $store instanceof IReportsClaimDeadLetters ? $store->takeDeadLetteredAtClaim() : [];
+    return $store instanceof IReportsClaimDeadLetters ? $store->take_claim_dead_letters() : [];
   }
 
   private function store(): IOutboxStore {

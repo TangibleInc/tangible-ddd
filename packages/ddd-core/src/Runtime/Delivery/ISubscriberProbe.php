@@ -13,5 +13,5 @@ namespace TangibleDDD\Runtime\Delivery;
  * Error behaviour: never throws.
  */
 interface ISubscriberProbe {
-  public function hasSubscribers(string $integrationAction): ?bool;
+  public function has_subscribers(string $integrationAction): ?bool;
 }

@@ -39,7 +39,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
     self::assertSame('e1', $claim->event_id);
     self::assertSame(0, $claim->attempts);
-    self::assertEquals(self::utc('2026-10-01 12:01:00'), $claim->leaseUntil);
+    self::assertEquals(self::utc('2026-10-01 12:01:00'), $claim->lease_until);
     self::assertEquals($record, $claim->record);
     self::assertSame('UTC', $claim->record->due_at->getTimezone()->getName());
   }
@@ -120,7 +120,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
       $this->expectException(NestedTransactionRejected::class);
       $store->claim(1, $this->clock->now(), 60);
     } finally {
-      $this->db->rollBack();
+      $this->db->rollback();
     }
   }
 
@@ -131,7 +131,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
     self::assertSame([], $store->claim(1, $this->clock->now()->modify('+59 seconds'), 60));
     [$second] = $store->claim(1, $this->clock->now()->modify('+60 seconds'), 60);
-    self::assertNotSame($first->claimToken, $second->claimToken);
+    self::assertNotSame($first->token, $second->token);
   }
 
   public function test_the_store_reports_claim_time_dead_letters(): void {
@@ -146,7 +146,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
     self::assertSame(0, $claim->attempts);
     self::assertSame(0, (int) $this->row('ddd_outbox', 'event_id = ?', ['e1'])['attempts']);
-    self::assertSame([], $store->takeDeadLetteredAtClaim());
+    self::assertSame([], $store->take_claim_dead_letters());
   }
 
   public function test_re_claiming_an_expired_lease_counts_an_attempt(): void {
@@ -160,14 +160,14 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
     self::assertSame(1, (int) $row['attempts']);
     self::assertSame(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, $row['last_error']);
-    self::assertSame([], $store->takeDeadLetteredAtClaim());
+    self::assertSame([], $store->take_claim_dead_letters());
   }
 
   public function test_a_released_lease_is_not_a_re_claim(): void {
     $store = $this->store();
     $store->append(self::record('e1'));
     [$c] = $store->claim(1, $this->clock->now(), 60);
-    $store->retryLater($c, 'transport down', $this->clock->now());
+    $store->retry_later($c, 'transport down', $this->clock->now());
 
     [$again] = $store->claim(1, $this->clock->now(), 60);
 
@@ -195,13 +195,13 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     self::assertSame(3, (int) $dlq['attempts']);
     self::assertStringStartsWith(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR . ' 3 times', (string) $dlq['error']);
 
-    $taken = $store->takeDeadLetteredAtClaim();
+    $taken = $store->take_claim_dead_letters();
     self::assertCount(1, $taken);
     [$claim, $error] = $taken[0];
     self::assertSame('e1', $claim->event_id);
     self::assertSame(3, $claim->attempts);
     self::assertSame($dlq['error'], $error);
-    self::assertSame([], $store->takeDeadLetteredAtClaim(), 'taking empties the list');
+    self::assertSame([], $store->take_claim_dead_letters(), 'taking empties the list');
   }
 
   public function test_the_relay_step_reports_a_claim_time_dead_letter_and_the_operator_view_lists_it(): void {
@@ -217,7 +217,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     );
     $result = $relay->process_batch(10);
 
-    self::assertSame(['e1'], $result->deadLetteredAtClaim);
+    self::assertSame(['e1'], $result->claim_dead_letters);
     $items = (new \TangibleDDD\Defaults\Pdo\PdoOperatorView($this->db, 'acme', self::PREFIX, $this->clock))->list(\TangibleDDD\Runtime\Ops\Layer::Relay);
     self::assertSame(['e1'], array_map(static fn ($i) => $i->key, $items));
     self::assertSame(1, $items[0]->attempts);
@@ -232,10 +232,10 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     $other = $this->otherConnection();
     $other->begin();
     try {
-      $other->fetchAll('SELECT id FROM tp_ddd_outbox WHERE event_id = ? FOR UPDATE', ['locked']);
+      $other->fetch_all('SELECT id FROM tp_ddd_outbox WHERE event_id = ? FOR UPDATE', ['locked']);
       self::assertSame(['free'], self::ids($store->claim(5, $this->clock->now(), 60)), 'SKIP LOCKED, no wait');
     } finally {
-      $other->rollBack();
+      $other->rollback();
     }
     self::assertSame(['locked'], self::ids($store->claim(5, $this->clock->now(), 60)));
   }
@@ -268,8 +268,8 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     self::assertTrue($workerB->accept($b, 'job:1'));
 
     self::assertFalse($store->accept($a, 'job:late'));
-    self::assertFalse($store->retryLater($a, 'late', $this->clock->now()));
-    self::assertFalse($store->deadLetter($a, 'late'));
+    self::assertFalse($store->retry_later($a, 'late', $this->clock->now()));
+    self::assertFalse($store->dead_letter($a, 'late'));
 
     $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
     self::assertSame('accepted', $row['status']);
@@ -293,7 +293,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     $store->append(self::record('e1'));
     [$c] = $store->claim(1, $this->clock->now(), 60);
 
-    self::assertTrue($store->retryLater($c, 'transport down', self::utc('2026-10-01 12:05:00')));
+    self::assertTrue($store->retry_later($c, 'transport down', self::utc('2026-10-01 12:05:00')));
 
     $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
     self::assertSame(1, (int) $row['attempts']);
@@ -310,10 +310,10 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     $store = $this->store();
     $store->append(self::record('e1', extra: ['payload_signature' => ['k' => 1], 'is_unique' => true]));
     [$c] = $store->claim(1, $this->clock->now(), 60);
-    $store->retryLater($c, 'first', $this->clock->now());
+    $store->retry_later($c, 'first', $this->clock->now());
     [$c] = $store->claim(1, $this->clock->now(), 60);
 
-    self::assertTrue($store->deadLetter($c, 'gave up'));
+    self::assertTrue($store->dead_letter($c, 'gave up'));
 
     $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
     self::assertSame('dlq', $row['status'], 'the outbox row stays, so replay keeps event_id');
@@ -334,12 +334,12 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     $faulty->failStatement = '/INSERT INTO `tp_ddd_dlq`/';
 
     try {
-      $store->deadLetter($c, 'gave up');
+      $store->dead_letter($c, 'gave up');
       self::fail('expected the injected failure');
     } catch (\RuntimeException) {
     }
 
-    self::assertFalse($this->db->inTransaction());
+    self::assertFalse($this->db->in_transaction());
     self::assertSame('pending', $this->row('ddd_outbox', 'event_id = ?', ['e1'])['status']);
     self::assertSame(0, $this->countRows('ddd_dlq'));
     self::assertTrue($store->accept($c, 'job:1'), 'the lease is still ours');
@@ -354,7 +354,7 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
     $boundary->run(function () use ($store, $c1, $c2) {
       self::assertTrue($store->accept($c1, 'job:1'));
-      self::assertTrue($store->deadLetter($c2, 'rejected'));
+      self::assertTrue($store->dead_letter($c2, 'rejected'));
     });
 
     self::assertSame('accepted', $this->row('ddd_outbox', 'event_id = ?', ['e1'])['status']);
@@ -387,32 +387,32 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
   public function test_the_event_class_is_kept_when_the_writer_knows_it(): void {
     $store = $this->store();
-    $store->appendFact(self::record('e1'), 'App\\OrderPlaced');
+    $store->append_fact(self::record('e1'), 'App\\OrderPlaced');
     $store->append(self::record('e2'));
 
-    self::assertSame('App\\OrderPlaced', $store->eventClassOf('e1'));
-    self::assertNull($store->eventClassOf('e2'));
-    self::assertNull($store->eventClassOf('missing'));
+    self::assertSame('App\\OrderPlaced', $store->event_class_of('e1'));
+    self::assertNull($store->event_class_of('e2'));
+    self::assertNull($store->event_class_of('missing'));
   }
 
   public function test_a_scoped_fact_class_is_written_by_plain_appends_inside_the_scope_only(): void {
     $store = $this->store();
 
-    $result = $store->withFactClass('App\\OrderPlaced', function () use ($store): string {
+    $result = $store->with_event_class('App\\OrderPlaced', function () use ($store): string {
       $store->append(self::record('inside'));
       return 'done';
     });
     $store->append(self::record('after'));
     try {
-      $store->withFactClass('App\\Other', static fn () => throw new \RuntimeException('publish failed'));
+      $store->with_event_class('App\\Other', static fn () => throw new \RuntimeException('publish failed'));
     } catch (\RuntimeException) {
     }
     $store->append(self::record('after-throw'));
 
     self::assertSame('done', $result);
-    self::assertSame('App\\OrderPlaced', $store->eventClassOf('inside'));
-    self::assertNull($store->eventClassOf('after'));
-    self::assertNull($store->eventClassOf('after-throw'), 'the scope is cleared when the work throws');
+    self::assertSame('App\\OrderPlaced', $store->event_class_of('inside'));
+    self::assertNull($store->event_class_of('after'));
+    self::assertNull($store->event_class_of('after-throw'), 'the scope is cleared when the work throws');
   }
 
   public function test_the_fact_class_recording_bus_records_the_published_class(): void {
@@ -424,10 +424,10 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
 
     $bus->publish(new OrderPlaced(7, 'tea'));
 
-    $row = $this->db->fetchOne('SELECT event_id, event_class, event_type FROM tp_ddd_outbox');
+    $row = $this->db->fetch_one('SELECT event_id, event_class, event_type FROM tp_ddd_outbox');
     self::assertSame(OrderPlaced::class, $row['event_class']);
     self::assertSame(OrderPlaced::name(), $row['event_type']);
-    self::assertSame(OrderPlaced::class, $store->eventClassOf((string) $row['event_id']));
+    self::assertSame(OrderPlaced::class, $store->event_class_of((string) $row['event_id']));
   }
 
   public function test_the_store_exposes_its_connection_for_shared_connection_checks(): void {

@@ -97,10 +97,10 @@ abstract class PdoTestCase extends TestCase {
 
   /** @return array<string, mixed>|null */
   protected function row(string $logical, string $where, array $params = []): ?array {
-    return $this->db->fetchOne('SELECT * FROM `' . $this->table($logical) . "` WHERE $where", $params);
+    return $this->db->fetch_one('SELECT * FROM `' . $this->table($logical) . "` WHERE $where", $params);
   }
 
   protected function countRows(string $logical, string $where = '1 = 1', array $params = []): int {
-    return (int) ($this->db->fetchOne('SELECT COUNT(*) AS n FROM `' . $this->table($logical) . "` WHERE $where", $params)['n'] ?? 0);
+    return (int) ($this->db->fetch_one('SELECT COUNT(*) AS n FROM `' . $this->table($logical) . "` WHERE $where", $params)['n'] ?? 0);
   }
 }

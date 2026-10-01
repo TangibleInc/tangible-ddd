@@ -54,16 +54,16 @@ final class PdoCatalogueTest extends TestCase {
 
   public function test_pdo_wave_3_matches_register_section_8(): void {
     self::assertCount(37, self::PDO_WAVE_3);
-    self::assertSame([], ScenarioCatalogue::dueBy('pdo', 2), 'nothing is due on pdo before wave 3');
-    self::assertEqualsCanonicalizing(self::PDO_WAVE_3, ScenarioCatalogue::dueBy('pdo', 3));
+    self::assertSame([], ScenarioCatalogue::due_by('pdo', 2), 'nothing is due on pdo before wave 3');
+    self::assertEqualsCanonicalizing(self::PDO_WAVE_3, ScenarioCatalogue::due_by('pdo', 3));
   }
 
   public function test_pdo_wave_4_matches_register_section_8(): void {
     self::assertCount(7, self::PDO_WAVE_4);
-    self::assertEqualsCanonicalizing(self::PDO_WAVE_4, ScenarioCatalogue::firstDueAt('pdo', 4));
-    self::assertEqualsCanonicalizing([...self::PDO_WAVE_3, ...self::PDO_WAVE_4], ScenarioCatalogue::dueBy('pdo', self::WAVE));
-    self::assertNotContains('workflow.fact-ignition-once', ScenarioCatalogue::dueBy('pdo', self::WAVE), 'pdo: -');
-    self::assertNotContains('wakeup.post-commit', ScenarioCatalogue::dueBy('pdo', self::WAVE), 'sf only');
+    self::assertEqualsCanonicalizing(self::PDO_WAVE_4, ScenarioCatalogue::first_due_at('pdo', 4));
+    self::assertEqualsCanonicalizing([...self::PDO_WAVE_3, ...self::PDO_WAVE_4], ScenarioCatalogue::due_by('pdo', self::WAVE));
+    self::assertNotContains('workflow.fact-ignition-once', ScenarioCatalogue::due_by('pdo', self::WAVE), 'pdo: -');
+    self::assertNotContains('wakeup.post-commit', ScenarioCatalogue::due_by('pdo', self::WAVE), 'sf only');
   }
 
   /** @return array<string, array{string}> */
@@ -73,9 +73,9 @@ final class PdoCatalogueTest extends TestCase {
 
   #[DataProvider('modes')]
   public function test_every_id_due_on_pdo_runs_the_shared_scenario_in_this_prepare_mode(string $mode): void {
-    $due = ScenarioCatalogue::dueBy('pdo', self::WAVE);
+    $due = ScenarioCatalogue::due_by('pdo', self::WAVE);
     $classes = self::hostClasses($mode);
-    $implemented = ScenarioId::implementedBy($classes);
+    $implemented = ScenarioId::implemented_by($classes);
 
     self::assertSame([], array_values(array_diff($due, array_keys($implemented))), "due on pdo but no $mode scenario method");
 
@@ -110,7 +110,7 @@ final class PdoCatalogueTest extends TestCase {
    */
   public static function hostClasses(string $mode): array {
     $classes = [];
-    foreach (ScenarioCatalogue::casesFor('pdo', self::WAVE) as $case) {
+    foreach (ScenarioCatalogue::cases_for('pdo', self::WAVE) as $case) {
       $short = (new \ReflectionClass($case))->getShortName();
       $class = __NAMESPACE__ . "\\$mode\\Pdo{$mode}{$short}Test";
       self::assertTrue(class_exists($class), "missing $class");

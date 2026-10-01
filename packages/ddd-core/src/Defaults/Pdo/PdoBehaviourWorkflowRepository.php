@@ -55,7 +55,7 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
   }
 
   public function get_by_id(int $id): BehaviourWorkflow {
-    $row = $this->db->fetchOne("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
+    $row = $this->db->fetch_one("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
     if ($row === null) {
       throw new \RuntimeException("BehaviourWorkflow not found: {$id}");
     }
@@ -63,14 +63,14 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
   }
 
   public function get_by_ref_id(int $ref_id, string $ref_type): array {
-    $rows = $this->db->fetchAll("SELECT * FROM `{$this->table}` WHERE ref_id = ? AND ref_type = ? ORDER BY id", [$ref_id, $ref_type]);
+    $rows = $this->db->fetch_all("SELECT * FROM `{$this->table}` WHERE ref_id = ? AND ref_type = ? ORDER BY id", [$ref_id, $ref_type]);
     $meta = $this->metaFor(array_map(static fn (array $r) => (int) $r['id'], $rows));
     return array_map(fn (array $r) => $this->fromRow($r, $meta[(int) $r['id']] ?? []), $rows);
   }
 
   protected function persist(Aggregate $aggregate): void {
     /** @var BehaviourWorkflow $aggregate */
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     $row = [
       'ref_id' => $aggregate->get_ref_id(),
       'ref_type' => $aggregate->get_ref_type(),
@@ -91,7 +91,7 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
         $names = implode(', ', array_map(static fn (string $c) => "`$c`", array_keys($row)));
         $marks = implode(', ', array_fill(0, count($row), '?'));
         $this->db->execute("INSERT INTO `{$this->table}` ($names) VALUES ($marks)", array_values($row));
-        $id = (int) $this->db->lastInsertId();
+        $id = (int) $this->db->last_insert_id();
         if ($id <= 0) {
           throw new \RuntimeException('Inserting a BehaviourWorkflow returned no id');
         }
@@ -130,7 +130,7 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
     }
     $in = implode(', ', array_fill(0, count($ids), '?'));
     $meta = [];
-    foreach ($this->db->fetchAll("SELECT workflow_id, meta_key, meta_value FROM `{$this->meta}` WHERE workflow_id IN ($in) ORDER BY meta_id", $ids) as $r) {
+    foreach ($this->db->fetch_all("SELECT workflow_id, meta_key, meta_value FROM `{$this->meta}` WHERE workflow_id IN ($in) ORDER BY meta_id", $ids) as $r) {
       $value = $r['meta_value'];
       if (is_string($value) && $value !== '' && ($value[0] === '{' || $value[0] === '[')) {
         $decoded = json_decode($value, true);
@@ -167,7 +167,7 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
   }
 
   private function atomically(callable $work): void {
-    if ($this->db->inTransaction()) {
+    if ($this->db->in_transaction()) {
       $work();
       return;
     }
@@ -176,8 +176,8 @@ final class PdoBehaviourWorkflowRepository extends PersistsAggregatesRepository 
       $work();
       $this->db->commit();
     } catch (\Throwable $e) {
-      if ($this->db->inTransaction()) {
-        $this->db->rollBack();
+      if ($this->db->in_transaction()) {
+        $this->db->rollback();
       }
       throw $e;
     }

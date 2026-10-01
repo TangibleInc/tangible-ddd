@@ -12,7 +12,7 @@ use TangibleDDD\Runtime\Support\Log;
  * backend sees one acquisition per wake even when the timeout path acquires
  * and `with_process` acquires again (`lock.reentrant-balance`).
  *
- * heldCount() is the number of outstanding acquisitions through this wrapper.
+ * held_count() is the number of outstanding acquisitions through this wrapper.
  * release() never throws: an unknown/double release or a backend release
  * failure is reported through $log and otherwise ignored.
  */
@@ -74,7 +74,7 @@ final class ReentrantProcessLock implements IProcessLock {
     }
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     $n = 0;
     foreach ($this->held as $entry) {
       $n += $entry['count'];
@@ -82,8 +82,8 @@ final class ReentrantProcessLock implements IProcessLock {
     return $n;
   }
 
-  public function forceReleaseAll(): int {
-    $dropped = $this->heldCount();
+  public function release_all(): int {
+    $dropped = $this->held_count();
     $held = $this->held;
     $this->held = [];
     $this->tickets = [];

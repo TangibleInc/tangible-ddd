@@ -77,7 +77,7 @@ final class ProcessRunnerWave4Test extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     Correlation::reset();
     Journal::reset();
@@ -96,7 +96,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->boundary = new InMemoryTransactionBoundary();
     $this->store = new InMemoryProcessStore($this->clock);
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
-    $this->store->attachIntents($this->wakeups);
+    $this->store->attach_intents($this->wakeups);
     $this->boundary->enlist($this->store);
     $this->boundary->enlist($this->wakeups);
     $this->lock = new InMemoryProcessLock();
@@ -113,7 +113,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     RecordingCommand::$onSend = null;
     ReadinessProcess::$statusProbe = null;
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function deliver(string $class, array $payload, string $eventId = self::EVENT_ID): void {
@@ -129,7 +129,7 @@ final class ProcessRunnerWave4Test extends TestCase {
   /** Claim and run every due intent once, as a drain would. */
   private function drainDue(): int {
     $n = 0;
-    foreach ($this->wakeups->claimDue($this->clock->now(), 50, 60) as $claimed) {
+    foreach ($this->wakeups->claim_due($this->clock->now(), 50, 60) as $claimed) {
       $this->runner->wake($claimed->intent);
       $this->boundary->run(fn () => $this->wakeups->complete($claimed));
       $n++;
@@ -172,10 +172,10 @@ final class ProcessRunnerWave4Test extends TestCase {
     $job = RecordingCommand::$sent[0]->data;
 
     $this->deliver(JobFinished::class, ['job_id' => 'someone-elses-job', 'ok' => true]);
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
 
     $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => true]);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
     self::assertSame(['order:' . $job, 'record:ok', 'finish'], Journal::$steps);
   }
 
@@ -187,7 +187,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => true]);
     $report = $this->runner->resume_with_outcome(new JobFinished($job, true));
 
-    self::assertTrue($report->isUnheard());
+    self::assertTrue($report->is_unheard());
     self::assertSame(['order:' . $job, 'record:ok', 'finish'], Journal::$steps);
   }
 
@@ -198,7 +198,7 @@ final class ProcessRunnerWave4Test extends TestCase {
 
     $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => false]);
 
-    self::assertSame('failed', $this->store->statusOf($p->get_id()));
+    self::assertSame('failed', $this->store->status_of($p->get_id()));
     self::assertSame([$job], KeyedJobProcess::$undone);
   }
 
@@ -227,7 +227,7 @@ final class ProcessRunnerWave4Test extends TestCase {
 
   public function test_the_precheck_runs_after_the_await_is_persisted_and_resumes_at_once(): void {
     ReadinessProcess::$ready = true;
-    ReadinessProcess::$statusProbe = fn () => $this->store->statusOf(1);
+    ReadinessProcess::$statusProbe = fn () => $this->store->status_of(1);
 
     $p = new ReadinessProcess();
     $this->runner->start($p);
@@ -235,14 +235,14 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame(['suspended'], ReadinessProcess::$seenStatus, 'registered first, then checked');
     self::assertSame(['await_ready', 'provision:string'], Journal::$steps);
     self::assertSame(['ask-ready'], RecordingCommand::labels(), 'the step commands dispatched before the check');
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
     self::assertSame([], $this->pendingOf(WakeKind::Timeout), 'the alarm was cancelled with the resuming save');
   }
 
   public function test_a_late_fact_after_a_satisfied_precheck_is_absorbed(): void {
     ReadinessProcess::$ready = true;
     // Capture the minted key while the await is registered (the precheck runs then).
-    ReadinessProcess::$statusProbe = fn () => $this->store->find(1)->await_routes()[0]->awaitKey;
+    ReadinessProcess::$statusProbe = fn () => $this->store->find(1)->await_routes()[0]->await_key;
     $p = new ReadinessProcess();
     $this->runner->start($p);
     [$minted] = ReadinessProcess::$seenStatus;
@@ -250,28 +250,28 @@ final class ProcessRunnerWave4Test extends TestCase {
     // The fact the precheck stood in for arrives late, keyed on the minted ref.
     $report = $this->runner->resume_with_outcome(new JobFinished((string) $minted, true));
 
-    self::assertTrue($report->isUnheard(), 'no process waits for it any more, and nothing throws');
+    self::assertTrue($report->is_unheard(), 'no process waits for it any more, and nothing throws');
     self::assertSame([], $report->resumed);
     self::assertSame(['await_ready', 'provision:string'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_unsatisfied_precheck_stays_suspended_and_the_fact_resumes_later(): void {
     $p = new ReadinessProcess();
     $this->runner->start($p);
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
 
-    $ref = $this->store->find($p->get_id())->await_routes()[0]->awaitKey;
+    $ref = $this->store->find($p->get_id())->await_routes()[0]->await_key;
     $this->deliver(JobFinished::class, ['job_id' => $ref, 'ok' => true]);
 
     self::assertSame(['await_ready', 'provision:' . JobFinished::class], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_the_precheck_is_skipped_when_a_fact_already_resumed_the_process_during_dispatch(): void {
     ReadinessProcess::$ready = true;
     RecordingCommand::$onSend = function (RecordingCommand $c): void {
-      $ref = $this->store->find(1)->await_routes()[0]->awaitKey;
+      $ref = $this->store->find(1)->await_routes()[0]->await_key;
       $this->runner->resume(new JobFinished($ref, true));
     };
 
@@ -291,7 +291,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => true]);
 
     self::assertSame(['prepare:9', 'sync:9', 'complete_sync:9'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_cancellation_fact_compensates_every_process_it_cancels(): void {
@@ -305,9 +305,9 @@ final class ProcessRunnerWave4Test extends TestCase {
 
     $this->deliver(AppDestroyScheduled::class, ['app_id' => 9]);
 
-    self::assertSame('failed', $this->store->statusOf($a->get_id()));
-    self::assertSame('failed', $this->store->statusOf($b->get_id()));
-    self::assertSame('suspended', $this->store->statusOf($other->get_id()));
+    self::assertSame('failed', $this->store->status_of($a->get_id()));
+    self::assertSame('failed', $this->store->status_of($b->get_id()));
+    self::assertSame('suspended', $this->store->status_of($other->get_id()));
     self::assertCount(2, Journal::$steps);
     self::assertStringStartsWith('unprepare:9:', Journal::$steps[0]);
     self::assertStringContainsString('Cancelled by', Journal::$steps[0]);
@@ -317,14 +317,14 @@ final class ProcessRunnerWave4Test extends TestCase {
     $p = new CancellableSyncProcess(9);
     $this->runner->start($p);
 
-    self::assertSame([$p->get_id()], $this->store->findWaitingFor(JobFinished::class));
-    self::assertSame([$p->get_id()], $this->store->findWaitingFor(AppDestroyScheduled::class));
+    self::assertSame([$p->get_id()], $this->store->find_waiting_for(JobFinished::class));
+    self::assertSame([$p->get_id()], $this->store->find_waiting_for(AppDestroyScheduled::class));
 
     // A fact of another class may reach it through the common-ancestor
     // column, but accepts() filters it: nothing resumes.
     $report = $this->runner->resume_with_outcome(new UserJoined(9));
-    self::assertTrue($report->isUnheard());
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertTrue($report->is_unheard());
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
   }
 
   private function legacyRunner(ArrayProcessRepository $repo): ProcessRunner {
@@ -370,7 +370,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $runner->start($p);
 
     $child = $runner->resume_with_outcome(new \TangibleDDD\Core\Tests\Unit\Fixtures\Process\VipJoined(4));
-    self::assertTrue($child->isUnheard(), 'as on 0.6: the subclass fact does not reach the parent-class await');
+    self::assertTrue($child->is_unheard(), 'as on 0.6: the subclass fact does not reach the parent-class await');
     self::assertSame('suspended', $repo->find($p->get_id())->status());
 
     $parent = $runner->resume_with_outcome(new \TangibleDDD\Core\Tests\Unit\Fixtures\Process\MemberJoined(4));
@@ -385,7 +385,7 @@ final class ProcessRunnerWave4Test extends TestCase {
 
     $first = $this->runner->resume_with_outcome(new UserJoined(5));
     self::assertSame([$a->get_id()], $first->resumed, '0.6: only the first accepting process takes an unkeyed fact');
-    self::assertSame('suspended', $this->store->statusOf($b->get_id()));
+    self::assertSame('suspended', $this->store->status_of($b->get_id()));
 
     $second = $this->runner->resume_with_outcome(new UserJoined(6));
     self::assertSame([$b->get_id()], $second->resumed);
@@ -394,7 +394,7 @@ final class ProcessRunnerWave4Test extends TestCase {
 
   public function test_any_of_round_trips_and_routes_each_branch(): void {
     $any = AwaitAny::of(AwaitEvent::keyed(JobFinished::class, 'j1'))
-      ->cancelledBy(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 3]))
+      ->cancelled_by(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 3]))
       ->until(new \DateTimeImmutable('2026-10-03 00:00:00', new \DateTimeZone('Europe/Berlin')));
     $copy = AwaitAny::from_array(json_decode(json_encode($any->to_array()), true));
 
@@ -431,7 +431,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->deliver(ChildPurged::class, ['child_id' => 'c3'], '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d24');
 
     self::assertSame(['children_first:3', 'purge_self:c2,c1,c3'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_empty_dynamic_key_set_does_not_suspend(): void {
@@ -439,7 +439,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->runner->start($p);
 
     self::assertSame(['children_first:0', 'purge_self:'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
     self::assertSame([], $this->pendingOf(WakeKind::Timeout));
   }
 
@@ -460,7 +460,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->runner->start($p);
 
     [$intent] = $this->pendingOf(WakeKind::Timeout);
-    self::assertSame('2026-10-02T13:00:00+00:00', $intent->dueAt->format('c'));
+    self::assertSame('2026-10-02T13:00:00+00:00', $intent->due_at->format('c'));
     self::assertSame('2026-10-02T13:00:00+00:00', $this->store->find($p->get_id())->await_deadline()?->format('c'));
     self::assertNull($this->store->find($p->get_id())->waiting_for(), 'a timer waits for no fact');
 
@@ -479,7 +479,7 @@ final class ProcessRunnerWave4Test extends TestCase {
 
     self::assertSame(['wait', 'fire'], Journal::$steps);
     self::assertSame(['fired'], RecordingCommand::labels());
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_alarm_at_an_absolute_instant_is_due_exactly_then_in_utc(): void {
@@ -487,7 +487,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->runner->start($p);
 
     [$intent] = $this->pendingOf(WakeKind::Timeout);
-    self::assertSame('2026-10-04T13:30:00+00:00', $intent->dueAt->format('c'));
+    self::assertSame('2026-10-04T13:30:00+00:00', $intent->due_at->format('c'));
   }
 
   public function test_alarm_round_trips(): void {
@@ -504,7 +504,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $deadline = new FactOrDeadlineProcess('2026-10-04T12:00:00+00:00');
     $this->runner->start($deadline);
     [$intent] = $this->pendingOf(WakeKind::Timeout);
-    self::assertSame('2026-10-04T12:00:00+00:00', $intent->dueAt->format('c'));
+    self::assertSame('2026-10-04T12:00:00+00:00', $intent->due_at->format('c'));
 
     $this->clock->advance('PT72H');
     $this->drainDue();
@@ -525,9 +525,9 @@ final class ProcessRunnerWave4Test extends TestCase {
     $p = new EffectStepProcess();
     $this->runner->start($p);
 
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()), 'a retry, not a compensation');
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()), 'a retry, not a compensation');
     [$retry] = $this->pendingOf(WakeKind::Continue);
-    self::assertSame('2026-10-01T12:00:30+00:00', $retry->dueAt->format('c'), 'the policy backoff');
+    self::assertSame('2026-10-01T12:00:30+00:00', $retry->due_at->format('c'), 'the policy backoff');
     self::assertSame(1, $this->store->find($p->get_id())->step_attempts('charge'));
 
     $this->clock->advance('PT30S');
@@ -536,7 +536,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame(1, EffectStepProcess::$performed, 'the process-level retry reused the journaled result');
     self::assertSame(['charge', 'charge', 'done'], Journal::$steps);
     self::assertSame(EffectStepProcess::$keys[0], EffectStepProcess::$keys[1], 'same idempotency key on the re-run');
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_exhausted_retry_policy_compensates(): void {
@@ -549,7 +549,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     }
 
     self::assertSame(['charge', 'charge', 'charge'], Journal::$steps, '1 attempt + 2 retries');
-    self::assertSame('failed', $this->store->statusOf($p->get_id()));
+    self::assertSame('failed', $this->store->status_of($p->get_id()));
   }
 
   public function test_the_default_policy_is_zero_retries_then_compensate(): void {
@@ -557,7 +557,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->runner->start($p);
 
     self::assertSame(['first', 'second', 'undo_first'], Journal::$steps);
-    self::assertSame('failed', $this->store->statusOf($p->get_id()));
+    self::assertSame('failed', $this->store->status_of($p->get_id()));
     self::assertSame([], $this->pendingOf(WakeKind::Continue));
   }
 
@@ -572,11 +572,11 @@ final class ProcessRunnerWave4Test extends TestCase {
     $p = new RetriedAwaitProcess();
     $this->runner->start($p);
 
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
-    self::assertSame([], $this->store->findWaitingFor(JobFinished::class), 'the await was withdrawn');
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
+    self::assertSame([], $this->store->find_waiting_for(JobFinished::class), 'the await was withdrawn');
 
     $this->drainDue();
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
     self::assertSame(['ask', 'ask'], Journal::$steps);
     self::assertSame(RecordingCommand::$hints[0], RecordingCommand::$hints[1], 'the re-run dispatches the same deterministic command id');
   }
@@ -584,10 +584,10 @@ final class ProcessRunnerWave4Test extends TestCase {
   public function test_a_retried_post_await_step_receives_the_same_fact(): void {
     $p = new RetriedAnswerProcess();
     $this->runner->start($p);
-    $job = $this->store->find($p->get_id())->await_routes()[0]->awaitKey;
+    $job = $this->store->find($p->get_id())->await_routes()[0]->await_key;
 
     $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => true]);
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()), 'a retry, not a compensation');
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()), 'a retry, not a compensation');
     self::assertSame(1, $this->store->find($p->get_id())->step_attempts('answer'));
 
     // A restarted worker runs the retry: the fact must come from the row.
@@ -598,7 +598,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->drainDue();
 
     self::assertSame(['ask', 'answer:' . $job, 'answer:' . $job], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
     self::assertNull($this->store->find($p->get_id())->steps()->resume, 'the resume source is cleared once the step completes');
   }
 
@@ -607,25 +607,25 @@ final class ProcessRunnerWave4Test extends TestCase {
     $this->runner->start($p);
     $this->deliver(ChildPurged::class, ['child_id' => 'c1']);
     $this->deliver(ChildPurged::class, ['child_id' => 'c2'], '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d25');
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
 
     $this->drainDue();
 
     self::assertSame(['judge:c1,c2', 'judge:c1,c2'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_an_async_post_await_step_still_receives_its_fact(): void {
     $p = new AsyncAnswerProcess();
     $this->runner->start($p);
-    $ref = $this->store->find($p->get_id())->await_routes()[0]->awaitKey;
+    $ref = $this->store->find($p->get_id())->await_routes()[0]->await_key;
 
     $this->deliver(JobFinished::class, ['job_id' => $ref, 'ok' => true]);
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
     $this->drainDue();
 
     self::assertSame(['async-answer:' . $ref], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_new_step_state_round_trips_through_the_steps_json(): void {
@@ -635,7 +635,7 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame(['a' => 2], $copy->attempts);
     self::assertSame('2026-10-02T13:00:00+00:00', $copy->await_due_at);
 
-    $source = ['step_index' => 1] + \TangibleDDD\Application\Process\ResumeSource::ofMechanism(
+    $source = ['step_index' => 1] + \TangibleDDD\Application\Process\ResumeSource::of_mechanism(
       AwaitAll::keyed(ChildPurged::class, ['a'], 60)->accumulate(new ChildPurged('a')), new ChildPurged('a'),
     );
     $withResume = new ProcessSteps(['a', 'b'], [], [], 1, -1, null, [], null, $source);
@@ -644,9 +644,9 @@ final class ProcessRunnerWave4Test extends TestCase {
     unset($restored['step_index']);
     self::assertSame(['a'], \TangibleDDD\Application\Process\ResumeSource::restore($restored)->gathered());
     self::assertEquals(new JobFinished('j', false), \TangibleDDD\Application\Process\ResumeSource::restore(
-      \TangibleDDD\Application\Process\ResumeSource::ofValue(new JobFinished('j', false)),
+      \TangibleDDD\Application\Process\ResumeSource::of_value(new JobFinished('j', false)),
     ));
-    self::assertNull(\TangibleDDD\Application\Process\ResumeSource::ofValue(new \stdClass()), 'not persistable');
+    self::assertNull(\TangibleDDD\Application\Process\ResumeSource::of_value(new \stdClass()), 'not persistable');
 
     // A 0.6 / wave-3 row without the new keys still decodes.
     $old = ProcessSteps::from_json(json_decode('{"steps":["a"],"compensations":{},"checkpoints":{},"step_index":0,"undo_index":-1,"failure_msg":null}', false));

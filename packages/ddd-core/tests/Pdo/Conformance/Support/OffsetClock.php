@@ -9,7 +9,7 @@ use TangibleDDD\Testing\EnvOffsetClock;
 
 /**
  * The test process's side of EnvOffsetClock (register 3.1, ruling #84):
- * system time plus a whole number of seconds that advanceClock() grows.
+ * system time plus a whole number of seconds that advance_clock() grows.
  * A fresh `php` process gets the same offset as DDD_CLOCK_OFFSET and builds
  * an EnvOffsetClock, so both read the same "now" up to real elapsed time,
  * which only moves forward.

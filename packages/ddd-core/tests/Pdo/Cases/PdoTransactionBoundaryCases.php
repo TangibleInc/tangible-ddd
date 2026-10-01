@@ -23,7 +23,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
 
   /** @return list<string> */
   private function names(): array {
-    return array_column($this->db->fetchAll('SELECT name FROM tp_widgets ORDER BY id'), 'name');
+    return array_column($this->db->fetch_all('SELECT name FROM tp_widgets ORDER BY id'), 'name');
   }
 
   public function test_run_commits_and_returns_the_value_unchanged(): void {
@@ -32,15 +32,15 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
     $dto = new \stdClass();
 
     $result = $boundary->run(function () use ($boundary, $dto) {
-      self::assertTrue($boundary->isActive());
+      self::assertTrue($boundary->is_active());
       $this->insert('a');
       return $dto;
     });
 
     self::assertSame($dto, $result);
-    self::assertFalse($boundary->isActive());
+    self::assertFalse($boundary->is_active());
     self::assertSame(['a'], $this->names());
-    self::assertSame(['a'], array_column($this->otherConnection()->fetchAll('SELECT name FROM tp_widgets'), 'name'), 'visible to another connection: committed');
+    self::assertSame(['a'], array_column($this->otherConnection()->fetch_all('SELECT name FROM tp_widgets'), 'name'), 'visible to another connection: committed');
   }
 
   public function test_a_throwing_work_rolls_back_and_rethrows_the_original(): void {
@@ -56,7 +56,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
     } catch (\DomainException $e) {
       self::assertSame($original, $e);
     }
-    self::assertFalse($this->db->inTransaction());
+    self::assertFalse($this->db->in_transaction());
     self::assertSame([], $this->names());
   }
 
@@ -70,7 +70,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
         self::fail('expected NestedTransactionRejected');
       } catch (NestedTransactionRejected) {
       }
-      self::assertTrue($this->db->inTransaction(), 'outer transaction still open');
+      self::assertTrue($this->db->in_transaction(), 'outer transaction still open');
       $this->insert('outer-after');
     });
 
@@ -85,7 +85,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
       $boundary->run(fn () => $this->insert('inner'));
       self::fail('expected NestedTransactionRejected');
     } catch (NestedTransactionRejected) {
-      self::assertTrue($this->db->inTransaction());
+      self::assertTrue($this->db->in_transaction());
     } finally {
       $this->db->commit();
     }
@@ -109,7 +109,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
         return 42;
       });
       self::assertSame(42, $value);
-      self::assertTrue($this->db->inTransaction());
+      self::assertTrue($this->db->in_transaction());
     });
 
     self::assertSame(['outer', 'inner-kept'], $this->names());
@@ -126,7 +126,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
     } catch (TransactionFailed $e) {
       self::assertSame('injected commit failure', $e->getPrevious()?->getMessage());
     }
-    self::assertFalse($this->db->inTransaction(), 'the open transaction was rolled back');
+    self::assertFalse($this->db->in_transaction(), 'the open transaction was rolled back');
     self::assertSame([], $this->names());
   }
 
@@ -148,7 +148,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
     $faulty = new FaultyConnection($this->db);
     $logger = new RecordingLogger();
     $boundary = new PdoTransactionBoundary($faulty, logger: $logger);
-    $faulty->failOn = 'rollBack';
+    $faulty->failOn = 'rollback';
     $original = new \DomainException('handler failed');
 
     try {
@@ -161,7 +161,7 @@ abstract class PdoTransactionBoundaryCases extends PdoTestCase {
       self::assertSame($original, $e);
     }
     self::assertCount(1, $logger->records);
-    self::assertStringContainsString('injected rollBack failure', $logger->messages()[0]);
+    self::assertStringContainsString('injected rollback failure', $logger->messages()[0]);
     self::assertSame([], $this->names());
   }
 

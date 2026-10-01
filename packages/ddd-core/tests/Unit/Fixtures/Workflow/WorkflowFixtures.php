@@ -43,7 +43,7 @@ final class MemIgnitionLedger implements IWorkflowIgnitionLedger, InMemoryTransa
   public function attach(string $dedupKey, int $workflowId): void {
     $row = $this->rows[$dedupKey] ?? null;
     if ($row !== null) {
-      $this->rows[$dedupKey] = new WorkflowIgnition($row->dedupKey, $row->kind, $workflowId, $row->eventId, $row->createdAt);
+      $this->rows[$dedupKey] = new WorkflowIgnition($row->key, $row->kind, $workflowId, $row->event_id, $row->created_at);
     }
   }
 
@@ -55,11 +55,11 @@ final class MemIgnitionLedger implements IWorkflowIgnitionLedger, InMemoryTransa
     unset($this->rows[$dedupKey]);
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return $this->rows;
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     $this->rows = $state;
   }
 }
@@ -92,11 +92,11 @@ final class MemWorkflowRepository implements IBehaviourWorkflowRepository, InMem
     $this->rows[$workflow->get_id()] = $workflow;
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->rows, $this->next];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->rows, $this->next] = $state;
   }
 }
@@ -130,7 +130,7 @@ final class NightlyExportWorkflow extends WorkflowHandler implements IStartsFrom
 
   public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
     /** @var CronEntryDue $fact */
-    return WorkflowIgnitionKey::perMinute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
+    return WorkflowIgnitionKey::per_minute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
   }
 
   public function start_ignited(BehaviourWorkflow $workflow): void {

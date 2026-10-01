@@ -36,18 +36,18 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
     $c = WakeupIntent::continuation('acme', 7, 3, $due);
 
     self::assertSame(WakeKind::Timeout, $t->kind);
-    self::assertSame('timeout:7:2', $t->idempotencyKey);
-    self::assertSame('suspended', $t->expectedStatus);
+    self::assertSame('timeout:7:2', $t->key);
+    self::assertSame('suspended', $t->expected_status);
     self::assertSame(WakeKind::Continue, $c->kind);
-    self::assertSame('continue:7:3', $c->idempotencyKey);
-    self::assertSame('scheduled', $c->expectedStatus);
+    self::assertSame('continue:7:3', $c->key);
+    self::assertSame('scheduled', $c->expected_status);
     self::assertSame('timeout', WakeKind::Timeout->value);
     self::assertSame('resume_retry', WakeKind::ResumeRetry->value);
   }
 
   public function test_intent_due_at_is_normalised_to_utc(): void {
     $i = WakeupIntent::timeout('acme', 1, 0, new \DateTimeImmutable('2026-10-01 14:00:00', new \DateTimeZone('Europe/Berlin')));
-    self::assertSame('2026-10-01T12:00:00+00:00', $i->dueAt->format(DATE_ATOM));
+    self::assertSame('2026-10-01T12:00:00+00:00', $i->due_at->format(DATE_ATOM));
   }
 
   public function test_schedule_outside_a_transaction_throws(): void {
@@ -68,12 +68,12 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
   }
 
   public function test_lenient_mode_is_an_explicit_named_factory(): void {
-    $lenient = InMemoryWakeupScheduler::withoutTransactionCheck();
+    $lenient = InMemoryWakeupScheduler::lenient();
 
     $lenient->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
     self::assertCount(1, $lenient->pending());
 
-    $lenient->cancel(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())->idempotencyKey);
+    $lenient->cancel(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())->key);
     self::assertSame([], $lenient->pending());
   }
 
@@ -85,7 +85,7 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
       });
     } catch (\RuntimeException) {
     }
-    self::assertSame([], $this->scheduler->claimDue($this->clock->now(), 10, 30));
+    self::assertSame([], $this->scheduler->claim_due($this->clock->now(), 10, 30));
   }
 
   public function test_due_intents_are_claimed_once_in_due_order(): void {
@@ -93,37 +93,37 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
     $this->schedule(WakeupIntent::timeout('acme', 2, 0, $this->clock->now()->modify('+5 seconds')));
     $this->schedule(WakeupIntent::timeout('acme', 3, 0, $this->clock->now()->modify('+25 hours')));
 
-    self::assertSame([], $this->scheduler->claimDue($this->clock->now(), 10, 30));
+    self::assertSame([], $this->scheduler->claim_due($this->clock->now(), 10, 30));
 
     $this->clock->advance('PT10S');
-    $claimed = $this->scheduler->claimDue($this->clock->now(), 10, 30);
-    self::assertSame([2, 1], array_map(static fn ($w) => $w->intent->processId, $claimed));
-    self::assertSame([], $this->scheduler->claimDue($this->clock->now(), 10, 30), 'leased');
+    $claimed = $this->scheduler->claim_due($this->clock->now(), 10, 30);
+    self::assertSame([2, 1], array_map(static fn ($w) => $w->intent->process_id, $claimed));
+    self::assertSame([], $this->scheduler->claim_due($this->clock->now(), 10, 30), 'leased');
   }
 
   public function test_duplicate_idempotency_key_is_a_no_op(): void {
     $this->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
     $this->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()->modify('+1 day')));
 
-    $claimed = $this->scheduler->claimDue($this->clock->now(), 10, 30);
+    $claimed = $this->scheduler->claim_due($this->clock->now(), 10, 30);
     self::assertCount(1, $claimed);
-    self::assertEquals($this->clock->now(), $claimed[0]->intent->dueAt, 'the first intent wins');
+    self::assertEquals($this->clock->now(), $claimed[0]->intent->due_at, 'the first intent wins');
   }
 
   public function test_cancel_removes_the_intent(): void {
     $this->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
     $this->tx->run(fn () => $this->scheduler->cancel('timeout:1:0'));
 
-    self::assertSame([], $this->scheduler->claimDue($this->clock->now(), 10, 30));
+    self::assertSame([], $this->scheduler->claim_due($this->clock->now(), 10, 30));
     self::assertSame([], $this->scheduler->pending());
   }
 
   public function test_complete_is_fenced_by_the_claim_token(): void {
     $this->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
-    [$a] = $this->scheduler->claimDue($this->clock->now(), 1, 30);
+    [$a] = $this->scheduler->claim_due($this->clock->now(), 1, 30);
 
     $this->clock->advance('PT31S');
-    [$b] = $this->scheduler->claimDue($this->clock->now(), 1, 30);
+    [$b] = $this->scheduler->claim_due($this->clock->now(), 1, 30);
 
     self::assertFalse($this->scheduler->complete($a));
     self::assertTrue($this->scheduler->complete($b));
@@ -132,14 +132,14 @@ final class InMemoryWakeupSchedulerTest extends TestCase {
 
   public function test_retry_later_counts_attempts_and_delays(): void {
     $this->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now()));
-    [$w] = $this->scheduler->claimDue($this->clock->now(), 1, 30);
+    [$w] = $this->scheduler->claim_due($this->clock->now(), 1, 30);
 
-    self::assertTrue($this->scheduler->retryLater($w, 'LockNotAcquired', $this->clock->now()->modify('+2 seconds')));
-    self::assertSame([], $this->scheduler->claimDue($this->clock->now(), 1, 30));
+    self::assertTrue($this->scheduler->retry_later($w, 'LockNotAcquired', $this->clock->now()->modify('+2 seconds')));
+    self::assertSame([], $this->scheduler->claim_due($this->clock->now(), 1, 30));
 
     $this->clock->advance('PT2S');
-    [$again] = $this->scheduler->claimDue($this->clock->now(), 1, 30);
+    [$again] = $this->scheduler->claim_due($this->clock->now(), 1, 30);
     self::assertSame(1, $again->attempts);
-    self::assertFalse($this->scheduler->retryLater($w, 'late', $this->clock->now()), 'stale claim');
+    self::assertFalse($this->scheduler->retry_later($w, 'late', $this->clock->now()), 'stale claim');
   }
 }

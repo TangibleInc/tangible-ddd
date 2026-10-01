@@ -33,7 +33,7 @@ use TangibleDDD\Testing\StaticConsumerIdentity;
 final class PsrLoggingTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   public function test_log_write_routes_to_a_psr3_logger_at_warning_by_default(): void {
@@ -103,7 +103,7 @@ final class PsrLoggingTest extends TestCase {
   public function test_mem_boundary_logs_a_failed_rollback_through_psr3(): void {
     $logger = new RecordingLogger();
     $boundary = new InMemoryTransactionBoundary(NestedPolicy::Reject, $logger);
-    $boundary->failNextRollback('disk gone');
+    $boundary->fail_next_rollback('disk gone');
 
     try {
       $boundary->run(static function (): void { throw new \DomainException('original'); });

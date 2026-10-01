@@ -37,7 +37,7 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
   }
 
   public function get_by_id(int $id): WorkItem {
-    $row = $this->db->fetchOne("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
+    $row = $this->db->fetch_one("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
     if ($row === null) {
       throw new \RuntimeException("WorkItem not found: {$id}");
     }
@@ -45,7 +45,7 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
   }
 
   public function find_by_unique(int $workflow_id, int $behaviour_idx, int $phase, string $item_key): ?WorkItem {
-    $row = $this->db->fetchOne(
+    $row = $this->db->fetch_one(
       "SELECT * FROM `{$this->table}` WHERE workflow_id = ? AND behaviour_idx = ? AND phase = ? AND item_key = ?",
       [$workflow_id, $behaviour_idx, $phase, $item_key]
     );
@@ -53,7 +53,7 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
   }
 
   public function get_for_step(int $workflow_id, int $behaviour_idx, int $phase): WorkItemList {
-    $rows = $this->db->fetchAll(
+    $rows = $this->db->fetch_all(
       "SELECT * FROM `{$this->table}` WHERE workflow_id = ? AND behaviour_idx = ? AND phase = ? ORDER BY id",
       [$workflow_id, $behaviour_idx, $phase]
     );
@@ -61,7 +61,7 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
   }
 
   public function save(WorkItem $item): void {
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     $payload = $item->payload === null ? null : json_encode($item->payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
     if ($item->get_id() !== null) {
@@ -84,7 +84,7 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
       [$item->workflow_id, $item->behaviour_idx, $item->phase, $item->item_key, $item->status->value, $item->attempts,
        $item->last_error, $payload, $item->blog_id, $now, $now]
     );
-    $id = (int) $this->db->lastInsertId();
+    $id = (int) $this->db->last_insert_id();
     if ($id <= 0) {
       throw new \RuntimeException("Saving work item {$item->item_key} returned no id");
     }
@@ -109,8 +109,8 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
       payload: $payload,
       blog_id: (int) $row['blog_id'],
     );
-    $item->created_at = Utc::fromDbOrNull($row['created_at']);
-    $item->updated_at = Utc::fromDbOrNull($row['updated_at']);
+    $item->created_at = Utc::from_db_or_null($row['created_at']);
+    $item->updated_at = Utc::from_db_or_null($row['updated_at']);
     return $item;
   }
 }

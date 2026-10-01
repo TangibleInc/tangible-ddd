@@ -173,7 +173,7 @@ final class DurableRuntime {
     $store = new PdoProcessStore($db, $tablePrefix, $clock, logger: $logger);
     $ledger = new PdoDeliveryLedger($db, $tablePrefix, $clock);
     $lock = new ReentrantProcessLock(new MySqlNamedLock($db, $logger), $logger);
-    RuntimeReset::guardLock($lock);
+    RuntimeReset::guard($lock);
     $effectJournal = new PdoEffectJournal($db, $tablePrefix, $clock);
 
     // ── command and query buses (register 3.2 frozen order) ──────────────
@@ -211,8 +211,8 @@ final class DurableRuntime {
     $workflowIgnitions = new PdoWorkflowIgnitionLedger($db, $tablePrefix, $clock);
 
     // ── the core operator repairs (WP8-10), dispatchable on the bus ──────
-    $container->setDefaultHandler(ResumeStrandedProcess::class, new ResumeStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
-    $container->setDefaultHandler(FailStrandedProcess::class, new FailStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
+    $container->set_default_handler(ResumeStrandedProcess::class, new ResumeStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
+    $container->set_default_handler(FailStrandedProcess::class, new FailStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
 
     foreach ([
       CommandBus::class => $bus,
@@ -242,17 +242,17 @@ final class DurableRuntime {
 
     $registrar = new SubscriptionRegistrar($registry, $runner, $container);
     foreach ($listeners as $listener) {
-      $registrar->registerListener($listener);
+      $registrar->register_listener($listener);
     }
     foreach ($processes as $process) {
-      $registrar->registerProcess($process);
+      $registrar->register_process($process);
     }
 
     // ── the drain ────────────────────────────────────────────────────────
     $delivery = new IntegrationDelivery($registry, $ledger, IntegrationDelivery::DEFAULT_BUDGET, $logger);
     $drain = new Drain(
       relay: new OutboxProcessor($config, null, $outboxConfig, null, null, $logger, $clock, $outbox, $jobs, $boundary),
-      wakeups: $jobs->withClaimKinds(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry),
+      wakeups: $jobs->claiming(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry),
       processWakes: $runner,
       delivery: new PdoDeliveryWorker($jobs, $delivery, self::eventClasses($registry), logger: $logger),
       stranded: $runner,
@@ -275,7 +275,7 @@ final class DurableRuntime {
   }
 
   /** The query bus (SelfExecuting → handler; no act bracket). */
-  public function queryBus(): CommandBus {
+  public function query_bus(): CommandBus {
     return $this->queryBus;
   }
 
@@ -285,7 +285,7 @@ final class DurableRuntime {
    * shutdown function or a worker loop the host writes itself.
    */
   public function drain(int $maxItems = 200, int $maxSeconds = 50): DrainReport {
-    return $this->drain->runOnce($maxItems, $maxSeconds);
+    return $this->drain->run_once($maxItems, $maxSeconds);
   }
 
   /** The core Drain behind drain() (W3C-R5). */
@@ -293,7 +293,7 @@ final class DurableRuntime {
     return $this->drain;
   }
 
-  public function operatorView(): PdoOperatorView {
+  public function operator_view(): PdoOperatorView {
     return $this->operatorView;
   }
 
@@ -319,7 +319,7 @@ final class DurableRuntime {
   }
 
   /** Local (in-transaction) domain-event listeners: ->listen(DomainEventClass, callable). */
-  public function localListeners(): OrderedListenerDispatcher {
+  public function listeners(): OrderedListenerDispatcher {
     return $this->localListeners;
   }
 
@@ -332,7 +332,7 @@ final class DurableRuntime {
   }
 
   /** The D1 journal EffectMiddleware uses (wave 4); repairs call invalidate() in their own transaction. */
-  public function effectJournal(): PdoEffectJournal {
+  public function journal(): PdoEffectJournal {
     return $this->effectJournal;
   }
 
@@ -341,19 +341,19 @@ final class DurableRuntime {
     return $this->workflows;
   }
 
-  public function workItems(): PdoWorkItemRepository {
+  public function work_items(): PdoWorkItemRepository {
     return $this->workItems;
   }
 
   /** The workflow ignition ledger, for a core WorkflowIgniter (with boundary() and the runtime's clock). */
-  public function workflowIgnitions(): PdoWorkflowIgnitionLedger {
+  public function ignitions(): PdoWorkflowIgnitionLedger {
     return $this->workflowIgnitions;
   }
 
   /** @return array<string, class-string<IIntegrationEvent>> event type → fact class, for jobs without a recorded class */
   private static function eventClasses(RecordingSubscriptionRegistry $registry): array {
     $map = [];
-    foreach ($registry->subscribedClasses() as $class) {
+    foreach ($registry->fact_classes() as $class) {
       if (!class_exists($class) || !is_a($class, IIntegrationEvent::class, true)) {
         continue; // a marker interface names no single class
       }

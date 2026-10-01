@@ -16,16 +16,16 @@ final class Utc {
 
   private const FORMAT = 'Y-m-d H:i:s.u';
 
-  public static function toDb(\DateTimeInterface $t): string {
+  public static function to_db(\DateTimeInterface $t): string {
     return \DateTimeImmutable::createFromInterface($t)->setTimezone(self::zone())->format(self::FORMAT);
   }
 
-  public static function fromDb(string $value): \DateTimeImmutable {
+  public static function from_db(string $value): \DateTimeImmutable {
     return new \DateTimeImmutable($value, self::zone());
   }
 
-  public static function fromDbOrNull(mixed $value): ?\DateTimeImmutable {
-    return $value === null ? null : self::fromDb((string) $value);
+  public static function from_db_or_null(mixed $value): ?\DateTimeImmutable {
+    return $value === null ? null : self::from_db((string) $value);
   }
 
   private static function zone(): \DateTimeZone {

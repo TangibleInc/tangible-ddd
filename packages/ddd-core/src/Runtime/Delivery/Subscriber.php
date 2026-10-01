@@ -18,12 +18,12 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * uuid5(event_id, subscriber_id).
  *
  * `handle` is `\Closure(IIntegrationEvent $event, string $eventId): void`.
- * `onExhausted` (optional) is `\Closure(IIntegrationEvent $event, \Throwable $last): void`,
+ * `on_exhausted` (optional) is `\Closure(IIntegrationEvent $event, \Throwable $last): void`,
  * fired by IntegrationDelivery when this subscriber reaches its budget and
  * re-fired on later deliveries until it returns without throwing (then the
  * ledger's terminal marker stops it). It must be idempotent.
  *
- * UNRATIFIED: `onExhausted` is a fifth parameter beyond the register sketch;
+ * UNRATIFIED: `on_exhausted` is a fifth parameter beyond the register sketch;
  * see CR-2 in Runtime/API-CHANGE-REQUESTS.md.
  */
 final class Subscriber {
@@ -33,16 +33,16 @@ final class Subscriber {
   public const RESUME = 99;
 
   /**
-   * @param class-string $eventClassOrMarker a concrete fact class or a marker interface (D2)
+   * @param class-string $event_class a concrete fact class or a marker interface (D2)
    * @param \Closure(IIntegrationEvent, string): void $handle
-   * @param (\Closure(IIntegrationEvent, \Throwable): void)|null $onExhausted
+   * @param (\Closure(IIntegrationEvent, \Throwable): void)|null $on_exhausted
    */
   public function __construct(
     public readonly string $id,
     public readonly int $priority,
-    public readonly string $eventClassOrMarker,
+    public readonly string $event_class,
     public readonly \Closure $handle,
-    public readonly ?\Closure $onExhausted = null,
+    public readonly ?\Closure $on_exhausted = null,
   ) {
     if ($id === '') {
       throw new \InvalidArgumentException('Subscriber id must not be empty');

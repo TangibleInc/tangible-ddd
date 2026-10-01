@@ -50,7 +50,7 @@ final class CreateCustomer extends Command implements IExternalEffectCommand {
     self::$failRecord = 0;
   }
 
-  public function idempotencyKey(): string {
+  public function idempotency_key(): string {
     return "provider:customer:{$this->account_id}";
   }
 
@@ -64,10 +64,10 @@ final class CreateCustomer extends Command implements IExternalEffectCommand {
       self::$failRecord--;
       throw new \RuntimeException('record failed on purpose');
     }
-    self::$recorded[] = (string) $r->externalRef;
+    self::$recorded[] = (string) $r->external_ref;
   }
 
-  public function failureCommand(\Throwable $last): ?ICommand {
+  public function failure_command(\Throwable $last): ?ICommand {
     return null;
   }
 }

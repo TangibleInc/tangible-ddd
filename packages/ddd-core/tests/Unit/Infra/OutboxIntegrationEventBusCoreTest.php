@@ -38,14 +38,14 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
   private InMemoryOutboxStore $store;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
     $this->store = new InMemoryOutboxStore($this->clock);
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
@@ -71,8 +71,8 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
     $event = new OrderPlaced(3, 'sku-3');
     $this->portBus()->publish($event);
 
-    [$id] = $this->store->eventIds();
-    $r = $this->store->recordOf($id);
+    [$id] = $this->store->event_ids();
+    $r = $this->store->record_of($id);
     self::assertSame(OrderPlaced::name(), $r->event_type);
     self::assertSame(OrderPlaced::integration_action(), $r->integration_action);
     self::assertSame(['order_id' => 3, 'sku' => 'sku-3'], $r->payload);
@@ -86,7 +86,7 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
   public function test_the_record_carries_the_fact_class_cr_pc_2(): void {
     $this->portBus()->publish(new OrderPlaced(3, 'sku-3'));
 
-    self::assertSame(OrderPlaced::class, $this->store->recordOf($this->store->eventIds()[0])->event_class);
+    self::assertSame(OrderPlaced::class, $this->store->record_of($this->store->event_ids()[0])->event_class);
   }
 
   public function test_a_hand_built_record_has_no_fact_class(): void {
@@ -99,7 +99,7 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
       Correlation::within(Correlation::current()->for_act('cmd-1', 'X'), fn () => $this->portBus()->publish(new OrderPlaced()));
     });
 
-    $r = $this->store->recordOf($this->store->eventIds()[0]);
+    $r = $this->store->record_of($this->store->event_ids()[0]);
     self::assertSame('story-1', $r->correlation_id);
     self::assertSame(5, $r->sequence);
     self::assertSame('cmd-1', $r->command_id);
@@ -108,7 +108,7 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
   public function test_a_delayed_fact_gets_an_absolute_utc_due_time_once(): void {
     $this->portBus(config: new OutboxConfig(max_attempts: 9))->publish(new ReminderDue(2));
 
-    $r = $this->store->recordOf($this->store->eventIds()[0]);
+    $r = $this->store->record_of($this->store->event_ids()[0]);
     self::assertEquals(new \DateTimeImmutable('2026-10-01 12:01:30', new \DateTimeZone('UTC')), $r->due_at);
     self::assertSame('UTC', $r->due_at->getTimezone()->getName());
     self::assertTrue($r->is_unique);
@@ -126,7 +126,7 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
     $this->portBus($observer)->publish(new OrderPlaced(8));
 
     self::assertCount(1, $observer->seen);
-    self::assertSame($this->store->eventIds()[0], $observer->seen[0][1]->event_id);
+    self::assertSame($this->store->event_ids()[0], $observer->seen[0][1]->event_id);
   }
 
   public function test_an_observer_error_never_breaks_publication(): void {
@@ -135,7 +135,7 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
 
     $this->portBus($this->observer(new \RuntimeException('index down')))->publish(new OrderPlaced());
 
-    self::assertCount(1, $this->store->eventIds(), 'the fact is still appended');
+    self::assertCount(1, $this->store->event_ids(), 'the fact is still appended');
     self::assertStringContainsString('index down', implode("\n", $logger->messages()));
   }
 

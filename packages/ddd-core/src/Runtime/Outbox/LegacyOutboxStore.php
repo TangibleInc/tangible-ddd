@@ -17,13 +17,13 @@ use TangibleDDD\Runtime\Support\Log;
  * - claim(): release_stale_locks($leaseSeconds), then
  *   fetch_pending($limit, $workerId); the repository leases rows its own
  *   way and honours its own pauses and clock ($now only computes the
- *   reported leaseUntil). Each entry becomes a Claim whose record carries
+ *   reported lease_until). Each entry becomes a Claim whose record carries
  *   the entry's ABSOLUTE scheduled_at as due_at, read as UTC: a 0.6 row with
  *   delay_seconds > 0 is not delayed a second time (bug 3, extraction
  *   variant).
- * - accept() → mark_completed(), retryLater() → mark_failed() (the
+ * - accept() → mark_completed(), retry_later() → mark_failed() (the
  *   repository computes its own next attempt; $nextAt is not honoured),
- *   deadLetter() → move_to_dlq(). All three return true: there is no claim
+ *   dead_letter() → move_to_dlq(). All three return true: there is no claim
  *   token to fence on, so a late holder's write is NOT detected. The
  *   missing fence is logged once per instance as a warning.
  * - append() throws OutboxWriteFailed: IOutboxRepository::write() takes the
@@ -77,12 +77,12 @@ final class LegacyOutboxStore implements IOutboxStore {
     return true;
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
     $this->repository->mark_failed($c->event_id, $error);
     return true;
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
+  public function dead_letter(Claim $c, string $error): bool {
     $this->repository->move_to_dlq($c->event_id, $error);
     return true;
   }

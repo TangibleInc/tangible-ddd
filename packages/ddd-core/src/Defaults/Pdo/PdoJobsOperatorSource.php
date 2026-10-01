@@ -49,7 +49,7 @@ final class PdoJobsOperatorSource implements IOperatorItemSource {
       Layer::Delivery => " AND kind = 'deliver'",
       default => '',
     };
-    $rows = $this->db->fetchAll(
+    $rows = $this->db->fetch_all(
       "SELECT idempotency_key, kind, attempts, last_error, created_at FROM `{$this->jobs}`
        WHERE attempts > 0$kindSql ORDER BY created_at, id LIMIT ?",
       [$limit]
@@ -64,7 +64,7 @@ final class PdoJobsOperatorSource implements IOperatorItemSource {
         (int) $r['attempts'],
         $deliver ? $this->deliveryBudget : $this->wakeBudget,
         $r['last_error'] === null ? null : (string) $r['last_error'],
-        Utc::fromDb((string) $r['created_at']),
+        Utc::from_db((string) $r['created_at']),
         $deliver ? ['redeliver'] : ['retry_wake'],
       );
     }, $rows);

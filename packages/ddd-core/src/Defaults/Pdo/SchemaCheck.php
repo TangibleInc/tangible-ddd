@@ -29,7 +29,7 @@ final class SchemaCheck {
   public function problems(): array {
     $problems = [];
     foreach (self::expected($this->tablePrefix) as $table => $spec) {
-      $info = $this->db->fetchOne(
+      $info = $this->db->fetch_one(
         'SELECT engine AS engine FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
         [$table]
       );
@@ -41,7 +41,7 @@ final class SchemaCheck {
         $problems[] = "$table: engine is {$info['engine']}, expected InnoDB";
       }
 
-      $columns = array_map('strval', array_column($this->db->fetchAll(
+      $columns = array_map('strval', array_column($this->db->fetch_all(
         'SELECT column_name AS c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?',
         [$table]
       ), 'c'));
@@ -52,7 +52,7 @@ final class SchemaCheck {
       }
 
       $unique = [];
-      foreach ($this->db->fetchAll(
+      foreach ($this->db->fetch_all(
         'SELECT index_name AS i, column_name AS c FROM information_schema.statistics
          WHERE table_schema = DATABASE() AND table_name = ? AND non_unique = 0
          ORDER BY index_name, seq_in_index',

@@ -72,7 +72,7 @@ final class AwaitEvent implements IAwaitMechanism, IRoutedAwait {
     if (!$event instanceof $this->event_class) {
       return false;
     }
-    if ($this->await_key !== null && AwaitRoute::keyOf($event) !== $this->await_key) {
+    if ($this->await_key !== null && AwaitRoute::key_of($event) !== $this->await_key) {
       return false;
     }
     foreach ($this->match_criteria as $key => $expected) {

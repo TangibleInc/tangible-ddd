@@ -11,7 +11,7 @@ use TangibleDDD\Application\Process\LongProcess;
  * 5.2, 5.3). New interface; consumers' IProcessRepository implementations
  * are bridged by LegacyProcessStore in wave 3 (R3).
  *
- * - insertIgnited(): the #[StartsOn] ignition path ONLY. Writes
+ * - insert_ignited(): the #[StartsOn] ignition path ONLY. Writes
  *   ignition_key = uuid5(event_id, process_class) (IgnitionKey::for) under
  *   UNIQUE (process_class, ignition_key) and returns AlreadyIgnited on a
  *   duplicate key (MySQL 1062 / Postgres 23505 only, never SQLSTATE class
@@ -30,9 +30,9 @@ use TangibleDDD\Application\Process\LongProcess;
  * - touch(): the fenced version bump the runner performs before each step
  *   dispatch (3.7); same errors as save(). (UNRATIFIED addition to the 3.8
  *   sketch; CR-5 in Runtime/API-CHANGE-REQUESTS.md.)
- * - versionOf(): the current version for the runner's fence, null for an
+ * - version_of(): the current version for the runner's fence, null for an
  *   unknown id. (UNRATIFIED addition; CR-5.)
- * - findWaitingFor(): ids only (E F14), of `suspended` processes waiting for
+ * - find_waiting_for(): ids only (E F14), of `suspended` processes waiting for
  *   the class; $awaitKey narrows keyed awaits (D3, wave 4). A store may
  *   index per route (LongProcess::await_routes(): one (event_class,
  *   await_key) row each, key '' = unkeyed) and match $awaitKey exactly, with
@@ -45,18 +45,18 @@ use TangibleDDD\Application\Process\LongProcess;
  *   `waiting_for` value is the branches' common class or interface, so the
  *   runner also asks for each IIntegrationEvent ancestor of the fact unless
  *   the store implements IMatchesFactAncestry (one lookup then).
- * - findStranded(): `running`/`scheduled` rows with no live intent past the
+ * - find_stranded(): `running`/`scheduled` rows with no live intent past the
  *   threshold (default 15 min).
  *
  * Error behaviour: every write failure throws ProcessStoreFailed; nothing
  * returns 0 or false for a failure (C27).
  * Connection rules: the host connection. The runner wraps "save + intents +
  * await rows" in ITransactionBoundary::run on this connection (5.3), and
- * insertIgnited runs in the same transaction as the initial save.
+ * insert_ignited runs in the same transaction as the initial save.
  */
 interface IProcessStore {
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult;
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult;
 
   public function insert(LongProcess $p): int;
 
@@ -69,11 +69,11 @@ interface IProcessStore {
   /** @throws ConcurrentProcessModification|ProcessStoreFailed */
   public function touch(int $id, int $expectedVersion): int;
 
-  public function versionOf(int $id): ?int;
+  public function version_of(int $id): ?int;
 
   /** @return list<int> */
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array;
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array;
 
   /** @return list<StrandedProcess> */
-  public function findStranded(\DateTimeImmutable $now): array;
+  public function find_stranded(\DateTimeImmutable $now): array;
 }

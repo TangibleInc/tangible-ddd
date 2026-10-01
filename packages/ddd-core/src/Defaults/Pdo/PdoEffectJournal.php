@@ -27,7 +27,7 @@ use TangibleDDD\Runtime\SystemClock;
  *   operator. An unknown or already-invalidated key is a no-op.
  *
  * No failure-command trigger of its own: the core invoker fires
- * failureCommand() from the delivery ledger budget (register 5.1).
+ * failure_command() from the delivery ledger budget (register 5.1).
  * Errors: storage failures (including a key over 191 characters, the
  * column) and a corrupt row throw \RuntimeException. Same contract as
  * ddd-symfony's DbalEffectJournal.
@@ -43,7 +43,7 @@ final class PdoEffectJournal implements IEffectJournal {
   }
 
   public function find(string $key): ?EffectResult {
-    $row = $this->guard('find', $key, fn () => $this->db->fetchOne(
+    $row = $this->guard('find', $key, fn () => $this->db->fetch_one(
       "SELECT result_json, external_ref FROM `{$this->table}` WHERE idempotency_key = ? AND invalidated_at IS NULL",
       [$key]
     ));
@@ -67,12 +67,12 @@ final class PdoEffectJournal implements IEffectJournal {
     } catch (\JsonException $e) {
       throw new \RuntimeException("Effect result for '$key' does not encode as JSON: " . $e->getMessage(), 0, $e);
     }
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     $this->guard('store', $key, fn () => $this->db->execute(
       "INSERT INTO `{$this->table}` (idempotency_key, result_json, external_ref, performed_at) VALUES (?, ?, ?, ?) AS new
        ON DUPLICATE KEY UPDATE result_json = new.result_json, external_ref = new.external_ref,
          performed_at = new.performed_at, invalidated_at = NULL",
-      [$key, $json, $r->externalRef, $now]
+      [$key, $json, $r->external_ref, $now]
     ));
   }
 
@@ -80,7 +80,7 @@ final class PdoEffectJournal implements IEffectJournal {
     $this->guard('invalidate', $key, fn () => $this->db->execute(
       "UPDATE `{$this->table}` SET invalidated_at = ?, invalidation_reason = ?, invalidations = invalidations + 1
        WHERE idempotency_key = ? AND invalidated_at IS NULL",
-      [Utc::toDb($this->clock->now()), $reason, $key]
+      [Utc::to_db($this->clock->now()), $reason, $key]
     ));
   }
 

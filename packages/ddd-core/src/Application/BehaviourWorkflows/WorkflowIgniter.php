@@ -35,9 +35,9 @@ use TangibleDDD\Runtime\SystemClock;
  * explicitly when the save fails.
  *
  * Start and restart (fix round 1). After the ignition commits, the igniter
- * claims the key's start marker (WorkflowIgnitionKey::startMarker, a second
+ * claims the key's start marker (WorkflowIgnitionKey::start_marker, a second
  * ledger entry) and runs start_ignited(). If the start throws, the marker
- * is released, the error is logged and returned as startError, and the
+ * is released, the error is logged and returned as start_error, and the
  * registered subscriber rethrows it, so the delivery ledger records a failed
  * attempt and redelivers the fact. Any later ignition with the key (that
  * retry, or another fact with the same key) finds the workflow attached but
@@ -51,7 +51,7 @@ use TangibleDDD\Runtime\SystemClock;
  * "started". A marker with no workflow is a start in flight, or a worker
  * that died inside start_ignited(). While it is younger than
  * $stale_start_seconds (default 900), ignite() returns AlreadyIgnited with
- * startPending, and the registered subscriber throws WorkflowStartPending,
+ * start_pending, and the registered subscriber throws WorkflowStartPending,
  * so the delivery ledger keeps the fact failed and retries it (a start that
  * never completes dead-letters the fact: that is where an operator sees
  * it). Once older, the next ignition with the key releases and re-claims the
@@ -116,12 +116,12 @@ final class WorkflowIgniter {
         $fact,
         function (IIntegrationEvent $event, string $event_id = '') use ($workflow): void {
           $result = $this->ignite($workflow, $event, $event_id);
-          if ($result->startError !== null) {
-            throw $result->startError; // the delivery retries; the retry restarts the workflow
+          if ($result->start_error !== null) {
+            throw $result->start_error; // the delivery retries; the retry restarts the workflow
           }
-          if ($result->startPending) {
+          if ($result->start_pending) {
             // Not done until the start completes: the delivery retries (and dead-letters, visibly, if it never does).
-            throw new WorkflowStartPending((string) $result->dedupKey, (int) $result->workflowId);
+            throw new WorkflowStartPending((string) $result->key, (int) $result->workflow_id);
           }
         },
       ));
@@ -152,10 +152,10 @@ final class WorkflowIgniter {
     }
 
     $entry = $this->ledger->find($key);
-    if ($entry !== null && $entry->workflowId === null && $this->is_stale($entry)) {
+    if ($entry !== null && $entry->workflow_id === null && $this->is_stale($entry)) {
       Log::write($this->logger, sprintf(
         '[ddd-workflow] %s: ignition key %s was claimed at %s but no workflow was attached (no transaction boundary, the worker died); reclaiming it',
-        $kind, $key, $entry->createdAt->format(\DateTimeInterface::ATOM)
+        $kind, $key, $entry->created_at->format(\DateTimeInterface::ATOM)
       ), 'warning');
       $this->atomically(fn () => $this->ledger->release($key));
       if ($this->claim_and_save($workflow, $new, $key, $kind, $event)) {
@@ -164,8 +164,8 @@ final class WorkflowIgniter {
       $entry = $this->ledger->find($key);
     }
 
-    if ($entry?->workflowId !== null) {
-      return $this->restart($workflow, $key, $entry->workflowId, $event);
+    if ($entry?->workflow_id !== null) {
+      return $this->restart($workflow, $key, $entry->workflow_id, $event);
     }
     return new WorkflowIgnitionResult(WorkflowIgnitionOutcome::AlreadyIgnited, $key, null);
   }
@@ -196,9 +196,9 @@ final class WorkflowIgniter {
    */
   private function restart(IStartsFromFact $workflow, string $key, int $workflowId, ?string $eventId): WorkflowIgnitionResult {
     $already = new WorkflowIgnitionResult(WorkflowIgnitionOutcome::AlreadyIgnited, $key, $workflowId);
-    $marker = WorkflowIgnitionKey::startMarker($key);
+    $marker = WorkflowIgnitionKey::start_marker($key);
     $held = $this->ledger->find($marker);
-    if ($held !== null && $held->workflowId !== null) {
+    if ($held !== null && $held->workflow_id !== null) {
       return $already; // the start completed
     }
     if (!$workflow instanceof ILoadsIgnitedWorkflow && !method_exists($workflow, 'load_ignited')) {
@@ -223,7 +223,7 @@ final class WorkflowIgniter {
       }
       Log::write($this->logger, sprintf(
         '[ddd-workflow] %s workflow #%d (key %s): start marker claimed at %s never completed (the worker died inside start_ignited?); reclaiming it',
-        $workflow->workflow_kind(), $workflowId, $key, $held->createdAt->format(\DateTimeInterface::ATOM)
+        $workflow->workflow_kind(), $workflowId, $key, $held->created_at->format(\DateTimeInterface::ATOM)
       ), 'warning');
       $reclaimed = $this->atomically(function () use ($marker, $workflow, $eventId): bool {
         $this->ledger->release($marker);
@@ -259,7 +259,7 @@ final class WorkflowIgniter {
     if ($key === null) {
       return $this->run_start($workflow, $new, null, null, WorkflowIgnitionOutcome::Ignited);
     }
-    $marker = WorkflowIgnitionKey::startMarker($key);
+    $marker = WorkflowIgnitionKey::start_marker($key);
     if (!$this->atomically(fn () => $this->ledger->claim($marker, $workflow->workflow_kind(), $eventId))) {
       return new WorkflowIgnitionResult(WorkflowIgnitionOutcome::Ignited, $key, $new->get_id());
     }
@@ -322,7 +322,7 @@ final class WorkflowIgniter {
 
   private function age_of(WorkflowIgnition $entry): int {
     $clock = $this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock();
-    return $clock->now()->getTimestamp() - $entry->createdAt->getTimestamp();
+    return $clock->now()->getTimestamp() - $entry->created_at->getTimestamp();
   }
 
   /**
@@ -332,7 +332,7 @@ final class WorkflowIgniter {
    */
   private function atomically(callable $work): mixed {
     $boundary = $this->boundary();
-    if ($boundary === null || $boundary->isActive()) {
+    if ($boundary === null || $boundary->is_active()) {
       return $work();
     }
     return $boundary->run($work);

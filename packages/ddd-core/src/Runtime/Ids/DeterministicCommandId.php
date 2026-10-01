@@ -19,7 +19,7 @@ namespace TangibleDDD\Runtime\Ids;
  * take() consumes the hint, so only the first command dispatched in the
  * window gets it; nested windows restore the outer hint on exit.
  *
- * Error behaviour: forFact() returns null when the event id is not a UUID
+ * Error behaviour: for_fact() returns null when the event id is not a UUID
  * (hand-built or legacy payloads); the bracket then mints a random id as
  * before. Never throws.
  *
@@ -30,7 +30,7 @@ final class DeterministicCommandId {
   private static ?string $next = null;
 
   /** The 32-hex uuid5(event_id, subscriber_id), or null when $eventId is not a UUID. */
-  public static function forFact(string $eventId, string $subscriberId): ?string {
+  public static function for_fact(string $eventId, string $subscriberId): ?string {
     try {
       return str_replace('-', '', NameBasedUuid::v5($eventId, $subscriberId));
     } catch (\InvalidArgumentException) {
@@ -52,7 +52,7 @@ final class DeterministicCommandId {
    * for compensations (keyed by the compensated step's name). A re-run of the
    * same step after a crash dispatches the same ids.
    */
-  public static function forStep(string $consumer, int $processId, int|string $step, int $ordinal, bool $compensation = false): string {
+  public static function for_step(string $consumer, int $processId, int|string $step, int $ordinal, bool $compensation = false): string {
     $process = NameBasedUuid::v5(self::PROCESS_NAMESPACE, $consumer . ':' . $processId);
     return str_replace('-', '', NameBasedUuid::v5($process, ($compensation ? 'undo' : 'step') . ':' . $step . ':' . $ordinal));
   }

@@ -16,11 +16,11 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
 
 /**
  * In-memory IWakeupScheduler driven by the caller's clock (pass FrozenClock
- * time to claimDue). schedule()/cancel() enforce the "inside the process
+ * time to claim_due). schedule()/cancel() enforce the "inside the process
  * transaction" rule against the required boundary (WakeupOutsideTransaction
  * otherwise); enlist it in that boundary so an intent rolls back with the
  * process save. Tests that deliberately skip the rule must say so with
- * withoutTransactionCheck().
+ * lenient().
  */
 final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
 
@@ -38,7 +38,7 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
    * transaction. Never use it in conformance or runner tests, where it
    * would hide an intent written outside the process transaction (C8/C9).
    */
-  public static function withoutTransactionCheck(): self {
+  public static function lenient(): self {
     $s = new self(new InMemoryTransactionBoundary());
     $s->checkTransaction = false;
     return $s;
@@ -46,10 +46,10 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
 
   public function schedule(WakeupIntent $i): void {
     $this->assertInTransaction('schedule');
-    if (isset($this->intents[$i->idempotencyKey])) {
+    if (isset($this->intents[$i->key])) {
       return;
     }
-    $this->intents[$i->idempotencyKey] = [
+    $this->intents[$i->key] = [
       'intent' => $i, 'seq' => ++$this->seq, 'attempts' => 0,
       'next_at' => null, 'token' => null, 'lease_until' => null, 'error' => null,
     ];
@@ -60,12 +60,12 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
     unset($this->intents[$idempotencyKey]);
   }
 
-  public function claimDue(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
+  public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     $due = array_filter($this->intents, static fn (array $r) =>
-      $r['intent']->dueAt <= $now
+      $r['intent']->due_at <= $now
       && ($r['next_at'] === null || $r['next_at'] <= $now)
       && ($r['token'] === null || $r['lease_until'] <= $now));
-    uasort($due, static fn ($a, $b) => [$a['intent']->dueAt, $a['seq']] <=> [$b['intent']->dueAt, $b['seq']]);
+    uasort($due, static fn ($a, $b) => [$a['intent']->due_at, $a['seq']] <=> [$b['intent']->due_at, $b['seq']]);
 
     $leaseUntil = $now->modify("+{$leaseSeconds} seconds");
     $claimed = [];
@@ -82,15 +82,15 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
     if (!$this->holds($w)) {
       return false;
     }
-    unset($this->intents[$w->intent->idempotencyKey]);
+    unset($this->intents[$w->intent->key]);
     return true;
   }
 
-  public function retryLater(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
     if (!$this->holds($w)) {
       return false;
     }
-    $key = $w->intent->idempotencyKey;
+    $key = $w->intent->key;
     $this->intents[$key]['attempts']++;
     $this->intents[$key]['next_at'] = $nextAt;
     $this->intents[$key]['error'] = $error;
@@ -122,20 +122,20 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
     return array_values(array_map(static fn (array $r) => $r['intent'], $this->intents));
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->intents, $this->seq];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->intents, $this->seq] = $state;
   }
 
   private function holds(ClaimedWakeup $w): bool {
-    return ($this->intents[$w->intent->idempotencyKey]['token'] ?? null) === $w->claimToken;
+    return ($this->intents[$w->intent->key]['token'] ?? null) === $w->token;
   }
 
   private function assertInTransaction(string $op): void {
-    if ($this->checkTransaction && !$this->boundary->isActive()) {
+    if ($this->checkTransaction && !$this->boundary->is_active()) {
       throw new WakeupOutsideTransaction("IWakeupScheduler::$op() must run inside the process store's transaction.");
     }
   }

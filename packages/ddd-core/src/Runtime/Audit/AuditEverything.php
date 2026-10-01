@@ -11,7 +11,7 @@ final class AuditEverything implements IAuditPolicy {
     return true;
   }
 
-  public function captureParameters(object $command): bool {
+  public function captures_parameters(object $command): bool {
     return true;
   }
 }

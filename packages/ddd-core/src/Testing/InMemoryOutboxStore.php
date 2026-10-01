@@ -44,7 +44,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
   private int $dlqSeq = 0;
 
   /** @var list<array{0: Claim, 1: string}> */
-  private array $deadLetteredAtClaim = [];
+  private array $claim_dead_letters = [];
 
   public function __construct(
     private readonly IClock $clock,
@@ -85,7 +85,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
   }
 
   public function claim(int $limit, \DateTimeImmutable $now, int $leaseSeconds): array {
-    if ($this->boundary?->isActive()) {
+    if ($this->boundary?->is_active()) {
       throw new NestedTransactionRejected('IOutboxStore::claim() must run outside any open transaction.');
     }
 
@@ -94,7 +94,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
         && $row['record']->due_at <= $now
         && ($row['next_attempt_at'] === null || $row['next_attempt_at'] <= $now)
         && ($row['claim_token'] === null || $row['lease_until'] <= $now)
-        && !($this->pauses?->isPaused($row['record']->event_type, $now) ?? false);
+        && !($this->pauses?->is_paused($row['record']->event_type, $now) ?? false);
     });
     uasort($due, static fn ($a, $b) => [$a['record']->due_at, $a['seq']] <=> [$b['record']->due_at, $b['seq']]);
 
@@ -116,7 +116,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
       if ($row['claim_token'] !== null && $claim->attempts >= $claim->record->max_attempts) {
         $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
         $this->moveToDlq($claim, $error);
-        $this->deadLetteredAtClaim[] = [$claim, $error];
+        $this->claim_dead_letters[] = [$claim, $error];
         continue;
       }
       $claims[] = $claim;
@@ -124,9 +124,9 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
     return $claims;
   }
 
-  public function takeDeadLetteredAtClaim(): array {
-    $taken = $this->deadLetteredAtClaim;
-    $this->deadLetteredAtClaim = [];
+  public function take_claim_dead_letters(): array {
+    $taken = $this->claim_dead_letters;
+    $this->claim_dead_letters = [];
     return $taken;
   }
 
@@ -141,7 +141,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
     return true;
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
     if (!$this->holds($c)) {
       return false;
     }
@@ -152,7 +152,7 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
     return true;
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
+  public function dead_letter(Claim $c, string $error): bool {
     if (!$this->holds($c)) {
       return false;
     }
@@ -163,10 +163,10 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
 
   // ── IOutboxAdministration ─────────────────────────────────────────────────
 
-  public function deadLetters(int $limit, ?string $after = null): array {
+  public function dead_letters(int $limit, ?string $after = null): array {
     $letters = array_values(array_filter(
       $this->dlq,
-      static fn (DeadLetter $d) => $after === null || $d->dlqId > (int) $after
+      static fn (DeadLetter $d) => $after === null || $d->dlq_id > (int) $after
     ));
     return array_slice($letters, 0, max(0, $limit));
   }
@@ -230,47 +230,47 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
 
   // ── InMemoryTransactional ─────────────────────────────────────────────────
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->rows, $this->dlq, $this->seq, $this->dlqSeq];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->rows, $this->dlq, $this->seq, $this->dlqSeq] = $state;
   }
 
   // ── test inspection ───────────────────────────────────────────────────────
 
-  public function recordOf(string $event_id): ?OutboxRecord {
+  public function record_of(string $event_id): ?OutboxRecord {
     return $this->rows[$event_id]['record'] ?? null;
   }
 
   /** @return list<string> event ids in append order */
-  public function eventIds(): array {
+  public function event_ids(): array {
     $rows = $this->rows;
     uasort($rows, static fn (array $a, array $b) => $a['seq'] <=> $b['seq']);
     return array_keys($rows);
   }
 
-  public function statusOf(string $event_id): ?string {
+  public function status_of(string $event_id): ?string {
     return $this->rows[$event_id]['status'] ?? null;
   }
 
-  public function attemptsOf(string $event_id): ?int {
+  public function attempts_of(string $event_id): ?int {
     return $this->rows[$event_id]['attempts'] ?? null;
   }
 
-  public function transportRefOf(string $event_id): ?string {
+  public function transport_ref_of(string $event_id): ?string {
     return $this->rows[$event_id]['transport_ref'] ?? null;
   }
 
   /** Simulate a purge/manual delete of the original row. */
-  public function forgetRowForTests(string $event_id): void {
+  public function forget(string $event_id): void {
     unset($this->rows[$event_id]);
   }
 
   private function holds(Claim $c): bool {
     $row = $this->rows[$c->event_id] ?? null;
-    return $row !== null && $row['status'] === 'pending' && $row['claim_token'] === $c->claimToken;
+    return $row !== null && $row['status'] === 'pending' && $row['claim_token'] === $c->token;
   }
 
   /** Status `dlq` plus a DeadLetter entry; the caller has counted the attempt. */

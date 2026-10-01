@@ -41,7 +41,7 @@ final class CurrentFactAndUuidTest extends TestCase {
   public function test_current_fact_without_a_label_has_an_empty_class(): void {
     $ref = Correlation::within((new TraceContext('c'))->for_fact('evt-2'), static fn () => Correlation::current_fact());
 
-    self::assertSame('', $ref?->eventClass);
+    self::assertSame('', $ref?->event_class);
   }
 
   public function test_current_fact_does_not_mint_an_ambient_story(): void {

@@ -94,16 +94,16 @@ use Throwable;
  *   subscriber and re-delivers the fact to it with backoff (the fact is the
  *   payload a retry needs).
  * - Ignition (X7, bug 2): #[StartsOn] facts go through
- *   IProcessStore::insertIgnited() (ignition_key = uuid5(event_id,
+ *   IProcessStore::insert_ignited() (ignition_key = uuid5(event_id,
  *   process_class) under UNIQUE (process_class, ignition_key)); the loser
  *   returns without a step. Manual start() never dedups.
- * - Stranded scan (5.3 step 5): scanStranded() re-queues `scheduled` rows
+ * - Stranded scan (5.3 step 5): scan_stranded() re-queues `scheduled` rows
  *   with no live intent and reports `running` ones.
  * - Start mode: StartMode::InBand (0.6, default) runs the first step in the
  *   request; StartMode::Deferred persists the process `scheduled` plus a
  *   Continue intent in the caller's transaction and takes no lock (sf
  *   default; legal inside a command because no step runs there).
- * - Step commands carry deterministic ids (DeterministicCommandId::forStep):
+ * - Step commands carry deterministic ids (DeterministicCommandId::for_step):
  *   a step re-run after a crash dispatches the same command ids.
  *
  * Wave 4 (register section 8 wave 4 core; D1, D3, D7, D13):
@@ -333,7 +333,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   /**
    * IProcessEntry: the #[StartsOn] ignition door. Exactly one ignited process
    * per (process_class, event_id), however many deliveries or workers:
-   * IProcessStore::insertIgnited() is the gate (X7). The loser returns
+   * IProcessStore::insert_ignited() is the gate (X7). The loser returns
    * quietly without running a step. The first step runs after the insert,
    * under the per-process lock like every other wake; if that lock is
    * contended, a ResumeRetry runs it later (a redelivery of the fact finds
@@ -365,12 +365,12 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     // One INSERT against UNIQUE (process_class, ignition_key) on SQL hosts;
     // a store that gates with a named lock (LegacyProcessStore, wp) may throw
     // LockNotAcquired, and nothing was persisted then.
-    $result = $this->locked(fn () => $this->store()->insertIgnited($process, $processClass, $eventId));
+    $result = $this->locked(fn () => $this->store()->insert_ignited($process, $processClass, $eventId));
     if ($result === IgnitionResult::AlreadyIgnited) {
       return; // redelivery / concurrent worker: this fact already ignited its saga
     }
 
-    $this->versions[(int) $process->get_id()] = $this->store()->versionOf((int) $process->get_id()) ?? 1;
+    $this->versions[(int) $process->get_id()] = $this->store()->version_of((int) $process->get_id()) ?? 1;
     $this->run_started($process);
   }
 
@@ -386,17 +386,17 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    */
   public function wake(WakeupIntent $intent): void {
     if ($intent->kind === WakeKind::Deliver) {
-      throw new \LogicException("ProcessRunner does not run Deliver wakes ({$intent->idempotencyKey})");
+      throw new \LogicException("ProcessRunner does not run Deliver wakes ({$intent->key})");
     }
-    if ($intent->processId === null) {
-      throw new \InvalidArgumentException("Wakeup {$intent->idempotencyKey} has no process id");
+    if ($intent->process_id === null) {
+      throw new \InvalidArgumentException("Wakeup {$intent->key} has no process id");
     }
 
     $this->wake_depth++;
     try {
       match ($intent->kind) {
-        WakeKind::Continue => $this->continue_scheduled($intent->processId, $intent->stepIndex),
-        WakeKind::Timeout => $this->handle_timeout($intent->processId, (int) $intent->stepIndex),
+        WakeKind::Continue => $this->continue_scheduled($intent->process_id, $intent->step_index),
+        WakeKind::Timeout => $this->handle_timeout($intent->process_id, (int) $intent->step_index),
         WakeKind::ResumeRetry => $this->resume_retry($intent),
       };
     } finally {
@@ -409,20 +409,20 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * intent get a fresh Continue intent (stale-safe); `running` rows are
    * reported only.
    */
-  public function scanStranded(\DateTimeImmutable $now): StrandedScanReport {
+  public function scan_stranded(\DateTimeImmutable $now): StrandedScanReport {
     $requeued = [];
     $reported = [];
-    foreach ($this->store()->findStranded($now) as $stranded) {
+    foreach ($this->store()->find_stranded($now) as $stranded) {
       if ($stranded->status !== 'scheduled') {
         $reported[] = $stranded;
         continue;
       }
       $intent = WakeupIntent::continuation(
-        $this->config->prefix(), $stranded->processId, $stranded->stepIndex, $now,
+        $this->config->prefix(), $stranded->process_id, $stranded->step_index, $now,
         'stranded-' . $now->setTimezone(new \DateTimeZone('UTC'))->format('YmdHis'),
       );
       $this->atomically(fn () => $this->wakeups()->schedule($intent));
-      $requeued[] = $stranded->processId;
+      $requeued[] = $stranded->process_id;
     }
     return new StrandedScanReport($requeued, $reported);
   }
@@ -469,16 +469,16 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   /**
    * resume_on_event() with what it did (D3). Candidates are tried in id
    * order. A keyed await or an AwaitAny takes the fact in every process
-   * that accepts it: a cancellation fact (AwaitAny::cancelledBy) reaches
+   * that accepts it: a cancellation fact (AwaitAny::cancelled_by) reaches
    * every process it cancels, and keyed awaits accept only their own key,
    * so a keyed answer reaches exactly the process that minted the key. A
    * 0.6-shaped await (unkeyed AwaitEvent, extractor-keyed AwaitAll, a
    * consumer mechanism) keeps 0.6's first-wins: once one of them took the
    * fact, the others do not (R1).
    *
-   * Lookup: findWaitingFor(class) for an unkeyed fact; for a fact reporting
-   * an await key (IAwaitKeyed), findWaitingFor(class, key) plus the unkeyed
-   * rows findWaitingFor(class, ''), so a route-indexing store (sf) answers
+   * Lookup: find_waiting_for(class) for an unkeyed fact; for a fact reporting
+   * an await key (IAwaitKeyed), find_waiting_for(class, key) plus the unkeyed
+   * rows find_waiting_for(class, ''), so a route-indexing store (sf) answers
    * from its index and a column store (mem, pdo, wp, which ignore the key)
    * returns its usual candidates. On a store without IMatchesFactAncestry
    * the fact's IIntegrationEvent ancestors are looked up too (an AwaitAny
@@ -536,7 +536,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           }
 
           $suspended_at = $process->current_step_index();
-          $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeoutKey($id, $suspended_at) : null;
+          $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeout_key($id, $suspended_at) : null;
 
           $reason = $updated instanceof ICancellingAwait ? $updated->cancellation_reason($event) : null;
           if ($reason !== null) {
@@ -550,7 +550,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           }
 
           $process->advance_step();
-          $this->take_resume($updated->resume_argument($event), ResumeSource::ofMechanism($updated, $event));
+          $this->take_resume($updated->resume_argument($event), ResumeSource::of_mechanism($updated, $event));
           $this->stamp_resume($process);
           $process->advance(status: 'running', payload: $process->payload());
           $this->persist($process, null, $alarm);
@@ -594,10 +594,10 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   private function candidates(IIntegrationEvent $event): array {
     $store = $this->store();
     $class = get_class($event);
-    $key = AwaitRoute::keyOf($event);
+    $key = AwaitRoute::key_of($event);
     $ids = $key === null
-      ? $store->findWaitingFor($class)
-      : [...$store->findWaitingFor($class, $key), ...$store->findWaitingFor($class, '')];
+      ? $store->find_waiting_for($class)
+      : [...$store->find_waiting_for($class, $key), ...$store->find_waiting_for($class, '')];
     $found = array_fill_keys($ids, true);
 
     if (!$store instanceof IMatchesFactAncestry) {
@@ -605,7 +605,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       // common ancestor in `waiting_for`, so ask for each ancestor as well.
       foreach ([...array_values(class_parents($event) ?: []), ...array_values(class_implements($event) ?: [])] as $ancestor) {
         if (is_a($ancestor, IIntegrationEvent::class, true)) {
-          foreach ($store->findWaitingFor($ancestor) as $id) {
+          foreach ($store->find_waiting_for($ancestor) as $id) {
             $found[$id] ??= false;
           }
         }
@@ -657,7 +657,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $this->in_scope($process, function () use ($process, $mechanism): void {
           if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
             $process->advance_step();
-            $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+            $this->take_resume($mechanism->resume_argument(null), ResumeSource::of_mechanism($mechanism, null));
             $this->stamp_resume($process);
             $process->advance(status: 'running', payload: $process->payload());
             $this->persist($process);
@@ -741,11 +741,11 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
   /** The ResumeRetry wake: repeat the wake its expected status names. */
   private function resume_retry(WakeupIntent $intent): void {
-    $id = (int) $intent->processId;
-    match ($intent->expectedStatus) {
-      'scheduled' => $this->continue_scheduled($id, $intent->stepIndex),
-      'suspended' => $intent->stepIndex === null ? null : $this->handle_timeout($id, $intent->stepIndex),
-      'running' => $this->resume_started($id, $intent->stepIndex, $intent->retryVersion()),
+    $id = (int) $intent->process_id;
+    match ($intent->expected_status) {
+      'scheduled' => $this->continue_scheduled($id, $intent->step_index),
+      'suspended' => $intent->step_index === null ? null : $this->handle_timeout($id, $intent->step_index),
+      'running' => $this->resume_started($id, $intent->step_index, $intent->retry_version()),
       default => null,
     };
   }
@@ -814,9 +814,9 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
   private function retry_intent(int $process_id, ?int $step_index, string $expected_status, int $version): WakeupIntent {
     $now = $this->clock()->now();
-    return WakeupIntent::resumeRetry(
+    return WakeupIntent::resume_retry(
       $this->config->prefix(), $process_id, $step_index, $expected_status, $version,
-      $now->modify('+' . WakeRetryPolicy::backoffSeconds(1) . ' seconds'),
+      $now->modify('+' . WakeRetryPolicy::backoff_seconds(1) . ' seconds'),
       $now->setTimezone(new \DateTimeZone('UTC'))->format('YmdHis.u'),
     );
   }
@@ -828,7 +828,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     } catch (Throwable $e) {
       Log::write($this->logger, sprintf(
         '[%s process] wake of process #%d could not take its lock (%s) and could not be re-queued as %s: %s',
-        $this->config->prefix(), (int) $intent->processId, $cause->getMessage(), $intent->idempotencyKey, $e->getMessage()
+        $this->config->prefix(), (int) $intent->process_id, $cause->getMessage(), $intent->key, $e->getMessage()
       ), 'error');
     }
   }
@@ -861,7 +861,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    */
   private function atomically(callable $work): mixed {
     $boundary = $this->boundary();
-    if ($boundary === null || $boundary->isActive()) {
+    if ($boundary === null || $boundary->is_active()) {
       return $work();
     }
     return $boundary->run($work);
@@ -895,13 +895,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   private function find(int $process_id): ?LongProcess {
     $process = $this->store()->find($process_id);
     if ($process !== null) {
-      $this->versions[$process_id] = $this->store()->versionOf($process_id) ?? 1;
+      $this->versions[$process_id] = $this->store()->version_of($process_id) ?? 1;
     }
     return $process;
   }
 
   private function version_of(int $process_id): int {
-    return $this->versions[$process_id] ??= ($this->store()->versionOf($process_id) ?? 1);
+    return $this->versions[$process_id] ??= ($this->store()->version_of($process_id) ?? 1);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1187,7 +1187,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     }
     $mechanism = $process->await_mechanism();
     $cancel = $mechanism !== null && $this->has_alarm($mechanism)
-      ? WakeupIntent::timeoutKey((int) $process->get_id(), $process->current_step_index())
+      ? WakeupIntent::timeout_key((int) $process->get_id(), $process->current_step_index())
       : null;
     $process->advance(status: 'running', payload: $process->payload());
     return $cancel;
@@ -1289,7 +1289,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     // command parents on the saga by scope semantics.
     $ordinal = 0;
     foreach ($result->commands as $command) {
-      $id = DeterministicCommandId::forStep($this->config->prefix(), (int) $process->get_id(), $step, $ordinal++, $compensation);
+      $id = DeterministicCommandId::for_step($this->config->prefix(), (int) $process->get_id(), $step, $ordinal++, $compensation);
       DeterministicCommandId::within($id, static fn () => $command->send());
     }
   }
@@ -1312,7 +1312,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       $process->record_checkpoint($result->checkpoint);
       $process->advance_step();
       $process->advance(status: 'running', payload: $result->payload);
-      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::of_mechanism($mechanism, null));
       $this->stamp_resume($process);
       $this->persist($process);
       return true;
@@ -1325,7 +1325,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     try {
       $this->dispatch_commands($result, $process, $step, $compensation);
     } catch (Throwable $e) {
-      if ($suspended_version !== null && ($this->store()->versionOf($id) ?? $suspended_version) !== $suspended_version) {
+      if ($suspended_version !== null && ($this->store()->version_of($id) ?? $suspended_version) !== $suspended_version) {
         throw new ConcurrentProcessModification(
           "Process #$id moved on while its step's commands dispatched; the failed dispatch does not compensate over the newer state: " . $e->getMessage(),
           0,
@@ -1350,7 +1350,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    */
   private function precheck(LongProcess&IPrecheckAwait $process, IAwaitMechanism $mechanism, ?int $suspended_version): bool {
     $id = (int) $process->get_id();
-    if ($suspended_version === null || $this->store()->versionOf($id) !== $suspended_version) {
+    if ($suspended_version === null || $this->store()->version_of($id) !== $suspended_version) {
       return false; // a fact delivered during the dispatch already took the await
     }
 
@@ -1360,13 +1360,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     }
 
     $suspended_at = $process->current_step_index();
-    $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeoutKey($id, $suspended_at) : null;
+    $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeout_key($id, $suspended_at) : null;
     $process->advance_step();
     $process->advance(status: 'running', payload: $process->payload());
     if ($hit->use_mechanism_argument) {
-      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::of_mechanism($mechanism, null));
     } else {
-      $this->take_resume($hit->resume_argument, ResumeSource::ofValue($hit->resume_argument));
+      $this->take_resume($hit->resume_argument, ResumeSource::of_value($hit->resume_argument));
     }
     $this->stamp_resume($process);
     $this->persist($process, null, $alarm);
@@ -1423,7 +1423,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     if (!$mechanism instanceof IRoutedAwait) {
       return [$mechanism->event_class()];
     }
-    $classes = array_map(static fn (AwaitRoute $r) => $r->eventClass, $mechanism->routes());
+    $classes = array_map(static fn (AwaitRoute $r) => $r->event_class, $mechanism->routes());
     return $classes === [] ? [$mechanism->event_class()] : array_values(array_unique($classes));
   }
 

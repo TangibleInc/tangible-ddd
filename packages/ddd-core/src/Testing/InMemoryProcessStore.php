@@ -36,7 +36,7 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
 
   /**
    * @param InMemoryWakeupScheduler|null $intents the host's intents, so the
-   *   stranded scan can honour "no live intent" (or attachIntents() later)
+   *   stranded scan can honour "no live intent" (or attach_intents() later)
    */
   public function __construct(
     private readonly IClock $clock,
@@ -47,11 +47,11 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
   }
 
   /** Join the stranded scan to these intents (the scheduler is often built after the store). */
-  public function attachIntents(InMemoryWakeupScheduler $intents): void {
+  public function attach_intents(InMemoryWakeupScheduler $intents): void {
     $this->intents = $intents;
   }
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     $key = IgnitionKey::for($eventId, $processClass);
     foreach ($this->rows as $row) {
       if ($row['class'] === $processClass && $row['ignition_key'] === $key) {
@@ -110,11 +110,11 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
     return $expectedVersion + 1;
   }
 
-  public function versionOf(int $id): ?int {
+  public function version_of(int $id): ?int {
     return $this->rows[$id]['version'] ?? null;
   }
 
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array {
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array {
     $ids = [];
     foreach ($this->rows as $id => $row) {
       if ($row['status'] !== 'suspended') {
@@ -129,13 +129,13 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
     return $ids;
   }
 
-  public function findStranded(\DateTimeImmutable $now): array {
+  public function find_stranded(\DateTimeImmutable $now): array {
     $cutoff = $now->modify("-{$this->strandedAfterSeconds} seconds");
 
     $live = [];
     foreach ($this->intents?->pending() ?? [] as $intent) {
-      if ($intent->processId !== null) {
-        $live[$intent->processId] = true;
+      if ($intent->process_id !== null) {
+        $live[$intent->process_id] = true;
       }
     }
 
@@ -157,20 +157,20 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
     return count($this->rows);
   }
 
-  public function ignitionKeyOf(int $id): ?string {
+  public function ignition_key_of(int $id): ?string {
     return $this->rows[$id]['ignition_key'] ?? null;
   }
 
-  public function statusOf(int $id): ?string {
+  public function status_of(int $id): ?string {
     return $this->rows[$id]['status'] ?? null;
   }
 
-  public function quarantineReasonOf(int $id): ?string {
+  public function quarantine_reason_of(int $id): ?string {
     return $this->rows[$id]['quarantine_reason'] ?? null;
   }
 
   /** Rewrite the stored class name so the row no longer decodes (decode.unknown-class). */
-  public function corruptClassForTests(int $id, string $missingClass): void {
+  public function corrupt_class(int $id, string $missingClass): void {
     $class = $this->rows[$id]['class'];
     $blob = $this->rows[$id]['blob'];
     $prefix = 'O:' . strlen($class) . ':"' . $class . '"';
@@ -181,11 +181,11 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
     $this->rows[$id]['class'] = $missingClass;
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->rows, $this->nextId];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->rows, $this->nextId] = $state;
   }
 

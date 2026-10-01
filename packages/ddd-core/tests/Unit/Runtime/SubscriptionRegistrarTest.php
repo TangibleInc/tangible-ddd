@@ -60,7 +60,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   }
 
   public function test_register_listener_instance_subscribes_at_listener_priority_and_sends_its_command(): void {
-    $this->registrar()->registerListener(new ShipOrderListener());
+    $this->registrar()->register_listener(new ShipOrderListener());
 
     self::assertSame([['listener:' . ShipOrderListener::class, Subscriber::LISTENER]], $this->subscribers(OrderPlaced::class));
 
@@ -78,19 +78,19 @@ final class SubscriptionRegistrarTest extends TestCase {
       public function has(string $id): bool { return $id === ShipOrderListener::class; }
     };
 
-    $this->registrar($container)->registerListener(ShipOrderListener::class);
+    $this->registrar($container)->register_listener(ShipOrderListener::class);
 
     self::assertSame([ShipOrderListener::class], $container->asked);
     self::assertCount(1, $this->registry->for(OrderPlaced::class));
   }
 
   public function test_register_listener_class_string_without_container_is_constructed(): void {
-    $this->registrar()->registerListener(ShipOrderListener::class);
+    $this->registrar()->register_listener(ShipOrderListener::class);
     self::assertCount(1, $this->registry->for(OrderPlaced::class));
   }
 
   public function test_a_declared_subscriber_priority_wins_over_the_listener_default(): void {
-    $this->registrar()->registerListener(new LateAuditListener());
+    $this->registrar()->register_listener(new LateAuditListener());
 
     self::assertSame([['listener:' . LateAuditListener::class, 100]], $this->subscribers(OrderPlaced::class));
   }
@@ -98,7 +98,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   public function test_legacy_integration_listener_is_read_through_its_protected_hooks(): void {
     $legacy = (new \ReflectionClass(LegacyWelcomeListener::class))->newInstanceWithoutConstructor();
 
-    $this->registrar()->registerListener($legacy);
+    $this->registrar()->register_listener($legacy);
     $this->deliver(UserJoined::class, ['user_id' => 5]);
 
     self::assertSame(['welcome'], RecordingCommand::labels());
@@ -107,8 +107,8 @@ final class SubscriptionRegistrarTest extends TestCase {
 
   public function test_registering_the_same_listener_twice_subscribes_once(): void {
     $r = $this->registrar();
-    $r->registerListener(new ShipOrderListener());
-    $r->registerListener(ShipOrderListener::class);
+    $r->register_listener(new ShipOrderListener());
+    $r->register_listener(ShipOrderListener::class);
 
     $this->deliver(OrderPlaced::class, ['order_id' => 1, 'sku' => 's']);
     self::assertSame(['ship'], RecordingCommand::labels());
@@ -116,7 +116,7 @@ final class SubscriptionRegistrarTest extends TestCase {
 
   public function test_an_object_that_is_not_a_listener_is_rejected(): void {
     $this->expectException(\InvalidArgumentException::class);
-    $this->registrar()->registerListener(new \stdClass());
+    $this->registrar()->register_listener(new \stdClass());
   }
 
   public function test_a_listener_whose_event_class_is_not_integration_or_interface_is_rejected(): void {
@@ -125,11 +125,11 @@ final class SubscriptionRegistrarTest extends TestCase {
       public function translate(\TangibleDDD\Domain\Events\IIntegrationEvent $e): ?\TangibleDDD\Application\Commands\ICommand { return null; }
     };
     $this->expectException(\InvalidArgumentException::class);
-    $this->registrar()->registerListener($bad);
+    $this->registrar()->register_listener($bad);
   }
 
   public function test_register_process_reads_starts_on_and_awaits_by_reflection(): void {
-    $this->registrar()->registerProcess(FulfilmentProcess::class);
+    $this->registrar()->register_process(FulfilmentProcess::class);
 
     self::assertSame(
       [['ignition:' . FulfilmentProcess::class . '@' . OrderPlaced::class, Subscriber::IGNITION]],
@@ -151,8 +151,8 @@ final class SubscriptionRegistrarTest extends TestCase {
 
   public function test_two_processes_awaiting_one_fact_share_one_resume_subscriber(): void {
     $r = $this->registrar();
-    $r->registerProcess(FulfilmentProcess::class);
-    $r->registerProcess(OnboardingProcess::class);
+    $r->register_process(FulfilmentProcess::class);
+    $r->register_process(OnboardingProcess::class);
 
     self::assertSame([['resume:' . UserJoined::class, Subscriber::RESUME]], $this->subscribers(UserJoined::class));
   }
@@ -166,8 +166,8 @@ final class SubscriptionRegistrarTest extends TestCase {
       }
     };
     $r = $this->registrar();
-    $r->registerProcess(FulfilmentProcess::class);  // resume on UserJoined (99)
-    $r->registerListener($journaling);               // listener on UserJoined (10)
+    $r->register_process(FulfilmentProcess::class);  // resume on UserJoined (99)
+    $r->register_listener($journaling);               // listener on UserJoined (10)
 
     $this->deliver(UserJoined::class, ['user_id' => 1]);
 
@@ -176,17 +176,17 @@ final class SubscriptionRegistrarTest extends TestCase {
 
   public function test_starts_on_without_from_event_is_rejected(): void {
     $this->expectException(\InvalidArgumentException::class);
-    $this->registrar()->registerProcess(BrokenStartsOnProcess::class);
+    $this->registrar()->register_process(BrokenStartsOnProcess::class);
   }
 
   public function test_register_process_rejects_a_non_process_class(): void {
     $this->expectException(\InvalidArgumentException::class);
-    $this->registrar()->registerProcess(\stdClass::class);
+    $this->registrar()->register_process(\stdClass::class);
   }
 
   public function test_register_process_without_a_runner_is_a_logic_error(): void {
     $this->expectException(\LogicException::class);
-    (new SubscriptionRegistrar($this->registry))->registerProcess(FulfilmentProcess::class);
+    (new SubscriptionRegistrar($this->registry))->register_process(FulfilmentProcess::class);
   }
 
   public function test_the_process_runner_is_accepted_as_the_process_entry(): void {
@@ -197,13 +197,13 @@ final class SubscriptionRegistrarTest extends TestCase {
     $runner = new ProcessRunner($config, $repo);
 
     $registrar = new SubscriptionRegistrar($this->registry, $runner);
-    $registrar->registerProcess(FulfilmentProcess::class);
+    $registrar->register_process(FulfilmentProcess::class);
 
     self::assertCount(1, $this->registry->for(OrderPlaced::class));
   }
 
   public function test_exhausted_external_effect_listener_dispatches_its_failure_command_once(): void {
-    $this->registrar()->registerListener(new ChargeOnOrderListener());
+    $this->registrar()->register_listener(new ChargeOnOrderListener());
     $ledger = new InMemoryDeliveryLedger();
     $delivery = new IntegrationDelivery($this->registry, $ledger, 2, new \Psr\Log\NullLogger());
     $wrapped = IntegrationEnvelope::wrap(['order_id' => 8, 'sku' => 's'], 'corr', 1, self::EVENT_ID);
@@ -223,7 +223,7 @@ final class SubscriptionRegistrarTest extends TestCase {
 
   public function test_a_listener_command_gets_the_deterministic_id_uuid5_of_event_and_subscriber(): void {
     // wave1-notes core minor 2 / register 3.8.
-    $this->registrar()->registerListener(new ShipOrderListener());
+    $this->registrar()->register_listener(new ShipOrderListener());
 
     $this->deliver(OrderPlaced::class, ['order_id' => 42, 'sku' => 's']);
 
@@ -233,7 +233,7 @@ final class SubscriptionRegistrarTest extends TestCase {
   }
 
   public function test_a_listener_command_for_a_non_uuid_event_id_gets_no_hint(): void {
-    $this->registrar()->registerListener(new ShipOrderListener());
+    $this->registrar()->register_listener(new ShipOrderListener());
 
     (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger()))
       ->deliver(OrderPlaced::class, IntegrationEnvelope::wrap(['order_id' => 1, 'sku' => 's'], 'corr', 1, 'evt-not-a-uuid'));
@@ -245,7 +245,7 @@ final class SubscriptionRegistrarTest extends TestCase {
     // wave1-notes core minor 3: the 0.6 IntegrationListener constructor
     // self-registers on a WordPress hook; the registrar must not run it.
     // This suite has no WordPress, so running it would fatal.
-    $this->registrar()->registerListener(LegacyWelcomeListener::class);
+    $this->registrar()->register_listener(LegacyWelcomeListener::class);
 
     $this->deliver(UserJoined::class, ['user_id' => 5]);
     self::assertSame(['welcome'], RecordingCommand::labels());
@@ -259,7 +259,7 @@ final class SubscriptionRegistrarTest extends TestCase {
       public function has(string $id): bool { return true; }
     };
 
-    $this->registrar($container)->registerListener(LegacyWelcomeListener::class);
+    $this->registrar($container)->register_listener(LegacyWelcomeListener::class);
     $this->deliver(UserJoined::class, ['user_id' => 6]);
 
     self::assertSame(6, RecordingCommand::$sent[0]->data);
@@ -268,8 +268,8 @@ final class SubscriptionRegistrarTest extends TestCase {
   public function test_ignition_subscriber_is_registered_per_process_and_event_class(): void {
     self::assertTrue(is_subclass_of(FulfilmentProcess::class, LongProcess::class));
     $r = $this->registrar();
-    $r->registerProcess(FulfilmentProcess::class);
-    $r->registerProcess(FulfilmentProcess::class);
+    $r->register_process(FulfilmentProcess::class);
+    $r->register_process(FulfilmentProcess::class);
 
     self::assertCount(1, $this->registry->for(OrderPlaced::class));
   }

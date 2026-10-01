@@ -13,10 +13,10 @@ final class AuditClose {
    * @param array{type: string, message: string, code: int}|null $error
    */
   public function __construct(
-    public readonly string $commandId,
+    public readonly string $command_id,
     public readonly string $status,
-    public readonly int $durationMs,
-    public readonly int $peakMemoryBytes,
+    public readonly int $duration_ms,
+    public readonly int $peak_memory_bytes,
     public readonly array $events,
     public readonly ?array $error,
   ) {

@@ -256,11 +256,11 @@ abstract class PdoWorkflowStoresCases extends PdoTestCase {
     $ledger->attach($key, 42);
     $entry = $other->find($key);
     self::assertNotNull($entry);
-    self::assertSame($key, $entry->dedupKey);
+    self::assertSame($key, $entry->key);
     self::assertSame('nightly-report', $entry->kind);
-    self::assertSame(42, $entry->workflowId);
-    self::assertSame('evt-1', $entry->eventId);
-    self::assertEquals(self::utc('2026-10-01 12:00:00'), $entry->createdAt);
+    self::assertSame(42, $entry->workflow_id);
+    self::assertSame('evt-1', $entry->event_id);
+    self::assertEquals(self::utc('2026-10-01 12:00:00'), $entry->created_at);
     self::assertNull($other->find('CronEntryDue:nightly-report:2026-10-01T03:01Z'));
   }
 
@@ -268,8 +268,8 @@ abstract class PdoWorkflowStoresCases extends PdoTestCase {
     $this->ledger()->claim('k1', 'kind');
 
     $entry = $this->ledger()->find('k1');
-    self::assertNull($entry?->workflowId);
-    self::assertNull($entry?->eventId);
+    self::assertNull($entry?->workflow_id);
+    self::assertNull($entry?->event_id);
   }
 
   public function test_a_losing_claim_inside_a_transaction_leaves_it_usable(): void {
@@ -288,7 +288,7 @@ abstract class PdoWorkflowStoresCases extends PdoTestCase {
     $other = $this->otherConnection();
     $other->begin();
     self::assertTrue($this->ledger($other)->claim('k1', 'kind'));
-    $other->rollBack();
+    $other->rollback();
 
     self::assertTrue($this->ledger()->claim('k1', 'kind'), 'a rolled-back claim does not hold the key');
   }
@@ -322,13 +322,13 @@ abstract class PdoWorkflowStoresCases extends PdoTestCase {
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $first->outcome);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $redelivery->outcome);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $secondTick->outcome);
-    self::assertSame($first->workflowId, $secondTick->workflowId, 'the loser is told the winner');
+    self::assertSame($first->workflow_id, $secondTick->workflow_id, 'the loser is told the winner');
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $nextMinute->outcome);
-    self::assertSame([$first->workflowId, $nextMinute->workflowId], $workflow->started);
+    self::assertSame([$first->workflow_id, $nextMinute->workflow_id], $workflow->started);
     self::assertSame(2, $this->countRows('ddd_behaviour_workflows'));
 
-    $key = WorkflowIgnitionKey::perMinute($workflow->workflow_kind() . ':nightly', new \DateTimeImmutable('2026-10-01T03:00:05+00:00'));
-    self::assertSame($first->workflowId, $this->ledger()->find($key)?->workflowId);
+    $key = WorkflowIgnitionKey::per_minute($workflow->workflow_kind() . ':nightly', new \DateTimeImmutable('2026-10-01T03:00:05+00:00'));
+    self::assertSame($first->workflow_id, $this->ledger()->find($key)?->workflow_id);
   }
 
   public function test_a_failed_save_releases_the_key_with_the_rolled_back_transaction(): void {

@@ -17,7 +17,7 @@ final class WakeRetryPolicy {
   public const CAP_SECONDS = 300;
 
   /** Delay before retry number $attempt (1 = the first retry). */
-  public static function backoffSeconds(int $attempt): int {
+  public static function backoff_seconds(int $attempt): int {
     $n = max(1, $attempt) - 1;
     return (int) min(self::CAP_SECONDS, self::BASE_SECONDS * (2 ** min($n, 20)));
   }

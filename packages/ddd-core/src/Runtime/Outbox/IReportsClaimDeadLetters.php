@@ -17,13 +17,13 @@ namespace TangibleDDD\Runtime\Outbox;
  * - A re-claimed row whose attempts reach its max_attempts is moved to the
  *   DLQ inside claim() (a DLQ entry, status `dlq`) and NOT handed out. It
  *   is then visible wherever dead letters are (IOutboxAdministration::
- *   deadLetters(), the operator view's relay layer).
+ *   dead_letters(), the operator view's relay layer).
  *
- * takeDeadLetteredAtClaim() returns the rows claim() dead-lettered since
+ * take_claim_dead_letters() returns the rows claim() dead-lettered since
  * the last call, each with the error stored in the DLQ, and empties the
  * list. The core relay step (OutboxProcessor) calls it after every claim,
  * emits OutboxDeadLettered for each and lists them in
- * ProcessingResult::$deadLetteredAtClaim, so a claim-time dead letter is as
+ * ProcessingResult::$claim_dead_letters, so a claim-time dead letter is as
  * visible as a relay-side one.
  *
  * A store without this interface keeps the wave-3 behaviour (only explicit
@@ -34,5 +34,5 @@ interface IReportsClaimDeadLetters {
   public const LEASE_EXPIRED_ERROR = 'lease expired without an outcome (submitter crashed or was killed?)';
 
   /** @return list<array{0: Claim, 1: string}> */
-  public function takeDeadLetteredAtClaim(): array;
+  public function take_claim_dead_letters(): array;
 }

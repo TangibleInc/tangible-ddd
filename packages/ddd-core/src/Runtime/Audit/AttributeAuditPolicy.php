@@ -45,7 +45,7 @@ final class AttributeAuditPolicy implements IAuditPolicy {
     return $this->attributeOf($command)?->enabled ?? true;
   }
 
-  public function captureParameters(object $command): bool {
+  public function captures_parameters(object $command): bool {
     if ($this->listed($command, $this->withoutParameters)) {
       return false;
     }

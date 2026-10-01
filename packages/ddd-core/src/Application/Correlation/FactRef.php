@@ -16,8 +16,8 @@ namespace TangibleDDD\Application\Correlation;
 final class FactRef {
 
   public function __construct(
-    public readonly string $eventId,
-    public readonly string $eventClass,
-    public readonly string $correlationId,
+    public readonly string $event_id,
+    public readonly string $event_class,
+    public readonly string $correlation_id,
   ) {}
 }

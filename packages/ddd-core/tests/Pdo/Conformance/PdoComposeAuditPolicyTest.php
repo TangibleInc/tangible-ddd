@@ -39,16 +39,16 @@ final class PdoComposeAuditPolicyTest extends TestCase {
   protected function setUp(): void {
     $this->database = 'ddd_w4_pdoconf4_audit_' . bin2hex(random_bytes(4));
     ConformanceDatabase::create($this->database);
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     ConsumerRegistry::reset();
     Correlation::reset();
     HostDefaults::provide(LoggerInterface::class, new NullLogger());
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     ConsumerRegistry::reset();
     Correlation::reset();
     ConformanceDatabase::drop($this->database, [ConformanceDatabase::connectionId($this->pdo)]);
@@ -84,7 +84,7 @@ final class PdoComposeAuditPolicyTest extends TestCase {
     $rt->bus()->handle(new ParameterlessCommand('p-1'));
 
     self::assertSame([AuditedCommand::class, UnauditedCommand::class, ParameterlessCommand::class], $ran, 'every command ran');
-    $names = array_map(static fn ($o) => $o->commandName, $sink->opened);
+    $names = array_map(static fn ($o) => $o->command_name, $sink->opened);
     self::assertCount(2, $sink->opened, '#[Audit(false)] writes no row: ' . implode(', ', $names));
     self::assertCount(2, $sink->closed);
     foreach ($names as $name) {

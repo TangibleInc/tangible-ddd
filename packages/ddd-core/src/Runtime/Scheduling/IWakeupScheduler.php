@@ -13,9 +13,9 @@ namespace TangibleDDD\Runtime\Scheduling;
  *   transaction is active on the process store's connection: the intent and
  *   the state change commit together or not at all (C8, C9). Scheduling an
  *   idempotency key that already exists is a no-op. Storage failures throw.
- * - complete() and retryLater() are fenced by the claim token and return
+ * - complete() and retry_later() are fenced by the claim token and return
  *   false when the lease was lost; they do not throw for that.
- * - claimDue() runs its own short transaction, outside any open one.
+ * - claim_due() runs its own short transaction, outside any open one.
  *
  * Connection rules: the process store's connection.
  * Lifetime: stateless per call. Implementations: pdo `{prefix}_ddd_jobs`,
@@ -29,9 +29,9 @@ interface IWakeupScheduler {
   public function cancel(string $idempotencyKey): void;
 
   /** @return list<ClaimedWakeup> due intents, oldest first, leased for $leaseSeconds */
-  public function claimDue(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array;
+  public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array;
 
   public function complete(ClaimedWakeup $w): bool;
 
-  public function retryLater(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool;
+  public function retry_later(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool;
 }

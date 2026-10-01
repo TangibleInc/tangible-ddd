@@ -47,8 +47,8 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
     $this->clock = $clock ?? new SystemClock();
   }
 
-  public function deadLetters(int $limit, ?string $after = null): array {
-    $rows = $this->db->fetchAll(
+  public function dead_letters(int $limit, ?string $after = null): array {
+    $rows = $this->db->fetch_all(
       "SELECT * FROM `{$this->dlq}` WHERE id > ? ORDER BY id LIMIT ?",
       [$after === null ? 0 : (int) $after, max(0, $limit)]
     );
@@ -57,19 +57,19 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
       (string) $row['event_id'],
       (string) $row['error'],
       (int) $row['attempts'],
-      Utc::fromDb((string) $row['dead_lettered_at']),
+      Utc::from_db((string) $row['dead_lettered_at']),
       OutboxRows::record($row),
     ), $rows);
   }
 
   public function retry(string $event_id, bool $force = false): void {
     $this->transactionally(function () use ($event_id, $force): void {
-      $row = $this->db->fetchOne(
+      $row = $this->db->fetch_one(
         "SELECT status, claim_token, lease_until FROM `{$this->outbox}` WHERE event_id = ? FOR UPDATE",
         [$event_id]
       ) ?? throw new OutboxRowNotFound("Outbox row $event_id not found");
 
-      if ($row['claim_token'] !== null && Utc::fromDb((string) $row['lease_until']) > $this->clock->now()) {
+      if ($row['claim_token'] !== null && Utc::from_db((string) $row['lease_until']) > $this->clock->now()) {
         throw new OutboxAdministrationRefused("Outbox row $event_id is leased; retry refused");
       }
       if (!$force && !in_array($row['status'], ['pending', 'dlq'], true)) {
@@ -82,18 +82,18 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
 
   public function replay(int $dlqId): void {
     $this->transactionally(function () use ($dlqId): void {
-      $letter = $this->db->fetchOne("SELECT * FROM `{$this->dlq}` WHERE id = ? FOR UPDATE", [$dlqId])
+      $letter = $this->db->fetch_one("SELECT * FROM `{$this->dlq}` WHERE id = ? FOR UPDATE", [$dlqId])
         ?? throw new OutboxRowNotFound("Dead letter #$dlqId not found");
 
-      $exists = $this->db->fetchOne("SELECT id FROM `{$this->outbox}` WHERE event_id = ? FOR UPDATE", [$letter['event_id']]);
+      $exists = $this->db->fetch_one("SELECT id FROM `{$this->outbox}` WHERE event_id = ? FOR UPDATE", [$letter['event_id']]);
       if ($exists === null) {
-        $now = Utc::toDb($this->clock->now());
-        $columns = array_combine(OutboxRows::SHARED, OutboxRows::sharedValues($letter)) + [
+        $now = Utc::to_db($this->clock->now());
+        $columns = array_combine(OutboxRows::SHARED, OutboxRows::shared_values($letter)) + [
           'status' => 'pending',
           'next_attempt_at' => $now,
           'created_at' => $now,
         ];
-        $this->db->execute(OutboxRows::insertSql($this->outbox, $columns), array_values($columns));
+        $this->db->execute(OutboxRows::insert_sql($this->outbox, $columns), array_values($columns));
       } else {
         $this->reset((string) $letter['event_id']);
       }
@@ -110,21 +110,21 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
   public function purge(\DateTimeImmutable $olderThan): int {
     return $this->db->execute(
       "DELETE FROM `{$this->outbox}` WHERE status = 'accepted' AND accepted_at < ?",
-      [Utc::toDb($olderThan)]
+      [Utc::to_db($olderThan)]
     );
   }
 
   public function stats(): array {
     $stats = ['pending' => 0, 'accepted' => 0, 'dlq' => 0, 'cancelled' => 0];
-    foreach ($this->db->fetchAll("SELECT status, COUNT(*) AS n FROM `{$this->outbox}` GROUP BY status") as $row) {
+    foreach ($this->db->fetch_all("SELECT status, COUNT(*) AS n FROM `{$this->outbox}` GROUP BY status") as $row) {
       $stats[(string) $row['status']] = (int) $row['n'];
     }
-    $stats['dead_letters'] = (int) ($this->db->fetchOne("SELECT COUNT(*) AS n FROM `{$this->dlq}`")['n'] ?? 0);
+    $stats['dead_letters'] = (int) ($this->db->fetch_one("SELECT COUNT(*) AS n FROM `{$this->dlq}`")['n'] ?? 0);
     return $stats;
   }
 
-  public function eventIdOf(int $outboxId): ?string {
-    $id = $this->db->fetchOne("SELECT event_id FROM `{$this->outbox}` WHERE id = ?", [$outboxId])['event_id'] ?? null;
+  public function event_id_of(int $outboxId): ?string {
+    $id = $this->db->fetch_one("SELECT event_id FROM `{$this->outbox}` WHERE id = ?", [$outboxId])['event_id'] ?? null;
     return $id === null ? null : (string) $id;
   }
 
@@ -133,12 +133,12 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
       "UPDATE `{$this->outbox}` SET status = 'pending', attempts = 0, next_attempt_at = ?, last_error = NULL,
          claim_token = NULL, lease_until = NULL, transport_ref = NULL, accepted_at = NULL
        WHERE event_id = ?",
-      [Utc::toDb($this->clock->now()), $eventId]
+      [Utc::to_db($this->clock->now()), $eventId]
     );
   }
 
   private function transactionally(callable $work): void {
-    if ($this->db->inTransaction()) {
+    if ($this->db->in_transaction()) {
       $work();
       return;
     }
@@ -147,8 +147,8 @@ final class PdoOutboxAdministration implements IOutboxAdministration, IOutboxRow
       $work();
       $this->db->commit();
     } catch (\Throwable $e) {
-      if ($this->db->inTransaction()) {
-        $this->db->rollBack();
+      if ($this->db->in_transaction()) {
+        $this->db->rollback();
       }
       throw $e;
     }

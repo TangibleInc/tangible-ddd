@@ -13,7 +13,7 @@ use TangibleDDD\Core\Tests\Pdo\Conformance\PdoHostFixture;
 #[Group('pdo-native')]
 final class PdoNativeAlarmScenariosTest extends AlarmScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new PdoHostFixture(emulatePrepares: false);
   }
 }

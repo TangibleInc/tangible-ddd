@@ -16,7 +16,7 @@ use TangibleDDD\Runtime\SystemClock;
  * per (holder, selector), fnmatch selectors, expiry honoured (`held_until`
  * <= now is released). hold() is an upsert.
  *
- * activePatterns() exposes the live selectors as anchored regexes so
+ * patterns() exposes the live selectors as anchored regexes so
  * PdoOutboxStore can exclude paused rows inside its claim statement instead
  * of claiming and handing them back.
  *
@@ -37,11 +37,11 @@ final class PdoPauseStore implements IRelayPauseStore {
   }
 
   public function hold(string $holder, string $selector, ?\DateTimeImmutable $until): void {
-    $untilDb = $until === null ? null : Utc::toDb($until);
+    $untilDb = $until === null ? null : Utc::to_db($until);
     $this->db->execute(
       "INSERT INTO `{$this->table}` (holder, selector, held_until, created_at) VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE held_until = ?",
-      [$holder, $selector, $untilDb, Utc::toDb($this->clock->now()), $untilDb]
+      [$holder, $selector, $untilDb, Utc::to_db($this->clock->now()), $untilDb]
     );
   }
 
@@ -53,8 +53,8 @@ final class PdoPauseStore implements IRelayPauseStore {
     $this->db->execute("DELETE FROM `{$this->table}` WHERE holder = ? AND selector = ?", [$holder, $selector]);
   }
 
-  public function isPaused(string $eventType, \DateTimeImmutable $now): bool {
-    foreach ($this->activeSelectors($now) as $selector) {
+  public function is_paused(string $eventType, \DateTimeImmutable $now): bool {
+    foreach ($this->selectors($now) as $selector) {
       if (Glob::matches($selector, $eventType)) {
         return true;
       }
@@ -63,15 +63,15 @@ final class PdoPauseStore implements IRelayPauseStore {
   }
 
   /** @return list<string> anchored regexes (MySQL REGEXP_LIKE / PCRE) of the live selectors */
-  public function activePatterns(\DateTimeImmutable $now): array {
-    return array_values(array_unique(array_map(Glob::toRegex(...), $this->activeSelectors($now))));
+  public function patterns(\DateTimeImmutable $now): array {
+    return array_values(array_unique(array_map(Glob::to_regex(...), $this->selectors($now))));
   }
 
   /** @return list<string> */
-  private function activeSelectors(\DateTimeImmutable $now): array {
-    $rows = $this->db->fetchAll(
+  private function selectors(\DateTimeImmutable $now): array {
+    $rows = $this->db->fetch_all(
       "SELECT DISTINCT selector FROM `{$this->table}` WHERE held_until IS NULL OR held_until > ? ORDER BY selector",
-      [Utc::toDb($now)]
+      [Utc::to_db($now)]
     );
     return array_map(static fn (array $r) => (string) $r['selector'], $rows);
   }

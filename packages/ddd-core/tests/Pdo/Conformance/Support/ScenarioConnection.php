@@ -37,13 +37,13 @@ final class ScenarioConnection implements IHostConnection {
     return $this->inner->execute($sql, $params);
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
-    return $this->inner->fetchAll($sql, $params);
+  public function fetch_all(string $sql, array $params = []): array {
+    return $this->inner->fetch_all($sql, $params);
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
+  public function fetch_one(string $sql, array $params = []): ?array {
     if (!str_contains($sql, 'GET_LOCK(')) {
-      return $this->inner->fetchOne($sql, $params);
+      return $this->inner->fetch_one($sql, $params);
     }
 
     if ($this->primary && ($before = $this->locks->takeBefore()) !== null) {
@@ -54,15 +54,15 @@ final class ScenarioConnection implements IHostConnection {
       // lock was not taken. $reason is the scenario's label for it.
       return ['acquired' => null, 'conformance_fault' => $reason];
     }
-    $row = $this->inner->fetchOne($sql, $params);
+    $row = $this->inner->fetch_one($sql, $params);
     if ((string) ($row['acquired'] ?? '') === '1') {
       $this->locks->acquisitions++;
     }
     return $row;
   }
 
-  public function lastInsertId(): string {
-    return $this->inner->lastInsertId();
+  public function last_insert_id(): string {
+    return $this->inner->last_insert_id();
   }
 
   public function begin(): void {
@@ -78,15 +78,15 @@ final class ScenarioConnection implements IHostConnection {
     $this->inner->commit();
   }
 
-  public function rollBack(): void {
-    $this->inner->rollBack();
+  public function rollback(): void {
+    $this->inner->rollback();
   }
 
-  public function inTransaction(): bool {
-    return $this->inner->inTransaction();
+  public function in_transaction(): bool {
+    return $this->inner->in_transaction();
   }
 
-  public function isDuplicateKey(\Throwable $e): bool {
-    return $this->inner->isDuplicateKey($e);
+  public function is_duplicate_key(\Throwable $e): bool {
+    return $this->inner->is_duplicate_key($e);
   }
 }

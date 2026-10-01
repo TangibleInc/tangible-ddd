@@ -32,10 +32,10 @@ final class PdoScenarioRows implements ScenarioRows {
   }
 
   public function has(string $id): bool {
-    return $this->db->fetchOne("SELECT 1 AS present FROM `{$this->table}` WHERE id = ?", [$id]) !== null;
+    return $this->db->fetch_one("SELECT 1 AS present FROM `{$this->table}` WHERE id = ?", [$id]) !== null;
   }
 
   public function count(): int {
-    return (int) ($this->db->fetchOne("SELECT COUNT(*) AS n FROM `{$this->table}`")['n'] ?? 0);
+    return (int) ($this->db->fetch_one("SELECT COUNT(*) AS n FROM `{$this->table}`")['n'] ?? 0);
   }
 }

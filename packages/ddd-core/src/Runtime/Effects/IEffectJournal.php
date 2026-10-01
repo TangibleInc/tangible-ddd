@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Runtime\Effects;
 
 /**
- * Journal of performed external effects, keyed by idempotencyKey() (D1).
+ * Journal of performed external effects, keyed by idempotency_key() (D1).
  *
  * - find(): the recorded result, or null when the effect has not performed.
  * - store(): records a result; storing an existing key overwrites it.

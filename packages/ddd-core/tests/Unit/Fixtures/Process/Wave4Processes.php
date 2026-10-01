@@ -148,7 +148,7 @@ final class CancellableSyncProcess extends LongProcess {
     return new Result(
       commands: [new RecordingCommand('sync-job', $job)],
       await: AwaitAny::of(AwaitEvent::keyed(JobFinished::class, $job))
-        ->cancelledBy(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => $this->app_id])),
+        ->cancelled_by(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => $this->app_id])),
     );
   }
 

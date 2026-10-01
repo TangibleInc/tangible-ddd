@@ -24,8 +24,8 @@ use TangibleDDD\Runtime\Codec\UndecodableLargeString;
  * length/sha256 check); the store quarantines it.
  *
  * D6 (wave 4, CR-W4CE-5): a promoted constructor parameter holding a
- * LargeString is stored as LargeString::toPayload() and revived by the
- * parameter's type; UndecodableLargeString::$quarantineReason becomes the
+ * LargeString is stored as LargeString::encode() and revived by the
+ * parameter's type; UndecodableLargeString::$reason becomes the
  * quarantine reason.
  *
  * @internal
@@ -86,7 +86,7 @@ final class ProcessCodec {
         $mechanism = new AwaitEvent((string) $row['waiting_for'], $match ?? []);
       }
     } catch (UndecodableLargeString $e) {
-      throw new \UnexpectedValueException("row of $class cannot be decoded: " . $e->quarantineReason, 0, $e);
+      throw new \UnexpectedValueException("row of $class cannot be decoded: " . $e->reason, 0, $e);
     } catch (\Throwable $e) {
       throw new \UnexpectedValueException("row of $class cannot be decoded: " . $e->getMessage(), 0, $e);
     }
@@ -100,8 +100,8 @@ final class ProcessCodec {
       waiting_for: $row['waiting_for'] === null ? null : (string) $row['waiting_for'],
       match_criteria: $match,
       last_error: $row['last_error'] === null ? null : (string) $row['last_error'],
-      created_at: Utc::fromDbOrNull($row['created_at']),
-      updated_at: Utc::fromDbOrNull($row['updated_at']),
+      created_at: Utc::from_db_or_null($row['created_at']),
+      updated_at: Utc::from_db_or_null($row['updated_at']),
       await_mechanism: $mechanism,
       ignited_by_event_id: $row['ignited_by_event_id'] === null ? null : (string) $row['ignited_by_event_id'],
       source: $row['source'] === null ? null : (string) $row['source'],
@@ -117,7 +117,7 @@ final class ProcessCodec {
       if ($param->isPromoted()) {
         $value = (new \ReflectionProperty($process, $param->getName()))->getValue($process);
         // D6: a LargeString is stored in its wire form (base64 + length + sha256).
-        $data[$param->getName()] = $value instanceof LargeString ? $value->toPayload() : $value;
+        $data[$param->getName()] = $value instanceof LargeString ? $value->encode() : $value;
       }
     }
     return $data;
@@ -152,7 +152,7 @@ final class ProcessCodec {
   private static function revive(\ReflectionParameter $param, mixed $value): mixed {
     $type = $param->getType();
     if ($type instanceof \ReflectionNamedType && $type->getName() === LargeString::class && $value !== null) {
-      return LargeString::fromPayload($value);
+      return LargeString::decode($value);
     }
     return $value;
   }

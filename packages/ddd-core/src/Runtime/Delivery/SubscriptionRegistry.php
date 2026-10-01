@@ -22,7 +22,7 @@ final class SubscriptionRegistry implements ISubscriptionRegistry {
   public function for(string $eventClass): array {
     $matching = array_filter(
       $this->subscribers,
-      static fn (array $e) => is_a($eventClass, $e['sub']->eventClassOrMarker, true)
+      static fn (array $e) => is_a($eventClass, $e['sub']->event_class, true)
     );
     usort($matching, static fn (array $a, array $b) => [$a['sub']->priority, $a['seq']] <=> [$b['sub']->priority, $b['seq']]);
 

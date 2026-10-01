@@ -24,8 +24,8 @@ use TangibleDDD\Testing\StaticConsumerIdentity;
 final class HostAndResetTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
     Reactions::reset();
   }
@@ -102,7 +102,7 @@ final class HostAndResetTest extends TestCase {
   public function test_a_miss_asks_the_resolver_and_reads_the_port_again(): void {
     $clock = new FrozenClock();
     $asked = [];
-    HostDefaults::onMiss(static function (string $port) use ($clock, &$asked): void {
+    HostDefaults::on_miss(static function (string $port) use ($clock, &$asked): void {
       $asked[] = $port;
       HostDefaults::provide(IClock::class, $clock);
     });
@@ -117,7 +117,7 @@ final class HostAndResetTest extends TestCase {
 
   public function test_a_resolver_that_provides_nothing_keeps_the_miss_and_is_asked_again(): void {
     $calls = 0;
-    HostDefaults::onMiss(static function () use (&$calls): void { $calls++; });
+    HostDefaults::on_miss(static function () use (&$calls): void { $calls++; });
 
     self::assertNull(HostDefaults::get(IClock::class));
     self::assertNull(HostDefaults::get(IClock::class));
@@ -126,7 +126,7 @@ final class HostAndResetTest extends TestCase {
 
   public function test_a_miss_inside_the_resolver_returns_null_instead_of_recursing(): void {
     $inner = 'unset';
-    HostDefaults::onMiss(static function () use (&$inner): void {
+    HostDefaults::on_miss(static function () use (&$inner): void {
       $inner = HostDefaults::get(ITableNames::class);
     });
 
@@ -136,23 +136,23 @@ final class HostAndResetTest extends TestCase {
 
   public function test_for_asks_the_resolver_for_the_host_port_factory(): void {
     $acme = new FrozenClock(new \DateTimeImmutable('2030-01-01'));
-    HostDefaults::onMiss(static function () use ($acme): void {
+    HostDefaults::on_miss(static function () use ($acme): void {
       HostDefaults::provide(\TangibleDDD\Runtime\IHostPortFactory::class, new class($acme) implements \TangibleDDD\Runtime\IHostPortFactory {
         public function __construct(private readonly IClock $acme) {}
         public function create(string $port, IConsumerIdentity $consumer, ?object $legacy = null): ?object {
           return $port === IClock::class ? $this->acme : null;
         }
       });
-      HostDefaults::onMiss(null);
+      HostDefaults::on_miss(null);
     });
 
     self::assertSame($acme, HostDefaults::for(IClock::class, new StaticConsumerIdentity('acme')));
   }
 
   public function test_reset_for_tests_removes_the_resolver(): void {
-    HostDefaults::onMiss(static function (): void { HostDefaults::provide(IClock::class, new FrozenClock()); });
+    HostDefaults::on_miss(static function (): void { HostDefaults::provide(IClock::class, new FrozenClock()); });
 
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
 
     self::assertNull(HostDefaults::get(IClock::class));
   }
@@ -166,7 +166,7 @@ final class HostAndResetTest extends TestCase {
     $clock = new FrozenClock();
     HostDefaults::provide(IClock::class, $clock);
 
-    RuntimeReset::betweenMessages();
+    RuntimeReset::between_messages();
 
     self::assertSame($clock, HostDefaults::get(IClock::class));
   }
@@ -175,8 +175,8 @@ final class HostAndResetTest extends TestCase {
     $calls = 0;
     RuntimeReset::register('uow', function () use (&$calls) { $calls++; });
 
-    RuntimeReset::betweenMessages();
-    RuntimeReset::betweenMessages();
+    RuntimeReset::between_messages();
+    RuntimeReset::between_messages();
 
     self::assertSame(2, $calls);
   }
@@ -187,7 +187,7 @@ final class HostAndResetTest extends TestCase {
     self::assertNotNull(Correlation::peek());
 
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
       self::fail('expected RuntimeLeakDetected');
     } catch (RuntimeLeakDetected $e) {
       self::assertStringContainsString('Correlation', $e->getMessage());
@@ -199,42 +199,42 @@ final class HostAndResetTest extends TestCase {
   public function test_runtime_reset_is_quiet_inside_a_balanced_bracket_run(): void {
     Correlation::within(TraceContext::root(), static fn () => null);
 
-    RuntimeReset::betweenMessages();
+    RuntimeReset::between_messages();
     self::assertNull(Correlation::peek());
   }
 
   public function test_runtime_reset_reports_a_held_process_lock(): void {
     $lock = new InMemoryProcessLock();
-    RuntimeReset::guardLock($lock);
+    RuntimeReset::guard($lock);
     $lock->acquire(new LockKey('acme', '', 7), 0.0);
 
     $this->expectException(RuntimeLeakDetected::class);
     $this->expectExceptionMessage('lock');
-    RuntimeReset::betweenMessages();
+    RuntimeReset::between_messages();
   }
 
   public function test_a_lock_leak_is_force_released_so_the_next_reset_is_clean(): void {
     $backend = new InMemoryProcessLock();
     $lock = new ReentrantProcessLock($backend, new \Psr\Log\NullLogger());
-    RuntimeReset::guardLock($lock);
+    RuntimeReset::guard($lock);
     $key = new LockKey('acme', '', 7);
     $lock->acquire($key, 0.0);
     $lock->acquire($key, 0.0);
 
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
       self::fail('expected RuntimeLeakDetected');
     } catch (RuntimeLeakDetected $e) {
       self::assertStringContainsString('held 2 time(s)', $e->getMessage());
     }
 
-    self::assertSame(0, $lock->heldCount());
-    self::assertSame(0, $backend->heldCount(), 'the backend lock was released too');
+    self::assertSame(0, $lock->held_count());
+    self::assertSame(0, $backend->held_count(), 'the backend lock was released too');
 
-    RuntimeReset::betweenMessages(); // no throw: the leak is not sticky
+    RuntimeReset::between_messages(); // no throw: the leak is not sticky
 
     $lock->acquire($key, 0.0);
-    self::assertSame(2, $backend->acquireCount(), 'a later acquire goes to the backend again');
+    self::assertSame(2, $backend->acquisitions(), 'a later acquire goes to the backend again');
   }
 
   public function test_runtime_reset_runs_every_resetter_even_when_one_throws(): void {
@@ -243,7 +243,7 @@ final class HostAndResetTest extends TestCase {
     RuntimeReset::register('good', function () use (&$ran) { $ran = true; });
 
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
       self::fail('expected RuntimeLeakDetected');
     } catch (RuntimeLeakDetected $e) {
       self::assertStringContainsString('bad', $e->getMessage());

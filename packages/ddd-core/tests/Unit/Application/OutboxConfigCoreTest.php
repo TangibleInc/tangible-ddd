@@ -15,7 +15,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxOptionsReader;
 final class OutboxConfigCoreTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   public function test_from_array_overrides_named_fields_and_keeps_defaults(): void {

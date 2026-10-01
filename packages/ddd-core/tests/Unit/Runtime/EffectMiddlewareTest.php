@@ -63,12 +63,12 @@ final class PurgeZone implements IExternalEffectCommand {
     return self::$bus->handle($this);
   }
 
-  public function idempotencyKey(): string {
+  public function idempotency_key(): string {
     return "cf-purge:{$this->zone}";
   }
 
   public function perform(): EffectResult {
-    self::$performInTx[] = self::$tx?->isActive() ?? false;
+    self::$performInTx[] = self::$tx?->is_active() ?? false;
     if (self::$performFails !== null) {
       throw self::$performFails;
     }
@@ -81,10 +81,10 @@ final class PurgeZone implements IExternalEffectCommand {
       self::$recordFailuresLeft--;
       throw new \RuntimeException('domain write failed');
     }
-    self::$recorded[] = ['result' => $r, 'in_tx' => self::$tx?->isActive() ?? false];
+    self::$recorded[] = ['result' => $r, 'in_tx' => self::$tx?->is_active() ?? false];
   }
 
-  public function failureCommand(\Throwable $last): ?ICommand {
+  public function failure_command(\Throwable $last): ?ICommand {
     return new PurgeFailed($this->zone, $last->getMessage());
   }
 }
@@ -134,7 +134,7 @@ final class EffectMiddlewareTest extends TestCase {
   private InMemoryAuditSink $audit;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     PurgeZone::$performs = 0;
     PurgeZone::$performFails = null;
@@ -152,7 +152,7 @@ final class EffectMiddlewareTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     PurgeZone::$bus = null;
     PurgeZone::$tx = null;
@@ -211,9 +211,9 @@ final class EffectMiddlewareTest extends TestCase {
     self::assertTrue(PurgeZone::$recorded[0]['in_tx']);
     self::assertSame($result, PurgeZone::$recorded[0]['result']);
     self::assertSame(['purge_id' => 'p-1'], $result->data);
-    self::assertSame('cf-1', $this->journal->find('cf-purge:example.com')?->externalRef);
+    self::assertSame('cf-1', $this->journal->find('cf-purge:example.com')?->external_ref);
     self::assertSame(1, $this->tx->commits());
-    self::assertSame([PurgeZone::class], array_map(static fn ($o) => $o->commandName, $this->audit->opened), 'one act, the effect command');
+    self::assertSame([PurgeZone::class], array_map(static fn ($o) => $o->command_name, $this->audit->opened), 'one act, the effect command');
   }
 
   public function test_a_record_failure_keeps_the_journal_and_a_retry_reuses_the_journaled_result(): void {
@@ -240,7 +240,7 @@ final class EffectMiddlewareTest extends TestCase {
 
     self::assertSame(1, PurgeZone::$performs);
     self::assertCount(2, PurgeZone::$recorded);
-    self::assertNotSame($this->audit->opened[0]->commandId, $this->audit->opened[1]->commandId);
+    self::assertNotSame($this->audit->opened[0]->command_id, $this->audit->opened[1]->command_id);
   }
 
   public function test_invalidate_in_the_repair_commands_transaction_makes_the_effect_perform_again(): void {
@@ -332,7 +332,7 @@ final class EffectMiddlewareTest extends TestCase {
    */
   public function test_budget_is_counted_in_the_delivery_ledger_and_the_failure_command_fires_once(): void {
     $registry = new SubscriptionRegistry();
-    (new SubscriptionRegistrar($registry))->registerListener(new PurgeOnOrder());
+    (new SubscriptionRegistrar($registry))->register_listener(new PurgeOnOrder());
     $ledger = new InMemoryDeliveryLedger();
     $delivery = new IntegrationDelivery($registry, $ledger, 3, new NullLogger());
     $wrapped = IntegrationEnvelope::wrap(['order_id' => 1, 'sku' => 'example.com'], 'corr-1', 1, self::EVENT_ID);
@@ -351,8 +351,8 @@ final class EffectMiddlewareTest extends TestCase {
     self::assertCount(1, PurgeFailed::$handled);
     self::assertSame('domain write failed', PurgeFailed::$handled[0]->error);
 
-    $failureOpen = array_values(array_filter($this->audit->opened, static fn ($o) => $o->commandName === PurgeFailed::class));
-    self::assertSame(DeterministicCommandId::forFact(self::EVENT_ID, $subscriber . '#failure'), $failureOpen[0]->commandId);
+    $failureOpen = array_values(array_filter($this->audit->opened, static fn ($o) => $o->command_name === PurgeFailed::class));
+    self::assertSame(DeterministicCommandId::for_fact(self::EVENT_ID, $subscriber . '#failure'), $failureOpen[0]->command_id);
 
     $delivery->deliver(OrderPlaced::class, $wrapped);
     self::assertCount(1, PurgeFailed::$handled, 'fired once');

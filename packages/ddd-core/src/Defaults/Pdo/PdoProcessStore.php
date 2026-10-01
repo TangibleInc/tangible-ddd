@@ -25,10 +25,10 @@ use TangibleDDD\Runtime\SystemClock;
  * IProcessStore on `{prefix}ddd_processes` (register 3.8, X7, 5.2, 5.3,
  * CR-5).
  *
- * - insertIgnited(): the #[StartsOn] path only. INSERT with
+ * - insert_ignited(): the #[StartsOn] path only. INSERT with
  *   ignition_key = uuid5(event_id, process_class) under
  *   UNIQUE (process_class, ignition_key); a duplicate-key error (MySQL 1062
- *   only, IHostConnection::isDuplicateKey) answers AlreadyIgnited and the
+ *   only, IHostConnection::is_duplicate_key) answers AlreadyIgnited and the
  *   loser is not persisted (bug 2). A duplicate-key error rolls back only
  *   the statement, so the caller's transaction stays usable. Any other
  *   error is ProcessStoreFailed, never AlreadyIgnited.
@@ -48,13 +48,13 @@ use TangibleDDD\Runtime\SystemClock;
  *   unkeyed), none unless the process is `suspended`. The process write and
  *   its routes share the caller's transaction, or one of the store's own
  *   when none is open.
- * - findWaitingFor(): ids of `suspended` processes with a route whose class
+ * - find_waiting_for(): ids of `suspended` processes with a route whose class
  *   is the fact class or one of its parents/interfaces (is_a, D2; the store
  *   declares IMatchesFactAncestry). $awaitKey: null = any key, '' = unkeyed
  *   routes only, otherwise that key. A suspended row with no routes at all
  *   (written before 007_process_waits) is matched by its `waiting_for`
  *   column for a null or '' key.
- * - findStranded(): `running`/`scheduled` rows not updated for the
+ * - find_stranded(): `running`/`scheduled` rows not updated for the
  *   threshold (default 15 min) with no row in `{prefix}ddd_jobs`.
  *
  * Every write runs on the host connection (inside the runner's transaction
@@ -83,12 +83,12 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     $this->logger = $logger ?? new NullLogger();
   }
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     try {
       $this->persistNew($p, IgnitionKey::for($eventId, $processClass), $processClass);
       return IgnitionResult::Inserted;
     } catch (ProcessStoreFailed $e) {
-      if ($e->getPrevious() !== null && $this->db->isDuplicateKey($e->getPrevious())) {
+      if ($e->getPrevious() !== null && $this->db->is_duplicate_key($e->getPrevious())) {
         $p->set_id(null);
         return IgnitionResult::AlreadyIgnited;
       }
@@ -101,7 +101,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
   }
 
   public function find(int $id): ?LongProcess {
-    $row = $this->db->fetchOne("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
+    $row = $this->db->fetch_one("SELECT * FROM `{$this->table}` WHERE id = ?", [$id]);
     if ($row === null) {
       return null;
     }
@@ -111,7 +111,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
       $reason = $e->getMessage();
       $this->db->execute(
         "UPDATE `{$this->table}` SET status = 'failed', quarantine_reason = ?, version = version + 1, updated_at = ? WHERE id = ?",
-        [$reason, Utc::toDb($this->clock->now()), $id]
+        [$reason, Utc::to_db($this->clock->now()), $id]
       );
       $this->db->execute("DELETE FROM `{$this->waits}` WHERE process_id = ?", [$id]);
       $this->logger->error("[ddd process] #$id quarantined: $reason");
@@ -125,7 +125,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
       throw new ProcessStoreFailed('Cannot save a process that was never inserted');
     }
     try {
-      $columns = ProcessCodec::encode($p) + ['updated_at' => Utc::toDb($this->clock->now())];
+      $columns = ProcessCodec::encode($p) + ['updated_at' => Utc::to_db($this->clock->now())];
       unset($columns['process_class']);
       $set = implode(', ', array_map(static fn (string $c) => "`$c` = ?", array_keys($columns)));
       $n = $this->atomically(function () use ($set, $columns, $id, $expectedVersion, $p): int {
@@ -148,7 +148,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     try {
       $n = $this->db->execute(
         "UPDATE `{$this->table}` SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-        [Utc::toDb($this->clock->now()), $id, $expectedVersion]
+        [Utc::to_db($this->clock->now()), $id, $expectedVersion]
       );
     } catch (\Throwable $e) {
       throw new ProcessStoreFailed("Touching process #$id failed: " . $e->getMessage(), 0, $e);
@@ -156,12 +156,12 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     return $this->fenced($n, $id, $expectedVersion, 'touch');
   }
 
-  public function versionOf(int $id): ?int {
-    $version = $this->db->fetchOne("SELECT version FROM `{$this->table}` WHERE id = ?", [$id])['version'] ?? null;
+  public function version_of(int $id): ?int {
+    $version = $this->db->fetch_one("SELECT version FROM `{$this->table}` WHERE id = ?", [$id])['version'] ?? null;
     return $version === null ? null : (int) $version;
   }
 
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array {
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array {
     $names = [$eventClass];
     if (class_exists($eventClass) || interface_exists($eventClass)) {
       $names = array_values(array_unique([$eventClass, ...array_values(class_parents($eventClass) ?: []), ...array_values(class_implements($eventClass) ?: [])]));
@@ -181,25 +181,25 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
       $params = [...$params, ...$names];
     }
 
-    $rows = $this->db->fetchAll("$sql ORDER BY id", $params);
+    $rows = $this->db->fetch_all("$sql ORDER BY id", $params);
     return array_map(static fn (array $r) => (int) $r['id'], $rows);
   }
 
-  public function findStranded(\DateTimeImmutable $now): array {
+  public function find_stranded(\DateTimeImmutable $now): array {
     $cutoff = $now->setTimezone(new \DateTimeZone('UTC'))->modify("-{$this->strandedAfterSeconds} seconds");
-    $rows = $this->db->fetchAll(
+    $rows = $this->db->fetch_all(
       "SELECT p.id, p.process_class, p.status, p.step_index, p.updated_at FROM `{$this->table}` p
        WHERE p.status IN ('running', 'scheduled') AND p.updated_at <= ?
          AND NOT EXISTS (SELECT 1 FROM `{$this->jobs}` j WHERE j.process_id = p.id)
        ORDER BY p.id",
-      [Utc::toDb($cutoff)]
+      [Utc::to_db($cutoff)]
     );
     return array_map(static fn (array $r) => new StrandedProcess(
       (int) $r['id'],
       (string) $r['process_class'],
       (string) $r['status'],
       (int) $r['step_index'],
-      Utc::fromDb((string) $r['updated_at']),
+      Utc::from_db((string) $r['updated_at']),
     ), $rows);
   }
 
@@ -207,7 +207,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     if ($p->get_id() !== null) {
       throw new ProcessStoreFailed('Process #' . $p->get_id() . ' is already persisted; use save()');
     }
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     try {
       $columns = ['process_class' => $class] + ProcessCodec::encode($p) + [
         'ignition_key' => $ignitionKey,
@@ -219,7 +219,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
       $marks = implode(', ', array_fill(0, count($columns), '?'));
       $id = $this->atomically(function () use ($names, $marks, $columns, $p): int {
         $this->db->execute("INSERT INTO `{$this->table}` ($names) VALUES ($marks)", array_values($columns));
-        $id = (int) $this->db->lastInsertId();
+        $id = (int) $this->db->last_insert_id();
         if ($id > 0) {
           $this->writeRoutes($id, $p);
         }
@@ -240,16 +240,16 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     $this->db->execute("DELETE FROM `{$this->waits}` WHERE process_id = ?", [$id]);
     $routes = [];
     foreach ($p->await_routes() as $route) {
-      $routes[$route->eventClass . "\0" . $route->awaitKey] = $route;
+      $routes[$route->event_class . "\0" . $route->await_key] = $route;
     }
     if ($routes === []) {
       return;
     }
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     $step = $p->current_step_index();
     $params = [];
     foreach ($routes as $route) {
-      array_push($params, $id, $route->eventClass, $route->awaitKey, $step, $now);
+      array_push($params, $id, $route->event_class, $route->await_key, $step, $now);
     }
     $this->db->execute(
       "INSERT INTO `{$this->waits}` (process_id, event_class, await_key, step_index, created_at) VALUES "
@@ -267,7 +267,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
    * @return T
    */
   private function atomically(callable $work): mixed {
-    if ($this->db->inTransaction()) {
+    if ($this->db->in_transaction()) {
       return $work();
     }
     $this->db->begin();
@@ -277,8 +277,8 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
       return $result;
     } catch (\Throwable $e) {
       try {
-        if ($this->db->inTransaction()) {
-          $this->db->rollBack();
+        if ($this->db->in_transaction()) {
+          $this->db->rollback();
         }
       } catch (\Throwable $rollback) {
         $this->logger->error('[ddd process] rollback failed: ' . $rollback->getMessage());
@@ -291,7 +291,7 @@ final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
     if ($affected === 1) {
       return $expectedVersion + 1;
     }
-    $current = $this->versionOf($id);
+    $current = $this->version_of($id);
     if ($current === null) {
       throw new ProcessStoreFailed("Cannot $what process #$id: no such row");
     }

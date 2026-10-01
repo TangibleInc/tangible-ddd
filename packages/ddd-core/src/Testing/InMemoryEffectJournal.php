@@ -36,11 +36,11 @@ final class InMemoryEffectJournal implements IEffectJournal, InMemoryTransaction
     $this->invalidations[] = ['key' => $key, 'reason' => $reason];
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->entries, $this->invalidations];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->entries, $this->invalidations] = $state;
   }
 }

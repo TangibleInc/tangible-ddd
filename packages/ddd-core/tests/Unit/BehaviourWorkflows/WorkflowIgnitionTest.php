@@ -51,7 +51,7 @@ final class WorkflowIgnitionTest extends TestCase {
   private RecordingLogger $log;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     $this->log = new RecordingLogger();
     HostDefaults::provide(LoggerInterface::class, $this->log);
     Correlation::reset();
@@ -67,7 +67,7 @@ final class WorkflowIgnitionTest extends TestCase {
 
   protected function tearDown(): void {
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function nightly(): NightlyExportWorkflow {
@@ -119,11 +119,11 @@ final class WorkflowIgnitionTest extends TestCase {
 
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $first->outcome);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $second->outcome);
-    self::assertSame($first->dedupKey, $second->dedupKey);
-    self::assertSame(1, $second->workflowId, 'the loser is told who won');
-    $entry = $this->ledger->find($first->dedupKey);
-    self::assertSame(1, $entry->workflowId);
-    self::assertSame(self::E1, $entry->eventId);
+    self::assertSame($first->key, $second->key);
+    self::assertSame(1, $second->workflow_id, 'the loser is told who won');
+    $entry = $this->ledger->find($first->key);
+    self::assertSame(1, $entry->workflow_id);
+    self::assertSame(self::E1, $entry->event_id);
     self::assertSame(NightlyExportWorkflow::class, $entry->kind);
   }
 
@@ -157,7 +157,7 @@ final class WorkflowIgnitionTest extends TestCase {
     $result = $this->igniter->ignite($wf, new CronEntryDue('nightly'), self::E1);
 
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $result->outcome);
-    self::assertNotNull($result->startError);
+    self::assertNotNull($result->start_error);
     self::assertCount(1, $this->repo->rows);
     self::assertNotSame([], array_filter($this->log->records, static fn (array $r) => $r['level'] === 'error'));
   }
@@ -194,7 +194,7 @@ final class WorkflowIgnitionTest extends TestCase {
     $third = $this->igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00'), self::E1);
 
     self::assertSame(WorkflowIgnitionOutcome::Restarted, $second->outcome);
-    self::assertSame(1, $second->workflowId);
+    self::assertSame(1, $second->workflow_id);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $third->outcome, 'started: nothing left to do');
     self::assertSame([1], $wf->started);
     self::assertCount(1, $this->repo->rows);
@@ -210,21 +210,21 @@ final class WorkflowIgnitionTest extends TestCase {
 
     $fresh = $igniter->ignite($wf, $fact, self::E2);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $fresh->outcome, 'a fresh claim may still be in flight');
-    self::assertNull($fresh->workflowId);
+    self::assertNull($fresh->workflow_id);
 
     $this->clock->advance('PT16M');
     $stale = $igniter->ignite($wf, $fact, self::E2);
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $stale->outcome);
     self::assertSame([1], $wf->started);
-    self::assertSame(1, $this->ledger->find($key)->workflowId);
+    self::assertSame(1, $this->ledger->find($key)->workflow_id);
   }
 
   public function test_a_completed_start_attaches_the_workflow_to_its_start_marker(): void {
     $result = $this->igniter->ignite($this->nightly(), new CronEntryDue('nightly'), self::E1);
 
-    $marker = $this->ledger->find(WorkflowIgnitionKey::startMarker($result->dedupKey));
+    $marker = $this->ledger->find(WorkflowIgnitionKey::start_marker($result->key));
     self::assertNotNull($marker);
-    self::assertSame(1, $marker->workflowId, 'an attached marker = the start completed');
+    self::assertSame(1, $marker->workflow_id, 'an attached marker = the start completed');
   }
 
   public function test_a_worker_that_died_inside_the_start_keeps_redelivering_and_a_stale_marker_is_reclaimed(): void {
@@ -238,7 +238,7 @@ final class WorkflowIgnitionTest extends TestCase {
     $wf->failStart = new \RuntimeException('x');
     $igniter->ignite($wf, new CronEntryDue('nightly', $fact['due_at']), self::E1);
     $wf->failStart = null;
-    $this->ledger->claim(WorkflowIgnitionKey::startMarker($key), $wf->workflow_kind(), self::E1);
+    $this->ledger->claim(WorkflowIgnitionKey::start_marker($key), $wf->workflow_kind(), self::E1);
 
     $delivery = new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger());
     $pending = $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1));
@@ -246,18 +246,18 @@ final class WorkflowIgnitionTest extends TestCase {
     self::assertSame([], $wf->started);
     $direct = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $direct->outcome);
-    self::assertTrue($direct->startPending);
+    self::assertTrue($direct->start_pending);
 
     $this->clock->advance('PT16M');
     $retry = $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1));
     self::assertSame([], $retry->failed);
     self::assertSame([1], $wf->started, 'the stale marker was reclaimed and the workflow started');
-    self::assertSame(1, $this->ledger->find(WorkflowIgnitionKey::startMarker($key))->workflowId);
+    self::assertSame(1, $this->ledger->find(WorkflowIgnitionKey::start_marker($key))->workflow_id);
     self::assertNotSame([], array_filter($this->log->records, static fn (array $r) => $r['level'] === 'warning'));
 
     $after = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $after->outcome);
-    self::assertFalse($after->startPending);
+    self::assertFalse($after->start_pending);
     self::assertSame([1], $wf->started);
   }
 
@@ -267,14 +267,14 @@ final class WorkflowIgnitionTest extends TestCase {
     $wf->failStart = new \RuntimeException('x');
     $first = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00'), self::E1);
     $wf->failStart = null;
-    $this->ledger->claim(WorkflowIgnitionKey::startMarker($first->dedupKey), $wf->workflow_kind(), self::E1);
+    $this->ledger->claim(WorkflowIgnitionKey::start_marker($first->key), $wf->workflow_kind(), self::E1);
     $this->repo->rows[1]->fail();
     $this->clock->advance('PT16M');
 
     $again = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
 
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $again->outcome);
-    self::assertFalse($again->startPending);
+    self::assertFalse($again->start_pending);
     self::assertSame([], $wf->started);
   }
 
@@ -304,7 +304,7 @@ final class WorkflowIgnitionTest extends TestCase {
 
     self::assertSame([1, 2], $wf->started);
     self::assertNotNull($this->ledger->find(NameBasedUuid::v5(self::E1, PerFactWorkflow::class)));
-    self::assertSame(WorkflowIgnitionKey::forFact(self::E2, PerFactWorkflow::class), NameBasedUuid::v5(self::E2, PerFactWorkflow::class));
+    self::assertSame(WorkflowIgnitionKey::for_fact(self::E2, PerFactWorkflow::class), NameBasedUuid::v5(self::E2, PerFactWorkflow::class));
   }
 
   public function test_an_id_less_fact_with_the_default_key_ignites_without_dedup_and_warns(): void {
@@ -313,13 +313,13 @@ final class WorkflowIgnitionTest extends TestCase {
     $result = $this->igniter->ignite($wf, new CronEntryDue('a'), '');
 
     self::assertSame(WorkflowIgnitionOutcome::Ignited, $result->outcome);
-    self::assertNull($result->dedupKey);
+    self::assertNull($result->key);
     self::assertSame([], $this->ledger->rows);
     self::assertNotSame([], array_filter($this->log->records, static fn (array $r) => $r['level'] === 'warning'));
   }
 
   public function test_per_minute_keys(): void {
     $berlin = new \DateTimeImmutable('2026-10-01 14:00:59', new \DateTimeZone('Europe/Berlin'));
-    self::assertSame('wf:2026-10-01T12:00Z', WorkflowIgnitionKey::perMinute('wf', $berlin));
+    self::assertSame('wf:2026-10-01T12:00Z', WorkflowIgnitionKey::per_minute('wf', $berlin));
   }
 }

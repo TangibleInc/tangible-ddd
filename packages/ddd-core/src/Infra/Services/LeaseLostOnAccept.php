@@ -14,7 +14,7 @@ namespace TangibleDDD\Infra\Services;
  */
 final class LeaseLostOnAccept extends \RuntimeException {
 
-  public function __construct(public readonly string $eventId) {
-    parent::__construct("Lease lost on accept of $eventId; the shared submission rolls back");
+  public function __construct(public readonly string $event_id) {
+    parent::__construct("Lease lost on accept of $event_id; the shared submission rolls back");
   }
 }

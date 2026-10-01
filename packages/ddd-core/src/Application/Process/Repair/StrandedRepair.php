@@ -29,8 +29,8 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * Guards, in order, all before any write: the process lock is taken with a
  * zero wait (a worker holding it means the process is not stranded); the row
- * is re-read under it; it must be in IProcessStore::findStranded(now); with
- * an expected version, versionOf() must equal it. The writes run in the
+ * is re-read under it; it must be in IProcessStore::find_stranded(now); with
+ * an expected version, version_of() must equal it. The writes run in the
  * command's transaction (TransactionalCommandMiddleware), or in the boundary
  * when the handler is called outside one.
  *
@@ -91,8 +91,8 @@ abstract class StrandedRepair {
         throw new ProcessNotStranded("Process #$processId does not exist");
       }
       $stranded = null;
-      foreach ($store->findStranded($now) as $row) {
-        if ($row->processId === $processId) {
+      foreach ($store->find_stranded($now) as $row) {
+        if ($row->process_id === $processId) {
           $stranded = $row;
           break;
         }
@@ -103,13 +103,13 @@ abstract class StrandedRepair {
           $processId, $process->status()
         ));
       }
-      $version = (int) $store->versionOf($processId);
+      $version = (int) $store->version_of($processId);
       if ($expectedVersion !== null && $version !== $expectedVersion) {
         throw new ProcessNotStranded("Process #$processId moved on: version $version, expected $expectedVersion");
       }
 
       $work = static fn () => $repair($process, $stranded, $version, $store, $wakeups, $now);
-      if ($boundary === null || $boundary->isActive()) {
+      if ($boundary === null || $boundary->is_active()) {
         $work();
       } else {
         $boundary->run($work);

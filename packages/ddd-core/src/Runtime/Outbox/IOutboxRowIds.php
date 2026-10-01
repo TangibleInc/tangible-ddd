@@ -14,5 +14,5 @@ namespace TangibleDDD\Runtime\Outbox;
  * Error behaviour: null for an unknown id; storage errors throw.
  */
 interface IOutboxRowIds {
-  public function eventIdOf(int $outboxId): ?string;
+  public function event_id_of(int $outboxId): ?string;
 }

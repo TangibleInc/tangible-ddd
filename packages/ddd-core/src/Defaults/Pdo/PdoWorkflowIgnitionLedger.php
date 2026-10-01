@@ -18,7 +18,7 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * - claim(): a plain INSERT on the host connection, so it commits or rolls
  *   back with the transaction that saves the workflow. A duplicate key
- *   (MySQL 1062 only, IHostConnection::isDuplicateKey) answers false; it
+ *   (MySQL 1062 only, IHostConnection::is_duplicate_key) answers false; it
  *   rolls back only the statement, so the caller's transaction stays usable.
  *   A concurrent claimer of the same key waits on InnoDB's lock for the
  *   first one's uncommitted row, then loses (or wins if that rolled back).
@@ -46,11 +46,11 @@ final class PdoWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
     try {
       $this->db->execute(
         "INSERT INTO `{$this->table}` (dedup_key, kind, event_id, created_at) VALUES (?, ?, ?, ?)",
-        [$dedupKey, $kind, $eventId, Utc::toDb($this->clock->now())]
+        [$dedupKey, $kind, $eventId, Utc::to_db($this->clock->now())]
       );
       return true;
     } catch (\Throwable $e) {
-      if ($this->db->isDuplicateKey($e)) {
+      if ($this->db->is_duplicate_key($e)) {
         return false;
       }
       throw new \RuntimeException("Workflow ignition claim of '$dedupKey' failed: " . $e->getMessage(), 0, $e);
@@ -65,7 +65,7 @@ final class PdoWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
   }
 
   public function find(string $dedupKey): ?WorkflowIgnition {
-    $row = $this->guard('find', $dedupKey, fn () => $this->db->fetchOne("SELECT * FROM `{$this->table}` WHERE dedup_key = ?", [$dedupKey]));
+    $row = $this->guard('find', $dedupKey, fn () => $this->db->fetch_one("SELECT * FROM `{$this->table}` WHERE dedup_key = ?", [$dedupKey]));
     if ($row === null) {
       return null;
     }
@@ -74,7 +74,7 @@ final class PdoWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
       (string) $row['kind'],
       $row['workflow_id'] === null ? null : (int) $row['workflow_id'],
       $row['event_id'] === null ? null : (string) $row['event_id'],
-      Utc::fromDb((string) $row['created_at']),
+      Utc::from_db((string) $row['created_at']),
     );
   }
 

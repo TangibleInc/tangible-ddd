@@ -12,10 +12,10 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * from wave 2 (CR-3, ratified).
  *
  * - ignite(): the #[StartsOn] path ONLY. Asks `$processClass::from_event()`
- *   (null = declined, return quietly), then IProcessStore::insertIgnited()
+ *   (null = declined, return quietly), then IProcessStore::insert_ignited()
  *   with ignition_key = uuid5(event_id, process_class); AlreadyIgnited
  *   returns without running a step (bug 2, X7).
- * - resume(): wakes processes suspended on this fact (findWaitingFor), each
+ * - resume(): wakes processes suspended on this fact (find_waiting_for), each
  *   under its process lock with a re-read.
  *
  * Error behaviour: lock and store errors propagate, so the delivery invoker

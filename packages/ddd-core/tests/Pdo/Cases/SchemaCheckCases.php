@@ -22,7 +22,7 @@ abstract class SchemaCheckCases extends PdoTestCase {
 
   /** @return list<string> */
   private function tables(): array {
-    return array_column($this->db->fetchAll(
+    return array_column($this->db->fetch_all(
       'SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name'
     ), 't');
   }

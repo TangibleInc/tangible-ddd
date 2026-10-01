@@ -38,7 +38,7 @@ abstract class PdoEffectJournalCases extends PdoTestCase {
     $found = (new PdoEffectJournal($this->otherConnection(), self::PREFIX, $this->clock))->find('stripe:customer:1');
     self::assertNotNull($found);
     self::assertSame($data, $found->data, 'exact round trip, key order included');
-    self::assertSame('cus_1', $found->externalRef);
+    self::assertSame('cus_1', $found->external_ref);
     self::assertSame('2026-10-01 12:00:00.000000', $this->row('ddd_effect_journal', 'idempotency_key = ?', ['stripe:customer:1'])['performed_at']);
   }
 
@@ -48,7 +48,7 @@ abstract class PdoEffectJournalCases extends PdoTestCase {
     $found = $this->journal->find('k');
     self::assertNotNull($found);
     self::assertSame([], $found->data);
-    self::assertNull($found->externalRef);
+    self::assertNull($found->external_ref);
   }
 
   public function test_storing_an_existing_key_overwrites_it(): void {
@@ -56,7 +56,7 @@ abstract class PdoEffectJournalCases extends PdoTestCase {
     $this->journal->store('k', new EffectResult(['v' => 2], 'r2'));
 
     self::assertSame(['v' => 2], $this->journal->find('k')?->data);
-    self::assertSame('r2', $this->journal->find('k')?->externalRef);
+    self::assertSame('r2', $this->journal->find('k')?->external_ref);
     self::assertSame(1, $this->countRows('ddd_effect_journal'));
   }
 

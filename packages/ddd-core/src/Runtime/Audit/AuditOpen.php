@@ -17,14 +17,14 @@ final class AuditOpen {
    * @param array<string, mixed> $environment IEnvironmentProvider::describe()
    */
   public function __construct(
-    public readonly string $commandId,
-    public readonly string $correlationId,
-    public readonly string $commandName,
+    public readonly string $command_id,
+    public readonly string $correlation_id,
+    public readonly string $command_name,
     public readonly Actor $actor,
-    public readonly ?string $causationId,
-    public readonly ?string $causationType,
+    public readonly ?string $causation_id,
+    public readonly ?string $causation_type,
     public readonly array $parameters,
     public readonly array $environment,
-    public readonly \DateTimeImmutable $startedAt,
+    public readonly \DateTimeImmutable $started_at,
   ) {}
 }

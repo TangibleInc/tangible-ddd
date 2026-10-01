@@ -77,7 +77,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $id = $store->insert($p);
 
     self::assertSame($id, $p->get_id());
-    self::assertSame(1, $store->versionOf($id));
+    self::assertSame(1, $store->version_of($id));
     $row = $this->row('ddd_processes', 'id = ?', [$id]);
     self::assertNull($row['ignition_key']);
     self::assertNull($row['quarantine_reason']);
@@ -99,7 +99,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
 
   public function test_find_of_an_unknown_id_is_null(): void {
     self::assertNull($this->store()->find(987654));
-    self::assertNull($this->store()->versionOf(987654));
+    self::assertNull($this->store()->version_of(987654));
   }
 
   public function test_insert_of_an_already_persisted_process_fails(): void {
@@ -116,31 +116,31 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $first = $this->process();
     $first->mark_ignited_by(self::EVENT);
 
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($first, FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($first, FulfilmentProcess::class, self::EVENT));
     self::assertSame(IgnitionKey::for(self::EVENT, FulfilmentProcess::class), $this->row('ddd_processes', 'id = ?', [$first->get_id()])['ignition_key']);
 
     $loser = $this->process();
     $other = $this->store($this->otherConnection());
-    self::assertSame(IgnitionResult::AlreadyIgnited, $other->insertIgnited($loser, FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $other->insert_ignited($loser, FulfilmentProcess::class, self::EVENT));
     self::assertNull($loser->get_id(), 'the loser is not persisted');
     self::assertSame(1, $this->countRows('ddd_processes'));
 
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($this->process(), FulfilmentProcess::class, self::OTHER_EVENT), 'another fact ignites again');
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($this->process(), FulfilmentProcess::class, self::OTHER_EVENT), 'another fact ignites again');
     $onboarding = new OnboardingProcess();
     $onboarding->initialize_lifecycle('corr-2', new ProcessSteps(['begin'], []));
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($onboarding, OnboardingProcess::class, self::EVENT), 'another class ignites on the same fact');
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($onboarding, OnboardingProcess::class, self::EVENT), 'another class ignites on the same fact');
   }
 
   public function test_a_concurrent_uncommitted_ignition_blocks_the_second_worker_which_never_inserts(): void {
     $store = $this->store();
     $this->db->begin();
-    $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT);
+    $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT);
 
     $other = $this->otherConnection();
     $other->execute('SET SESSION innodb_lock_wait_timeout = 1');
     $loser = $this->process();
     try {
-      $this->store($other)->insertIgnited($loser, FulfilmentProcess::class, self::EVENT);
+      $this->store($other)->insert_ignited($loser, FulfilmentProcess::class, self::EVENT);
       self::fail('expected the unique-index wait to time out');
     } catch (ProcessStoreFailed $e) {
       self::assertStringContainsString('1205', $e->getMessage(), 'lock wait timeout: retryable, not AlreadyIgnited');
@@ -148,16 +148,16 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
       $this->db->commit();
     }
     self::assertNull($loser->get_id());
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store($other)->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store($other)->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
     self::assertSame(1, $this->countRows('ddd_processes'));
   }
 
   public function test_an_ignition_that_lost_inside_a_transaction_leaves_the_transaction_usable(): void {
     $store = $this->store();
-    $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT);
+    $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT);
 
     (new PdoTransactionBoundary($this->db))->run(function () use ($store) {
-      self::assertSame(IgnitionResult::AlreadyIgnited, $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+      self::assertSame(IgnitionResult::AlreadyIgnited, $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
       $store->insert($this->process(9));
     });
     self::assertSame(2, $this->countRows('ddd_processes'));
@@ -167,13 +167,13 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $store = $this->store();
     try {
       (new PdoTransactionBoundary($this->db))->run(function () use ($store) {
-        $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT);
+        $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT);
         throw new \RuntimeException('initial save failed');
       });
     } catch (\RuntimeException) {
     }
 
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
   }
 
   public function test_other_integrity_errors_are_store_failures_never_already_ignited(): void {
@@ -184,7 +184,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $faulty->failWith = $notNull;
 
     $this->expectException(ProcessStoreFailed::class);
-    $this->store($faulty)->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT);
+    $this->store($faulty)->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT);
   }
 
   public function test_manual_starts_are_never_deduped_even_with_an_ignited_by_event_id(): void {
@@ -196,8 +196,8 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
 
     $store->insert($a);
     $store->insert($b);
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $store->insertIgnited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $store->insert_ignited($this->process(), FulfilmentProcess::class, self::EVENT));
 
     self::assertSame(3, $this->countRows('ddd_processes', 'process_class = ?', [FulfilmentProcess::class]));
     self::assertSame(2, $this->countRows('ddd_processes', 'ignited_by_event_id = ? AND ignition_key IS NULL', [self::EVENT]));
@@ -211,7 +211,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
 
     $p->advance('suspended', waiting_for: UserJoined::class, await_mechanism: new AwaitEvent(UserJoined::class, ['user_id' => 9]));
     self::assertSame(2, $store->save($p, 1));
-    self::assertSame(2, $store->versionOf($id));
+    self::assertSame(2, $store->version_of($id));
     self::assertSame('2026-10-01 12:01:00.000000', $this->row('ddd_processes', 'id = ?', [$id])['updated_at']);
 
     $stale = $this->store($this->otherConnection());
@@ -220,7 +220,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
       self::fail('expected ConcurrentProcessModification');
     } catch (ConcurrentProcessModification) {
     }
-    self::assertSame(2, $store->versionOf($id), 'nothing overwritten');
+    self::assertSame(2, $store->version_of($id), 'nothing overwritten');
 
     $found = $store->find($id);
     self::assertSame('suspended', $found->status());
@@ -299,11 +299,11 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $completed->complete();
     $store->save($completed, 1);
 
-    self::assertSame([$exact], $store->findWaitingFor(UserJoined::class));
-    $billing = $store->findWaitingFor(OrderPlaced::class);
+    self::assertSame([$exact], $store->find_waiting_for(UserJoined::class));
+    $billing = $store->find_waiting_for(OrderPlaced::class);
     sort($billing);
     self::assertSame([$marker, $marker + 2], $billing, 'OrderPlaced implements BillingFact (D2)');
-    self::assertSame([], $store->findWaitingFor('App\\Unknown\\Fact'));
+    self::assertSame([], $store->find_waiting_for('App\\Unknown\\Fact'));
   }
 
   /** A FulfilmentProcess suspended on $await, as the runner leaves it. */
@@ -318,7 +318,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
   private function waitsOf(int $id): array {
     return array_map(
       static fn (array $r) => ['event_class' => (string) $r['event_class'], 'await_key' => (string) $r['await_key']],
-      $this->db->fetchAll('SELECT event_class, await_key FROM `' . $this->table('ddd_process_waits') . '` WHERE process_id = ? ORDER BY event_class, await_key', [$id])
+      $this->db->fetch_all('SELECT event_class, await_key FROM `' . $this->table('ddd_process_waits') . '` WHERE process_id = ? ORDER BY event_class, await_key', [$id])
     );
   }
 
@@ -333,11 +333,11 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $unkeyed = $store->insert($this->suspendedOn(new AwaitEvent(JobFinished::class), 3));
 
     self::assertSame([['event_class' => JobFinished::class, 'await_key' => 'job-1']], $this->waitsOf($one));
-    self::assertSame([$one], $store->findWaitingFor(JobFinished::class, 'job-1'));
-    self::assertSame([$two], $store->findWaitingFor(JobFinished::class, 'job-2'));
-    self::assertSame([], $store->findWaitingFor(JobFinished::class, 'job-3'));
-    self::assertSame([$unkeyed], $store->findWaitingFor(JobFinished::class, ''), "'' = unkeyed rows only");
-    self::assertSame([$one, $two, $unkeyed], $store->findWaitingFor(JobFinished::class), 'null = any key');
+    self::assertSame([$one], $store->find_waiting_for(JobFinished::class, 'job-1'));
+    self::assertSame([$two], $store->find_waiting_for(JobFinished::class, 'job-2'));
+    self::assertSame([], $store->find_waiting_for(JobFinished::class, 'job-3'));
+    self::assertSame([$unkeyed], $store->find_waiting_for(JobFinished::class, ''), "'' = unkeyed rows only");
+    self::assertSame([$one, $two, $unkeyed], $store->find_waiting_for(JobFinished::class), 'null = any key');
   }
 
   public function test_saving_rewrites_the_routes_and_a_process_that_is_not_suspended_has_none(): void {
@@ -354,25 +354,25 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $p->update_await($gather->accumulate(new ChildPurged('c1')));
     $version = $store->save($p, 1);
     self::assertSame([['event_class' => ChildPurged::class, 'await_key' => 'c2']], $this->waitsOf($id), 'a partial arrival leaves the missing key');
-    self::assertSame([], $store->findWaitingFor(ChildPurged::class, 'c1'));
-    self::assertSame([$id], $store->findWaitingFor(ChildPurged::class, 'c2'));
+    self::assertSame([], $store->find_waiting_for(ChildPurged::class, 'c1'));
+    self::assertSame([$id], $store->find_waiting_for(ChildPurged::class, 'c2'));
 
     $p->advance('running');
     $store->save($p, $version);
     self::assertSame([], $this->waitsOf($id));
-    self::assertSame([], $store->findWaitingFor(ChildPurged::class));
+    self::assertSame([], $store->find_waiting_for(ChildPurged::class));
   }
 
   public function test_an_any_of_await_is_found_by_each_branch_class_and_not_by_its_common_ancestor(): void {
     $store = $this->store();
     $any = AwaitAny::of(AwaitEvent::keyed(JobFinished::class, 'job-9'))
-      ->cancelledBy(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 4]));
+      ->cancelled_by(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 4]));
     $id = $store->insert($this->suspendedOn($any));
 
-    self::assertSame([$id], $store->findWaitingFor(JobFinished::class, 'job-9'));
-    self::assertSame([$id], $store->findWaitingFor(AppDestroyScheduled::class, ''));
-    self::assertSame([$id], $store->findWaitingFor(AppDestroyScheduled::class));
-    self::assertSame([], $store->findWaitingFor(UserJoined::class), 'the waiting_for column holds the common ancestor; the routes are exact');
+    self::assertSame([$id], $store->find_waiting_for(JobFinished::class, 'job-9'));
+    self::assertSame([$id], $store->find_waiting_for(AppDestroyScheduled::class, ''));
+    self::assertSame([$id], $store->find_waiting_for(AppDestroyScheduled::class));
+    self::assertSame([], $store->find_waiting_for(UserJoined::class), 'the waiting_for column holds the common ancestor; the routes are exact');
   }
 
   public function test_a_parent_class_route_matches_a_subclass_fact(): void {
@@ -380,9 +380,9 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $store = $this->store();
     $id = $store->insert($this->suspendedOn(new AwaitEvent(MemberJoined::class)));
 
-    self::assertSame([$id], $store->findWaitingFor(VipJoined::class));
-    self::assertSame([$id], $store->findWaitingFor(VipJoined::class, ''));
-    self::assertSame([], $store->findWaitingFor(VipJoined::class, 'some-key'));
+    self::assertSame([$id], $store->find_waiting_for(VipJoined::class));
+    self::assertSame([$id], $store->find_waiting_for(VipJoined::class, ''));
+    self::assertSame([], $store->find_waiting_for(VipJoined::class, 'some-key'));
   }
 
   public function test_a_suspended_row_without_routes_is_still_found_by_its_waiting_for_column(): void {
@@ -390,9 +390,9 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $id = $store->insert($this->suspendedOn(new AwaitEvent(UserJoined::class)));
     $this->db->execute('DELETE FROM `' . $this->table('ddd_process_waits') . '` WHERE process_id = ?', [$id]); // written before 007
 
-    self::assertSame([$id], $store->findWaitingFor(UserJoined::class));
-    self::assertSame([$id], $store->findWaitingFor(UserJoined::class, ''));
-    self::assertSame([], $store->findWaitingFor(UserJoined::class, 'k'), 'a keyed lookup needs a route');
+    self::assertSame([$id], $store->find_waiting_for(UserJoined::class));
+    self::assertSame([$id], $store->find_waiting_for(UserJoined::class, ''));
+    self::assertSame([], $store->find_waiting_for(UserJoined::class, 'k'), 'a keyed lookup needs a route');
   }
 
   public function test_a_pure_alarm_has_no_route(): void {
@@ -438,7 +438,7 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     self::assertNull($found->optional);
     self::assertSame('big', $found->label);
     $stored = json_decode((string) $this->row('ddd_processes', 'id = ?', [$id])['business_data'], true);
-    self::assertTrue(LargeString::isEncoded($stored['blob']), 'stored in the LargeString wire form, base64 with sha256');
+    self::assertTrue(LargeString::is_encoded($stored['blob']), 'stored in the LargeString wire form, base64 with sha256');
   }
 
   public function test_a_nullable_large_string_round_trips_when_set(): void {
@@ -479,12 +479,12 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     $this->clock->advance('PT15M');
     $fresh = $store->insert($this->process(5, 'running'));
 
-    $found = $store->findStranded($this->clock->now());
+    $found = $store->find_stranded($this->clock->now());
 
-    self::assertSame([$stranded, $scheduled], array_map(static fn (StrandedProcess $s) => $s->processId, $found));
+    self::assertSame([$stranded, $scheduled], array_map(static fn (StrandedProcess $s) => $s->process_id, $found));
     self::assertSame('running', $found[0]->status);
-    self::assertSame(FulfilmentProcess::class, $found[0]->processClass);
-    self::assertEquals(self::utc('2026-10-01 12:00:00'), $found[0]->updatedAt);
-    self::assertNotContains($fresh, array_map(static fn (StrandedProcess $s) => $s->processId, $found));
+    self::assertSame(FulfilmentProcess::class, $found[0]->process_class);
+    self::assertEquals(self::utc('2026-10-01 12:00:00'), $found[0]->updated_at);
+    self::assertNotContains($fresh, array_map(static fn (StrandedProcess $s) => $s->process_id, $found));
   }
 }

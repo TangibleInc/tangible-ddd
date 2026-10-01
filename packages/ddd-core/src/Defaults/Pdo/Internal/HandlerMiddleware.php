@@ -33,7 +33,7 @@ final class HandlerMiddleware implements Middleware {
 
   public function execute(object $command, callable $next): mixed {
     $class = get_class($command);
-    $handler = $this->container->handlerFor($class) ?? $this->conventional($class);
+    $handler = $this->container->handler_for($class) ?? $this->conventional($class);
     if ($handler === null) {
       throw new \LogicException("No handler for $class: pass [$class => handler] in DurableRuntime::compose() \$handlers, or a container holding its convention-named handler");
     }

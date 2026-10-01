@@ -18,7 +18,7 @@ namespace TangibleDDD\Runtime\Outbox;
  *   included), so a failed insert rolls back the command (C14). When the
  *   record is is_unique, it cancels older UNLEASED `pending` rows with the
  *   same event type and payload signature (C26); leased rows are never touched.
- * - accept(), retryLater() and deadLetter() are fenced with
+ * - accept(), retry_later() and dead_letter() are fenced with
  *   `WHERE event_id = ? AND claim_token = ?`. 0 rows means the lease was
  *   lost: they return false, the caller discards and logs; nothing throws
  *   (C16-C18). An expired lease that nobody re-claimed still matches.
@@ -52,8 +52,8 @@ interface IOutboxStore {
   public function accept(Claim $c, ?string $transportRef): bool;
 
   /** Back to `pending` with attempts = attempts + 1 (in SQL) and next_attempt_at = $nextAt. false = lease lost. */
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool;
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool;
 
   /** DLQ insert + status `dlq` in one transaction; the outbox row stays. false = lease lost. */
-  public function deadLetter(Claim $c, string $error): bool;
+  public function dead_letter(Claim $c, string $error): bool;
 }

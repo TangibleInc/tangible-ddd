@@ -59,7 +59,7 @@ final class ProcessRunnerCoreTest extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     Journal::reset();
     RecordingCommand::$sent = [];
@@ -69,7 +69,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->boundary = new InMemoryTransactionBoundary();
     $this->store = new InMemoryProcessStore($this->clock);
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
-    $this->store->attachIntents($this->wakeups);
+    $this->store->attach_intents($this->wakeups);
     $this->boundary->enlist($this->store);
     $this->boundary->enlist($this->wakeups);
     $this->lock = new InMemoryProcessLock();
@@ -112,9 +112,9 @@ final class ProcessRunnerCoreTest extends TestCase {
     self::assertSame(['reserve', 'ship'], Journal::$steps);
     self::assertSame(['Trajectory', 'Trajectory'], Journal::$causes);
     self::assertSame(['reserve', 'ship'], RecordingCommand::labels());
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
-    self::assertGreaterThan(1, $this->store->versionOf($p->get_id()), 'each state change is a versioned save');
-    self::assertSame(0, $this->lock->heldCount(), 'the wake lock is released');
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
+    self::assertGreaterThan(1, $this->store->version_of($p->get_id()), 'each state change is a versioned save');
+    self::assertSame(0, $this->lock->held_count(), 'the wake lock is released');
     self::assertNull(Correlation::peek(), 'the wake scope is closed');
   }
 
@@ -122,7 +122,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->runner->register_event(UserJoined::class);
     $p = new AwaitingProcess(5);
     $this->runner->start($p);
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
 
     $this->deliver(UserJoined::class, ['user_id' => 6]);
     self::assertSame(['invite'], Journal::$steps, 'a non-matching fact does not wake it');
@@ -130,7 +130,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->deliver(UserJoined::class, ['user_id' => 5]);
     self::assertSame(['invite', 'greet'], Journal::$steps);
     self::assertSame(['invite', 'greet'], RecordingCommand::labels());
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_register_event_subscribes_at_resume_priority(): void {
@@ -152,7 +152,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $p = new AwaitingProcess(5);
     $this->runner->start($p);
 
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
   }
 
   public function test_suspend_with_a_timeout_writes_the_intent_in_the_process_transaction(): void {
@@ -163,10 +163,10 @@ final class ProcessRunnerCoreTest extends TestCase {
     $intents = $this->wakeups->pending();
     self::assertCount(1, $intents);
     self::assertSame(WakeKind::Timeout, $intents[0]->kind);
-    self::assertSame("timeout:{$p->get_id()}:1", $intents[0]->idempotencyKey);
-    self::assertSame(1, $intents[0]->stepIndex);
-    self::assertSame('suspended', $intents[0]->expectedStatus);
-    self::assertEquals($this->clock->now()->modify('+60 seconds'), $intents[0]->dueAt, 'absolute UTC due time from the clock');
+    self::assertSame("timeout:{$p->get_id()}:1", $intents[0]->key);
+    self::assertSame(1, $intents[0]->step_index);
+    self::assertSame('suspended', $intents[0]->expected_status);
+    self::assertEquals($this->clock->now()->modify('+60 seconds'), $intents[0]->due_at, 'absolute UTC due time from the clock');
     self::assertSame('acme', $intents[0]->consumer);
   }
 
@@ -180,9 +180,9 @@ final class ProcessRunnerCoreTest extends TestCase {
         throw new \RuntimeException('intent table unavailable');
       }
       public function cancel(string $k): void { $this->inner->cancel($k); }
-      public function claimDue(\DateTimeImmutable $n, int $l, int $s): array { return $this->inner->claimDue($n, $l, $s); }
+      public function claim_due(\DateTimeImmutable $n, int $l, int $s): array { return $this->inner->claim_due($n, $l, $s); }
       public function complete(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $w): bool { return $this->inner->complete($w); }
-      public function retryLater(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $w, string $e, \DateTimeImmutable $n): bool { return $this->inner->retryLater($w, $e, $n); }
+      public function retry_later(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $w, string $e, \DateTimeImmutable $n): bool { return $this->inner->retry_later($w, $e, $n); }
     };
     $runner = new ProcessRunner(new AcmeConfig(), null, $this->lock, $this->store, $failing, $this->registry, $this->boundary, $this->clock);
     $runner->register_event(UserJoined::class);
@@ -194,7 +194,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     }
 
     self::assertSame([], $this->wakeups->pending(), 'the half-written intent rolled back with the save');
-    self::assertNotSame('suspended', $this->store->statusOf((int) $p->get_id()), 'no suspension without its alarm');
+    self::assertNotSame('suspended', $this->store->status_of((int) $p->get_id()), 'no suspension without its alarm');
   }
 
   public function test_the_timeout_fails_and_compensates_under_the_lock(): void {
@@ -206,8 +206,8 @@ final class ProcessRunnerCoreTest extends TestCase {
 
     self::assertSame(['prepare', 'gather', 'undo_prepare'], Journal::$steps);
     self::assertSame(['undo'], RecordingCommand::labels());
-    self::assertSame(1 + 1, $this->lock->acquireCount(), 'start + one balanced acquisition for the timeout (re-entrant)');
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertSame(1 + 1, $this->lock->acquisitions(), 'start + one balanced acquisition for the timeout (re-entrant)');
+    self::assertSame(0, $this->lock->held_count());
   }
 
   public function test_the_proceed_policy_resumes_with_the_partial_gather(): void {
@@ -219,7 +219,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->runner->handle_timeout($p->get_id(), 1);
 
     self::assertSame(['prepare', 'gather', 'report'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_stale_timeout_is_a_noop(): void {
@@ -231,7 +231,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->runner->handle_timeout(999, 1);
 
     self::assertSame(['prepare', 'gather'], Journal::$steps);
-    self::assertSame('suspended', $this->store->statusOf($p->get_id()));
+    self::assertSame('suspended', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_failing_step_compensates_in_reverse(): void {
@@ -240,12 +240,12 @@ final class ProcessRunnerCoreTest extends TestCase {
 
     self::assertSame(['charge', 'deliver', 'refund'], Journal::$steps);
     self::assertSame(['charge', 'refund'], RecordingCommand::labels());
-    self::assertNotSame('running', $this->store->statusOf($p->get_id()));
+    self::assertNotSame('running', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_lock_held_elsewhere_runs_nothing_and_throws_a_locking_exception(): void {
     $p = new TwoStepProcess(1);
-    $this->lock->holdElsewhere(new LockKey('acme', '', 1));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', 1));
 
     try {
       $this->runner->start($p);
@@ -255,15 +255,15 @@ final class ProcessRunnerCoreTest extends TestCase {
     }
 
     self::assertSame([], Journal::$steps, 'no step runs unlocked');
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertSame(0, $this->lock->held_count());
   }
 
   public function test_a_backend_lock_error_on_a_wake_saves_nothing(): void {
     $this->runner->register_event(UserJoined::class);
     $p = new TimedGatherProcess();
     $this->runner->start($p);
-    $version = $this->store->versionOf($p->get_id());
-    $this->lock->failNextAcquire('connection lost');
+    $version = $this->store->version_of($p->get_id());
+    $this->lock->fail_next_acquire('connection lost');
 
     try {
       $this->runner->handle_timeout($p->get_id(), 1);
@@ -271,7 +271,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     } catch (LockingException) {
     }
 
-    self::assertSame($version, $this->store->versionOf($p->get_id()));
+    self::assertSame($version, $this->store->version_of($p->get_id()));
     self::assertSame(['prepare', 'gather'], Journal::$steps);
   }
 
@@ -281,14 +281,14 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->runner->start($p);
 
     self::assertSame(['reserve'], Journal::$steps);
-    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    self::assertSame('scheduled', $this->store->status_of($p->get_id()));
     $intents = $this->wakeups->pending();
     self::assertSame(WakeKind::Continue, $intents[0]->kind);
-    self::assertSame("continue:{$p->get_id()}:1", $intents[0]->idempotencyKey);
+    self::assertSame("continue:{$p->get_id()}:1", $intents[0]->key);
 
     $this->runner->continue_scheduled($p->get_id());
     self::assertSame(['reserve', 'ship'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 
   public function test_a_row_changed_before_the_lock_is_re_read_under_it(): void {
@@ -310,8 +310,8 @@ final class ProcessRunnerCoreTest extends TestCase {
         return $this->inner->acquire($k, $t);
       }
       public function release(\TangibleDDD\Runtime\Lock\LockHandle $h): void { $this->inner->release($h); }
-      public function heldCount(): int { return $this->inner->heldCount(); }
-      public function forceReleaseAll(): int { return $this->inner->forceReleaseAll(); }
+      public function held_count(): int { return $this->inner->held_count(); }
+      public function release_all(): int { return $this->inner->release_all(); }
     };
     $runner = new ProcessRunner(new AcmeConfig(), null, $lock, $store, $this->wakeups, $this->registry, $this->boundary, $this->clock);
     $runner->register_event(UserJoined::class);
@@ -320,25 +320,25 @@ final class ProcessRunnerCoreTest extends TestCase {
     $id = $p->get_id();
 
     $lock->beforeAcquire = static function () use ($store, $id): void {
-      $store->touch($id, (int) $store->versionOf($id));
+      $store->touch($id, (int) $store->version_of($id));
     };
 
     $runner->resume(new UserJoined(5));
 
     self::assertSame(['invite', 'greet'], Journal::$steps);
-    self::assertSame('completed', $store->statusOf($id));
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertSame('completed', $store->status_of($id));
+    self::assertSame(0, $this->lock->held_count());
   }
 
   public function test_starts_on_ignites_exactly_once_per_fact(): void {
-    (new SubscriptionRegistrar($this->registry, $this->runner))->registerProcess(IgnitedProcess::class);
+    (new SubscriptionRegistrar($this->registry, $this->runner))->register_process(IgnitedProcess::class);
 
     $this->deliver(OrderPlaced::class, ['order_id' => 4, 'sku' => 's']);
     $this->deliver(OrderPlaced::class, ['order_id' => 4, 'sku' => 's'], self::EVENT_ID, new InMemoryDeliveryLedger());
 
     self::assertSame(1, $this->store->count(), 'a redelivery of the same fact does not ignite twice');
     self::assertSame(['open:4'], Journal::$steps);
-    self::assertSame(IgnitionKey::for(self::EVENT_ID, IgnitedProcess::class), $this->store->ignitionKeyOf(1));
+    self::assertSame(IgnitionKey::for(self::EVENT_ID, IgnitedProcess::class), $this->store->ignition_key_of(1));
   }
 
   public function test_register_start_ignites_through_the_registry(): void {
@@ -360,7 +360,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->runner->ignite(IgnitedProcess::class, new OrderPlaced(2), '');
 
     self::assertSame(2, $this->store->count());
-    self::assertNull($this->store->ignitionKeyOf(1));
+    self::assertNull($this->store->ignition_key_of(1));
   }
 
   public function test_a_manual_start_inside_a_fact_drain_is_never_deduped(): void {
@@ -370,7 +370,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     });
 
     self::assertSame(2, $this->store->count());
-    self::assertNull($this->store->ignitionKeyOf(1));
+    self::assertNull($this->store->ignition_key_of(1));
   }
 
   public function test_a_failed_process_emits_its_signal_through_the_host_dispatcher(): void {

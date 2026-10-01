@@ -100,12 +100,12 @@ try {
     case 'drain':
       $jobs = "`{$tablePrefix}ddd_jobs`";
       $before = [];
-      foreach ($db->fetchAll("SELECT id, attempts FROM $jobs WHERE kind = 'deliver'") as $r) {
+      foreach ($db->fetch_all("SELECT id, attempts FROM $jobs WHERE kind = 'deliver'") as $r) {
         $before[(int) $r['id']] = (int) $r['attempts'];
       }
       $report = $runtime->drain();
       $errors = $report->errors;
-      foreach ($db->fetchAll("SELECT id, event_id, attempts, last_error FROM $jobs WHERE kind = 'deliver'") as $r) {
+      foreach ($db->fetch_all("SELECT id, event_id, attempts, last_error FROM $jobs WHERE kind = 'deliver'") as $r) {
         if ((int) $r['attempts'] > ($before[(int) $r['id']] ?? 0)) {
           $errors[] = "delivery of {$r['event_id']} needs a retry: {$r['last_error']}";
         }
@@ -127,7 +127,7 @@ try {
       $process = $args['process'];
       if ($args['dieAfterCommand'] !== null) {
         $label = $args['dieAfterCommand'];
-        ProcessJournal::$onSend = static function (StepCommand $c) use ($label, $process, $answer, $die): void {
+        ProcessJournal::$on_send = static function (StepCommand $c) use ($label, $process, $answer, $die): void {
           if ($c->label === $label) {
             $answer(['processId' => $process->get_id()]);
             $die(); // the step's command committed; its checkpoint is not saved

@@ -9,7 +9,7 @@ namespace TangibleDDD\Runtime\Outbox;
  * a later hold() for the same pair replaces it. A selector is an exact event
  * type, `*`, or a glob such as `acme_order_*`.
  *
- * Error behaviour: hold()/release() throw on a storage failure; isPaused()
+ * Error behaviour: hold()/release() throw on a storage failure; is_paused()
  * never throws for a well-formed store and honours expiry (`until` <= now
  * means released).
  *
@@ -23,5 +23,5 @@ interface IRelayPauseStore {
   /** Release one selector of $holder, or every selector when null. */
   public function release(string $holder, ?string $selector = null): void;
 
-  public function isPaused(string $eventType, \DateTimeImmutable $now): bool;
+  public function is_paused(string $eventType, \DateTimeImmutable $now): bool;
 }

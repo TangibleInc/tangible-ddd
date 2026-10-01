@@ -15,8 +15,8 @@ final class PayloadTooLarge extends \DomainException {
   public function __construct(
     public readonly string $subject,
     public readonly int $bytes,
-    public readonly int $maxBytes,
+    public readonly int $max_bytes,
   ) {
-    parent::__construct(sprintf('%s is %d bytes, over the cap of %d bytes', $subject, $bytes, $maxBytes));
+    parent::__construct(sprintf('%s is %d bytes, over the cap of %d bytes', $subject, $bytes, $max_bytes));
   }
 }

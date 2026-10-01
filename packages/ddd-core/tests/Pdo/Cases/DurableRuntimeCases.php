@@ -68,16 +68,16 @@ abstract class DurableRuntimeCases extends PdoTestCase {
 
     $this->clock = new FrozenClock(self::utc('2026-10-01 12:00:00'));
     ConsumerRegistry::reset();
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     HostDefaults::provide(LoggerInterface::class, new NullLogger());
     Trace::reset();
   }
 
   protected function tearDown(): void {
     ConsumerRegistry::reset();
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     parent::tearDown();
   }
 
@@ -86,18 +86,18 @@ abstract class DurableRuntimeCases extends PdoTestCase {
   }
 
   private function order(int $id): ?array {
-    return $this->db->fetchOne('SELECT status, outcome FROM pdocompose_orders WHERE id = ?', [$id]);
+    return $this->db->fetch_one('SELECT status, outcome FROM pdocompose_orders WHERE id = ?', [$id]);
   }
 
   /** @return array<string, mixed> */
   private function processOf(string $class): array {
-    $row = $this->db->fetchOne('SELECT * FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id DESC LIMIT 1', [$class]);
+    $row = $this->db->fetch_one('SELECT * FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id DESC LIMIT 1', [$class]);
     self::assertNotNull($row, "a $class row");
     return $row;
   }
 
   private function rows(string $logical, string $where = '1 = 1', array $params = []): int {
-    return (int) $this->db->fetchOne('SELECT COUNT(*) AS n FROM `' . self::TP . $logical . "` WHERE $where", $params)['n'];
+    return (int) $this->db->fetch_one('SELECT COUNT(*) AS n FROM `' . self::TP . $logical . "` WHERE $where", $params)['n'];
   }
 
   private static function assertClean(DrainReport $report): void {
@@ -121,9 +121,9 @@ abstract class DurableRuntimeCases extends PdoTestCase {
 
     self::assertNull($this->order(3), 'the failed command rolled back its write');
     self::assertSame(2, $this->rows('ddd_outbox'), '... and its fact');
-    $row = $this->db->fetchOne('SELECT event_class, event_type, status FROM pdocompose_ddd_outbox ORDER BY id LIMIT 1');
+    $row = $this->db->fetch_one('SELECT event_class, event_type, status FROM pdocompose_ddd_outbox ORDER BY id LIMIT 1');
     self::assertSame([OrderPlaced::class, 'pending'], [$row['event_class'], $row['status']]);
-    self::assertSame(['status' => 'placed', 'outcome' => null], $rt->queryBus()->handle(new OrderStatus(1)));
+    self::assertSame(['status' => 'placed', 'outcome' => null], $rt->query_bus()->handle(new OrderStatus(1)));
   }
 
   public function test_a_drain_relays_delivers_ignites_and_resumes_the_process_to_completion(): void {
@@ -138,7 +138,7 @@ abstract class DurableRuntimeCases extends PdoTestCase {
     $saga = $this->processOf(FulfilmentSaga::class);
     self::assertSame('suspended', $saga['status']);
     $timeoutKey = "timeout:{$saga['id']}:0";
-    self::assertSame('2026-10-01 13:00:00.000000', $this->db->fetchOne('SELECT due_at FROM pdocompose_ddd_jobs WHERE idempotency_key = ?', [$timeoutKey])['due_at'] ?? null);
+    self::assertSame('2026-10-01 13:00:00.000000', $this->db->fetch_one('SELECT due_at FROM pdocompose_ddd_jobs WHERE idempotency_key = ?', [$timeoutKey])['due_at'] ?? null);
     self::assertSame(1, $this->rows('ddd_outbox', "status = 'pending'"), 'OrderShipped waits for the next relay step');
 
     $second = $rt->drain();
@@ -149,7 +149,7 @@ abstract class DurableRuntimeCases extends PdoTestCase {
     self::assertSame(0, $this->rows('ddd_jobs'), 'the satisfied await cancelled its timeout');
 
     $idle = $rt->drain();
-    self::assertSame([0, DrainReport::STOPPED_IDLE], [$idle->items, $idle->stoppedBy]);
+    self::assertSame([0, DrainReport::STOPPED_IDLE], [$idle->items, $idle->stopped_by]);
   }
 
   public function test_the_timeout_proceeds_when_the_fact_never_comes_and_a_late_fact_is_a_noop(): void {
@@ -159,12 +159,12 @@ abstract class DurableRuntimeCases extends PdoTestCase {
     $saga = $this->processOf(FulfilmentSaga::class);
     self::assertSame('suspended', $saga['status']);
 
-    self::assertSame([], $rt->drain()->wakesCompleted, 'not due yet');
+    self::assertSame([], $rt->drain()->wakes_completed, 'not due yet');
     $this->clock->advance('PT1H1S');
     $report = $rt->drain();
 
     self::assertClean($report);
-    self::assertSame(["timeout:{$saga['id']}:0"], $report->wakesCompleted);
+    self::assertSame(["timeout:{$saga['id']}:0"], $report->wakes_completed);
     self::assertSame('completed', $this->processOf(FulfilmentSaga::class)['status']);
     self::assertSame('timed_out', $this->order(1)['outcome']);
 
@@ -190,7 +190,7 @@ abstract class DurableRuntimeCases extends PdoTestCase {
     $report = $rt->drain();
 
     self::assertClean($report);
-    self::assertSame([$copy->idempotencyKey], $report->wakesCompleted, 'claimed, run, completed');
+    self::assertSame([$copy->key], $report->wakes_completed, 'claimed, run, completed');
     $after = $this->processOf(FulfilmentSaga::class);
     self::assertSame([$done['status'], $done['version'], $done['updated_at']], [$after['status'], $after['version'], $after['updated_at']], 'the process row is untouched');
     self::assertSame('shipped', $this->order(1)['outcome']);
@@ -240,10 +240,10 @@ abstract class DurableRuntimeCases extends PdoTestCase {
     $rt->bus()->handle(new PlaceOrder(1));
     $rt->drain();
 
-    $view = $rt->operatorView();
+    $view = $rt->operator_view();
     self::assertInstanceOf(PdoOperatorView::class, $view);
     $keys = array_map(static fn ($i) => $i->key, $view->list(Layer::Delivery));
-    $eventId = $this->db->fetchOne('SELECT event_id FROM pdocompose_ddd_outbox LIMIT 1')['event_id'];
+    $eventId = $this->db->fetch_one('SELECT event_id FROM pdocompose_ddd_outbox LIMIT 1')['event_id'];
     self::assertSame(['listener:' . ShipOnOrderPlaced::class . "@$eventId", "deliver:$eventId"], $keys);
     self::assertSame('suspended', $this->processOf(FulfilmentSaga::class)['status'], 'the ignition still ran (subscriber isolation)');
   }
@@ -256,7 +256,7 @@ abstract class DurableRuntimeCases extends PdoTestCase {
 
     self::assertInstanceOf(Drain::class, $rt->drainer());
     $report = $rt->drain(maxItems: 2, maxSeconds: 5);
-    self::assertSame(DrainReport::STOPPED_MAX_ITEMS, $report->stoppedBy);
+    self::assertSame(DrainReport::STOPPED_MAX_ITEMS, $report->stopped_by);
     self::assertSame(2, $report->items);
   }
 

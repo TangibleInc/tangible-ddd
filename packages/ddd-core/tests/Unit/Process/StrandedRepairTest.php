@@ -61,7 +61,7 @@ final class StrandedRepairTest extends TestCase {
   private ProcessRunner $runner;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     Correlation::reset();
     Journal::reset();
@@ -77,7 +77,7 @@ final class StrandedRepairTest extends TestCase {
     $this->boundary = new InMemoryTransactionBoundary();
     $this->store = new InMemoryProcessStore($this->clock);
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
-    $this->store->attachIntents($this->wakeups);
+    $this->store->attach_intents($this->wakeups);
     $this->boundary->enlist($this->store);
     $this->boundary->enlist($this->wakeups);
     $this->lock = new InMemoryProcessLock();
@@ -89,7 +89,7 @@ final class StrandedRepairTest extends TestCase {
 
   protected function tearDown(): void {
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   /** A process a worker took (`running`) and then died in, 16 minutes ago: no live intent. */
@@ -98,11 +98,11 @@ final class StrandedRepairTest extends TestCase {
     $id = (int) $p->get_id();
     $copy = $this->store->find($id);
     $copy->advance(status: 'running', payload: $copy->payload());
-    $this->store->save($copy, (int) $this->store->versionOf($id));
+    $this->store->save($copy, (int) $this->store->version_of($id));
     $this->boundary->run(function () use ($id): void {
       foreach ($this->wakeups->pending() as $intent) {
-        if ($intent->processId === $id) {
-          $this->wakeups->cancel($intent->idempotencyKey);
+        if ($intent->process_id === $id) {
+          $this->wakeups->cancel($intent->key);
         }
       }
     });
@@ -119,7 +119,7 @@ final class StrandedRepairTest extends TestCase {
   }
 
   private function drainDue(): void {
-    foreach ($this->wakeups->claimDue($this->clock->now(), 50, 60) as $claimed) {
+    foreach ($this->wakeups->claim_due($this->clock->now(), 50, 60) as $claimed) {
       $this->runner->wake($claimed->intent);
       $this->boundary->run(fn () => $this->wakeups->complete($claimed));
     }
@@ -132,21 +132,21 @@ final class StrandedRepairTest extends TestCase {
 
   public function test_resume_re_runs_the_stranded_step_with_the_same_command_ids(): void {
     $id = $this->stranded(new TwoStepProcess(4));
-    $version = (int) $this->store->versionOf($id);
+    $version = (int) $this->store->version_of($id);
 
     $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, $version));
 
     [$intent] = $this->wakeups->pending();
     self::assertSame(WakeKind::ResumeRetry, $intent->kind);
-    self::assertSame('running', $intent->expectedStatus);
-    self::assertSame($version + 1, $intent->retryVersion(), 'the repair fences the row and the wake expects the fenced version');
-    self::assertSame(0, $this->lock->heldCount(), 'the lease guard was released');
+    self::assertSame('running', $intent->expected_status);
+    self::assertSame($version + 1, $intent->retry_version(), 'the repair fences the row and the wake expects the fenced version');
+    self::assertSame(0, $this->lock->held_count(), 'the lease guard was released');
 
     $this->drainDue();
 
     self::assertSame(['reserve', 'ship'], Journal::$steps);
-    self::assertSame('completed', $this->store->statusOf($id));
-    self::assertSame(DeterministicCommandId::forStep('acme', $id, '0', 0), RecordingCommand::$hints[0], 'the re-run step dispatches its deterministic id');
+    self::assertSame('completed', $this->store->status_of($id));
+    self::assertSame(DeterministicCommandId::for_step('acme', $id, '0', 0), RecordingCommand::$hints[0], 'the re-run step dispatches its deterministic id');
   }
 
   public function test_resume_re_runs_a_stranded_post_await_step_with_the_fact_it_was_resumed_with(): void {
@@ -158,7 +158,7 @@ final class StrandedRepairTest extends TestCase {
     $this->runner->start($p);
     $this->drainDue();
     $id = (int) $p->get_id();
-    self::assertSame('suspended', $this->store->statusOf($id));
+    self::assertSame('suspended', $this->store->status_of($id));
     $job = RecordingCommand::$sent[0]->data;
 
     KeyedJobProcess::$onRecord = static function (): void {
@@ -172,7 +172,7 @@ final class StrandedRepairTest extends TestCase {
     } finally {
       KeyedJobProcess::$onRecord = null;
     }
-    self::assertSame('running', $this->store->statusOf($id));
+    self::assertSame('running', $this->store->status_of($id));
     self::assertSame(1, $this->store->find($id)->current_step_index());
 
     $seen = null;
@@ -180,11 +180,11 @@ final class StrandedRepairTest extends TestCase {
       $seen = $done;
     };
     $this->clock->advance('PT16M');
-    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->versionOf($id)));
+    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->version_of($id)));
     $this->drainDue();
     KeyedJobProcess::$onRecord = null;
 
-    self::assertSame('completed', $this->store->statusOf($id));
+    self::assertSame('completed', $this->store->status_of($id));
     self::assertSame(['order:' . $job, 'record:ok', 'finish'], Journal::$steps);
     self::assertInstanceOf(JobFinished::class, $seen);
     self::assertSame($job, $seen->job_id, 'the re-run receives the same fact');
@@ -206,18 +206,18 @@ final class StrandedRepairTest extends TestCase {
       ReadinessProcess::$onProvision = null;
     }
     $id = (int) $p->get_id();
-    self::assertSame('running', $this->store->statusOf($id));
+    self::assertSame('running', $this->store->status_of($id));
 
     $this->clock->advance('PT16M');
     // The dead worker's Continue claim lapses; its redelivery is stale (the row is `running`) and completes.
     $this->drainDue();
-    self::assertSame('running', $this->store->statusOf($id));
+    self::assertSame('running', $this->store->status_of($id));
     self::assertSame([], $this->wakeups->pending());
 
-    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->versionOf($id)));
+    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->version_of($id)));
     $this->drainDue();
 
-    self::assertSame('completed', $this->store->statusOf($id));
+    self::assertSame('completed', $this->store->status_of($id));
     self::assertSame(['await_ready', 'provision:string'], Journal::$steps, 'the re-run receives the precheck argument');
   }
 
@@ -225,13 +225,13 @@ final class StrandedRepairTest extends TestCase {
     // TransactionalCommandMiddleware: the repair joins the open transaction,
     // and the process lock is released before that transaction commits.
     $id = $this->stranded(new TwoStepProcess(4));
-    $before = (int) $this->store->versionOf($id);
+    $before = (int) $this->store->version_of($id);
     $stale = $this->store->find($id);
 
     $this->expectException(\TangibleDDD\Runtime\Process\ConcurrentProcessModification::class);
     $this->boundary->run(function () use ($id, $before, $stale): void {
       $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, $before));
-      self::assertSame(0, $this->lock->heldCount());
+      self::assertSame(0, $this->lock->held_count());
       // A worker takes the free lock and saves from the row it read before the repair.
       $this->store->save($stale, $before);
     });
@@ -247,7 +247,7 @@ final class StrandedRepairTest extends TestCase {
 
   public function test_resume_refuses_while_a_worker_holds_the_process_lock(): void {
     $id = $this->stranded(new TwoStepProcess());
-    $this->lock->holdElsewhere(new LockKey('acme', '', $id));
+    $this->lock->hold_elsewhere(new LockKey('acme', '', $id));
 
     try {
       $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id));
@@ -275,11 +275,11 @@ final class StrandedRepairTest extends TestCase {
 
     $this->failHandler()->handle(new FailStrandedProcess('acme', $id, 'courier API gone'));
 
-    self::assertSame('failed', $this->store->statusOf($id));
+    self::assertSame('failed', $this->store->status_of($id));
     self::assertStringContainsString('courier API gone', (string) $this->store->find($id)->last_error());
     self::assertSame([], $this->wakeups->pending());
     self::assertSame([], Journal::$steps);
-    self::assertSame(0, $this->lock->heldCount());
+    self::assertSame(0, $this->lock->held_count());
   }
 
   public function test_fail_with_compensation_runs_the_compensations_in_a_worker(): void {
@@ -288,17 +288,17 @@ final class StrandedRepairTest extends TestCase {
     // Move the stranded row to step 1 (charge done), as a crash in `deliver` would leave it.
     $copy = $this->store->find($id);
     $copy->advance_step();
-    $this->store->save($copy, (int) $this->store->versionOf($id));
+    $this->store->save($copy, (int) $this->store->version_of($id));
     $this->clock->advance('PT16M');
 
     $this->failHandler()->handle(new FailStrandedProcess('acme', $id, 'operator gave up', compensate: true));
-    self::assertSame('scheduled', $this->store->statusOf($id), 'compensation runs in the drain, not in the command');
+    self::assertSame('scheduled', $this->store->status_of($id), 'compensation runs in the drain, not in the command');
     self::assertSame([], Journal::$steps);
 
     $this->drainDue();
 
     self::assertSame(['refund'], Journal::$steps);
-    self::assertSame('failed', $this->store->statusOf($id));
+    self::assertSame('failed', $this->store->status_of($id));
   }
 
   public function test_fail_refuses_a_completed_process(): void {

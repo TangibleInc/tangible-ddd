@@ -20,7 +20,7 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * The one composition path from listener and process classes to
  * ISubscriptionRegistry, shared by wp, sf and pdo (ruling #80, register 3.5).
  *
- * registerListener(class|object):
+ * register_listener(class|object):
  *   Accepts the IntegrationTranslator shape (public event_class() and
  *   translate(IIntegrationEvent): ?ICommand) and 0.6 IntegrationListener
  *   subclasses (read through their protected get_event_class()/get_command()).
@@ -31,9 +31,9 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  *   #[SubscriberPriority]. Id: `listener:<class>`. The translated command is
  *   sent with the deterministic id uuid5(event_id, subscriber_id)
  *   (DeterministicCommandId; register 3.8). On budget exhaustion, an
- *   IExternalEffectCommand's failureCommand() is sent.
+ *   IExternalEffectCommand's failure_command() is sent.
  *
- * registerProcess(class-string<LongProcess>):
+ * register_process(class-string<LongProcess>):
  *   Each #[StartsOn(E)] → `ignition:<process>@<E>` at Subscriber::IGNITION,
  *   calling IProcessEntry::ignite(). Each #[Awaits(E)] → `resume:<E>` at
  *   Subscriber::RESUME, calling IProcessEntry::resume() (one per fact class,
@@ -42,7 +42,7 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * Error behaviour: \InvalidArgumentException for anything that is not a
  * listener / LongProcess, an event class that is neither an
  * IIntegrationEvent nor an interface, or #[StartsOn] without a static
- * from_event(); \LogicException for registerProcess() without a process
+ * from_event(); \LogicException for register_process() without a process
  * entry.
  *
  * The register 3.5 sketch takes `ProcessRunner $runner`; CR-3 (ratified)
@@ -63,7 +63,7 @@ final class SubscriptionRegistrar {
     private readonly ?ContainerInterface $services = null,
   ) {}
 
-  public function registerListener(string|object $listener): void {
+  public function register_listener(string|object $listener): void {
     $instance = is_object($listener) ? $listener : $this->resolve($listener);
     [$eventClass, $translate] = $this->translatorOf($instance);
     $this->assertSubscribable($eventClass, get_class($instance));
@@ -87,7 +87,7 @@ final class SubscriptionRegistrar {
         // Register 3.8: inside a fact cause the command id is
         // uuid5(event_id, subscriber_id), so a redelivery repeats it.
         DeterministicCommandId::within(
-          $eventId !== '' ? DeterministicCommandId::forFact($eventId, $id) : null,
+          $eventId !== '' ? DeterministicCommandId::for_fact($eventId, $id) : null,
           static fn () => $command->send()
         );
       },
@@ -96,16 +96,16 @@ final class SubscriptionRegistrar {
         if (!$command instanceof IExternalEffectCommand) {
           return;
         }
-        $failure = $command->failureCommand($last);
+        $failure = $command->failure_command($last);
         if ($failure === null) {
           return;
         }
         // D1: a re-fired compensation (crash before the ledger's terminal
         // marker) repeats the same command id, uuid5(event_id,
         // "{subscriber}#failure"), so the failure command can dedup on it.
-        $eventId = Correlation::current_fact()?->eventId ?? '';
+        $eventId = Correlation::current_fact()?->event_id ?? '';
         DeterministicCommandId::within(
-          $eventId !== '' ? DeterministicCommandId::forFact($eventId, $id . '#failure') : null,
+          $eventId !== '' ? DeterministicCommandId::for_fact($eventId, $id . '#failure') : null,
           static fn () => $failure->send()
         );
       },
@@ -113,7 +113,7 @@ final class SubscriptionRegistrar {
   }
 
   /** @param class-string<LongProcess> $processClass */
-  public function registerProcess(string $processClass): void {
+  public function register_process(string $processClass): void {
     if (!is_subclass_of($processClass, LongProcess::class)) {
       throw new \InvalidArgumentException("$processClass must extend " . LongProcess::class);
     }

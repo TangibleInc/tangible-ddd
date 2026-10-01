@@ -37,7 +37,7 @@ final class RetryDeliveryHandler implements ICommandHandler {
             throw new \LogicException(get_class($admin) . ' has no integer outbox ids; RetryDeliveryCommand needs an ' . IOutboxRowIds::class);
         }
 
-        $event_id = $admin->eventIdOf($command->outbox_id)
+        $event_id = $admin->event_id_of($command->outbox_id)
             ?? throw new OutboxRowNotFound("Outbox row #{$command->outbox_id} not found for consumer {$command->consumer_prefix}");
 
         $admin->retry($event_id);

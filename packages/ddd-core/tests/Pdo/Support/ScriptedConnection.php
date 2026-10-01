@@ -7,7 +7,7 @@ namespace TangibleDDD\Core\Tests\Pdo\Support;
 use TangibleDDD\Defaults\Pdo\IHostConnection;
 
 /**
- * An IHostConnection whose fetchOne() answers come from a script: each entry
+ * An IHostConnection whose fetch_one() answers come from a script: each entry
  * is a row (array), null, or a Throwable to throw. Used to make GET_LOCK
  * return what a live server only returns under faults (NULL, an error).
  */
@@ -24,12 +24,12 @@ final class ScriptedConnection implements IHostConnection {
     return 0;
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
-    $row = $this->fetchOne($sql, $params);
+  public function fetch_all(string $sql, array $params = []): array {
+    $row = $this->fetch_one($sql, $params);
     return $row === null ? [] : [$row];
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
+  public function fetch_one(string $sql, array $params = []): ?array {
     $this->queries[] = $sql;
     $answer = array_shift($this->answers);
     if ($answer instanceof \Throwable) {
@@ -38,7 +38,7 @@ final class ScriptedConnection implements IHostConnection {
     return $answer;
   }
 
-  public function lastInsertId(): string {
+  public function last_insert_id(): string {
     return '0';
   }
 
@@ -46,13 +46,13 @@ final class ScriptedConnection implements IHostConnection {
 
   public function commit(): void {}
 
-  public function rollBack(): void {}
+  public function rollback(): void {}
 
-  public function inTransaction(): bool {
+  public function in_transaction(): bool {
     return false;
   }
 
-  public function isDuplicateKey(\Throwable $e): bool {
+  public function is_duplicate_key(\Throwable $e): bool {
     return false;
   }
 }
