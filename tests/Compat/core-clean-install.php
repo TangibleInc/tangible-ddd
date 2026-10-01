@@ -122,29 +122,7 @@ foreach ($files as $path) {
         $broken[] = "{$fqcn}: " . get_class($e) . ': ' . $e->getMessage();
     }
 }
-// A class whose missing parent still lives in packages/ddd-wp/src is a
-// split the wave-2 move table defers to round 2 ("split-deferred"): its core
-// half has not landed yet. Reported as PENDING, a failure only at the gate.
-$wp_src = getenv('DDD_WP_SRC') ?: '';
-$gate = getenv('DDD_GATE') === '1';
-$pending = [];
-$hard = [];
-foreach ($broken as $line) {
-    if ($wp_src !== '' && preg_match('/(?:Class|Interface|Trait) "(TangibleDDD\\\\[^"]+)" not found/', $line, $m)
-        && is_file($wp_src . '/' . str_replace('\\', '/', substr($m[1], strlen('TangibleDDD\\'))) . '.php')) {
-        $pending[] = $line . ' (still in packages/ddd-wp/src)';
-    } else {
-        $hard[] = $line;
-    }
-}
-$check($hard === [], sprintf('every ddd-core class declares without WordPress (%d declared, %d bridge skipped, %d pending)', $declared, $skipped_bridge, count($pending)), "\n  " . implode("\n  ", $hard));
-if ($pending !== []) {
-    if ($gate) {
-        $check(false, 'no ddd-core class depends on a split-deferred class still in ddd-wp (DDD_GATE=1)', "\n  " . implode("\n  ", $pending));
-    } else {
-        printf("PENDING %d ddd-core classes extend a split-deferred class still in ddd-wp (round 2); DDD_GATE=1 fails on them:\n  %s\n", count($pending), implode("\n  ", $pending));
-    }
-}
+$check($broken === [], sprintf('every ddd-core class declares without WordPress (%d declared, %d bridge skipped)', $declared, $skipped_bridge), "\n  " . implode("\n  ", $broken));
 
 $found = $wp_symbols();
 $check($found === [], 'still no WordPress symbol after declaring every core class', implode(', ', $found));

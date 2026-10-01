@@ -53,33 +53,13 @@ final class DeptracConfigTest extends TestCase
     }
 
     /**
-     * A skip may only name a class the wave-2 move table marks
-     * `split-deferred` (or the procedural API such a class calls). Judged on
-     * the table, not on where the file is today, so this stays green in
-     * either merge order; once a class moves to core its skip no longer
-     * matches and deptrac itself fails until the entry is deleted.
+     * The wave-2 skips for core files that depended on split-deferred
+     * classes (CR-PK-5) expired with the round-2 splits. From wave 4 no
+     * violation may be skipped at all; tests/Compat/check-allowances.php
+     * enforces the same in `run.sh compat`.
      */
-    public function test_skipped_violations_name_only_split_deferred_classes(): void
+    public function test_no_violation_is_skipped(): void
     {
-        $root = dirname(__DIR__, 3);
-        $table = (string) file_get_contents($root . '/docs/extraction/wave2-move-table.md');
-        preg_match_all('/^\|[^|]+\|[^|]+\|\s*(TangibleDDD\\\\[^|\s]+)\s*\|\s*split-deferred\s*\|/m', $table, $m);
-        $deferred = $m[1];
-        $this->assertNotEmpty($deferred, 'the move table lists the split-deferred classes');
-
-        $skips = self::config()['skip_violations'] ?? [];
-        foreach ($skips as $depender => $targets) {
-            $this->assertMatchesRegularExpression('/^TangibleDDD\\\\/', $depender);
-            $this->assertNotContains($depender, $deferred, "{$depender}: the skip belongs on the core file that depends on the deferred class");
-            foreach ($targets as $target) {
-                if (str_ends_with($target, '()')) {
-                    // the procedural API a split-deferred parent calls
-                    $this->assertStringStartsWith('TangibleDDD\\WordPress\\', $target);
-                    continue;
-                }
-                $this->assertContains($target, $deferred, "{$depender} -> {$target}: a skip may only name a split-deferred class");
-            }
-        }
-        $this->assertLessThanOrEqual(10, count($skips), 'the skip list only ever shrinks (wave 2 round 1 had 10 dependers)');
+        $this->assertArrayNotHasKey('skip_violations', self::config(), 'CR-PK-5: the transitional deptrac skips have expired');
     }
 }
