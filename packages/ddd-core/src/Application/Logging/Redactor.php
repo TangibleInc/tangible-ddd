@@ -2,17 +2,87 @@
 
 namespace TangibleDDD\Application\Logging;
 
+use TangibleDDD\Runtime\Audit\NotAudited;
+use TangibleDDD\Runtime\Audit\Sensitive;
+
 /**
  * Redacts sensitive information from command parameters for audit logging.
+ *
+ * Returns `[safe, redacted_paths]`. Built in (D8):
+ * - sensitive KEYS are masked (last four characters kept): the fixed list
+ *   below, plus any key containing `password`, `passwd` or `secret`, and
+ *   any key ending in `token`;
+ * - PEM blocks are replaced by `{__redacted: pem, label, length}` whatever
+ *   their key;
+ * - binary strings (invalid UTF-8 or containing NUL) are summarised as
+ *   `{__summary: binary, length, sha256}` with no preview, so the row stays
+ *   JSON-encodable and carries no content;
+ * - strings over 1024 bytes are summarised with a 120-byte preview.
+ *
+ * Extension point: `$extraKeys` (case-insensitive exact key names) and
+ * `$isSensitive(string $path, mixed $value): bool` (a dotted path such as
+ * `card.number`, `items[0].token`) mask more. On a command object,
+ * redact_object() also honours the #[Sensitive] (mask) and #[NotAudited]
+ * (omit) property attributes.
  */
 final class Redactor {
+
+  /** @var list<string> */
+  private readonly array $extra_keys;
+
+  /**
+   * @param list<string> $extraKeys
+   * @param (\Closure(string, mixed): bool)|null $isSensitive
+   */
+  public function __construct(array $extraKeys = [], private readonly ?\Closure $isSensitive = null) {
+    $this->extra_keys = array_values(array_map(static fn ($k) => strtolower((string) $k), $extraKeys));
+  }
+
   public function redact(array $params): array {
     return $this->process_field('', $params, 0);
   }
 
+  /**
+   * Redact a command's public properties (what get_object_vars() sees from
+   * outside the class), honouring #[NotAudited] and #[Sensitive].
+   *
+   * @return array{0: array<string, mixed>, 1: list<string>}
+   */
+  public function redact_object(object $command): array {
+    $out = [];
+    $red = [];
+    $reflection = new \ReflectionObject($command);
+
+    foreach (get_object_vars($command) as $name => $value) {
+      $property = $reflection->hasProperty($name) ? $reflection->getProperty($name) : null;
+      if ($property !== null && $property->getAttributes(NotAudited::class) !== []) {
+        continue;
+      }
+      if ($property !== null && $property->getAttributes(Sensitive::class) !== []) {
+        $out[$name] = $this->mask($value);
+        $red[] = (string) $name;
+        continue;
+      }
+      [$safe, $r] = $this->process_field((string) $name, $value, 1);
+      $out[$name] = $safe;
+      array_push($red, ...$r);
+    }
+
+    return [$out, $red];
+  }
+
   private function process_field(string $path, $value, int $depth): array {
-    if ($this->is_sensitive_key($this->last_key($path))) {
+    if ($this->is_sensitive_key($this->last_key($path))
+      || ($path !== '' && $this->isSensitive !== null && ($this->isSensitive)($path, $value))) {
       return [$this->mask($value), [$path]];
+    }
+
+    if (is_string($value) && ($pem = $this->pem_label($value)) !== null) {
+      return [['__redacted' => 'pem', 'label' => $pem, 'length' => strlen($value)], [$path]];
+    }
+
+    if (is_string($value) && $this->is_binary($value)) {
+      return [['__summary' => 'binary', 'length' => strlen($value), 'sha256' => hash('sha256', $value)], []];
     }
 
     if ($value === null || is_scalar($value)) {
@@ -159,10 +229,35 @@ final class Redactor {
       'auth_token',
       'bearer_token',
       'refresh_token',
-      'access_token'
+      'access_token',
+      'private_key',
+      'secret_key',
+      'apikey',
+      'pem',
+      'credentials'
     ];
 
-    return in_array(strtolower($key), $keys, true);
+    $k = strtolower($key);
+    if (in_array($k, $keys, true) || in_array($k, $this->extra_keys, true)) {
+      return true;
+    }
+
+    return str_contains($k, 'password')
+      || str_contains($k, 'passwd')
+      || str_contains($k, 'secret')
+      || str_ends_with($k, 'token');
+  }
+
+  /** The PEM label ("PRIVATE KEY", "CERTIFICATE") when $s contains a PEM block. */
+  private function pem_label(string $s): ?string {
+    if (!str_contains($s, '-----BEGIN ')) {
+      return null;
+    }
+    return preg_match('/-----BEGIN ([A-Z0-9 ]+)-----/', $s, $m) === 1 ? $m[1] : null;
+  }
+
+  private function is_binary(string $s): bool {
+    return str_contains($s, "\0") || preg_match('//u', $s) !== 1;
   }
 
   private function is_sensitive_header(string $key): bool {
@@ -210,6 +305,9 @@ final class Redactor {
 
   private function mask($v): string {
     $s = is_scalar($v) ? (string) $v : '[secret]';
+    if ($this->is_binary($s)) {
+      return '[secret]';
+    }
     $len = strlen($s);
 
     return $len <= 4 ? str_repeat('*', $len) : str_repeat('*', max(0, $len - 4)) . substr($s, -4);

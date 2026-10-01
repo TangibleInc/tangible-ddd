@@ -139,7 +139,7 @@ final class CorrelationMiddleware implements Middleware {
   private function open_row(IAuditSink $sink, IAuditPolicy $policy, object $command, string $command_id, string $command_name, TraceContext $enclosing): bool {
     $parameters = [];
     if ($policy->captureParameters($command)) {
-      [$parameters] = $this->redactor->redact(get_object_vars($command));
+      [$parameters] = $this->redactor->redact_object($command);
     }
 
     try {
