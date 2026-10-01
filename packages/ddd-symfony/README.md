@@ -1,18 +1,41 @@
 # tangible/ddd-symfony
 
-Symfony 7.4 host for `tangible/ddd-core` on Postgres 16 (register sections 1.2, 3.2-3.5, 5.1).
+Symfony 7.4 host for `tangible/ddd-core` on Postgres 16 (register sections 1.2, 3.2-3.8, 5.1-5.3).
 Install and configure: [examples/symfony/README.md](../../examples/symfony/README.md).
 
 | Namespace | Contents |
 |---|---|
-| `Bundle` | `TangibleDddBundle` (configuration, service wiring, consumer registration at boot) |
+| `Bundle` | `TangibleDddBundle` (configuration, service wiring, consumer registration and HostDefaults at boot) |
 | `DependencyInjection` | handler and `handle()` locators, compile-time subscription map, domain-listener map, Messenger health check, `#[AsIntegrationListener]`, `#[AsDomainEventListener]` |
-| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `PostgresSchema` |
-| `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler` |
-| `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step, `OutboxProcessor` port form), D5 actor providers, the transitional act bracket and outbox bus |
-| `Console` | `ddd:relay`, `ddd:schema:dump` |
+| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `DbalProcessStore`, `DbalWakeupScheduler`, D10 `DbalBehaviourWorkflowRepository` / `DbalWorkItemRepository` / `DbalWorkflowIgnitionLedger`, `ConnectionTopology`, `PostgresSchema` |
+| `Lock` | `PostgresAdvisoryProcessLock` (session `pg_try_advisory_lock`, register 5.2) |
+| `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler`, `ProcessWakeupMessage`, `ProcessWakeupHandler` |
+| `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step), `Wakeup\WakeupRelay` (due intents → `ddd_wakeups`, stranded scan), `Wakeup\PostgresNotifyRelayWakeup` / `PostgresListenWaiter` (D14), `SymfonySignalDispatcher`, D5 actor providers |
+| `Console` | `ddd:relay`, `ddd:schema:dump`, `ddd:ops:dlq:list`, `ddd:ops:dlq:replay`, `ddd:ops:dlq:retry`, `ddd:ops:stranded`, `ddd:ops:pause`, `ddd:ops:resume` |
 
 Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd.table_prefix`).
+
+## Processes and wakeups
+
+- `ProcessRunner` (service `tangible_ddd.process_runner`, public) runs on
+  `DbalProcessStore`, the reentrant `PostgresAdvisoryProcessLock`,
+  `DbalWakeupScheduler` and the transaction boundary.
+- `tangible_ddd.process.inband_start` (the register's `ddd.process.inband_start`,
+  default `false`): `start()` persists the process and a `Continue` intent in the
+  caller's transaction and the first step runs in a worker. `true` runs the first
+  step in-band and is refused at boot on a pooled DSN. The persist-only start
+  needs a core `ProcessRunner` option (CR sfp-1); until core has it, a warning is
+  logged and `start()` stays in-band.
+- Workers: `bin/console ddd:relay` (outbox relay, wakeup projection, stranded
+  scan, LISTEN wakeup) and `bin/console messenger:consume ddd_facts ddd_wakeups`,
+  both on a **direct** (non-pooled) connection. `tangible_ddd.process.pooled_connection:
+  refuse` makes the advisory lock and the LISTEN waiter refuse a pooled DSN
+  (default `warn`).
+- Intent rows (`ddd_wakeups`) are the source of truth; the `ddd_wakeups`
+  transport is a projection with Messenger retries off. A wake that fails on a
+  lock, a version fence or a transient DB error is retried (2 s x 2^n, 10
+  attempts); then, or on any other error, the intent is kept as exhausted for
+  `ddd:ops:stranded`.
 
 ## Tests
 
@@ -26,7 +49,8 @@ vendor/bin/phpunit --group relay.lease-fencing   # one scenario id
 
 Integration, kernel and conformance suites need Postgres 16. `DDD_SF_PG_URL`
 defaults to `pgsql://postgres:ddd@127.0.0.1:55432/ddd_w2_symfony_adapters`; point
-it at a database of your own when other runs share the server. The bootstrap
+it at a database of your own when other runs share the server (the lock tests
+also start a child `php` process that holds an advisory lock). The bootstrap
 creates that database if it is missing. Integration and kernel tests drop and
 re-create their tables; each conformance test gets a fresh Postgres schema
 (`ddd_conf_sf_<hash>`) that is dropped afterwards. Nothing runs inside a
