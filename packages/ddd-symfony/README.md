@@ -21,11 +21,11 @@ Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd
   `DbalProcessStore`, the reentrant `PostgresAdvisoryProcessLock`,
   `DbalWakeupScheduler` and the transaction boundary.
 - `tangible_ddd.process.inband_start` (the register's `ddd.process.inband_start`,
-  default `false`): `start()` persists the process and a `Continue` intent in the
-  caller's transaction and the first step runs in a worker. `true` runs the first
-  step in-band and is refused at boot on a pooled DSN. The persist-only start
-  needs a core `ProcessRunner` option (CR sfp-1); until core has it, a warning is
-  logged and `start()` stays in-band.
+  default `false`): the runner is built with `StartMode::Deferred`, so `start()`
+  persists the process and a `Continue` intent in the caller's transaction (also
+  inside a command), takes no process lock, and the first step runs in a worker.
+  `true` maps to `StartMode::InBand` (first step in-band, under the advisory lock)
+  and is refused at boot on a pooled DSN.
 - Workers: `bin/console ddd:relay` (outbox relay, wakeup projection, stranded
   scan, LISTEN wakeup) and `bin/console messenger:consume ddd_facts ddd_wakeups`,
   both on a **direct** (non-pooled) connection. `tangible_ddd.process.pooled_connection:
