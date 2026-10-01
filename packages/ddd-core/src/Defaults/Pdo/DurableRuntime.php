@@ -27,7 +27,11 @@ use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Defaults\Pdo\Internal\EffectHandlers;
 use TangibleDDD\Defaults\Pdo\Internal\HandlerMiddleware;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourTypes;
+use TangibleDDD\Domain\ValueObjects\Behaviours\IBehaviourTypes;
 use TangibleDDD\Defaults\Pdo\Internal\IdentityConfig;
 use TangibleDDD\Defaults\Pdo\Internal\RecordingSubscriptionRegistry;
 use TangibleDDD\Defaults\Pdo\Internal\RuntimeContainer;
@@ -100,6 +104,23 @@ use TangibleDDD\Runtime\SystemClock;
  *   wake handler), stranded scan (the runner);
  * - PdoOperatorView over the same tables.
  *
+ * Wave 5:
+ *
+ * - the jobs table is a PdoParkingJobStore (ICarriesFacts, AW2): a fact
+ *   resume that cannot take its process lock is parked as a ResumeRetry job
+ *   carrying the fact (schema 011) and the delivery completes; the drain
+ *   resumes the process once the lock is free;
+ * - EffectMiddleware finds the IExternalEffectHandler of a handler-class
+ *   effect (E1) like the handler middleware finds a handler: the
+ *   array-form `$handlers` entry keyed by the effect command's class, else
+ *   the convention-named handler in the container;
+ * - the journal keeps entry states (E2, schema 010) and the operator view
+ *   lists unrecorded effects (layer `effect`, repair invalidate);
+ * - one behaviour type registry (W2): HostDefaults' IBehaviourTypes, or a
+ *   BehaviourTypes compose() provides there; register_type() calls made
+ *   before compose() are handed over to it (behaviour_types(), and the
+ *   container's IBehaviourTypes).
+ *
  * `$handlers` is either a PSR-11 container or an array: an ICommand /
  * IQuery class key maps that message to its handler (callable, or object
  * with handle()); any other key is a service for handle() injection and
@@ -140,6 +161,7 @@ final class DurableRuntime {
     private readonly PdoBehaviourWorkflowRepository $workflows,
     private readonly PdoWorkItemRepository $workItems,
     private readonly PdoWorkflowIgnitionLedger $workflowIgnitions,
+    private readonly IBehaviourTypes $behaviourTypes,
   ) {}
 
   /**
@@ -165,11 +187,21 @@ final class DurableRuntime {
 
     $container = new RuntimeContainer($handlers);
 
+    // W2: one behaviour type registry per process, shared by every runtime;
+    // the include-time register_type() calls are handed over to it.
+    $types = HostDefaults::get(IBehaviourTypes::class);
+    if (!$types instanceof IBehaviourTypes) {
+      $types = new BehaviourTypes();
+      HostDefaults::provide(IBehaviourTypes::class, $types);
+    }
+    BaseBehaviourConfig::hand_over_types($types);
+
     // ── storage: one connection, the pdo adapter set ─────────────────────
     $boundary = new PdoTransactionBoundary($db, logger: $logger);
     $pauses = new PdoPauseStore($db, $tablePrefix, $clock);
     $outbox = new PdoOutboxStore($db, $pauses, $tablePrefix, $clock, $logger);
-    $jobs = new PdoJobStore($db, $prefix, $tablePrefix, $clock, $logger);
+    // AW2: a contended fact resume is parked as a fact-carrying ResumeRetry job.
+    $jobs = new PdoParkingJobStore($db, $prefix, $tablePrefix, $clock, $logger);
     $store = new PdoProcessStore($db, $tablePrefix, $clock, logger: $logger);
     $ledger = new PdoDeliveryLedger($db, $tablePrefix, $clock);
     $lock = new ReentrantProcessLock(new MySqlNamedLock($db, $logger), $logger);
@@ -186,9 +218,10 @@ final class DurableRuntime {
     );
     $handlerMiddleware = new HandlerMiddleware($container);
     $selfExecuting = new SelfExecutingCommandMiddleware($container);
+    $effectHandlers = new EffectHandlers($container);
     $bus = new CommandBus(
       new CorrelationMiddleware($config, $events, new Redactor()),
-      new EffectMiddleware($effectJournal, $boundary),
+      new EffectMiddleware($effectJournal, $boundary, $effectHandlers, $effectHandlers),
       new TransactionalCommandMiddleware($boundary),
       new DomainEventsPublishMiddleware($events, new EventRouter($localListeners, $integrationBus)),
       $selfExecuting,
@@ -235,6 +268,7 @@ final class DurableRuntime {
       PdoWorkItemRepository::class => $workItems,
       IWorkflowIgnitionLedger::class => $workflowIgnitions,
       PdoWorkflowIgnitionLedger::class => $workflowIgnitions,
+      IBehaviourTypes::class => $types,
     ] as $id => $service) {
       $container->set($id, $service);
     }
@@ -263,7 +297,7 @@ final class DurableRuntime {
     $runtime = new self(
       $bus, $queryBus, $drain, new PdoOperatorView($db, $prefix, $tablePrefix, $clock),
       $runner, $jobs, $store, $outbox, $boundary, $localListeners, $container, $consumer,
-      $effectJournal, $workflows, $workItems, $workflowIgnitions,
+      $effectJournal, $workflows, $workItems, $workflowIgnitions, $types,
     );
     $container->set(self::class, $runtime);
     return $runtime;
@@ -348,6 +382,11 @@ final class DurableRuntime {
   /** The workflow ignition ledger, for a core WorkflowIgniter (with boundary() and the runtime's clock). */
   public function ignitions(): PdoWorkflowIgnitionLedger {
     return $this->workflowIgnitions;
+  }
+
+  /** W2 (wave 5): the behaviour type registry stored workflows decode through (HostDefaults' IBehaviourTypes). */
+  public function behaviour_types(): IBehaviourTypes {
+    return $this->behaviourTypes;
   }
 
   /** @return array<string, class-string<IIntegrationEvent>> event type → fact class, for jobs without a recorded class */

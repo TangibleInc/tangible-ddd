@@ -15,7 +15,7 @@ final class PostgresSchemaTest extends TestCase {
     self::assertSame([
       '001_outbox.sql', '002_dlq.sql', '003_relay_pauses.sql', '004_delivery_ledger.sql',
       '005_processes.sql', '006_process_waits.sql', '007_wakeups.sql', '008_workflows.sql',
-      '009_effect_journal.sql', '010_delivery_notes.sql',
+      '009_effect_journal.sql', '010_delivery_notes.sql', '011_effect_states_and_facts.sql',
     ], $names);
     self::assertSame([
       'ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger',

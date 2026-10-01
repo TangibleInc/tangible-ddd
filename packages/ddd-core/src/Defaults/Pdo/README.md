@@ -67,6 +67,8 @@ Schema evolution is append-only (L5): a shipped file never changes. A change is 
 | 007_process_waits.sql | `{prefix}ddd_process_waits` | `PdoProcessStore` (D3 await routes) |
 | 008_workflows.sql | `{prefix}ddd_behaviour_workflows`, `_meta`, `_items`, `{prefix}ddd_workflow_ignitions` | `PdoBehaviourWorkflowRepository`, `PdoWorkItemRepository`, `PdoWorkflowIgnitionLedger` (D10) |
 | 009_effect_journal.sql | `{prefix}ddd_effect_journal` | `PdoEffectJournal` (D1) |
+| 010_effect_recorded.sql | `{prefix}ddd_effect_recorded` | `PdoEffectJournal` entry states (E2, wave 5: `ITracksEffectState`, operator layer `effect`) |
+| 011_job_facts.sql | `{prefix}ddd_job_facts` | `PdoJobStore` / `PdoParkingJobStore` (AW2, wave 5: the fact a parked resume carries) |
 
 All times are UTC `DATETIME(6)` written from `IClock`, never `NOW()`.
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Persistence;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use TangibleDDD\Domain\Exceptions\ConflictException;
 
 /**
  * A command's writes conflicted with a unique constraint when the configured
@@ -13,11 +14,16 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
  * UniqueConstraintViolationException is the previous exception, and
  * $constraint is the violated constraint's name when Postgres reports it.
  *
+ * A core ConflictException (L10, wave 5), so an application catches the 409
+ * family without depending on this package. Since wave 5 it is no longer a
+ * \RuntimeException: a `catch (\RuntimeException)` around a command stops
+ * catching it (catch ConflictException, or \Exception).
+ *
  * A unique violation raised inside the handler's own work (a DBAL insert the
  * handler issues) is NOT translated: the handler sees it at the statement
  * and may handle it there.
  */
-final class PersistenceConflict extends \RuntimeException {
+final class PersistenceConflict extends ConflictException {
 
   public function __construct(string $message, public readonly ?string $constraint, UniqueConstraintViolationException $previous) {
     parent::__construct($message, 409, $previous);

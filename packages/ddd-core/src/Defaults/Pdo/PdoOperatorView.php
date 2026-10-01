@@ -8,6 +8,7 @@ use TangibleDDD\Defaults\Pdo\Internal\OperatorRepairs;
 use TangibleDDD\Defaults\Pdo\Internal\OutboxAndQuarantineItems;
 use TangibleDDD\Runtime\ConsumerPrefix;
 use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\Ops\IOperatorView;
 use TangibleDDD\Runtime\Ops\Layer;
@@ -36,6 +37,9 @@ use TangibleDDD\Runtime\SystemClock;
  *   Repair retry_wake.
  * - `process`: stranded `running` rows (PdoProcessStore::find_stranded;
  *   repairs resume_stranded, fail_stranded) and quarantined rows (none).
+ * - `effect` (wave 5, E2): journal entries performed more than 300 s ago
+ *   and never recorded (core UnrecordedEffects over PdoEffectJournal; key =
+ *   the idempotency key, no budget). Repair invalidate.
  *
  * list() returns OperatorItems (IOperatorView); to_arrays() their array form
  * (OperatorItem::to_array: snake_case keys, ISO 8601 UTC times).
@@ -60,6 +64,9 @@ use TangibleDDD\Runtime\SystemClock;
  *   re-read under it and checked against the stranded scan, version
  *   fenced; $options: `reason` (fail_stranded, required), `compensate`,
  *   `expected_version`.
+ * - effect invalidate → PdoEffectJournal::invalidate($key, reason), so the
+ *   effect performs again on its next dispatch; $options: `reason`
+ *   (optional). Refused when the key has no live entry.
  *
  * Refusals: PdoRepairRefused (pdo guards), OutboxAdministrationRefused /
  * OutboxRowNotFound (relay), ProcessNotStranded (process);
@@ -93,9 +100,10 @@ final class PdoOperatorView implements IOperatorView {
         new OutboxAndQuarantineItems($db, $consumer, $tablePrefix),
         new PdoLedgerOperatorSource($db, $consumer, $tablePrefix, $deliveryBudget),
         new PdoJobsOperatorSource($db, $consumer, $tablePrefix, $wakeBudget, $deliveryBudget),
+        new UnrecordedEffects($journal = new PdoEffectJournal($db, $tablePrefix, $clock), $consumer, $clock),
       ],
     );
-    $this->repairs = new OperatorRepairs($db, $consumer, $tablePrefix, $clock, $administration, $processes);
+    $this->repairs = new OperatorRepairs($db, $consumer, $tablePrefix, $clock, $administration, $processes, $journal);
   }
 
   /** @return list<OperatorItem> */

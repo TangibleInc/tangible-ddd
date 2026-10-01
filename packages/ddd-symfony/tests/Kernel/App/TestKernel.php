@@ -165,6 +165,7 @@ final class TestKernel extends Kernel {
     $services->alias('test.chunked_digest', Workflows\ChunkedDigestWorkflow::class)->public();
     $services->alias('test.effect_middleware', 'tangible_ddd.middleware.effect')->public();
     $services->alias('test.process_lock', \TangibleDDD\Runtime\Lock\IProcessLock::class)->public();
+    $services->alias('test.process_wake_target', 'tangible_ddd.process_wake_target')->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Process,Reactions,Workflows}/')
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.

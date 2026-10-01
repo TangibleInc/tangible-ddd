@@ -122,20 +122,20 @@ abstract class RollbackTestCase extends TestCase {
 
   // ── N's side ─────────────────────────────────────────────────────────────
 
-  /** A fresh N install: schema v8, as an activation leaves it. */
+  /** A fresh N install at N's current schema, as an activation leaves it. */
   protected function nInstall(): void {
     if (!function_exists('dbDelta')) {
       require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     }
     install_tables($this->config);
-    update_option(ddd_schema_version_key($this->config), 8, false);
+    update_option(ddd_schema_version_key($this->config), \TangibleDDD\WordPress\DDD_SCHEMA_VERSION, false);
     $this->idBase();
   }
 
-  /** The upgrade: N's migration over whatever schema a legacy winner installed (v8 explicit migration, backfills). */
+  /** The upgrade: N's migration over whatever schema a legacy winner installed (v8+ explicit migrations, backfills). */
   protected function nUpgrade(): void {
     ddd_maybe_migrate($this->config);
-    self::assertSame(8, (int) get_option(ddd_schema_version_key($this->config)), 'N migrated the consumer to v8: ' . (string) get_option($this->config->option('ddd_migration_error')));
+    self::assertSame(\TangibleDDD\WordPress\DDD_SCHEMA_VERSION, (int) get_option(ddd_schema_version_key($this->config)), 'N migrated the consumer to its current schema: ' . (string) get_option($this->config->option('ddd_migration_error')));
   }
 
   /** N boots as the winner: its v8 ports, its process runner and hooks, the fixtures' listener. */

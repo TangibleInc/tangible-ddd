@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
+use TangibleDDD\Runtime\Effects\EffectEntry;
 use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\EffectState;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\ITracksEffectState;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\FrozenClock;
+use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
 use TangibleDDD\Symfony\Persistence\PostgresSchema;
@@ -112,6 +117,125 @@ final class DbalEffectJournalTest extends PostgresTestCase {
 
     $this->expectException(\RuntimeException::class);
     $this->journal->find('k');
+  }
+
+  // ── E2 (wave 5): entry states, ITracksEffectState ─────────────────────────
+
+  public function test_it_tracks_entry_states(): void {
+    self::assertInstanceOf(ITracksEffectState::class, $this->journal);
+  }
+
+  public function test_a_stored_entry_is_performed_and_not_recorded(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1], 'r1'));
+
+    $entry = $this->journal->find_entry('k');
+    self::assertNotNull($entry);
+    self::assertSame('k', $entry->key);
+    self::assertSame(EffectState::Performed, $entry->state);
+    self::assertFalse($entry->is_recorded());
+    self::assertSame(['v' => 1], $entry->result->data);
+    self::assertSame('r1', $entry->result->external_ref);
+    self::assertEquals(new \DateTimeImmutable('2026-10-01T12:00:00Z'), $entry->performed_at);
+    self::assertNull($entry->recorded_at);
+  }
+
+  public function test_mark_recorded_sets_the_state_and_the_time(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $this->clock->advance('5 seconds');
+
+    $this->journal->mark_recorded('k');
+
+    $entry = $this->journal->find_entry('k');
+    self::assertSame(EffectState::Recorded, $entry?->state);
+    self::assertTrue($entry->is_recorded());
+    self::assertEquals(new \DateTimeImmutable('2026-10-01T12:00:05Z'), $entry->recorded_at);
+    self::assertSame(['v' => 1], $this->journal->find('k')?->data, 'find() answers the result whatever the state');
+  }
+
+  public function test_mark_recorded_of_an_unknown_key_is_a_no_op(): void {
+    $this->journal->mark_recorded('never-performed');
+
+    self::assertNull($this->journal->find_entry('never-performed'));
+    self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_effect_journal'));
+  }
+
+  public function test_mark_recorded_commits_or_rolls_back_with_record(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $boundary = new DbalTransactionBoundary($this->db);
+
+    try {
+      $boundary->run(function (): void {
+        $this->journal->mark_recorded('k');
+        throw new \DomainException('record() failed after the mark');
+      });
+    } catch (\DomainException) {
+    }
+    self::assertSame(EffectState::Performed, $this->journal->find_entry('k')?->state, 'a rolled-back record() leaves the entry performed');
+
+    $boundary->run(fn () => $this->journal->mark_recorded('k'));
+    self::assertSame(EffectState::Recorded, $this->journal->find_entry('k')?->state);
+  }
+
+  public function test_storing_again_resets_the_entry_to_performed(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $this->journal->mark_recorded('k');
+    $this->journal->invalidate('k', 'repair');
+
+    $this->journal->store('k', new EffectResult(['v' => 2]));
+
+    $entry = $this->journal->find_entry('k');
+    self::assertSame(EffectState::Performed, $entry?->state);
+    self::assertNull($entry->recorded_at);
+    self::assertSame(['v' => 2], $entry->result->data);
+  }
+
+  public function test_an_invalidated_entry_is_not_found_in_either_state(): void {
+    $this->journal->store('performed', new EffectResult());
+    $this->journal->store('recorded', new EffectResult());
+    $this->journal->mark_recorded('recorded');
+
+    $this->journal->invalidate('performed', 'repair');
+    $this->journal->invalidate('recorded', 'repair');
+
+    self::assertNull($this->journal->find_entry('performed'));
+    self::assertNull($this->journal->find_entry('recorded'));
+    $this->journal->mark_recorded('performed');
+    self::assertNull($this->journal->find_entry('performed'), 'an invalidated row is not marked');
+  }
+
+  public function test_find_unrecorded_lists_old_performed_entries_oldest_first(): void {
+    $this->journal->store('b', new EffectResult(['n' => 'b']));
+    $this->clock->advance('10 seconds');
+    $this->journal->store('a', new EffectResult(['n' => 'a']));
+    $this->clock->advance('10 seconds');
+    $this->journal->store('recorded', new EffectResult());
+    $this->journal->mark_recorded('recorded');
+    $this->journal->store('invalidated', new EffectResult());
+    $this->journal->invalidate('invalidated', 'repair');
+    $this->clock->advance('10 seconds');
+    $this->journal->store('young', new EffectResult());
+
+    $due = $this->journal->find_unrecorded(new \DateTimeImmutable('2026-10-01T12:00:25Z'), 10);
+
+    self::assertSame(['b', 'a'], array_map(static fn (EffectEntry $e) => $e->key, $due));
+    self::assertSame(EffectState::Performed, $due[0]->state);
+    self::assertSame(['n' => 'b'], $due[0]->result->data);
+    self::assertCount(1, $this->journal->find_unrecorded(new \DateTimeImmutable('2026-10-01T12:00:25Z'), 1), 'the limit caps the list');
+    self::assertSame([], $this->journal->find_unrecorded(new \DateTimeImmutable('2026-10-01T12:00:25Z'), 0));
+  }
+
+  public function test_unrecorded_entries_are_the_operator_layer_effect(): void {
+    $this->journal->store('stripe:charge:1', new EffectResult(['charge' => 'ch_1']));
+    $this->journal->store('stripe:charge:2', new EffectResult(['charge' => 'ch_2']));
+    $this->journal->mark_recorded('stripe:charge:2');
+    $this->clock->advance((UnrecordedEffects::DEFAULT_AFTER_SECONDS + 1) . ' seconds');
+
+    $items = (new UnrecordedEffects($this->journal, 'app', $this->clock))->items(Layer::Effect, 10);
+
+    self::assertCount(1, $items);
+    self::assertSame(Layer::Effect, $items[0]->layer);
+    self::assertSame('stripe:charge:1', $items[0]->key);
+    self::assertSame(['invalidate'], $items[0]->repairs);
   }
 
   public function test_the_table_prefix_is_honoured(): void {

@@ -40,8 +40,19 @@ use TangibleDDD\Infra\IDDDConfig;
  *       claim_token; long_processes version, ignition_key (UNIQUE with
  *       process_class) and quarantine_reason; ignition keys and wakeup
  *       intents backfilled (ddd_migrate_v8)
+ *  - 9: wave 5 (additive only, R5): ddd_wakeups.fact, the fact a parked
+ *       resume carries (AW2, ICarriesFacts)
  */
-const DDD_SCHEMA_VERSION = 8;
+const DDD_SCHEMA_VERSION = 9;
+
+/**
+ * Fired by ddd_maybe_migrate() right after it installed (or healed) a
+ * consumer's tables, with the consumer's IDDDConfig. register_hooks() uses
+ * it to wire the outbox and process hooks it skipped because the tables
+ * were absent when it ran (the first request on a fresh database: hooks at
+ * init:2, migration at init:3).
+ */
+const TABLES_INSTALLED_ACTION = 'tangible_ddd_tables_installed';
 
 /**
  * The schema version installed for this consumer (0 when never migrated).
@@ -172,6 +183,12 @@ function ddd_explicit_migrations(): array {
     // v8 — durable contracts (wave 3). Additive only (R5); see ddd_migrate_v8().
     8 => static function (IDDDConfig $config): void {
       ddd_migrate_v8($config);
+    },
+
+    // v9 — the parked-fact column on ddd_wakeups (wave 5, AW2). Additive and
+    // nullable: a 0.6 winner never reads the table, a v8 build ignores it.
+    9 => static function (IDDDConfig $config): void {
+      ddd_add_column_if_missing($config->table('ddd_wakeups'), 'fact', 'LONGTEXT NULL', 'args');
     },
   ];
 }
@@ -522,6 +539,11 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
 
   // 1. dbDelta: create fresh + heal additive changes from the canonical schema.
   install_tables($config);
+  // The feature gates (outbox_enabled(), processes_enabled()) may have
+  // probed the tables absent earlier in this request: forget that, and let
+  // register_hooks() wire what it skipped (a fresh database's first request).
+  \TangibleDDD\WordPress\Adapter\WpSchema::forget_tables();
+  do_action(TABLES_INSTALLED_ACTION, $config);
 
   // 2. explicit migrations for the hard cases, in version order. A failed
   // one leaves the installed version where it was (the v8 adapters stay

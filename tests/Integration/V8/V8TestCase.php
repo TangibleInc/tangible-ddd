@@ -61,6 +61,15 @@ abstract class V8TestCase extends TestCase {
     update_option(ddd_schema_version_key($this->config), 8, false);
   }
 
+  /** A fresh install at the current schema (v9 since wave 5: the parked-fact column). */
+  protected function installCurrent(): void {
+    if (!function_exists('dbDelta')) {
+      require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    }
+    install_tables($this->config);
+    update_option(ddd_schema_version_key($this->config), \TangibleDDD\WordPress\DDD_SCHEMA_VERSION, false);
+  }
+
   protected function table(string $name): string {
     return $this->config->table($name);
   }

@@ -8,6 +8,9 @@ use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Core\Tests\Pdo\OutboxTestCase;
 use TangibleDDD\Core\Tests\Unit\Fixtures\FulfilmentProcess;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryLedger;
+use TangibleDDD\Defaults\Pdo\PdoEffectJournal;
+use TangibleDDD\Defaults\Pdo\PdoRepairRefused;
+use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
 use TangibleDDD\Defaults\Pdo\PdoJobsOperatorSource;
 use TangibleDDD\Defaults\Pdo\PdoLedgerOperatorSource;
@@ -129,6 +132,33 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
 
     self::assertSame(['resume_stranded', 'fail_stranded'], $byKey["process:{$ids['stranded']}"]->repairs);
     self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]->last_error);
+  }
+
+  // ── E2 (wave 5): the effect layer ───────────────────────────────────────
+
+  public function test_an_unrecorded_effect_is_listed_in_the_effect_layer_and_invalidated(): void {
+    $journal = new PdoEffectJournal($this->db, self::PREFIX, $this->clock);
+    $journal->store('stripe:charge:1', new EffectResult(['charge' => 'ch_1']));
+    $journal->store('stripe:charge:2', new EffectResult(['charge' => 'ch_2']));
+    $journal->mark_recorded('stripe:charge:2');
+    $this->clock->advance('PT6M');
+
+    $items = $this->view()->list(Layer::Effect);
+
+    self::assertSame(['stripe:charge:1'], array_map(static fn (OperatorItem $i) => $i->key, $items));
+    self::assertSame(['invalidate'], $items[0]->repairs);
+    self::assertSame('acme', $items[0]->consumer);
+
+    $this->view()->repair_item($items[0], 'invalidate', ['reason' => 'charge refunded by hand']);
+
+    self::assertNull($journal->find('stripe:charge:1'));
+    self::assertSame('charge refunded by hand', $this->row('ddd_effect_journal', 'idempotency_key = ?', ['stripe:charge:1'])['invalidation_reason']);
+    self::assertSame([], $this->view()->list(Layer::Effect));
+  }
+
+  public function test_invalidating_an_effect_without_a_live_entry_is_refused(): void {
+    $this->expectException(PdoRepairRefused::class);
+    $this->view()->repair(Layer::Effect, 'never-performed', 'invalidate');
   }
 
   // ── repairs (register 3.10, C23; wave 4) ────────────────────────────────

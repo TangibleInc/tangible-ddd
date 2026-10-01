@@ -8,10 +8,12 @@ use TangibleDDD\Core\Tests\Pdo\OutboxTestCase;
 use TangibleDDD\Defaults\Pdo\DeliveryJob;
 use TangibleDDD\Defaults\Pdo\IHostConnection;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
+use TangibleDDD\Defaults\Pdo\PdoParkingJobStore;
 use TangibleDDD\Defaults\Pdo\PdoTransactionBoundary;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Scheduling\ClaimedWakeup;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
@@ -303,5 +305,84 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     self::assertSame(1, $this->countRows('ddd_jobs'));
     self::assertSame('accepted', $this->row('ddd_outbox', 'event_id = ?', ['e1'])['status']);
     self::assertSame($this->row('ddd_outbox', 'event_id = ?', ['e1'])['transport_ref'], 'job:' . $this->row('ddd_jobs', '1 = 1')['id']);
+  }
+
+  // ── AW2 (wave 5): the fact a parked resume carries (schema 011) ───────────
+
+  /** @return array{class: string, payload: array<string, mixed>, event_id: string} */
+  private static function fact(): array {
+    return ['class' => 'Acme\\Events\\InviteAccepted', 'payload' => ['z' => 1, 'a' => ['n' => null, 'f' => 1.5], 'u' => "na\u{00EF}ve"], 'event_id' => '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d51'];
+  }
+
+  public function test_a_parked_fact_comes_back_from_claim_due_unchanged(): void {
+    $jobs = $this->jobs();
+    $intent = WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->clock->now());
+    $this->inTx(fn () => $jobs->schedule($intent));
+
+    [$claimed] = $this->jobs($this->otherConnection())->claim_due($this->clock->now(), 10, 60);
+
+    self::assertSame($intent->key, $claimed->intent->key);
+    self::assertSame(WakeKind::ResumeRetry, $claimed->intent->kind);
+    self::assertSame('suspended', $claimed->intent->expected_status);
+    self::assertSame(2, $claimed->intent->step_index);
+    self::assertSame(self::fact(), $claimed->intent->fact, 'class, payload (key order included) and event id round-trip');
+  }
+
+  public function test_an_intent_without_a_fact_has_none(): void {
+    $jobs = $this->jobs();
+    $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())));
+
+    self::assertNull($jobs->claim_due($this->clock->now(), 10, 60)[0]->intent->fact);
+    self::assertSame(0, $this->countRows('ddd_job_facts'));
+  }
+
+  public function test_the_fact_commits_or_rolls_back_with_the_intent(): void {
+    $jobs = $this->jobs();
+    try {
+      $this->inTx(function () use ($jobs): void {
+        $jobs->schedule(WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->clock->now()));
+        throw new \DomainException('the process save failed');
+      });
+    } catch (\DomainException) {
+    }
+
+    self::assertSame(0, $this->countRows('ddd_jobs'));
+    self::assertSame(0, $this->countRows('ddd_job_facts'));
+  }
+
+  public function test_complete_and_cancel_remove_the_fact_with_the_job(): void {
+    $jobs = $this->jobs();
+    $first = WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->clock->now());
+    $second = WakeupIntent::resume_fact('acme', 8, 0, self::fact(), $this->clock->now());
+    $this->inTx(function () use ($jobs, $first, $second): void {
+      $jobs->schedule($first);
+      $jobs->schedule($second);
+    });
+
+    $claims = $jobs->claim_due($this->clock->now(), 10, 60);
+    $byKey = array_combine(self::keys($claims), $claims);
+    self::assertTrue($jobs->complete($byKey[$first->key]));
+    $this->inTx(fn () => $jobs->cancel($second->key));
+
+    self::assertSame(0, $this->countRows('ddd_jobs'));
+    self::assertSame(0, $this->countRows('ddd_job_facts'));
+    self::assertFalse($jobs->complete($byKey[$first->key]), 'still fenced: a lost lease completes nothing');
+  }
+
+  public function test_parking_the_same_fact_twice_writes_one_job(): void {
+    $jobs = $this->jobs();
+    $intent = WakeupIntent::resume_fact('acme', 7, 2, self::fact(), $this->clock->now());
+    $this->inTx(fn () => $jobs->schedule($intent));
+    $this->inTx(fn () => $jobs->schedule($intent));
+
+    self::assertSame(1, $this->countRows('ddd_jobs'));
+    self::assertSame(1, $this->countRows('ddd_job_facts'));
+  }
+
+  public function test_the_parking_store_declares_that_it_carries_facts(): void {
+    self::assertNotInstanceOf(ICarriesFacts::class, $this->jobs(), 'the base store keeps the wave-3 delivery retry');
+    $parking = new PdoParkingJobStore($this->db, 'acme', self::PREFIX, $this->clock);
+    self::assertInstanceOf(ICarriesFacts::class, $parking);
+    self::assertInstanceOf(ICarriesFacts::class, $parking->claiming(WakeKind::ResumeRetry), 'a claiming view keeps the class');
   }
 }

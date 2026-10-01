@@ -20,9 +20,13 @@ use TangibleDDD\Application\Queries\SelfHandlingQuery;
 use TangibleDDD\Application\QueryHandlers\IQueryHandler;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
+use TangibleDDD\Runtime\Effects\IExternalEffectHandler;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsDomainEventListener;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsIntegrationListener;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourTypes;
+use TangibleDDD\Domain\ValueObjects\Behaviours\IBehaviourTypes;
+use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\BehaviourTypePass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\ConsumerAssignmentPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\DomainListenerPass;
@@ -303,6 +307,8 @@ final class TangibleDddBundle extends AbstractBundle {
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IReturningCommandHandler::class)->addTag(DddTags::COMMAND_HANDLER); // L1
+    // E1: handler-class effects; EffectMiddleware locates them in the command handler locator.
+    $builder->registerForAutoconfiguration(IExternalEffectHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
     $builder->registerForAutoconfiguration(IContinuesWorkflows::class)->addTag(DddTags::CONTINUES_WORKFLOW); // W1
     $builder->registerForAutoconfiguration(BaseBehaviourConfig::class)->addTag(DddTags::BEHAVIOUR_CONFIG); // W2
@@ -381,6 +387,7 @@ final class TangibleDddBundle extends AbstractBundle {
     parent::build($container);
     DDDCompilerPasses::register($container);
     $container->addCompilerPass(new HandlerLocatorPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
+    $container->addCompilerPass(new EffectHandlersPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -11); // E1, after HandlerLocatorPass
     $container->addCompilerPass(new SubscriptionMapPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     $container->addCompilerPass(new BehaviourTypePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10); // W2
     $container->addCompilerPass(new DomainListenerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
@@ -405,6 +412,21 @@ final class TangibleDddBundle extends AbstractBundle {
       );
     }
     $c->get('tangible_ddd.runtime_reset')->install();
+    // W2: core resolves stored behaviour types through the bundle's registry,
+    // which takes over what was registered before boot (include time) and,
+    // on a reboot in the same process (tests, a worker's kernel reset), what
+    // the previous kernel's registry held: the fallback is handed over once.
+    $types = $c->get('tangible_ddd.behaviour_types');
+    $previous = HostDefaults::get(IBehaviourTypes::class);
+    if ($previous instanceof BehaviourTypes && $previous !== $types) {
+      foreach ($previous->all() as $type => $class) {
+        if ($types->find($type) === null) {
+          $types->register($type, $class);
+        }
+      }
+    }
+    HostDefaults::provide(IBehaviourTypes::class, $types);
+    BaseBehaviourConfig::hand_over_types($types);
     // Pooled-DSN refusal for inband_start, and HostDefaults (signals, clock, logger).
     $c->get('tangible_ddd.host_defaults')->install();
   }
