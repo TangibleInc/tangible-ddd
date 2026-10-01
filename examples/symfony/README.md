@@ -410,8 +410,9 @@ workflow per key, whatever the redeliveries or concurrent workers.
 
 ```php
 #[StartsOn(CronEntryDue::class)]
-final class NightlyReport extends WorkflowHandler implements IStartsFromFact {
+final class NightlyReport extends WorkflowHandler implements IStartsFromFact, IContinuesWorkflows {
     use StartsFromFacts;
+    use ReschedulesThroughWakeups;   // reschedule() = a durable ddd_wakeups intent (W1)
 
     public function workflow_from_fact(IIntegrationEvent $fact): ?BehaviourWorkflow {
         return new BehaviourWorkflow(null, 0, 'nightly-report', [new BuildReportConfig()]);   // null declines
@@ -421,7 +422,7 @@ final class NightlyReport extends WorkflowHandler implements IStartsFromFact {
         // default (trait): once per fact, uuid5(event_id, kind); here: once per (workflow, minute)
         return WorkflowIgnitionKey::per_minute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
     }
-    // get_workflows(), execute_one(), generate_work_items(), reschedule(): as for any WorkflowHandler
+    // get_workflows(), execute_one(), generate_work_items(): as for any WorkflowHandler
 }
 ```
 
@@ -429,6 +430,54 @@ The claim, the workflow save and the attach commit together; the start
 (`start_ignited()`, by default `handle_workflow()`) runs after the commit. A
 start that throws is retried by the fact's redelivery, which restarts the
 attached workflow (it must tolerate a re-run).
+
+With `ReschedulesThroughWakeups`, a run that reaches its resource limits
+(25 s or 80 % of `memory_limit`), a step that failed with retries left and a
+fork of failed items continue later through `ddd_wakeups`, like process
+wakeups: `ddd:relay` projects the due intent, `messenger:consume ddd_wakeups`
+runs `continue_workflow()` under a per-workflow lock, and a failing
+continuation shows in `ddd:ops:list --layer=wakeup`. Behaviour config classes
+in your resource-loaded namespaces are registered at boot (list others under
+`tangible_ddd.workflow.behaviour_types`), so no handler has to call
+`register_type()` itself.
+
+```yaml
+tangible_ddd:
+  workflow:
+    stale_start_seconds: 900     # a start marker younger than this is "in flight"
+  messenger:
+    redeliver_timeout_seconds: 3600   # a dead worker's fact comes back after this long
+```
+
+A workflow whose worker died mid-start restarts on the fact's redelivery, so
+after `max(redeliver_timeout_seconds, stale_start_seconds)`. Lower both for
+user-facing workflows. `ddd:ops:list --layer=workflow` lists failed items,
+failed workflows and start markers older than `stale_start_seconds`.
+
+## 8a. Several consumers in one app
+
+A reusable bounded context (its own bundle) can be its own consumer, as each
+WordPress plugin is: its own tables (a table prefix or a Postgres schema),
+outbox, relay, ledger, processes, wakeups, journal and transports.
+
+```yaml
+tangible_ddd:
+  consumers:
+    txp: { namespace_root: App }            # the primary consumer (first): today's service ids and tables
+    billing:
+      bundle: Acme\Billing\AcmeBillingBundle
+      schema: billing
+```
+
+Classes belong to the consumer whose namespace root contains them (the
+longest root wins), and their port interfaces (`IOutboxStore`,
+`ITransactionBoundary`, `ProcessRunner`, ...) autowire to that consumer's
+services. A `billing` listener of an `App` fact receives it through a copy
+on billing's own transport (`ddd_facts_billing`), exactly once (billing's
+ledger). Run `ddd:relay` (or `ddd:relay --consumer=billing`) and
+`messenger:consume ddd_facts ddd_wakeups ddd_facts_billing ddd_wakeups_billing`;
+migrate each consumer from its own history:
+`ddd:schema:dump --consumer=billing --since=NNN`.
 
 ## 9. Cause, process id and step index (D13)
 
