@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Conformance\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Conformance\AuditSinkFaults;
@@ -100,10 +101,24 @@ final class CatalogueTest extends TestCase {
   /** CR-W4C4-1: D3 scenarios TXP's process-kernel needs, added to the catalogue in wave 4. */
   private const D3_IDS = ['process.await-keyed-precheck', 'process.await-any-cancellation', 'process.await-all-dynamic'];
 
-  public function test_the_catalogue_has_the_44_register_ids_and_the_3_d3_ids(): void {
-    self::assertCount(44 + count(self::D3_IDS), ScenarioCatalogue::WAVES);
+  /**
+   * Wave 5 (CR-W5C5-1, docs/extraction/wave5-conformance-5-change-requests.md):
+   * id => [mem, pdo, wp, sf]. wp is `-` where the wp adapters do not
+   * support the behaviour (no fact column, no effect journal).
+   */
+  private const WAVE_5 = [
+    'lock.parked-answer'                     => [5, 5, null, 5],
+    'process.resume-contention-keeps-answer' => [5, 5, null, 5],
+    'process.resume-cause'                   => [5, 5, 5, 5],
+  ];
+
+  public function test_the_catalogue_has_the_44_register_ids_the_3_d3_ids_and_the_wave_5_ids(): void {
+    self::assertCount(44 + count(self::D3_IDS) + count(self::WAVE_5), ScenarioCatalogue::WAVES);
     foreach (self::D3_IDS as $id) {
       self::assertSame([4, 4, null, 4], ScenarioCatalogue::WAVES[$id], "$id: mem 4, pdo 4, wp -, sf 4 (CR-W4C4-1)");
+    }
+    foreach (self::WAVE_5 as $id => $waves) {
+      self::assertSame($waves, ScenarioCatalogue::WAVES[$id] ?? null, "$id (CR-W5C5-1)");
     }
   }
 
@@ -113,7 +128,16 @@ final class CatalogueTest extends TestCase {
       self::assertCount($counts[$host], $ids);
       self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::first_due_at($host, 4), "$host wave 4");
     }
-    self::assertSame([], ScenarioCatalogue::first_due_at('mem', 5), 'nothing is due after wave 4');
+  }
+
+  public function test_wave_5_lists_match_the_wave_5_cells_exactly(): void {
+    foreach (ScenarioCatalogue::HOSTS as $col => $host) {
+      $ids = array_keys(array_filter(self::WAVE_5, static fn (array $w) => $w[$col] === 5));
+      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::first_due_at($host, 5), "$host wave 5");
+    }
+    foreach (ScenarioCatalogue::HOSTS as $host) {
+      self::assertSame([], ScenarioCatalogue::first_due_at($host, 6), 'nothing is due after wave 5');
+    }
   }
 
   public function test_every_id_has_a_scenario_case_by_wave_4(): void {
@@ -142,13 +166,13 @@ final class CatalogueTest extends TestCase {
     }
   }
 
-  public function test_every_id_due_on_mem_by_wave_4_has_a_mem_scenario(): void {
+  public function test_every_id_due_on_mem_by_wave_5_has_a_mem_scenario(): void {
     $implemented = ScenarioId::implemented_by(self::memHostClasses());
 
     self::assertEqualsCanonicalizing([...self::MEM_WAVE_1, 'audit.sink-fails', ...self::WAVE_3['mem']], ScenarioCatalogue::due_by('mem', 3), 'the 31 mem ids of waves 1-3');
     self::assertEqualsCanonicalizing([...ScenarioCatalogue::due_by('mem', 3), ...self::WAVE_4['mem']], ScenarioCatalogue::due_by('mem', 4), 'the 39 mem ids of waves 1-4');
-    $missing = array_values(array_diff(ScenarioCatalogue::due_by('mem', 4), array_keys($implemented)));
-    self::assertSame([], $missing, 'Due on mem by wave 4 but no scenario method carries the id');
+    $missing = array_values(array_diff(ScenarioCatalogue::due_by('mem', 5), array_keys($implemented)));
+    self::assertSame([], $missing, 'Due on mem by wave 5 but no scenario method carries the id');
 
     foreach (array_keys($implemented) as $id) {
       self::assertTrue(ScenarioCatalogue::is_known($id), "Scenario group '$id' is not a register id");
@@ -156,24 +180,30 @@ final class CatalogueTest extends TestCase {
     }
   }
 
-  public function test_every_id_due_on_any_host_by_wave_4_has_an_abstract_scenario(): void {
+  public function test_every_id_due_on_any_host_by_wave_5_has_an_abstract_scenario(): void {
     $byCase = self::scenarioMethodsOfAbstractCases();
 
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      $missing = array_values(array_diff(ScenarioCatalogue::due_by($host, 4), array_keys($byCase)));
-      self::assertSame([], $missing, "Due on $host by wave 4 but no abstract scenario case carries the id");
+      $missing = array_values(array_diff(ScenarioCatalogue::due_by($host, 5), array_keys($byCase)));
+      self::assertSame([], $missing, "Due on $host by wave 5 but no abstract scenario case carries the id");
     }
   }
 
-  public function test_wave_4_ids_live_in_new_cases_so_wave_3_host_classes_run_unchanged(): void {
-    $wave3Cases = [];
+  /** @return array<string, array{int}> */
+  public static function laterWaves(): array {
+    return ['wave 4' => [4], 'wave 5' => [5]];
+  }
+
+  #[DataProvider('laterWaves')]
+  public function test_later_wave_ids_live_in_new_cases_so_earlier_host_classes_run_unchanged(int $wave): void {
+    $earlierCases = [];
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      $wave3Cases = [...$wave3Cases, ...ScenarioCatalogue::cases_for($host, 3)];
+      $earlierCases = [...$earlierCases, ...ScenarioCatalogue::cases_for($host, $wave - 1)];
     }
-    self::assertNotEmpty($wave3Cases);
+    self::assertNotEmpty($earlierCases);
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      foreach (ScenarioCatalogue::first_due_at($host, 4) as $id) {
-        self::assertNotContains(ScenarioCatalogue::case_of($id), $wave3Cases, "'$id' is not added to a case a wave-3 host already extends");
+      foreach (ScenarioCatalogue::first_due_at($host, $wave) as $id) {
+        self::assertNotContains(ScenarioCatalogue::case_of($id), $earlierCases, "'$id' is not added to a case a wave-" . ($wave - 1) . ' host already extends');
       }
     }
   }

@@ -69,6 +69,10 @@ final class ScenarioCatalogue {
     'decode.unknown-class'                    => [4, 4, 4, 4],
     'effect.journal-reuse'                    => [4, 4, null, 4],
     'wakeup.post-commit'                      => [null, null, null, 4],
+    // wave 5 (CR-W5C5-1): TXP process-kernel demands AW1, AW2, E2, W4 and sf multi-consumer
+    'lock.parked-answer'                      => [5, 5, null, 5],
+    'process.resume-contention-keeps-answer'  => [5, 5, null, 5],
+    'process.resume-cause'                    => [5, 5, 5, 5],
   ];
 
   private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
@@ -130,6 +134,10 @@ final class ScenarioCatalogue {
     'effect.journal-reuse'                    => self::S . 'EffectScenarios',
     'workflow.fact-ignition-once'             => self::S . 'WorkflowScenarios',
     'wakeup.post-commit'                      => self::S . 'PostCommitWakeupScenarios',
+    // wave 5: new cases only, so a wave-4 host class runs unchanged
+    'lock.parked-answer'                      => self::S . 'ParkedAnswerScenarios',
+    'process.resume-contention-keeps-answer'  => self::S . 'ParkedAnswerScenarios',
+    'process.resume-cause'                    => self::S . 'ResumeCauseScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null for an unknown id. */
