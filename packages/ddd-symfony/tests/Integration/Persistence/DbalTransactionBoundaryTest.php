@@ -9,6 +9,7 @@ use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\TransactionFailed;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
+use TangibleDDD\Symfony\Persistence\PersistenceConflict;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
 use TangibleDDD\Symfony\Tests\Support\RecordingLogger;
 
@@ -299,6 +300,37 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
     }
     self::assertCount(1, $logger->at('error'));
     self::assertStringContainsString('reset exploded', $logger->at('error')[0]);
+  }
+
+  public function test_a_unique_violation_in_before_commit_is_a_persistence_conflict(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+    $boundary = new DbalTransactionBoundary($this->db, beforeCommit: fn () => $this->db->insert('sf_tx_rows', ['id' => 'dup']));
+
+    try {
+      $boundary->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'work']));
+      self::fail('expected a conflict');
+    } catch (PersistenceConflict $e) {
+      self::assertInstanceOf(UniqueConstraintViolationException::class, $e->getPrevious());
+      self::assertSame('sf_tx_rows_pkey', $e->constraint);
+      self::assertStringContainsString('sf_tx_rows_pkey', $e->getMessage());
+    }
+    self::assertSame(['dup'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows ORDER BY id'));
+    self::assertFalse($this->db->isTransactionActive());
+  }
+
+  public function test_a_unique_violation_in_the_work_is_rethrown_unchanged(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+
+    $this->expectException(UniqueConstraintViolationException::class);
+    (new DbalTransactionBoundary($this->db, beforeCommit: static fn () => null))
+      ->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'dup']));
+  }
+
+  public function test_other_before_commit_failures_are_not_conflicts(): void {
+    $boundary = new DbalTransactionBoundary($this->db, beforeCommit: static fn () => throw new \LogicException('flush failed'));
+
+    $this->expectException(\LogicException::class);
+    $boundary->run(static fn () => null);
   }
 
   private function swallow(callable $act): void {

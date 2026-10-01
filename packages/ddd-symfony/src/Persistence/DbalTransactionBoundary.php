@@ -37,7 +37,9 @@ use TangibleDDD\Runtime\TransactionFailed;
  *   transaction belongs to the caller.
  * - $beforeCommit (e.g. `EntityManager::flush`) runs inside the transaction
  *   just before COMMIT; if it throws, the transaction rolls back and its
- *   exception surfaces.
+ *   exception surfaces. A unique violation there (the ORM flush hit a
+ *   unique index) surfaces as PersistenceConflict with the DBAL exception
+ *   as previous (L8), so the host maps it to 409.
  * - $afterRollback (e.g. EntityManagerSession::reset) runs after every
  *   rollback this run performs (work or $beforeCommit threw, aborted
  *   transaction, failed COMMIT), so ORM changes a failed act scheduled are
@@ -98,7 +100,11 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
     try {
       $result = $work();
       if ($this->beforeCommit !== null) {
-        ($this->beforeCommit)();
+        try {
+          ($this->beforeCommit)();
+        } catch (\Throwable $flush) {
+          throw PersistenceConflict::fromUniqueViolationIn($flush) ?? $flush;
+        }
       }
     } catch (\Throwable $original) {
       $this->rollBackTo($outer, $original);

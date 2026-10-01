@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Tests\Kernel;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use TangibleDDD\Symfony\Persistence\PersistenceConflict;
 use TangibleDDD\Symfony\Tests\Kernel\App\Orm\Commands\SaveOrmWidgetCommand;
 
 /**
@@ -62,6 +64,20 @@ final class OrmTransactionRollbackTest extends KernelTestBase {
     $em = self::getContainer()->get('doctrine')->getManager();
     self::assertTrue($em->isOpen(), 'the registry hands out a usable EntityManager after the rollback');
     self::assertSame(0, $em->getUnitOfWork()->size(), 'nothing of the failed act is still managed');
+  }
+
+  /** L8: a unique violation at the ORM flush is the library's conflict, with the DBAL exception as previous. */
+  public function test_a_unique_violation_at_the_flush_is_a_persistence_conflict(): void {
+    $this->db->executeStatement("INSERT INTO app_orm_widgets (id, name) VALUES ('x', 'taken')");
+
+    try {
+      (new SaveOrmWidgetCommand('y', 'taken'))->send();
+      self::fail('expected a conflict');
+    } catch (PersistenceConflict $e) {
+      self::assertInstanceOf(UniqueConstraintViolationException::class, $e->getPrevious());
+      self::assertSame('app_orm_widgets_name_key', $e->constraint);
+    }
+    self::assertSame(['x'], $this->ids());
   }
 
   private function expectFailure(callable $act): void {
