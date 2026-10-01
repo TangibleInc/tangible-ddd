@@ -34,6 +34,9 @@
         <testsuite name="kernel">
             <directory suffix="Test.php">tests/Kernel</directory>
         </testsuite>
+        <testsuite name="conformance">
+            <directory suffix="Test.php">tests/Conformance</directory>
+        </testsuite>
     </testsuites>
 
     <source>
