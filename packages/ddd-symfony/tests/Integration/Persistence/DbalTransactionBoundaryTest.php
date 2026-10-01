@@ -154,6 +154,57 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
     self::assertSame(['b', 'dup'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows ORDER BY id'));
   }
 
+  /**
+   * The same swallowed error, but a LATER statement of the work (the outbox
+   * append of the command's fact, say) then fails with "current transaction
+   * is aborted" (25P02) and the work throws that. The failure is the
+   * aborted transaction, not the later statement: TransactionFailed, with
+   * the work's exception as previous (CR sf-7, cmd.commit-failure).
+   */
+  public function test_work_failing_on_the_aborted_transaction_it_caused_is_a_transaction_failure(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+    $boundary = new DbalTransactionBoundary($this->db);
+    $later = null;
+
+    try {
+      $boundary->run(function () use (&$later) {
+        $this->db->insert('sf_tx_rows', ['id' => 'a']);
+        try {
+          $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+        } catch (UniqueConstraintViolationException) {
+        }
+        try {
+          $this->db->insert('sf_tx_rows', ['id' => 'b']);
+        } catch (\Throwable $e) {
+          $later = new \RuntimeException('outbox write failed: ' . $e->getMessage(), 0, $e);
+          throw $later;
+        }
+      });
+      self::fail('expected TransactionFailed');
+    } catch (TransactionFailed $e) {
+      self::assertSame($later, $e->getPrevious(), 'previous = what the work threw');
+      self::assertStringContainsString('aborted', $e->getMessage());
+    }
+
+    self::assertFalse($this->db->isTransactionActive());
+    self::assertSame(['dup'], $this->secondConnection()->fetchFirstColumn('SELECT id FROM sf_tx_rows'));
+  }
+
+  public function test_a_work_exception_unrelated_to_an_aborted_transaction_is_rethrown_unchanged(): void {
+    $boundary = new DbalTransactionBoundary($this->db);
+    $boom = new \DomainException('business rule');
+
+    try {
+      $boundary->run(function () use ($boom): void {
+        $this->db->insert('sf_tx_rows', ['id' => 'a']);
+        throw $boom;
+      });
+      self::fail('expected the original');
+    } catch (\DomainException $e) {
+      self::assertSame($boom, $e);
+    }
+  }
+
   public function test_savepoint_mode_rolls_back_to_its_savepoint_when_the_inner_work_swallowed_an_error(): void {
     $this->db->insert('sf_tx_rows', ['id' => 'dup']);
     $boundary = new DbalTransactionBoundary($this->db, NestedPolicy::Savepoint);
