@@ -15,15 +15,18 @@
  *
  * HOW IT WORKS
  * ─────────────
- * Every bundled copy of tangible-ddd has this file as its composer "files"
- * entry-point.  When vendor/autoload.php is required by any consumer, this file
- * runs and:
+ * Every bundled copy of tangible-ddd reaches this file through its composer
+ * "files" entry-point (0.7.0 on: the version-unique loader/tangible-ddd-<slug>.php,
+ * which Composer's cross-vendor dedup cannot suppress; 0.2-0.6: this file
+ * directly). When vendor/autoload.php is required by any consumer, it runs and:
  *
  *   Priority 0  — registers THIS copy's version + path into Tangible_DDD_Versions.
  *   Priority 1  — Tangible_DDD_Versions::instance()->initialize_latest() picks the
  *                 highest registered version and runs its initializer exactly once.
- *                 The initializer prepends an spl_autoload for TangibleDDD\ classes
- *                 and require_once's all procedural ddd-wordpress/*.php files.
+ *                 The initializer prepends the winner autoloader for TangibleDDD\
+ *                 classes (loader/winner-autoloader.php), runs the load
+ *                 diagnostics (loader/load-diagnostics.php) and require_once's
+ *                 all procedural packages/ddd-wp/wordpress/*.php files.
  *   Priority 10 — host consumers boot against the initialised framework.
  *   Priority 30 — sidecars attach modules after their host is registered.
  *
@@ -263,49 +266,43 @@ if (!function_exists('tangible_ddd_initialize_0_7_0')) {
     /**
      * Boot this copy of tangible-ddd as the site winner.
      *
-     * (a) Prepend an spl_autoloader so THIS copy's classes take precedence over
-     *     any psr-4 maps a consumer's composer installed for TangibleDDD\.
-     * (b) require_once every procedural ddd-wordpress/*.php file exactly once.
+     * (a) Prepend the winner autoloader (loader/winner-autoloader.php) so THIS
+     *     copy's packages/ddd-core and packages/ddd-wp classes take precedence
+     *     over any psr-4 maps a consumer's composer installed for TangibleDDD\,
+     *     with the compat/ alias map and logged fall-through diagnostics.
+     * (b) Probe for a mixed load and for pre-window (0.2.x-0.5.x) copies
+     *     (loader/load-diagnostics.php; rulings X1). Logged, never thrown.
+     * (c) require_once every procedural packages/ddd-wp/wordpress/*.php file
+     *     exactly once.
      *
      * @param string $path Absolute path to the winning ddd plugin root.
      */
     function tangible_ddd_initialize_0_7_0(string $path): void
     {
+        // The registry records the winner before it calls this initializer.
+        $version = Tangible_DDD_Versions::instance()->winner()['version'] ?? 'unknown';
+
         // (a) Prepend autoloader — winner's classes beat consumer psr-4 maps.
-        spl_autoload_register(
-            static function (string $class) use ($path): void {
-                // TangibleDDD\WordPress\ → packages/ddd-wp/wordpress/
-                if (str_starts_with($class, 'TangibleDDD\\WordPress\\')) {
-                    $relative = substr($class, strlen('TangibleDDD\\WordPress\\'));
-                    $file     = $path . '/packages/ddd-wp/wordpress/' . str_replace('\\', '/', $relative) . '.php';
-                    if (file_exists($file)) {
-                        require_once $file;
-                    }
-                    return;
-                }
-                // TangibleDDD\ → packages/ddd-core/src/, then packages/ddd-wp/src/
-                // (one PSR-4 prefix over two directories; each file lives in
-                // exactly one of them, register 1.1).
-                if (str_starts_with($class, 'TangibleDDD\\')) {
-                    $relative = str_replace('\\', '/', substr($class, strlen('TangibleDDD\\'))) . '.php';
-                    foreach (['/packages/ddd-core/src/', '/packages/ddd-wp/src/'] as $dir) {
-                        $file = $path . $dir . $relative;
-                        if (file_exists($file)) {
-                            require_once $file;
-                            return;
-                        }
-                    }
-                }
-            },
-            true,   // throw on error
-            true    // prepend → winner beats any later psr-4
+        require_once $path . '/loader/load-diagnostics.php';
+        require_once $path . '/loader/winner-autoloader.php';
+        (new Tangible_DDD_Winner_Autoloader(
+            $path,
+            $version,
+            Tangible_DDD_Winner_Autoloader::aliases_from($path . '/compat/aliases.php')
+        ))->register();
+
+        // (b) Boot-time probes, before this copy loads anything of its own.
+        Tangible_DDD_Load_Diagnostics::at_winner_boot(
+            $version,
+            $path,
+            Tangible_DDD_Versions::instance()->all_registered()
         );
 
-        // (b) Procedural files — only files that define functions (not classes).
-        //     Class files under ddd-wordpress/ (di/HandlerClassNameInflector.php,
-        //     cli/class-ddd-command.php) are resolved on demand by the spl_autoload
-        //     registered above; require_once'ing them here would trigger class
-        //     loading before their interface dependencies are autoloaded.
+        // (c) Procedural files — only files that define functions (not classes).
+        //     Class files under wordpress/ (self/HandlerClassNameInflector.php,
+        //     cli/class-ddd-command.php) are resolved on demand by the winner
+        //     autoloader registered above; require_once'ing them here would trigger
+        //     class loading before their interface dependencies are autoloaded.
         //     cli/register.php executes \WP_CLI::add_command() (not just a function
         //     definition) and guards itself with WP_CLI, so also left to autoload.
         //     Order: db.php first (no deps); others depend on db helpers.
@@ -374,6 +371,9 @@ if (!function_exists('tangible_ddd_self_consume')) {
         }
 
         try {
+            // The legacy path on purpose: every 0.2-0.6 copy's self-consume
+            // requires it from whichever copy won, so the root ships it as a
+            // forwarding shim (register 1.1, B5) and this copy uses it too.
             require_once $winner['path'] . '/ddd-wordpress/self/index.php';
 
             // Install/heal the framework's own six tables on admin_init
@@ -396,7 +396,7 @@ if (!function_exists('tangible_ddd_self_consume')) {
 // ─── Immediate init for non-WP contexts (unit tests, CLI scripts) ─────────────
 // When add_action does not exist there is no hook system to fire registration +
 // initialization on.  The register call above already ran; now initialize so that
-// procedural ddd-wordpress/*.php files are loaded before test code runs.
+// procedural packages/ddd-wp/wordpress/*.php files are loaded before test code runs.
 // This mirrors how unit-test bootstraps load Action Scheduler directly.
 if (!function_exists('add_action') && !Tangible_DDD_Versions::instance()->is_initialized()) {
     Tangible_DDD_Versions::instance()->initialize_latest();
