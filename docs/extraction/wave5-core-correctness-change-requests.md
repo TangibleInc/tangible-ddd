@@ -14,7 +14,7 @@ Every item is additive: a new interface, class, enum case, optional trailing par
 | W2 behaviour type registry | `Domain/ValueObjects/Behaviours/{IBehaviourTypes,BehaviourTypes,BaseBehaviourConfig}` | `WorkflowItemsAndTypesTest` |
 | E1 handler-class effects | `Runtime/Effects/{IEffectCommand,IExternalEffectHandler,NoEffectHandler,IExternalEffectCommand,EffectMiddleware,RecordEffect}`, `Runtime/Delivery/SubscriptionRegistrar` | `tests/Unit/Runtime/EffectHandlerAndStateTest` |
 | E2 performed / recorded | `Runtime/Effects/{EffectState,EffectEntry,ITracksEffectState,UnrecordedEffects}`, `Runtime/Ops/Layer::Effect`, `Testing/InMemoryEffectJournal` | `EffectHandlerAndStateTest`, `EffectMiddlewareTest`, `OperatorViewTest` |
-| AW2 parked fact resume | `Application/Process/{ProcessRunner,ResumeReport,ProcessLockUnavailable}`, `Runtime/Scheduling/{ICarriesFacts,WakeupIntent}`, `Testing/InMemoryWakeupScheduler` | `tests/Unit/Process/ProcessRunnerWave5Test`, `ProcessRunnerWave3Test` (inverted case) |
+| AW2 parked fact resume | `Application/Process/{ProcessRunner,ResumeReport,ProcessLockUnavailable}`, `Runtime/Scheduling/{ICarriesFacts,WakeupIntent}`, `Testing/{InMemoryParkingScheduler,InMemoryWakeupScheduler}` | `tests/Unit/Process/ProcessRunnerWave5Test` |
 | AW1 resuming event id | `Application/Process/{LongProcess,ProcessSteps,ResumeSource,ProcessRunner}` | `ProcessRunnerWave5Test` |
 
 ## CR-W5CC-1: `ConflictException` (L10)
@@ -36,7 +36,8 @@ Every item is additive: a new interface, class, enum case, optional trailing par
 ## CR-W5CC-4: `IBehaviourTypes` (W2)
 
 - **What.** `interface IBehaviourTypes { register(string $type, string $class): void; find(string $type): ?string; }` and `final class BehaviourTypes implements IBehaviourTypes` (in-memory). `BaseBehaviourConfig::register_type()` writes to `HostDefaults::get(IBehaviourTypes::class)` when a host provided one, else to a process-wide fallback; `class_for_type()` asks the host registry, then the fallback, and still throws `\InvalidArgumentException("Invalid behaviour type: …")`. The private static `$type_map` is gone.
-- **Requests.** sf: build one `BehaviourTypes` service, populate it at compile/boot time from autoconfigured `BaseBehaviourConfig` subclasses (an attribute such as `#[BehaviourType('txp_…')]`, or `get_behaviour_type()` on a no-argument instance), and provide it in `HostDefaultsInstaller`. TXP can then drop `ToyDigestConfig::register()` in the handler constructor. wp, pdo: optional; their consumers' `register_type()` calls keep working through the fallback.
+- **Fix round 1.** Include-time registrations are handed over to the host registry: `BaseBehaviourConfig::hand_over_types(IBehaviourTypes $to)` copies them (the host entry wins on a clash) and drops the fallback; the facade also does it on its first call that sees a host registry. `BehaviourTypes::all()` (concrete class only) lists the map. `BaseBehaviourConfig::reset_types_for_tests()` clears the fallback (`HostDefaults::reset_for_tests()` does not). Hosts resolve stored types through `class_for_type()` / `from_json()`; a host that reads its `IBehaviourTypes` service directly calls `hand_over_types()` once at boot, after providing it. The `HostDefaults` lookup is the one Domain-to-Runtime reach in this class, kept for the 0.6 static facade.
+- **Requests.** sf: build one `BehaviourTypes` service, populate it at compile/boot time from autoconfigured `BaseBehaviourConfig` subclasses (an attribute such as `#[BehaviourType('txp_…')]`, or `get_behaviour_type()` on a no-argument instance), and provide it in `HostDefaultsInstaller`, then call `BaseBehaviourConfig::hand_over_types()` with it. TXP can then drop `ToyDigestConfig::register()` in the handler constructor. wp, pdo: optional; their consumers' `register_type()` calls keep working through the fallback.
 
 ## CR-W5CC-5: handler-class effects (E1)
 
@@ -70,22 +71,24 @@ Every item is additive: a new interface, class, enum case, optional trailing par
   - `ProcessRunner::resume_with_outcome(IIntegrationEvent $event, string $event_id = '')` and `resume_on_event(…, string $event_id = '')` (optional trailing parameter; `''` = the ambient fact's id from `Correlation::current_fact()` when it is the same class). The `resume:` subscriber passes the delivery's event id.
   - When one candidate's lock acquisition fails (`ProcessLockUnavailable`), the runner writes `resume_fact(…)` due after the wake backoff (2 s) in its own transaction, records the candidate as `ResumeReport::$deferred` (new trailing property; `is_unheard()` counts it), and continues with the next candidate. A parked first-wins (0.6-shaped) candidate counts as having taken the fact. The `resume:` subscriber returns normally, so the ledger marks it delivered: the answer never spends its per-subscriber budget and can never be dead-lettered while its process waits.
   - The wake (`wake()` → ResumeRetry with a fact) re-reads under the lock and resumes only if the process is still `suspended` at the parked step and its await still accepts the fact (stale = no-op, completed). Contention there propagates and `Drain` re-queues the claimed intent on the wake budget (2 s × 2ⁿ, cap 300 s, reported exhausted at 10 but never dropped), visible in the `wakeup` operator layer.
-  - Parked only when the scheduler implements `ICarriesFacts`, the event id is known and the fact encodes (no NonReversibleValue). Otherwise, and for a lock failure raised inside the resumed step, `ProcessLockUnavailable` propagates as in wave 3. `InMemoryWakeupScheduler` implements `ICarriesFacts`.
+  - Parked only when the scheduler implements `ICarriesFacts`, the event id is known and the fact encodes (no NonReversibleValue). Otherwise, and for a lock failure raised inside the resumed step, `ProcessLockUnavailable` propagates as in wave 3.
+  - **Opt-in on mem (fix round 1).** `InMemoryWakeupScheduler` does not implement `ICarriesFacts` (it is no longer `final`; `lenient()` returns `static`). The new `final class Testing\InMemoryParkingScheduler extends InMemoryWakeupScheduler implements ICarriesFacts` opts in. The mem conformance host keeps the wave-3 rule, so `lock.acquire-error` passes unchanged, and `ProcessRunnerWave3Test` is back to its base version.
+  - **R1 on the wake path (fix round 1).** `resume_parked()` recomputes the candidate's exactness from the store lookup (`candidates()`) under the lock and passes it to the shared resume, so a subclass fact parked on an exact-match store reaches only an `AwaitAny`, as on delivery; a process no longer waiting for the fact is a no-op.
 - **Why a capability marker.** pdo, wp and sf do not persist a fact on their wakeup rows yet. Without the marker the runner would park facts that come back without their payload. With it, every host keeps the wave-3 behaviour until it adds the column.
 - **Requests.**
   - sf (TXP's host, the one this item is for): a nullable JSON `fact` column on `ddd_wakeups`, written by `schedule()` and returned on `claim_due()`, `DbalWakeupScheduler implements ICarriesFacts`, and `ProcessRunnerWakeTarget` already routes ResumeRetry through `wake()`. TXP then inverts `ProcessLockContentionTest::testAnAnswerHeldOffLongerThanTheDeliveryBudgetIsDeadLetteredAndTheProcessKeepsWaiting`.
   - pdo (`{prefix}_ddd_jobs`) and wp (`{prefix}_ddd_wakeups`; the AS projection keeps `['key' => …]`): the same column and marker. Optional.
-  - conformance: `lock.acquire-error`'s resume path (`LockScenarios.php:90-100`) pins the wave-3 behaviour ("the resume subscriber failed; its delivery is retried"). On mem it now fails, because the mem scheduler carries facts (`MemLockScenariosTest::test_lock_acquire_error` and `DeferredStartLockScenariosTest::test_lock_acquire_error`; every other mem and simulated case passes, 93/95). Proposed: when `$processes->worker()`'s scheduler is an `ICarriesFacts`, assert the outcome is complete, one ResumeRetry intent carrying the fact exists, and after `advance_clock(PAST_WAKE_BACKOFF)` + `drain_once()` the partial gather is saved (`version + 1`); otherwise keep the current assertions. A new `lock.parked-answer` scenario from `ProcessRunnerWave5Test::test_an_answer_held_off_longer_than_the_delivery_budget_still_resumes_the_process` would cover the host column. `process.await-all-concurrent` ("whichever lost the lock is retried by its delivery runner") should also drain once after the deliveries, for a host that parks.
+  - conformance (no longer blocking since fix round 1; needed before any host declares `ICarriesFacts`): `lock.acquire-error`'s resume path (`LockScenarios.php:90-100`) pins the wave-3 behaviour ("the resume subscriber failed; its delivery is retried"). Proposed: when `$processes->worker()`'s scheduler is an `ICarriesFacts`, assert the outcome is complete, one ResumeRetry intent carrying the fact exists, and after `advance_clock(PAST_WAKE_BACKOFF)` + `drain_once()` the partial gather is saved (`version + 1`); otherwise keep the current assertions. A new `lock.parked-answer` scenario (with `MemHostFixture` switching to `InMemoryParkingScheduler` for it, or for all cases once `lock.acquire-error` branches) from `ProcessRunnerWave5Test::test_an_answer_held_off_longer_than_the_delivery_budget_still_resumes_the_process` would cover the host column. `process.await-all-concurrent` ("whichever lost the lock is retried by its delivery runner") should also drain once after the deliveries, for a host that parks.
 
 ## CR-W5CC-8: the resuming fact's event id (AW1)
 
-- **What.** `LongProcess::resumed_by_event_id(): ?string`: the event id of the fact that resumed the current step; null in a step no fact resumed (first step, alarm PROCEED, precheck, an id-less fact) and in later steps. `@internal LongProcess::mark_resumed_by(?string)`. Stored as `ProcessSteps::$resumed_by` (`['step_index' => int, 'event_id' => string]`, new nullable trailing constructor parameter), written with the resuming save. A `#[RetryStep]` re-run, an `#[Async]` continuation and a parked resume (AW2) read the same id from the row. `ResumeSource::of_mechanism()` gains an optional `$event_id` and keeps it in the encoded event; `ResumeSource::fact()` / `event()` are that encoding for parked facts.
+- **What.** `LongProcess::resumed_by_event_id(): ?string`: the event id of the fact that resumed the current step; null in a step no fact resumed (first step, alarm PROCEED, precheck, an id-less fact) and in later steps. Written by the runner through `ProcessSteps::mark_resumed_by(?string)` on the persistence-only `LongProcess::steps()`; since fix round 1 the aggregate has no setter, so an application subclass cannot overwrite the cause. Stored as `ProcessSteps::$resumed_by` (`['step_index' => int, 'event_id' => string]`, new nullable trailing constructor parameter), written with the resuming save. A `#[RetryStep]` re-run, an `#[Async]` continuation and a parked resume (AW2) read the same id from the row. `ResumeSource::of_mechanism()` gains an optional `$event_id` and keeps it in the encoded event; `ResumeSource::fact()` / `event()` are that encoding for parked facts.
 - **Store contract.** None for AW1: `resumed_by` lives in the `steps` JSON every host already persists whole (mem, pdo `ProcessCodec`, wp, sf `ProcessRowCodec`), and older readers ignore the extra key. The new per-host column is AW2's `fact` on the wakeup rows (CR-W5CC-7).
 - **Not done.** For an AwaitAll the id is the fact that completed the gather; one event id per gathered key (the rollup's "AwaitAll would need one event id per gathered key") would change `AwaitAll`'s persisted tally and is left for a later round.
 
 ## Behaviour changes
 
-1. **Fact resume under contention (AW2), mem only until a host opts in.** On a scheduler with `ICarriesFacts`, a resume that cannot lock no longer fails the `resume:` subscriber; it parks the fact as a ResumeRetry. `ProcessRunnerWave3Test` had pinned the old behaviour and is inverted. Conformance `lock.acquire-error` on mem needs the update in CR-W5CC-7.
+1. **Fact resume under contention (AW2), mem only until a host opts in.** On a scheduler with `ICarriesFacts` (on mem: `InMemoryParkingScheduler` only), a resume that cannot lock no longer fails the `resume:` subscriber; it parks the fact as a ResumeRetry. The default mem scheduler, `ProcessRunnerWave3Test` and conformance `lock.acquire-error` keep the wave-3 behaviour.
 2. **Recorded effects are not recorded again (E2), mem only until a host opts in.** With an `ITracksEffectState` journal, re-dispatching an effect whose entry is Recorded returns the journaled result without calling `record()`. `EffectMiddlewareTest::test_re_dispatching_under_a_new_command_id_does_not_bypass_the_journal` now expects one record instead of two. Conformance `effect.journal-reuse` passes unchanged on mem.
 3. **Operator layer vocabulary.** `Layer::cases()` has one more value, `effect`, before `transport`. A host that lists layers explicitly (wp `WpOperatorView::LAYERS`) is unaffected until it adds it.
 4. **Item command ids (W4).** The first command an item's `execute_one()` dispatches gets `for_item()` as its command id (it was random).
@@ -93,9 +96,29 @@ Every item is additive: a new interface, class, enum case, optional trailing par
 
 ## Verification on this branch
 
+See the fix-round-1 section below for the current numbers; the list here is the first round's.
+
+
 - `vendor/bin/phpunit -c packages/ddd-core/phpunit.xml`: OK (512 tests).
 - `vendor/bin/phpunit` (root): OK (929 tests, 9 PHPUnit deprecations as on the base).
 - `DDD_PDO_DATABASE=ddd_w5_core_correctness vendor/bin/phpunit -c packages/ddd-core/phpunit.pdo.xml --testsuite pdo` on MySQL 8: OK (459 tests).
 - ddd-symfony full suite on Postgres 16 (own database, vendor refreshed from this branch): OK (427 tests).
 - ddd-conformance (vendor refreshed from this branch): 93/95; the two failures are `lock.acquire-error` on mem and simulated, as described in CR-W5CC-7.
 - `vendor/bin/deptrac analyse`: 0 violations, 0 errors. `vendor/bin/phpstan analyse -c phpstan-core.neon`: no errors. WP-symbol grep over `packages/ddd-core/src`: empty. `composer cs`: no drift.
+
+## Fix round 1
+
+Review findings addressed:
+
+- **major, conformance red:** fact carrying on mem is opt-in (`InMemoryParkingScheduler`); see CR-W5CC-7. ddd-conformance passes on this branch unchanged.
+- **minor, W2 fallback:** hand-over to the host registry and a reset hook; see CR-W5CC-4.
+- **minor, R1 on the wake path:** exactness recomputed; see CR-W5CC-7; test `ProcessRunnerWave5Test::test_a_parked_wake_keeps_the_r1_reachability_guard` (exact-match legacy store).
+- **minor, `mark_resumed_by()` public on the aggregate:** moved to `ProcessSteps`; see CR-W5CC-8.
+- **minor, ratification:** no code change; CR-W5CC-1..8 and the sf/pdo/wp requests stand as recorded for the coordinator.
+
+Verification after fix round 1:
+
+- `vendor/bin/phpunit -c packages/ddd-core/phpunit.xml`: OK (517 tests).
+- `vendor/bin/phpunit` (root): OK (929 tests, 9 PHPUnit deprecations as on the base).
+- ddd-conformance on a scratch copy of this branch (`COMPOSER_ROOT_VERSION=dev-main composer install`, `vendor/bin/phpunit`): OK (95 tests).
+- `vendor/bin/deptrac analyse`: 0 violations, 0 errors. `vendor/bin/phpstan analyse -c phpstan-core.neon`: no errors. WP-symbol grep over `packages/ddd-core/src` (calls, `$wpdb`, `\WP_*` classes, `ABSPATH`): empty. `composer cs`: no drift.
