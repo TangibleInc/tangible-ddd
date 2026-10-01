@@ -33,6 +33,7 @@ use TangibleDDD\Conformance\ScenarioRows;
 use TangibleDDD\Conformance\SimulatedCrash;
 use TangibleDDD\Conformance\StatementErrors;
 use TangibleDDD\Conformance\Support\ConformanceConfig;
+use TangibleDDD\Conformance\Support\ConnectionView;
 use TangibleDDD\Conformance\Support\FaultInjectingAuditSink;
 use TangibleDDD\Conformance\Support\HandlerMapMiddleware;
 use TangibleDDD\Conformance\Support\InterleavingProcessLock;
@@ -129,6 +130,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected RecordingLogger $logger;
   protected RecordingSignalDispatcher $signals;
   protected InMemoryTransactionBoundary $boundary;
+  protected ConnectionView $outboxConnection;
   protected InMemoryRelayPauseStore $pauses;
   protected InMemoryOutboxStore $outbox;
   protected RecordingOutboxStore $relayStore;
@@ -186,7 +188,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->clock = new FrozenClock(new \DateTimeImmutable(self::START));
     $this->boundary = new InMemoryTransactionBoundary(NestedPolicy::Reject, $this->logger);
     $this->pauses = new InMemoryRelayPauseStore();
-    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->boundary);
+    $this->outboxConnection = new ConnectionView($this->boundary);
+    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->outboxConnection);
     $this->relayStore = new RecordingOutboxStore($this->outbox);
     // CONF-5: a shared-connection transport enlists in the boundary, so a
     // rolled-back relay transaction takes its submission with it.
@@ -361,7 +364,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       $competitor = $this->race;
       $this->race = null;
       $processor->between_submit_and_accept(function () use ($competitor, &$kept): void {
-        $competitor();
+        $this->outboxConnection->asAnotherConnection($competitor);
         // What the competitor committed on its own connection survives the
         // relay transaction's rollback: keep every participant but the
         // transport (the relay's own write) as the competitor left it.

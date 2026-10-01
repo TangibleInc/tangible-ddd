@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestDox;
 use TangibleDDD\Conformance\ConformanceTestCase;
 use TangibleDDD\Conformance\Fixtures\WidgetRegistered;
+use TangibleDDD\Conformance\RelayRace;
 use TangibleDDD\Conformance\SimulatedCrash;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Runtime\Delivery\Subscriber;
@@ -55,6 +56,45 @@ abstract class RelayScenarios extends ConformanceTestCase {
     self::assertSame(0, $stats['dlq']);
     self::assertSame(0, $stats['dead_letters']);
     self::assertSame([], $outbox->claim(10, $this->host->clock()->now()->modify('+1 day'), 30), 'accepted stays accepted');
+
+    if ($this->host instanceof RelayRace) {
+      $this->lateHolderOfARelayStep($this->host);
+    }
+  }
+
+  /**
+   * CR sf-3 (wave-2 notes, core sfc-1): the relay step submits, its lease
+   * expires, another relay re-claims and accepts the row, and only then
+   * does the first step's accept() run. It matches 0 rows (lease lost). On
+   * a transport sharing the store's connection the late holder's submission
+   * rolls back with it, so the fact is not transported twice.
+   */
+  private function lateHolderOfARelayStep(RelayRace $race): void {
+    $id = $this->publishFact(new WidgetRegistered('w-2'));
+    $outbox = $this->host->outbox();
+    $shared = $this->host->transport()->sharesConnectionWith($outbox);
+    $before = $this->transportedIds();
+
+    $race->raceNextRelayAfterSubmit(function () use ($outbox, $id): void {
+      $this->host->advanceClock(self::PAST_ANY_LEASE);
+      $b = $outbox->claim(10, $this->host->clock()->now(), 30);
+      self::assertSame([$id], array_map(static fn (Claim $c) => $c->event_id, $b), 'the expired lease is re-claimed by B');
+      self::assertTrue($outbox->accept($b[0], 'ref-b'), 'B accepts first');
+    });
+    $report = $this->host->relayOnce();
+
+    self::assertSame([$id], $report->claimed);
+    self::assertSame([], $report->accepted, 'the late holder never counts as accepted');
+    self::assertSame([$id], $report->leaseLost, 'its accept matched 0 rows');
+    $stats = $this->host->outboxAdministration()->stats();
+    self::assertSame(2, $stats['accepted'], 'B\'s acceptance stands');
+    self::assertSame(0, $stats['pending']);
+    $added = array_values(array_diff_key($this->transportedIds(), $before));
+    if ($shared) {
+      self::assertSame([], $added, 'shared connection: the late holder\'s submission rolled back with its 0-row accept');
+    } else {
+      self::assertSame([$id], $added, 'separate connection: the submission stays; the ledger keeps the effect single');
+    }
   }
 
   #[Group('relay.crash-after-submit')]
