@@ -10,7 +10,10 @@ namespace TangibleDDD\Conformance;
  *
  * This is a copy of the register table, not a second source of truth: a
  * change to either is a register edit, and CatalogueTest pins the per-host
- * wave lists of register section 8 against it.
+ * wave lists of register section 8 against it. The three D3 ids
+ * `process.await-*` are change request CR-W4C4-1
+ * (docs/extraction/wave4-conformance-4-change-requests.md), pending their
+ * register row.
  */
 final class ScenarioCatalogue {
 
@@ -55,6 +58,10 @@ final class ScenarioCatalogue {
     'process.fresh-process-resume'            => [null, 3, 3, 3],
     'process.start-from-web'                  => [null, null, null, 3],
     'process.alarm-long'                      => [4, 4, 4, 4],
+    // CR-W4C4-1 (not yet in the register table): D3 for TXP process-kernel
+    'process.await-keyed-precheck'            => [4, 4, null, 4],
+    'process.await-any-cancellation'          => [4, 4, null, 4],
+    'process.await-all-dynamic'               => [4, 4, null, 4],
     'workflow.fact-ignition-once'             => [4, null, null, 4],
     'worker.no-leak'                          => [1, 3, 3, 2],
     'audit.sink-fails'                        => [2, 3, 2, 3],
@@ -112,6 +119,8 @@ final class ScenarioCatalogue {
     'process.crash-mid-step'                  => self::S . 'FreshProcessScenarios',
     'process.fresh-process-resume'            => self::S . 'FreshProcessScenarios',
     'process.start-from-web'                  => self::S . 'WebStartScenarios',
+    // wave 4: new cases only, so a wave-3 host class runs unchanged
+    'process.alarm-long'                      => self::S . 'AlarmScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
