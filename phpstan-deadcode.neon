@@ -7,7 +7,7 @@
 #   composer run deadcode
 #
 # Filter to framework findings only (consumers analyzed as usage providers):
-#   composer run deadcode | grep -E "ddd-(src|wordpress)"
+#   composer run deadcode | grep -E "packages/ddd-(core|wp)/"
 
 includes:
   - vendor/tomasvotruba/unused-public/config/extension.neon
@@ -23,8 +23,9 @@ parameters:
     - ../tangible-cred/vendor/psr/container/src
 
   paths:
-    - ddd-src
-    - ddd-wordpress
+    - packages/ddd-core/src
+    - packages/ddd-wp/src
+    - packages/ddd-wp/wordpress
     - ../tangible-cred/src
     - ../tangible-cred/includes
     - ../tangible-datastream/src
@@ -33,7 +34,7 @@ parameters:
     - ../lms-monorepo/plugins/quiz/src
 
   excludePaths:
-    - ddd-wordpress/cli/class-ddd-command.php   # scaffolder templates = heredoc code, not calls
+    - packages/ddd-wp/wordpress/cli/class-ddd-command.php   # scaffolder templates = heredoc code, not calls
 
   unused_public:
     methods: true
