@@ -17,9 +17,15 @@ final class RecordingCommand implements ICommand {
 
   public function __construct(public readonly string $label, public readonly mixed $data = null) {}
 
+  /** @var null|\Closure(self): void runs inside send(), after recording (a synchronous handler) */
+  public static ?\Closure $onSend = null;
+
   public function send(): mixed {
     self::$sent[] = $this;
     self::$hints[] = \TangibleDDD\Runtime\Ids\DeterministicCommandId::peek();
+    if (self::$onSend !== null) {
+      (self::$onSend)($this);
+    }
     return null;
   }
 

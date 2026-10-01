@@ -39,6 +39,25 @@ final class DeterministicCommandId {
   }
 
   /**
+   * Namespace of the process-step ids (fixed; changing it changes every
+   * step command id).
+   */
+  public const PROCESS_NAMESPACE = '3f1d6c2e-8a4b-5e7f-9c0d-1b2a3c4d5e6f';
+
+  /**
+   * The 32-hex deterministic id of the $ordinal-th command a process step
+   * dispatches (register 3.8 "inside a process step: uuid5(process_id,
+   * step_index)", wave 3 CR-W3C-6): uuid5(uuid5(NS, "{consumer}:{process_id}"),
+   * "{phase}:{step}:{ordinal}"), phase `step` for forward steps and `undo`
+   * for compensations (keyed by the compensated step's name). A re-run of the
+   * same step after a crash dispatches the same ids.
+   */
+  public static function forStep(string $consumer, int $processId, int|string $step, int $ordinal, bool $compensation = false): string {
+    $process = NameBasedUuid::v5(self::PROCESS_NAMESPACE, $consumer . ':' . $processId);
+    return str_replace('-', '', NameBasedUuid::v5($process, ($compensation ? 'undo' : 'step') . ':' . $step . ':' . $ordinal));
+  }
+
+  /**
    * Run $work with $id as the next command id; null runs it without a hint.
    *
    * @template T
