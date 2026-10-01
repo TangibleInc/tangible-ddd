@@ -413,3 +413,17 @@ if (
     tangible_ddd_register_0_7_0();
     Tangible_DDD_Versions::instance()->initialize_latest();
 }
+
+// ─── Unbooted WordPress (test bootstraps) ─────────────────────────────────────
+// A bootstrap that stubs add_action before vendor/autoload.php and never fires
+// plugins_loaded leaves the winner uninitialized, so ddd-wp's lazy HostDefaults
+// wiring would never install. wire_unbooted() installs it, guarded to this copy's
+// classes; under real WordPress (WPINC) it is a no-op.
+if (
+    function_exists('add_action')
+    && !Tangible_DDD_Versions::instance()->is_initialized()
+    && is_file(__DIR__ . '/packages/ddd-wp/wordpress/unbooted.php')
+) {
+    require_once __DIR__ . '/packages/ddd-wp/wordpress/unbooted.php';
+    \TangibleDDD\WordPress\wire_unbooted(__DIR__);
+}

@@ -147,8 +147,11 @@ final class LateWordPressBootTest extends TestCase {
   }
 
   public function test_the_unbooted_wiring_steps_aside_once_the_winner_booted(): void {
-    // This process initialized the winner at autoload (no add_action then),
-    // so its hooks.php owns the wiring.
+    // The scenario is "the winner has booted, so its hooks.php owns the wiring".
+    // Establish it here instead of relying on which test ran first.
+    if (!\Tangible_DDD_Versions::instance()->is_initialized()) {
+      \Tangible_DDD_Versions::instance()->initialize_latest();
+    }
     self::assertTrue(\Tangible_DDD_Versions::instance()->is_initialized());
     HostDefaults::reset_for_tests();
 

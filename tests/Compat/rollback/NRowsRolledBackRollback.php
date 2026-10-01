@@ -182,6 +182,9 @@ final class NRowsRolledBackRollback extends RollbackTestCase {
 
   /** The RbNote listener fails once under N: a `failed` ledger row and a pending `{prefix}_ddd_redeliver`. */
   private function failOnce(): string {
+    // 0.7 gives WordPress listeners one attempt by default; this fixture needs
+    // a pending redelivery, so the consumer opts into the retry budget.
+    update_option($this->config->option(WpLedgeredDelivery::ATTEMPTS_OPTION), WpLedgeredDelivery::BUDGET, false);
     update_option(RbConsumer::LISTENER_DOWN_OPTION, 1, false);
     $eventId = Uuid::v4();
     $this->nDeliver(new RbNote('flaky'), $eventId);

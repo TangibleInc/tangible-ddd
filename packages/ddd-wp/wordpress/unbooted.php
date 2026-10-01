@@ -31,6 +31,11 @@ if (!function_exists(__NAMESPACE__ . '\\wire_unbooted')) {
     if (function_exists('did_action') && did_action('plugins_loaded')) {
       return;
     }
+    // The loader can be included without Composer's autoloader (e.g. a
+    // scaffold snippet requiring tangible-ddd.php directly): nothing to wire.
+    if (!class_exists(\TangibleDDD\WordPress\Adapter\HostDefaultsWiring::class)) {
+      return;
+    }
     \TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register_unbooted($root);
   }
 }

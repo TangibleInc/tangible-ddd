@@ -78,6 +78,11 @@ if ($mode !== 'stubs-first') {
   // packaging), do here what it will do at its include time.
   $report['loader_wires'] = function_exists('TangibleDDD\\WordPress\\wire_unbooted');
   if (!$report['loader_wires'] || $foreign) {
+    if ($foreign) {
+      // The loader already wired its own root at include time; model a
+      // process where only another distribution's wiring is installed.
+      HostDefaults::reset_for_tests();
+    }
     require_once $root . '/packages/ddd-wp/wordpress/unbooted.php';
     \TangibleDDD\WordPress\wire_unbooted($foreign ? sys_get_temp_dir() . '/another-tangible-ddd' : $root);
   }
