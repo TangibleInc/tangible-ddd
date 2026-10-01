@@ -129,3 +129,7 @@ jobs:
         run: vendor/bin/deptrac analyse --no-progress
       - name: ddd-core clean install
         run: tests/Compat/core-clean-install.sh
+      - name: CR-PK-5 transitional allowances expired
+        run: php tests/Compat/check-allowances.php
+      - name: Release artifact (git archive)
+        run: tests/Compat/release-artifact.sh HEAD

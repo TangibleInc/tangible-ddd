@@ -1,0 +1,118 @@
+# Split mirrors of the package directories (register 1.5, section 8 wave 4).
+#
+#   splitsh-lite --prefix=packages/<name>   for ddd-core, ddd-symfony and
+#   ddd-wp (the last only as a layering artifact: WordPress plugins keep
+#   requiring tangible/ddd). One version line for all packages (0.7.0).
+#
+# workflow_dispatch ONLY, and no secrets: it never runs on a push, holds
+# read-only permissions, and pushes nothing anywhere. It computes each split
+# commit, checks the split tree carries the package it names, and hands the
+# commit back as a git bundle artifact. Publishing (creating the mirror
+# repositories, pushing the split commits, tagging) is a separate step that
+# waits for the operator's approval and is deliberately not in this file.
+name: split
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to split
+        required: true
+        default: extraction/ddd-packages
+
+permissions:
+  contents: read
+
+concurrency:
+  group: split-${{ inputs.ref }}
+  cancel-in-progress: false
+
+env:
+  # splitsh/lite v2.0.0 (git2go v34, which needs libgit2 1.5).
+  SPLITSH_LITE_REF: a7e2d275b90c2376931a465f93451b0b5b89c87f
+  LIBGIT2_VERSION: 1.5.2
+  LIBGIT2_SHA256: 57638ac0e319078f56a7e17570be754515e5b1276d3750904b4214c92e8fa196
+
+jobs:
+  split:
+    name: split ${{ matrix.package }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - prefix: packages/ddd-core
+            package: tangible/ddd-core
+          - prefix: packages/ddd-symfony
+            package: tangible/ddd-symfony
+          - prefix: packages/ddd-wp
+            package: tangible/ddd-wp
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          # splitsh-lite walks the whole history of the prefix.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      - name: Build libgit2 and splitsh-lite
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake pkg-config libssl-dev zlib1g-dev
+          prefix="$RUNNER_TEMP/libgit2"
+          curl -fsSL -o "$RUNNER_TEMP/libgit2.tar.gz" "https://github.com/libgit2/libgit2/archive/refs/tags/v${LIBGIT2_VERSION}.tar.gz"
+          echo "${LIBGIT2_SHA256}  $RUNNER_TEMP/libgit2.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/libgit2.tar.gz" -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/libgit2-${LIBGIT2_VERSION}" -B "$RUNNER_TEMP/libgit2-build" \
+            -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_CLI=OFF
+          cmake --build "$RUNNER_TEMP/libgit2-build" --parallel
+          cmake --install "$RUNNER_TEMP/libgit2-build"
+          git clone --quiet https://github.com/splitsh/lite.git "$RUNNER_TEMP/splitsh-lite"
+          git -C "$RUNNER_TEMP/splitsh-lite" -c advice.detachedHead=false checkout --quiet "$SPLITSH_LITE_REF"
+          (cd "$RUNNER_TEMP/splitsh-lite" && \
+            PKG_CONFIG_PATH="$prefix/lib/pkgconfig" go build -o "$RUNNER_TEMP/bin/splitsh-lite" .)
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$prefix/lib" >> "$GITHUB_ENV"
+
+      - name: Split ${{ matrix.prefix }}
+        id: split
+        run: |
+          set -euo pipefail
+          sha="$(splitsh-lite --prefix="${{ matrix.prefix }}" --origin=HEAD)"
+          [ -n "$sha" ] || { echo "::error::splitsh-lite returned no commit"; exit 1; }
+          name="$(git show "$sha:composer.json" | jq -r .name)"
+          if [ "$name" != "${{ matrix.package }}" ]; then
+            echo "::error::the split of ${{ matrix.prefix }} carries $name, expected ${{ matrix.package }}"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ${{ matrix.package }}"
+            echo ""
+            echo "- source: \`${{ inputs.ref }}\` at \`$(git rev-parse HEAD)\`"
+            echo "- split commit of \`${{ matrix.prefix }}\`: \`$sha\`"
+            echo "- files: $(git ls-tree -r --name-only "$sha" | wc -l)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bundle the split commit
+        run: |
+          set -euo pipefail
+          short="${{ matrix.package }}"; short="${short#tangible/}"
+          git branch --force "split/$short" "${{ steps.split.outputs.sha }}"
+          git bundle create "$RUNNER_TEMP/$short.bundle" "split/$short"
+          git bundle verify "$RUNNER_TEMP/$short.bundle"
+          echo "BUNDLE=$RUNNER_TEMP/$short.bundle" >> "$GITHUB_ENV"
+          echo "SHORT=$short" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: split-${{ env.SHORT }}
+          path: ${{ env.BUNDLE }}
+          if-no-files-found: error
+          retention-days: 30
