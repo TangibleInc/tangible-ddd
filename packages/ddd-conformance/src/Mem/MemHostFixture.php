@@ -22,6 +22,7 @@ use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
 use TangibleDDD\Conformance\ProcessWorker;
@@ -119,7 +120,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in setUp().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -587,6 +588,20 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   public function failNextWakeHandoff(string $reason): void {
     $this->wakeFaults->failNext($reason);
+  }
+
+  // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
+
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    $this->processStore->corruptClassForTests($processId, $missingClass);
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    return $this->processStore->statusOf($processId);
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    return $this->processStore->quarantineReasonOf($processId);
   }
 
   // ── mem-only read-back (not HostFixture) ─────────────────────────────────
