@@ -7,6 +7,7 @@ namespace TangibleDDD\Conformance\Support;
 use TangibleDDD\Conformance\RelayReport;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 
 /**
@@ -14,6 +15,9 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
  * did into a RelayReport. The core OutboxProcessor returns counts
  * (ProcessingResult); the scenarios assert by event id, so a host hands the
  * processor this decorator around its store and reads report() afterwards.
+ *
+ * It also forwards IReportsClaimDeadLetters (CR-PDO-6), so the relay step
+ * sees the inner store's claim-time dead letters as it would undecorated.
  *
  * Every call goes to the inner store unchanged; only the outcome is noted:
  * claim() → claimed; accept() true → accepted; retryLater() true → retried;
@@ -26,7 +30,7 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
  * An accept() inside a transaction that later fails to commit is still
  * reported as accepted.
  */
-final class RecordingOutboxStore implements IOutboxStore {
+final class RecordingOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
   /** @var array{claimed: list<string>, accepted: list<string>, retried: list<string>, deadLettered: list<string>, leaseLost: list<string>} */
   private array $seen;
@@ -57,6 +61,15 @@ final class RecordingOutboxStore implements IOutboxStore {
       $this->seen['claimed'][] = $c->event_id;
     }
     return $claims;
+  }
+
+  /**
+   * CR-PDO-6 rule: pass the inner store's claim-time dead letters to the
+   * relay step (which signals and reports them); [] when the inner store
+   * does not implement IReportsClaimDeadLetters.
+   */
+  public function takeDeadLetteredAtClaim(): array {
+    return $this->inner instanceof IReportsClaimDeadLetters ? $this->inner->takeDeadLetteredAtClaim() : [];
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
