@@ -48,6 +48,11 @@ abstract class ConcurrencyScenarios extends ProcessScenarioCase {
         self::assertTrue($processes->worker(1)->deliver(PartArrived::class, $wrapped)->is_complete());
       }
     }
+    // On a scheduler that carries facts (CR-W5CC-7) the loser was parked
+    // instead: one drain past the first wake backoff resumes it (well before
+    // the gather's alarm). Elsewhere the drain finds nothing due.
+    $this->host->advance_clock(self::PAST_PARK_BACKOFF);
+    $processes->worker(1)->drain_once();
 
     self::assertSame(1, ProcessJournal::runs('assemble:w-1:a,w-1:b'), 'resumed once, with both keys');
     self::assertSame('completed', $this->row($id)->status);

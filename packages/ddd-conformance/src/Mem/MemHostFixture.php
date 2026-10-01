@@ -95,6 +95,7 @@ use TangibleDDD\Testing\InMemoryAuditSink;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
 use TangibleDDD\Testing\InMemoryEffectJournal;
 use TangibleDDD\Testing\InMemoryOutboxStore;
+use TangibleDDD\Testing\InMemoryParkingScheduler;
 use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\InMemoryProcessStore;
 use TangibleDDD\Testing\InMemoryRelayPauseStore;
@@ -184,9 +185,15 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   private ?\Closure $race = null;
 
+  /**
+   * @param bool $parks_facts the scheduler carries facts (InMemoryParkingScheduler,
+   *   ICarriesFacts; CR-W5CC-7): a fact resume that cannot lock is parked
+   *   as a ResumeRetry instead of failing the resume subscriber
+   */
   public function __construct(
     protected readonly bool $shared_connection = false,
     protected readonly StartMode $start_mode = StartMode::InBand,
+    protected readonly bool $parks_facts = false,
   ) {}
 
   public function name(): string {
@@ -221,7 +228,9 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->audit_port = new FaultInjectingAuditSink($this->audit);
     $this->facts = new RecordingFactObserver();
     $this->process_store = new InMemoryProcessStore($this->clock);
-    $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
+    $this->wakeups = $this->parks_facts
+      ? new InMemoryParkingScheduler($this->boundary)
+      : new InMemoryWakeupScheduler($this->boundary);
     $this->process_store->attach_intents($this->wakeups);
     $this->wake_faults = new WakeHandoffFaults();
     $this->effect_journal = new InMemoryEffectJournal();
