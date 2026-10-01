@@ -7,6 +7,7 @@ namespace TangibleDDD\Core\Tests\Pdo\Conformance\Support;
 use TangibleDDD\Defaults\Pdo\PdoOutboxStore;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 
 /**
@@ -16,8 +17,12 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
  * of the relay's open transaction on connection 1, and stands for another
  * relay process (PdoOutboxStore::claim() refuses to run inside an open
  * transaction, as it must).
+ *
+ * Claim-time dead letters (CR-PDO-6, IReportsClaimDeadLetters) are reported
+ * by the store that made the claim, so the core relay step sees them through
+ * this router and the RecordingOutboxStore above it.
  */
-final class RoutedOutboxStore implements IOutboxStore {
+final class RoutedOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
   private ?IOutboxStore $override = null;
 
@@ -60,6 +65,11 @@ final class RoutedOutboxStore implements IOutboxStore {
 
   public function deadLetter(Claim $c, string $error): bool {
     return $this->store()->deadLetter($c, $error);
+  }
+
+  public function takeDeadLetteredAtClaim(): array {
+    $store = $this->store();
+    return $store instanceof IReportsClaimDeadLetters ? $store->takeDeadLetteredAtClaim() : [];
   }
 
   private function store(): IOutboxStore {
