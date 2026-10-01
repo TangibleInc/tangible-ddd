@@ -18,6 +18,8 @@ use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
 use TangibleDDD\Conformance\AuditEntry;
+use TangibleDDD\Conformance\AuditSinkFaults;
+use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\HostFixture;
 use TangibleDDD\Conformance\RelayReport;
@@ -128,7 +130,7 @@ use function TangibleDDD\WordPress\install_touches_table;
  *     clock by namespaced shims (WPC-3),
  *   - relayPauses() is not available before schema v8 (wave 3).
  */
-final class WpHostFixture implements HostFixture {
+final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals {
 
   private DDDConfig $config;
   private string $prefix;

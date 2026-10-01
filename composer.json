@@ -32,7 +32,8 @@
         "tomasvotruba/unused-public": "^2.2",
         "php-stubs/wordpress-stubs": "^6.9",
         "php-stubs/wp-cli-stubs": "^2.12",
-        "deptrac/deptrac": "^4.7"
+        "deptrac/deptrac": "^4.7",
+        "nikic/php-parser": "^5"
     },
     "autoload": {
         "psr-4": {
