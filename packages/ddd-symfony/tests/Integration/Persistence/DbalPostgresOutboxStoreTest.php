@@ -324,7 +324,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
       self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_outbox'));
     } finally {
       foreach (\TangibleDDD\Symfony\Persistence\PostgresSchema::tables() as $t) {
-        $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t);
+        $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t . ' CASCADE');
       }
     }
   }

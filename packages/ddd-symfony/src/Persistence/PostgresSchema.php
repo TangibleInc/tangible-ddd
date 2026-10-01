@@ -12,8 +12,9 @@ use Doctrine\DBAL\Connection;
  * migrations; tests apply it directly.
  *
  * Every file is idempotent (CREATE ... IF NOT EXISTS). `{{prefix}}` is the
- * configured table prefix. Round 1 ships the outbox, DLQ, relay pauses and
- * the delivery ledger; process tables arrive in wave 3.
+ * configured table prefix. Wave 2 shipped the outbox, DLQ, relay pauses and
+ * the delivery ledger; wave 3 adds processes, process waits, wakeup intents
+ * and the D10 workflow tables (workflows, meta, items, ignition ledger).
  *
  * The Messenger Doctrine transport table (messenger_messages) is NOT here:
  * create it with `messenger:setup-transports`. It must exist before the relay
@@ -31,7 +32,11 @@ final class PostgresSchema {
 
   /** @return list<string> logical table names (unprefixed), in apply order */
   public static function tables(): array {
-    return ['ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger'];
+    return [
+      'ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger',
+      'ddd_processes', 'ddd_process_waits', 'ddd_wakeups',
+      'ddd_behaviour_workflows', 'ddd_behaviour_workflow_meta', 'ddd_behaviour_workflow_items', 'ddd_workflow_ignitions',
+    ];
   }
 
   public static function render(string $prefix = ''): string {
