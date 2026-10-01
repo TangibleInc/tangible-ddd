@@ -20,6 +20,7 @@ use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Support\Log;
 use TangibleDDD\Runtime\SystemClock;
 use Throwable;
@@ -45,6 +46,10 @@ use Throwable;
  *   (CR sfc-1), so the new lease holder's submission is the only one.
  *   process_batch(?int $limit) overrides the batch size for one run
  *   (CR sfc-3); ProcessingResult lists the event ids per outcome (CR sfc-4).
+ *   A store implementing IReportsClaimDeadLetters counts a re-claim of an
+ *   expired lease as an attempt and dead-letters at claim (CR-PDO-6); the
+ *   step signals those rows (OutboxDeadLettered) and lists them in
+ *   ProcessingResult::$deadLetteredAtClaim.
  *   between_submit_and_accept() is the test seam (a hook that throws aborts
  *   the batch at exactly that point; it is never counted as an attempt).
  * - 0.6 form, unchanged for shipped containers: (config, IOutboxRepository,
@@ -124,6 +129,7 @@ final class OutboxProcessor {
     $claims = $limit > 0
       ? $this->store->claim($limit, $now, $this->outbox_config->lock_timeout_seconds)
       : [];
+    $dead_at_claim = $this->claim_dead_letters();
 
     $completed = $failed = $dlq = 0;
     $ids = ['claimed' => [], 'accepted' => [], 'retried' => [], 'dead' => [], 'lost' => []];
@@ -201,7 +207,29 @@ final class OutboxProcessor {
     return new ProcessingResult(
       $completed, $failed, $dlq, count($claims),
       $ids['claimed'], $ids['accepted'], $ids['retried'], $ids['dead'], $ids['lost'],
+      $dead_at_claim,
     );
+  }
+
+  /**
+   * CR-PDO-6: rows the store dead-lettered inside claim() (their lease
+   * expired max_attempts times). Logged and signalled like a relay-side
+   * dead letter.
+   *
+   * @return list<string> their event ids
+   */
+  private function claim_dead_letters(): array {
+    if (!$this->store instanceof IReportsClaimDeadLetters) {
+      return [];
+    }
+    $ids = [];
+    foreach ($this->store->takeDeadLetteredAtClaim() as [$claim, $error]) {
+      $entry = OutboxEntry::from_claim($claim, 'dlq', $error);
+      $this->log_event('dlq', $entry, $error);
+      (new OutboxDeadLettered($entry, $error))->dispatch($this->config);
+      $ids[] = $claim->event_id;
+    }
+    return $ids;
   }
 
   private function submit_and_accept(Claim $claim): bool {

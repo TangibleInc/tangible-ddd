@@ -11,6 +11,7 @@ use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\DeadLetter;
 use TangibleDDD\Runtime\Outbox\IOutboxAdministration;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\Outbox\OutboxAdministrationRefused;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
@@ -21,8 +22,12 @@ use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
  * In-memory outbox implementing both IOutboxStore and IOutboxAdministration
  * with the SQL hosts' fencing semantics. Enlist it in an
  * InMemoryTransactionBoundary to make appends roll back with the command.
+ *
+ * Lease expiry (CR-PDO-6, IReportsClaimDeadLetters): a re-claim of an
+ * expired lease counts an attempt, and a row reaching max_attempts that way
+ * is dead-lettered inside claim().
  */
-final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, InMemoryTransactional {
+final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, IReportsClaimDeadLetters, InMemoryTransactional {
 
   /**
    * @var array<string, array{record: OutboxRecord, status: string, attempts: int, seq: int,
@@ -37,6 +42,9 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
   private int $seq = 0;
 
   private int $dlqSeq = 0;
+
+  /** @var list<array{0: Claim, 1: string}> */
+  private array $deadLetteredAtClaim = [];
 
   public function __construct(
     private readonly IClock $clock,
@@ -96,9 +104,30 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
       $token = bin2hex(random_bytes(8));
       $this->rows[$id]['claim_token'] = $token;
       $this->rows[$id]['lease_until'] = $leaseUntil;
-      $claims[] = new Claim((string) $id, $token, $leaseUntil, $row['record'], $row['attempts']);
+
+      // CR-PDO-6: re-claiming an expired lease is an attempt (the previous
+      // holder died without an outcome).
+      if ($row['claim_token'] !== null) {
+        $this->rows[$id]['attempts']++;
+        $this->rows[$id]['last_error'] = self::LEASE_EXPIRED_ERROR;
+      }
+      $claim = new Claim((string) $id, $token, $leaseUntil, $row['record'], $this->rows[$id]['attempts']);
+
+      if ($row['claim_token'] !== null && $claim->attempts >= $claim->record->max_attempts) {
+        $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
+        $this->moveToDlq($claim, $error);
+        $this->deadLetteredAtClaim[] = [$claim, $error];
+        continue;
+      }
+      $claims[] = $claim;
     }
     return $claims;
+  }
+
+  public function takeDeadLetteredAtClaim(): array {
+    $taken = $this->deadLetteredAtClaim;
+    $this->deadLetteredAtClaim = [];
+    return $taken;
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
@@ -127,15 +156,8 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
     if (!$this->holds($c)) {
       return false;
     }
-    $row = &$this->rows[$c->event_id];
-    $row['attempts']++;
-    $row['status'] = 'dlq';
-    $row['last_error'] = $error;
-    unset($row);
-    $this->clearLease($c->event_id);
-
-    $id = ++$this->dlqSeq;
-    $this->dlq[$id] = new DeadLetter($id, $c->event_id, $error, $this->rows[$c->event_id]['attempts'], $this->clock->now(), $c->record);
+    $this->rows[$c->event_id]['attempts']++;
+    $this->moveToDlq($c, $error);
     return true;
   }
 
@@ -249,6 +271,16 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
   private function holds(Claim $c): bool {
     $row = $this->rows[$c->event_id] ?? null;
     return $row !== null && $row['status'] === 'pending' && $row['claim_token'] === $c->claimToken;
+  }
+
+  /** Status `dlq` plus a DeadLetter entry; the caller has counted the attempt. */
+  private function moveToDlq(Claim $c, string $error): void {
+    $this->rows[$c->event_id]['status'] = 'dlq';
+    $this->rows[$c->event_id]['last_error'] = $error;
+    $this->clearLease($c->event_id);
+
+    $id = ++$this->dlqSeq;
+    $this->dlq[$id] = new DeadLetter($id, $c->event_id, $error, $this->rows[$c->event_id]['attempts'], $this->clock->now(), $c->record);
   }
 
   private function clearLease(string $event_id): void {
