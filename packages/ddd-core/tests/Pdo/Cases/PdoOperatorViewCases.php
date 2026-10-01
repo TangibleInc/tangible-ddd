@@ -131,6 +131,136 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]->lastError);
   }
 
+  // ── repairs (register 3.10, C23; wave 4) ────────────────────────────────
+
+  /** @return array<string, OperatorItem> */
+  private function items(): array {
+    return self::byKey($this->view()->list());
+  }
+
+  public function test_relay_retry_puts_a_dead_letter_back_to_pending(): void {
+    $this->seed();
+    $dead = $this->items()['relay:dead'];
+
+    $this->view()->repairItem($dead, 'retry');
+
+    $row = $this->row('ddd_outbox', 'event_id = ?', ['dead']);
+    self::assertSame(['pending', 0], [$row['status'], (int) $row['attempts']]);
+    self::assertSame(0, $this->countRows('ddd_dlq'));
+    self::assertArrayNotHasKey('relay:dead', $this->items());
+  }
+
+  public function test_relay_replay_keeps_the_event_id_and_discard_drops_the_dead_letter(): void {
+    $this->seed();
+    $this->view()->repair(Layer::Relay, 'dead', 'replay');
+    self::assertSame('pending', $this->row('ddd_outbox', 'event_id = ?', ['dead'])['status']);
+    self::assertSame(0, $this->countRows('ddd_dlq'));
+
+    $store = $this->store();
+    [$again] = array_values(array_filter($store->claim(10, $this->clock->now(), 60), static fn ($c) => $c->event_id === 'dead'));
+    $store->deadLetter($again, 'rejected again');
+    $this->view()->repair(Layer::Relay, 'dead', 'discard');
+    self::assertSame(0, $this->countRows('ddd_dlq'));
+    self::assertSame('dlq', $this->row('ddd_outbox', 'event_id = ?', ['dead'])['status'], 'discard deletes the DLQ row only');
+  }
+
+  public function test_replay_of_an_event_without_a_dead_letter_is_refused(): void {
+    $this->seed();
+    $this->expectException(\TangibleDDD\Runtime\Outbox\OutboxRowNotFound::class);
+    $this->view()->repair(Layer::Relay, 'retrying', 'replay');
+  }
+
+  public function test_retry_wake_makes_a_failed_intent_due_now(): void {
+    $this->seed();
+    $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'timeout:900077:0'");
+
+    $this->view()->repairItem($this->items()['wakeup:timeout:900077:0'], 'retry_wake');
+
+    $row = $this->row('ddd_jobs', 'idempotency_key = ?', ['timeout:900077:0']);
+    self::assertSame('2026-10-01 12:20:00.000000', $row['next_attempt_at']);
+    self::assertSame(1, (int) $row['attempts'], 'the attempt history stays');
+  }
+
+  public function test_redeliver_makes_the_facts_deliver_job_due_now(): void {
+    $this->seed();
+    $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'deliver:fact'");
+    (new PdoDeliveryLedger($this->db, self::PREFIX, $this->clock))->markFailed('listener:x', 'fact', 'boom', 1);
+
+    $this->view()->repair(Layer::Delivery, 'listener:x@fact', 'redeliver');
+    self::assertSame('2026-10-01 12:20:00.000000', $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:fact'])['next_attempt_at']);
+
+    $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'deliver:fact'");
+    $this->view()->repairItem($this->items()['delivery:deliver:fact'], 'redeliver');
+    self::assertSame('2026-10-01 12:20:00.000000', $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:fact'])['next_attempt_at']);
+  }
+
+  public function test_redeliver_without_a_queued_deliver_job_is_refused(): void {
+    $this->seed();
+    $this->expectException(\TangibleDDD\Defaults\Pdo\PdoRepairRefused::class);
+    $this->view()->repair(Layer::Delivery, 'listener:a@' . self::EVENT, 'redeliver');
+  }
+
+  public function test_a_leased_job_is_not_repaired(): void {
+    $this->seed();
+    $jobs = new PdoJobStore($this->db, 'acme', self::PREFIX, $this->clock);
+    $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 12:00:00' WHERE idempotency_key = 'timeout:900077:0'");
+    $jobs->claimDue($this->clock->now(), 10, 300);
+
+    $this->expectException(\TangibleDDD\Defaults\Pdo\PdoRepairRefused::class);
+    $this->view()->repair(Layer::Wakeup, 'timeout:900077:0', 'retry_wake');
+  }
+
+  public function test_resume_stranded_writes_a_resume_retry_intent_and_drops_out_of_the_view(): void {
+    $ids = $this->seed();
+
+    $this->view()->repairItem($this->items()["process:{$ids['stranded']}"], 'resume_stranded');
+
+    $job = $this->db->fetchOne('SELECT kind, expected_status FROM tp_ddd_jobs WHERE process_id = ?', [$ids['stranded']]);
+    self::assertSame(['resume_retry', 'running'], [$job['kind'], $job['expected_status']]);
+    self::assertArrayNotHasKey("process:{$ids['stranded']}", $this->items(), 'it has a live intent now');
+  }
+
+  public function test_fail_stranded_needs_a_reason_and_fails_the_process(): void {
+    $ids = $this->seed();
+    $item = $this->items()["process:{$ids['stranded']}"];
+    try {
+      $this->view()->repairItem($item, 'fail_stranded');
+      self::fail('a reason is required');
+    } catch (\InvalidArgumentException) {
+    }
+
+    $this->view()->repairItem($item, 'fail_stranded', ['reason' => 'worker lost']);
+
+    $row = $this->row('ddd_processes', 'id = ?', [$ids['stranded']]);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('worker lost', (string) $row['last_error']);
+  }
+
+  public function test_a_stranded_repair_is_refused_while_another_session_holds_the_process_lock(): void {
+    $ids = $this->seed();
+    $other = $this->otherConnection();
+    $name = \TangibleDDD\Defaults\Pdo\MySqlNamedLock::nameOf(new \TangibleDDD\Runtime\Lock\LockKey('acme', '', $ids['stranded']));
+    $other->fetchOne('SELECT GET_LOCK(?, 0) AS l', [$name]);
+    try {
+      $this->expectException(\TangibleDDD\Application\Process\Repair\ProcessNotStranded::class);
+      $this->view()->repair(Layer::Process, (string) $ids['stranded'], 'resume_stranded');
+    } finally {
+      $other->fetchOne('SELECT RELEASE_LOCK(?) AS l', [$name]);
+    }
+  }
+
+  public function test_an_action_the_layer_does_not_offer_is_rejected(): void {
+    $this->seed();
+    $this->expectException(\InvalidArgumentException::class);
+    $this->view()->repair(Layer::Wakeup, 'timeout:900077:0', 'replay');
+  }
+
+  public function test_repair_item_refuses_an_action_the_item_does_not_list(): void {
+    $this->seed();
+    $this->expectException(\TangibleDDD\Defaults\Pdo\PdoRepairRefused::class);
+    $this->view()->repairItem($this->items()['delivery:listener:b@' . self::EVENT], 'redeliver');
+  }
+
   public function test_it_filters_by_layer_and_honours_the_limit(): void {
     $this->seed();
     $view = $this->view();
