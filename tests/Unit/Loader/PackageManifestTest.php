@@ -131,6 +131,8 @@ class PackageManifestTest extends TestCase
                 'tangible/ddd-core' => 'self.version',
                 'doctrine/dbal' => '^4',
                 'symfony/messenger' => '^7.4',
+                // The relay's transport is Messenger's Doctrine transport on the DBAL connection.
+                'symfony/doctrine-messenger' => '^7.4',
                 'symfony/framework-bundle' => '^7.4',
             ],
             $sf['require']

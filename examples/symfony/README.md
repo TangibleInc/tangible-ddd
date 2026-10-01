@@ -46,25 +46,6 @@ In the app's `composer.json` (paths relative to the app; the monorepo checkout i
 - `*@dev` accepts the branch version the path repository reports
   (`dev-extraction/ddd-packages` or a wave branch).
 
-**Transition note (until the wave-2 move lands).** Most 0.6 classes the bundle
-builds on (`Correlation`, `EventsUnitOfWork`, `DomainEvent`, `ConsumerRegistry`,
-...) still live in the monorepo's `ddd-src/`, not yet in `packages/ddd-core/src/`.
-Until they move, add the legacy tree as a PSR-4 fallback in the app:
-
-```json
-"autoload": {
-    "psr-4": {
-        "App\\": "src/",
-        "TangibleDDD\\": "../tangible-ddd/ddd-src/"
-    }
-}
-```
-
-Composer consults ddd-core's own `TangibleDDD\` map first, so classes that have
-already moved win. No `ddd-wordpress/` file is loaded; anything that reaches a
-WordPress function fails loudly. Delete the line once `packages/ddd-core/src`
-carries the classes. (The package's own test bootstrap does the same thing.)
-
 Register the bundle in `config/bundles.php`:
 
 ```php
