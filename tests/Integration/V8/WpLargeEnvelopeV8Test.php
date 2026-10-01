@@ -102,6 +102,8 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
   }
 
   public function test_a_failed_by_reference_delivery_is_redelivered_by_reference(): void {
+    // A redelivery needs a listener budget above the wp default of one attempt.
+    update_option($this->config->option(WpLedgeredDelivery::ATTEMPTS_OPTION), 2, false);
     register_delivery_hooks($this->config);
     WpLedgeredDelivery::register_consumer($this->config);
     $blob = str_repeat('x', 20000);

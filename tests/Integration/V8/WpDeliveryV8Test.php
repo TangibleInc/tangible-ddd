@@ -23,7 +23,9 @@ use function TangibleDDD\WordPress\register_delivery_hooks;
  * Per-callback invoker wrapping on wp (register 3.5, 5.1; WPC-2): every
  * DDD-registered callback on a fact's 0.6 hook is a ledgered subscriber,
  * isolated from the others, retried through `{prefix}_ddd_redeliver` and
- * budgeted; id-less payloads bypass the ledger (wave1-notes).
+ * budgeted; id-less payloads bypass the ledger (wave1-notes). The retry
+ * tests opt the consumer in (retryListeners()); the one-attempt listener
+ * default is WpDeliveryBudgetV8Test.
  */
 final class WpDeliveryV8Test extends V8TestCase {
 
@@ -54,6 +56,15 @@ final class WpDeliveryV8Test extends V8TestCase {
 
   private function ledger(): WpDeliveryLedger {
     return new WpDeliveryLedger($this->config->prefix());
+  }
+
+  /**
+   * The retry machinery under test needs a budget above the wp listener
+   * default of one attempt (WpDeliveryBudgetV8Test covers that default):
+   * opt the consumer in to the core budget.
+   */
+  private function retryListeners(int $attempts = WpLedgeredDelivery::BUDGET): void {
+    update_option($this->config->option(WpLedgeredDelivery::ATTEMPTS_OPTION), $attempts, false);
   }
 
   /** A DDD listener counted under $name that throws while $failures > 0. */
@@ -94,6 +105,7 @@ final class WpDeliveryV8Test extends V8TestCase {
   }
 
   public function test_a_throwing_listener_is_isolated_and_only_it_is_redelivered(): void {
+    $this->retryListeners();
     $failA = 1;
     $failB = 0;
     $this->listen('a', $failA, 10);
@@ -123,6 +135,7 @@ final class WpDeliveryV8Test extends V8TestCase {
   }
 
   public function test_a_lost_redelivery_is_restored_by_the_relay_tick_and_held_against_the_drain(): void {
+    $this->retryListeners();
     $down = 99;
     $this->listen('a', $down);
     register_delivery_hooks($this->config);
@@ -154,6 +167,7 @@ final class WpDeliveryV8Test extends V8TestCase {
   }
 
   public function test_a_failed_subscriber_that_is_no_longer_bound_spends_its_budget_and_the_drain_ends(): void {
+    $this->retryListeners();
     $down = 99;
     $this->listen('a', $down);
     register_delivery_hooks($this->config);
@@ -190,6 +204,7 @@ final class WpDeliveryV8Test extends V8TestCase {
   }
 
   public function test_an_operator_abandons_a_failed_pair(): void {
+    $this->retryListeners();
     $down = 99;
     $this->listen('a', $down);
     register_delivery_hooks($this->config);
@@ -267,6 +282,7 @@ final class WpDeliveryV8Test extends V8TestCase {
   }
 
   public function test_the_budget_exhausts_and_fires_the_compensation_once(): void {
+    $this->retryListeners();
     $compensated = [];
     HostDefaults::get(ISubscriptionRegistry::class)->add(new Subscriber(
       'ddd8it/listener:always-down',

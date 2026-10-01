@@ -6,7 +6,6 @@ namespace TangibleDDD\WordPress\Adapter;
 
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\Persistence\ProcessRepository;
-use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\SystemClock;
@@ -19,7 +18,8 @@ use TangibleDDD\Runtime\SystemClock;
  * Layers (the core `Runtime\Ops\Layer` values):
  * - relay:    DLQ rows (budget = max_attempts) and pending rows retrying;
  * - delivery: ledger pairs `failed` (repair `abandon`) or `exhausted`
- *             (budget 5);
+ *             (budget WpLedgeredDelivery::budget(): 1 for a listener
+ *             unless opted in, 5 for process ignition and resume);
  * - wakeup:   intents that failed at least once or died while firing, and
  *             exhausted intents (budget 10, repair `rearm`);
  * - process:  stranded `scheduled`/`running` rows (a `running` one with
@@ -85,7 +85,7 @@ final class WpOperatorView {
       'delivery',
       $r['subscriber_id'] . ' @ ' . $r['event_id'],
       $r['attempts'],
-      IntegrationDelivery::DEFAULT_BUDGET,
+      WpLedgeredDelivery::budget($this->config->prefix(), $r['subscriber_id']),
       $r['last_error'],
       $r['updated_at'],
       // A failed pair is redelivered on its own (`{prefix}_ddd_redeliver`,

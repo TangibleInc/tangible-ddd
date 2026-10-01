@@ -34,8 +34,10 @@ function integration_action(
     return;
   }
 
-  // Schema v8: the callback is a ledgered DDD subscriber (isolated, retried
-  // via {prefix}_ddd_redeliver, budgeted); see WpLedgeredDelivery.
+  // Schema v8: the callback is a ledgered DDD subscriber (isolated,
+  // budgeted); see WpLedgeredDelivery. One attempt, as in 0.6, unless the
+  // consumer opts in ({prefix}_ddd_delivery_attempts) or the callback
+  // declares #[Retries(n)]; retries go through {prefix}_ddd_redeliver.
   $invoke = function(...$params) use ($callback, $event_class) {
     // The drain bracket: unwrap once, open a facade scope with the fact as
     // ambient cause for the WHOLE body.
@@ -68,7 +70,7 @@ function integration_action(
   $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
   add_action(
     $action,
-    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'action', $callback), $priority, $invoke),
+    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'action', $callback), $priority, $invoke, null, Retries::of($callback)?->attempts()),
     $priority,
     $arg_count
   );
@@ -119,7 +121,7 @@ function integration_listener(string $event_class, callable $translate): void {
   $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
   add_action(
     $action,
-    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'listener', $translate, $this_ !== null ? get_class($this_) : null), 10, $invoke),
+    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'listener', $translate, $this_ !== null ? get_class($this_) : null), 10, $invoke, null, Retries::of($this_ ?? $translate)?->attempts()),
     10,
     1
   );
