@@ -1,0 +1,50 @@
+[
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoPauseStore",
+    "kind": "method",
+    "from": "activeSelectors",
+    "to": "selectors"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalRelayPauseStore",
+    "kind": "method",
+    "from": "activeSelectors",
+    "to": "selectors"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\OutboxFactClassResolver",
+    "kind": "property",
+    "from": "knownFactClasses",
+    "to": "fact_classes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\PostgresListenWaiter",
+    "kind": "property",
+    "from": "lastPayloads",
+    "to": "payloads"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore",
+    "kind": "property",
+    "from": "deadLetteredAtClaim",
+    "to": "claim_dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOutboxStore",
+    "kind": "property",
+    "from": "deadLetteredAtClaim",
+    "to": "claim_dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "property",
+    "from": "deadLetteredAtClaim",
+    "to": "claim_dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbOutboxStore",
+    "kind": "property",
+    "from": "deadLetteredAtClaim",
+    "to": "claim_dead_letters"
+  }
+]
