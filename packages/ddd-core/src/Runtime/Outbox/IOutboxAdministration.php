@@ -14,6 +14,8 @@ namespace TangibleDDD\Runtime\Outbox;
  *   OutboxAdministrationRefused for a LEASED row (always, even forced) and
  *   for any status other than `pending`/`dlq` unless $force (O5). Resets
  *   status `pending`, attempts 0, next attempt now, clears lease and error.
+ *   A retried `dlq` row leaves the DLQ: its dead-letter entries are deleted
+ *   in the same transaction as the reset (CR sfc-5, every host).
  * - replay(): keeps event_id (C22): resets the original outbox row, or
  *   re-inserts it with the original event_id if it was purged, and deletes
  *   the DLQ row, in one transaction. Unknown dlq id: OutboxRowNotFound.
