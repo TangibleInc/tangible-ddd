@@ -14,6 +14,7 @@ use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\PrefixedTableNames;
@@ -49,9 +50,10 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * D14: with an IRelayWakeup, every append pokes it for $wakeupConsumer on
  * the same connection (a transactional NOTIFY, delivered at COMMIT).
  */
-final class DbalPostgresOutboxStore implements IOutboxStore {
+final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
-  public const LEASE_EXPIRED_ERROR = 'lease expired without an outcome (submitter crashed or was killed?)';
+  // LEASE_EXPIRED_ERROR is IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR (the
+  // same text sf shipped in wave 2), so self::LEASE_EXPIRED_ERROR still resolves.
 
   private readonly string $outbox;
   private readonly string $dlq;
@@ -296,9 +298,10 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
   /**
    * The rows claim() dead-lettered because their lease expired max_attempts
    * times, with the error stored in the DLQ, since the last call; the list
-   * is emptied. The relay reports them and emits OutboxDeadLettered, so a
-   * claim-time dead letter is as visible as a relay-side one (sf-only, not
-   * on the port).
+   * is emptied. The core relay step (OutboxProcessor) takes them after every
+   * claim, emits OutboxDeadLettered and lists them in
+   * ProcessingResult::$deadLetteredAtClaim, so a claim-time dead letter is
+   * as visible as a relay-side one (IReportsClaimDeadLetters, CR-W4CE-9).
    *
    * @return list<array{0: Claim, 1: string}>
    */
