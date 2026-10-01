@@ -23,7 +23,7 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
-use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\HostFixture;
 use TangibleDDD\Conformance\ProcessDecodeFaults;
@@ -48,8 +48,10 @@ use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
 use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Conformance\WorkItemHost;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
@@ -68,6 +70,7 @@ use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Runtime\Effects\RecordEffect;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\DrainReport;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
@@ -95,6 +98,7 @@ use TangibleDDD\Testing\InMemoryAuditSink;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
 use TangibleDDD\Testing\InMemoryEffectJournal;
 use TangibleDDD\Testing\InMemoryOutboxStore;
+use TangibleDDD\Testing\InMemoryParkingScheduler;
 use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\InMemoryProcessStore;
 use TangibleDDD\Testing\InMemoryRelayPauseStore;
@@ -131,7 +135,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in set_up().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectStateHost, WorkflowHost, WorkItemHost {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -165,6 +169,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected InMemoryEffectJournal $effect_journal;
   protected InMemoryWorkflowIgnitionLedger $ignitions;
   protected InMemoryWorkflowRepository $workflows;
+  protected InMemoryWorkItemRepository $work_items;
 
   /** @var array<int, MemProcessWorker> */
   protected array $workers = [];
@@ -184,9 +189,15 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   private ?\Closure $race = null;
 
+  /**
+   * @param bool $parks_facts the scheduler carries facts (InMemoryParkingScheduler,
+   *   ICarriesFacts; CR-W5CC-7): a fact resume that cannot lock is parked
+   *   as a ResumeRetry instead of failing the resume subscriber
+   */
   public function __construct(
     protected readonly bool $shared_connection = false,
     protected readonly StartMode $start_mode = StartMode::InBand,
+    protected readonly bool $parks_facts = false,
   ) {}
 
   public function name(): string {
@@ -221,12 +232,15 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->audit_port = new FaultInjectingAuditSink($this->audit);
     $this->facts = new RecordingFactObserver();
     $this->process_store = new InMemoryProcessStore($this->clock);
-    $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
+    $this->wakeups = $this->parks_facts
+      ? new InMemoryParkingScheduler($this->boundary)
+      : new InMemoryWakeupScheduler($this->boundary);
     $this->process_store->attach_intents($this->wakeups);
     $this->wake_faults = new WakeHandoffFaults();
-    $this->effect_journal = new InMemoryEffectJournal();
+    $this->effect_journal = new InMemoryEffectJournal($this->clock);
     $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
     $this->workflows = new InMemoryWorkflowRepository();
+    $this->work_items = new InMemoryWorkItemRepository();
     $this->workers = [];
     $this->starts = [];
     $this->awaits = [];
@@ -241,6 +255,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->boundary->enlist($this->effect_journal);
     $this->boundary->enlist($this->ignitions);
     $this->boundary->enlist($this->workflows);
+    $this->boundary->enlist($this->work_items);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -548,7 +563,11 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   }
 
   public function operator_view(): IOperatorView {
-    return new PortOperatorView($this->config, $this->outbox, $this->process_store, $this->clock, [$this->ledger, $this->wakeups]);
+    return new PortOperatorView($this->config, $this->outbox, $this->process_store, $this->clock, [
+      $this->ledger,
+      $this->wakeups,
+      new UnrecordedEffects($this->effect_journal, $this->config->prefix(), $this->clock),
+    ]);
   }
 
   public function consumer_prefix(): string {
@@ -621,7 +640,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->wake_faults->fail_next($reason);
   }
 
-  // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
+  // ── EffectHost (CR-W4C4-2), EffectStateHost (CR-W5C5-2) ─────────────────
+  // operator_view() (ProcessHost above) carries the UnrecordedEffects source.
 
   public function effect_journal(): IEffectJournal {
     return $this->effect_journal;
@@ -647,6 +667,12 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   public function igniter(): WorkflowIgniter {
     return new WorkflowIgniter($this->ignitions, $this->boundary, $this->logger, $this->clock);
+  }
+
+  // ── WorkItemHost (CR-W5C5-3); workflows() is WorkflowHost's ─────────────
+
+  public function work_items(): IWorkItemRepository {
+    return $this->work_items;
   }
 
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────

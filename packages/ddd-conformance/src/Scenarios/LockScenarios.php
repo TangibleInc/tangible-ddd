@@ -15,6 +15,7 @@ use TangibleDDD\Conformance\Fixtures\Process\StepCommand;
 use TangibleDDD\Conformance\ProcessScenarioCase;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Runtime\Lock\LockNotAcquired;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
 
 /**
@@ -67,7 +68,7 @@ abstract class LockScenarios extends ProcessScenarioCase {
   }
 
   #[Group('lock.acquire-error')]
-  #[TestDox('lock.acquire-error: the lock backend answers NULL / false / an error; LockNotAcquired, the critical section never runs, nothing is saved')]
+  #[TestDox('lock.acquire-error: the lock backend answers NULL / false / an error; LockNotAcquired, the critical section never runs, nothing is saved; a scheduler that carries facts parks the answer instead of failing its delivery')]
   public function test_lock_acquire_error(): void {
     $processes = $this->processes();
     $processes->wire_processes([], [PartArrived::class]);
@@ -88,16 +89,37 @@ abstract class LockScenarios extends ProcessScenarioCase {
 
     // The resume path.
     $processes->fail_next_lock('pg_try_advisory_lock raised an error');
-    $wrapped = self::wrap(new PartArrived('w-1', 'a'), Uuid::v4());
+    $eventId = Uuid::v4();
+    $wrapped = self::wrap(new PartArrived('w-1', 'a'), $eventId);
     $outcome = $this->host->deliver(PartArrived::class, $wrapped);
 
-    self::assertTrue($outcome->needs_retry(), 'the resume subscriber failed; its delivery is retried');
     self::assertSame($version, $this->row($id)->version, 'no save');
     self::assertSame(0, $processes->worker()->lock()->held_count(), 'no release was owed');
 
-    // The next definite acquisition enters.
-    $this->host->deliver(PartArrived::class, $wrapped);
-    self::assertSame($version + 1, $this->row($id)->version, 'the retried resume saved the partial gather');
+    if (!$processes->wakeups() instanceof ICarriesFacts) {
+      self::assertTrue($outcome->needs_retry(), 'the resume subscriber failed; its delivery is retried');
+
+      // The next definite acquisition enters.
+      $this->host->deliver(PartArrived::class, $wrapped);
+      self::assertSame($version + 1, $this->row($id)->version, 'the retried resume saved the partial gather');
+      return;
+    }
+
+    // A scheduler that carries facts (CR-W5CC-7, AW2): the answer is parked
+    // as a ResumeRetry carrying the fact, and the subscriber succeeds.
+    self::assertTrue($outcome->is_complete(), 'the resume subscriber succeeded: the fact is parked, not failed');
+    $parked = $this->parked($id, $eventId);
+    self::assertCount(1, $parked, 'one ResumeRetry intent carries the fact');
+    self::assertSame(PartArrived::class, $parked[0]->fact['class'] ?? null);
+    self::assertSame('suspended', $parked[0]->expected_status);
+    self::assertSame(1, $parked[0]->step_index, 'the suspended gather step');
+
+    // The parked wake takes the next definite acquisition. It is entered
+    // directly (the alarm is also due here, and a drain would fire it first).
+    $processes->worker()->runner()->wake($parked[0]);
+    self::assertSame($version + 1, $this->row($id)->version, 'the parked resume saved the partial gather');
+    self::assertTrue($this->host->deliver(PartArrived::class, $wrapped)->is_complete(), 'a redelivery finds the answer taken');
+    self::assertSame($version + 1, $this->row($id)->version);
   }
 
   #[Group('lock.reentrant-balance')]

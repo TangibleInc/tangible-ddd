@@ -19,6 +19,12 @@ abstract class ProcessScenarioCase extends ConformanceTestCase {
   /** Past the wake backoff cap (WakeRetryPolicy::CAP_SECONDS = 300). */
   protected const PAST_WAKE_BACKOFF = 301;
 
+  /**
+   * Past the first wake backoff (WakeRetryPolicy::backoff_seconds(1) = 2 s):
+   * a parked answer (CR-W5CC-7) is due, no scenario alarm is.
+   */
+  protected const PAST_PARK_BACKOFF = 3;
+
   /** Longer than any host's relay lease and relay backoff cap (as RelayScenarios). */
   protected const PAST_ANY_LEASE = 3601;
 
@@ -67,6 +73,19 @@ abstract class ProcessScenarioCase extends ConformanceTestCase {
     return array_values(array_filter(
       $this->processes()->live_intents(),
       static fn (WakeupIntent $i) => $i->process_id === $id && ($kind === null || $i->kind === $kind),
+    ));
+  }
+
+  /**
+   * Live ResumeRetry intents of process $id that carry the fact delivered
+   * under $eventId (a parked answer, CR-W5CC-7).
+   *
+   * @return list<WakeupIntent>
+   */
+  protected function parked(int $id, string $eventId): array {
+    return array_values(array_filter(
+      $this->intents($id, WakeKind::ResumeRetry),
+      static fn (WakeupIntent $i) => ($i->fact['event_id'] ?? null) === $eventId,
     ));
   }
 
