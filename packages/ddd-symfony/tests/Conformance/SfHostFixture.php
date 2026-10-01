@@ -150,6 +150,10 @@ use TangibleDDD\Symfony\Tests\Conformance\Support\SendFaults;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SfProcessWorker;
 use TangibleDDD\Symfony\Tests\Conformance\Support\SfWorkerPorts;
 use TangibleDDD\Symfony\Tests\Conformance\Support\StatementFaults;
+use TangibleDDD\Symfony\Tests\Conformance\Support\SuppressibleRelayWakeup;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresListenWaiter;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresNotifyRelayWakeup;
+use TangibleDDD\Conformance\PostCommitWakeups;
 use TangibleDDD\Symfony\Tests\Conformance\Support\WorkerTask;
 use TangibleDDD\Symfony\Tests\Kernel\App\TestKernel;
 use TangibleDDD\Symfony\Tests\Support\PostgresDatabase;
@@ -200,12 +204,18 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost, PostCommitWakeups {
 
   public const CONSUMER = 'sfc';
 
   /** register 5.3 step 5: the stranded threshold (the bundle default). */
   private const STRANDED_AFTER_SECONDS = 900;
+
+  /** The worker number of the PostCommitWakeups relay worker (its own connection). */
+  private const RELAY_WORKER = 9;
+
+  /** `ddd:relay --sleep` of the PostCommitWakeups worker: short, but well above the 1 s wakeup bound. */
+  private const RELAY_POLL_SECONDS = 3.0;
 
   /** tangible_ddd.process.wakeup_lease_seconds default. */
   private const WAKE_LEASE_SECONDS = 300;
@@ -234,6 +244,9 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private ?PostgresAdvisoryProcessLock $webLock = null;
   private ?Connection $elsewhere = null;
   private ?DbalEffectJournal $effectJournal = null;
+  private ?SuppressibleRelayWakeup $relayWakeup = null;
+  private ?PostgresListenWaiter $relayWaiter = null;
+  private float $relayIdleSince = 0.0;
   private ?DbalWorkflowIgnitionLedger $workflowLedger = null;
   private ?DbalBehaviourWorkflowRepository $workflowRepository = null;
   private ?WorkflowIgniter $workflowIgniter = null;
@@ -309,6 +322,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   public function tearDown(): void {
+    $this->stopRelayWorker();
     if ($this->ready) {
       $this->ready = false;
       foreach ($this->ports as $w) {
@@ -441,6 +455,85 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
   public function effectJournal(): IEffectJournal {
     return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
+  }
+
+  // ── PostCommitWakeups (CR-W4C4-5) ────────────────────────────────────────
+
+  /**
+   * The `ddd:relay` worker, in steps: its own DBAL connection (worker
+   * RELAY_WORKER, a direct session like the production worker's), the
+   * bundle's Relay on it, and PostgresListenWaiter for the LISTEN half.
+   * The loop rule is RelayCommand's: run a pass; when it claimed nothing,
+   * wait on LISTEN for at most the poll interval, then run the next pass.
+   * The poll interval is measured from the moment the worker went idle.
+   * (A separate `ddd:relay` php process is covered by
+   * tests/Kernel/PostCommitWakeupTest and PostCommitPollFallbackTest.)
+   */
+  public function startRelayWorker(): void {
+    $this->worker(self::RELAY_WORKER);
+    $this->relayWaiter = new PostgresListenWaiter($this->ports[self::RELAY_WORKER]->connection, self::CONSUMER, $this->logger);
+    $this->relayPassUntilIdle();
+    $this->relayWaiter->listen(); // idle and listening before the scenario commits
+  }
+
+  public function relayUntilTransported(string $eventId, float $timeoutSeconds): ?float {
+    $waiter = $this->relayWaiter ?? throw new \LogicException('startRelayWorker() first');
+    $start = microtime(true);
+    while (true) {
+      // Idle: blocked in LISTEN until a NOTIFY arrives or the poll interval (from going idle) is up.
+      $remaining = $timeoutSeconds - (microtime(true) - $start);
+      if ($remaining <= 0) {
+        return null;
+      }
+      $poll = max(0.0, self::RELAY_POLL_SECONDS - (microtime(true) - $this->relayIdleSince));
+      $waiter->wait(min($poll, $remaining));
+      if (microtime(true) - $start > $timeoutSeconds) {
+        return null;
+      }
+      if ($this->relayPassUntilIdle($eventId)) {
+        return microtime(true) - $start;
+      }
+    }
+  }
+
+  public function wakeupArrives(float $timeoutSeconds): bool {
+    return ($this->relayWaiter ?? throw new \LogicException('startRelayWorker() first'))->wait($timeoutSeconds);
+  }
+
+  public function suppressNextWakeup(): void {
+    $this->relayWakeup?->suppressNext();
+  }
+
+  public function relayPollIntervalSeconds(): float {
+    return self::RELAY_POLL_SECONDS;
+  }
+
+  public function stopRelayWorker(): void {
+    if ($this->relayWaiter === null) {
+      return;
+    }
+    $this->relayWaiter = null;
+    try {
+      $this->ports[self::RELAY_WORKER]->connection->executeStatement('UNLISTEN *');
+    } catch (\Throwable) {
+    }
+  }
+
+  /**
+   * Relay passes until one claims nothing (as `ddd:relay` loops without
+   * waiting while there is work); then the worker is idle.
+   *
+   * @return bool whether $eventId was handed to the transport
+   */
+  private function relayPassUntilIdle(?string $eventId = null): bool {
+    $relay = $this->ports[self::RELAY_WORKER]->relay;
+    $transported = false;
+    do {
+      $report = $relay->runOnce();
+      $transported = $transported || ($eventId !== null && in_array($eventId, $report->accepted, true));
+    } while ($report->claimed !== []);
+    $this->relayIdleSince = microtime(true);
+    return $transported;
   }
 
   // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
@@ -840,6 +933,8 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->ports = [];
     $this->workers = [];
     $this->effectJournal = null;
+    $this->relayWakeup = null;
+    $this->relayWaiter = null;
     $this->workflowLedger = null;
     $this->workflowRepository = null;
     $this->workflowIgniter = null;
@@ -878,7 +973,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $clock = $this->clock;
     $boundary = new DbalTransactionBoundary($c, NestedPolicy::Reject, null, $logger);
     $pauses = new DbalRelayPauseStore($c);
-    $outbox = new DbalPostgresOutboxStore($c, $pauses, '', $logger);
+    // D14 as the bundle wires it (relay.listen: true): every append NOTIFYs in its transaction.
+    $this->relayWakeup ??= new SuppressibleRelayWakeup(new PostgresNotifyRelayWakeup($this->connection, $logger));
+    $notify = $n === 1 ? $this->relayWakeup : new PostgresNotifyRelayWakeup($c, $logger);
+    $outbox = new DbalPostgresOutboxStore($c, $pauses, '', $logger, $notify, self::CONSUMER);
     $facts = self::doctrineTransport($c, 'ddd_facts');
     $factSender = new FaultInjectingSender($facts, null, $clock);
     $transport = new MessengerFactTransport($factSender, self::CONSUMER, new OutboxFactClassResolver($outbox), null, $clock, $c);
