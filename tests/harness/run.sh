@@ -62,7 +62,7 @@ loader() {
 # conformance-wp: the shared ddd-conformance scenarios on the wp host
 # (tests/Integration/Conformance, WpHostFixture) inside the WP integration
 # bootstrap, on a fresh database. Then every scenario id due on wp by
-# DDD_CONFORMANCE_WAVE (default 3) must have PASSED: not skipped, not absent.
+# DDD_CONFORMANCE_WAVE (default 4) must have PASSED: not skipped, not absent.
 # The multi-process scenarios start fresh `php` children in the same
 # container (tests/Integration/Conformance/bin/fresh.php).
 conformance_wp() {
@@ -91,7 +91,7 @@ conformance_wp() {
   log "phpunit -c tests/Integration/Conformance/phpunit.xml"
   h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Conformance/phpunit.xml \
     --cache-directory /tmp/phpunit-cache --do-not-cache-result --log-junit /out/conformance-wp.xml || phpunit_rc=$?
-  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-3}" || gate_rc=$?
+  h_run "$plugin" php tests/Integration/Conformance/bin/check-due.php /out/conformance-wp.xml "${DDD_CONFORMANCE_WAVE:-4}" || gate_rc=$?
   if [ "$phpunit_rc" -ne 0 ] || [ "$gate_rc" -ne 0 ]; then
     log "conformance-wp red on $DB_NAME (phpunit exit $phpunit_rc, check-due exit $gate_rc)"
     exit 1
@@ -196,8 +196,9 @@ core_pdo() {
 #               ships no tests/docs/tools/ddd-symfony/ddd-conformance
 #   7.2         `run.sh loader` unnarrowed: every 7.2 case, 0 skipped
 #   7.3         the rollback fixtures (wp, wave 4): the WordPress suite at
-#               tests/Integration/Rollback/phpunit.xml of the ref, on a fresh
-#               database; absent is a failure, not a skip
+#               tests/Integration/Rollback/phpunit.xml of the ref (fixtures in
+#               tests/Compat/rollback), on a fresh database, with installed
+#               legacy winners; absent is a failure, not a skip
 # DDD_COMPAT_SECTIONS picks a subset (for a partial local run; the gate runs
 # all). DDD_LOADER_CASES is refused: compat never narrows 7.2. With
 # DDD_DB_NAME set, the WordPress sections use <name>_l72 and <name>_r73.
@@ -268,8 +269,14 @@ compat() {
   [ "$failed" -eq 0 ] || exit 1
 }
 
-# 7.3 of compat: the wp-owned rollback fixtures inside the WP integration
-# bootstrap, on a fresh database, like conformance-wp.
+# 7.3 of compat: the wp-owned rollback fixtures (tests/Compat/rollback) inside
+# the WP integration bootstrap, on a fresh database, like conformance-wp.
+# The legacy winners are real installs: each ref of DDD_ROLLBACK_REFS
+# (default "v0.6.6 v0.6.5 v0.6.2"; register 7.3 names L-0.6.6 and L-0.6.2 as
+# rollback winners and 0.6.5 as the serializer) is exported from this clone,
+# `composer install --no-dev`ed on the host, mounted read-only at /legacy and
+# passed to the suite as DDD_ROLLBACK_LEGACY="<version>=<dir> ...". Each
+# legacy run is a php child that loads only that copy (bin/legacy.php).
 compat_rollback() {
   # shellcheck source=lib/common.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
@@ -277,13 +284,26 @@ compat_rollback() {
 
   H_EXPORT="$H_WORK/tangible-ddd"
   h_export "$H_EXPORT"
-  if [ ! -f "$H_EXPORT/tests/Integration/Rollback/phpunit.xml" ]; then
-    echo "FAIL 7.3: tests/Integration/Rollback/phpunit.xml is absent from the ref under test (the wp-owned rollback fixtures of register 7.3, wave 4)"
+  local suite=tests/Integration/Rollback/phpunit.xml
+  if [ ! -f "$H_EXPORT/$suite" ]; then
+    echo "FAIL 7.3: $suite is absent from the ref under test (the wp-owned rollback fixtures of register 7.3, wave 4)"
     exit 1
   fi
   h_datastream "$H_EXPORT/.reference/tangible-datastream"
   log "composer install in the export"
   composer install -d "$H_EXPORT" --no-scripts --no-interaction --no-progress --quiet
+
+  local legacy_root="$H_WORK/legacy" legacy_env="" ref label version
+  mkdir -p "$legacy_root"
+  for ref in ${DDD_ROLLBACK_REFS:-v0.6.6 v0.6.5 v0.6.2}; do
+    label="$(printf '%s' "$ref" | tr -c 'A-Za-z0-9_\n' '_')"
+    DDD_HARNESS_REF="$ref" h_export "$legacy_root/$label"
+    version="$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$legacy_root/$label/tangible-ddd.php" | head -1)"
+    [ -n "$version" ] || die "7.3: no Version: header in $ref"
+    log "composer install --no-dev in legacy $ref ($version)"
+    composer install -d "$legacy_root/$label" --no-dev --no-scripts --no-interaction --no-progress --quiet
+    legacy_env="${legacy_env:+$legacy_env }$version=/legacy/$label"
+  done
 
   h_mysql_up
   h_db_create
@@ -291,8 +311,9 @@ compat_rollback() {
 
   local plugin=/var/www/html/wp-content/plugins/tangible-ddd
   h_run "$plugin" php -d memory_limit=1G /harness/wp/install-tables.php
-  log "phpunit -c tests/Integration/Rollback/phpunit.xml"
-  h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c tests/Integration/Rollback/phpunit.xml \
+  H_EXTRA_MOUNTS=(-v "$legacy_root:/legacy:ro" -e "DDD_ROLLBACK_LEGACY=$legacy_env")
+  log "phpunit -c $suite (legacy winners: $legacy_env)"
+  h_run "$plugin" php -d memory_limit=1G vendor/bin/phpunit -c "$suite" \
     --cache-directory /tmp/phpunit-cache --do-not-cache-result --fail-on-skipped --fail-on-incomplete
   log "7.3 rollback fixtures green on $DB_NAME"
 }

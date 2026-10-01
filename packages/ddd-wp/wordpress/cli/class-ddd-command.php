@@ -198,14 +198,52 @@ class DDD_Command {
    *   lists it, `<subscriber id> @ <event id>`) without a compensation; its
    *   pending redelivery then skips it. Needs --consumer.
    *
+   * [--resume-stranded=<id>]
+   * : Repair: resume the stranded `running` process with this id (core
+   *   ResumeStrandedProcess: a worker re-runs its step with the same command
+   *   ids). Refused while a worker holds its lock. Needs --consumer.
+   *
+   * [--fail-stranded=<id>]
+   * : Repair: fail the stranded process with this id (core
+   *   FailStrandedProcess, with --reason; --compensate undoes its completed
+   *   steps first). Needs --consumer.
+   *
+   * [--reason=<reason>]
+   * : The operator reason --fail-stranded records.
+   *
+   * [--compensate]
+   * : With --fail-stranded: compensate the completed steps before failing.
+   *
    * ## EXAMPLES
    *
    *     wp ddd ops
    *     wp ddd ops --layer=delivery --format=json
    *     wp ddd ops --consumer=tgbl_cred --rearm=timeout:42:3
    *     wp ddd ops --consumer=tgbl_cred --abandon='action:Closure@wp-content/plugins/x/x.php:12 @ 0b6f…'
+   *     wp ddd ops --consumer=tgbl_cred --resume-stranded=42
+   *     wp ddd ops --consumer=tgbl_cred --fail-stranded=42 --reason='card expired' --compensate
    */
   public function ops( $args, $assoc_args ) {
+    if ( isset( $assoc_args['resume-stranded'] ) || isset( $assoc_args['fail-stranded'] ) ) {
+      $resume = isset( $assoc_args['resume-stranded'] );
+      $flag = $resume ? 'resume-stranded' : 'fail-stranded';
+      if ( ! isset( $assoc_args['consumer'] ) ) {
+        \WP_CLI::error( "--$flag needs --consumer=<prefix>." );
+      }
+      [ $handle ] = $this->selected_consumers( $assoc_args );
+      $id = (int) $assoc_args[ $flag ];
+      try {
+        $repairs = new \TangibleDDD\WordPress\Adapter\WpStrandedRepairs( $handle->config() );
+        $resume
+          ? $repairs->resume( $id )
+          : $repairs->fail( $id, (string) ( $assoc_args['reason'] ?? 'failed by an operator (wp ddd ops --fail-stranded)' ), (bool) Utils\get_flag_value( $assoc_args, 'compensate', false ) );
+      } catch ( \Throwable $e ) {
+        \WP_CLI::error( "--$flag=$id refused: " . $e->getMessage() );
+      }
+      \WP_CLI::success( $resume ? "Process #$id resumed: a worker re-runs its step." : "Process #$id failed." );
+      return;
+    }
+
     if ( isset( $assoc_args['abandon'] ) ) {
       if ( ! isset( $assoc_args['consumer'] ) ) {
         \WP_CLI::error( '--abandon needs --consumer=<prefix>.' );

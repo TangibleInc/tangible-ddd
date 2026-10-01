@@ -15,7 +15,8 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  * rollback runs the queued deliveries unchanged:
  *
  *   hook  = the fact's integration_action (`{prefix}_integration_{name}`)
- *   args  = [the wrapped envelope]
+ *   args  = [the wrapped envelope], or, over Action Scheduler's 8000-byte
+ *           args limit, its by-reference form (WpLargeEnvelope; D6)
  *   group = the consumer's outbox group (`{prefix}-outbox`)
  *
  * submit() schedules ONE single action at the ABSOLUTE $dueAt, also when it
@@ -38,7 +39,8 @@ final class ActionSchedulerTransport implements ITransport {
       throw new TransportRejected('Action Scheduler is not loaded; the fact stays in the outbox.');
     }
 
-    $id = as_schedule_single_action($dueAt->getTimestamp(), $c->record->integration_action, [$wrappedEnvelope], $this->group);
+    $args = WpLargeEnvelope::forTransport($wrappedEnvelope, $c->record->integration_action, $c->record->event_type);
+    $id = as_schedule_single_action($dueAt->getTimestamp(), $c->record->integration_action, [$args], $this->group);
 
     return (string) (int) $id;
   }

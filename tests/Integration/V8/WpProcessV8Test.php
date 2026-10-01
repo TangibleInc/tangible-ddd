@@ -7,6 +7,7 @@ namespace TangibleDDD\Tests\Integration\V8;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Infra\Persistence\ProcessRepository;
+use TangibleDDD\Runtime\Codec\LargeString;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\Lock\LockKey;
@@ -16,6 +17,7 @@ use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
+use TangibleDDD\Tests\Integration\V8\Fakes\V8BlobProcess;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8IgnitedProcess;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8ManualProcess;
 use TangibleDDD\WordPress\Adapter\GetLockProcessLock;
@@ -162,6 +164,44 @@ final class WpProcessV8Test extends V8TestCase {
     self::assertSame($row['version'], $this->row($id)['version'], 'a second find does not write again');
   }
 
+  // ── D6: LargeString in process state (CR-W4CE-5 request) ─────────────────
+
+  public function test_a_large_binary_string_round_trips_through_process_state(): void {
+    $bytes = substr(str_repeat(implode('', array_map('chr', range(0, 255))), 4097), 0, 1024 * 1024);
+    $id = $this->store->insert($this->process(new V8BlobProcess(new LargeString($bytes), 'one MiB')));
+
+    $found = $this->store->find($id);
+    self::assertInstanceOf(V8BlobProcess::class, $found);
+    self::assertSame(hash('sha256', $bytes), hash('sha256', (string) $found->blob), 'byte-identical');
+    self::assertSame('one MiB', $found->label);
+
+    $empty = $this->store->insert($this->process(new V8BlobProcess(null, 'none')));
+    self::assertNull($this->store->find($empty)?->blob, 'a nullable LargeString stays null');
+
+    // The 0.6 repository writes and reads the same encoded form.
+    $repository = new ProcessRepository($this->config);
+    self::assertSame(hash('sha256', $bytes), hash('sha256', (string) $repository->find($id)?->blob));
+  }
+
+  public function test_a_corrupt_large_string_quarantines_the_row_with_its_reason(): void {
+    $id = $this->store->insert($this->process(new V8BlobProcess(new LargeString(str_repeat("\x00\xff", 1000)))));
+    $data = json_decode((string) $this->row($id)['business_data'], true);
+    $data['blob']['data'] = base64_encode('tampered');
+    $this->wpdb->update($this->table('long_processes'), ['business_data' => wp_json_encode($data)], ['id' => $id]);
+
+    try {
+      $this->store->find($id);
+      self::fail('expected QuarantinedProcess');
+    } catch (QuarantinedProcess) {
+    }
+
+    $row = $this->row($id);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('LargeString', (string) $row['quarantine_reason']);
+    self::assertStringContainsString('$blob', (string) $row['quarantine_reason'], 'names the field');
+    self::assertStringContainsString('length mismatch', (string) $row['quarantine_reason'], 'carries UndecodableLargeString::$quarantineReason');
+  }
+
   public function test_find_waiting_for_returns_suspended_ids(): void {
     $a = SchemaV7::process($this->config, V8ManualProcess::class, 'suspended', 1, null);
     $b = SchemaV7::process($this->config, V8ManualProcess::class, 'completed', 1, null);
@@ -214,16 +254,31 @@ final class WpProcessV8Test extends V8TestCase {
     $running = SchemaV7::process($this->config, V8ManualProcess::class, 'running', 1, null);
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET updated_at = '$old' WHERE id = $running");
 
+    // A long wake in ANOTHER session (another php-fpm child) holds the lock.
+    $other = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::open($this->wpdb);
+    try {
+      $lock = new GetLockProcessLock();
+      $handle = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1));
+      self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
+      \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->release($handle));
+
+      self::assertWpdbLegacyHolderHides($other, $running, fn () => $this->store->findStranded($this->clock->now()));
+    } finally {
+      $other->close();
+    }
+    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+
+    // This session's own hold is the WP8-10 repair guard re-reading the row under the lock.
     $lock = new GetLockProcessLock();
     $handle = $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1);
-    self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
-    $lock->release($handle);
-
-    self::assertWpdbLegacyHolderHides($this->wpdb, $running, fn () => $this->store->findStranded($this->clock->now()));
-    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+    try {
+      self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+    } finally {
+      $lock->release($handle);
+    }
   }
 
-  /** A 0.6 copy holding only the legacy name hides the row too. */
+  /** A 0.6 copy (another session) holding only the legacy name hides the row too. */
   private static function assertWpdbLegacyHolderHides(\wpdb $db, int $id, callable $find): void {
     $db->get_var("SELECT GET_LOCK('ddd_process_$id', 1)");
     try {

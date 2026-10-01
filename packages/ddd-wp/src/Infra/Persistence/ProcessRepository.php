@@ -9,6 +9,8 @@ use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
+use TangibleDDD\Runtime\Codec\LargeString;
+use TangibleDDD\Runtime\Codec\UndecodableLargeString;
 
 /**
  * MySQL/WordPress implementation of the process repository.
@@ -162,7 +164,10 @@ class ProcessRepository implements IProcessRepository {
       if ($param->isPromoted()) {
         $prop = $reflection->getProperty($param->getName());
         $prop->setAccessible(true);
-        $data[$param->getName()] = $prop->getValue($process);
+        $value = $prop->getValue($process);
+        // D6: a LargeString is stored in its wire form (base64 + length +
+        // sha256), never as its raw bytes, which JSON cannot carry.
+        $data[$param->getName()] = $value instanceof LargeString ? $value->toPayload() : $value;
       }
     }
 
@@ -240,7 +245,7 @@ class ProcessRepository implements IProcessRepository {
     foreach ($constructor->getParameters() as $param) {
       $name = $param->getName();
       if (array_key_exists($name, $data)) {
-        $args[] = $data[$name];
+        $args[] = self::revive($class, $param, $data[$name]);
       } elseif ($param->isDefaultValueAvailable()) {
         $args[] = $param->getDefaultValue();
       } else {
@@ -249,5 +254,24 @@ class ProcessRepository implements IProcessRepository {
     }
 
     return $reflection->newInstanceArgs($args);
+  }
+
+  /**
+   * D6: a constructor parameter typed LargeString (nullable or not) is
+   * revived from its wire form. A corrupt one (bad base64, length or sha256
+   * mismatch, over its cap) throws, naming the field and
+   * UndecodableLargeString::$quarantineReason, so the v8 store quarantines
+   * the row with that reason (status `failed`, R5).
+   */
+  private static function revive(string $class, \ReflectionParameter $param, mixed $value): mixed {
+    $type = $param->getType();
+    if ($value === null || !$type instanceof \ReflectionNamedType || $type->getName() !== LargeString::class) {
+      return $value;
+    }
+    try {
+      return LargeString::fromPayload($value);
+    } catch (UndecodableLargeString $e) {
+      throw new \UnexpectedValueException(sprintf('%s::$%s is an undecodable LargeString: %s', $class, $param->getName(), $e->quarantineReason), 0, $e);
+    }
   }
 }

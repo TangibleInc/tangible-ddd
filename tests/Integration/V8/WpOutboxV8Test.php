@@ -12,6 +12,7 @@ use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxAdministrationRefused;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\WordPress\Adapter\ActionSchedulerTransport;
@@ -291,5 +292,113 @@ final class WpOutboxV8Test extends V8TestCase {
     self::assertSame(0, $admin->purge($this->clock->now()));
     $this->clock->advance('+1 day');
     self::assertSame(1, $admin->purge($this->clock->now()->modify('-1 hour')));
+  }
+
+  // ── CR-PDO-6 (wave3-notes ruling; CR-W4CE-9): expired-lease re-claims ─────
+
+  public function test_the_store_reports_claim_time_dead_letters(): void {
+    self::assertInstanceOf(IReportsClaimDeadLetters::class, $this->store);
+    self::assertSame([], $this->store->takeDeadLetteredAtClaim());
+  }
+
+  public function test_a_re_claim_of_an_expired_lease_counts_one_attempt(): void {
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000020'));
+
+    [$first] = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertSame(0, $first->attempts, 'a first claim counts nothing');
+
+    $this->clock->advance('+31 seconds');
+    [$second] = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertSame(1, $second->attempts, 'the expired lease counts as attempt 1');
+    $row = $this->row($second->event_id);
+    self::assertSame(['1', IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, 'pending'], [$row['attempts'], $row['last_error'], $row['status']]);
+    self::assertEquals(
+      [['attempt' => 1, 'error' => IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, 'timestamp' => $this->clock->now()->format('Y-m-d H:i:s')]],
+      json_decode((string) $row['error_history'], true),
+      'the lost attempt is in the error history like any other',
+    );
+    self::assertSame([], $this->store->takeDeadLetteredAtClaim());
+  }
+
+  public function test_a_row_released_by_an_outcome_is_not_a_re_claim(): void {
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000021'));
+    [$c] = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertTrue($this->store->retryLater($c, 'transport down', $this->clock->now()));
+
+    $this->clock->advance('+31 seconds');
+    [$again] = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertSame(1, $again->attempts, 'only the retryLater attempt counts');
+    self::assertSame('transport down', $this->row($again->event_id)['last_error']);
+  }
+
+  public function test_an_operator_retry_clears_the_lease_so_the_next_claim_is_not_a_re_claim(): void {
+    $admin = new WpdbOutboxAdministration($this->config->prefix(), $this->clock);
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000022'));
+    $this->store->claim(1, $this->clock->now(), 30);
+
+    $this->clock->advance('+31 seconds');
+    $admin->retry('e0000000-0000-4000-8000-000000000022');
+    [$c] = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertSame(0, $c->attempts);
+  }
+
+  public function test_the_re_claim_that_reaches_max_attempts_is_dead_lettered_at_claim(): void {
+    $id = 'e0000000-0000-4000-8000-000000000023';
+    $this->store->append(new OutboxRecord(
+      $id, 'v8.fact', $this->config->integration_action('v8_fact'), '22222222-2222-4222-8222-222222222222', 1, null,
+      ['n' => 1], $this->clock->now(), false, null, 3,
+    ));
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000024'));
+
+    $this->store->claim(1, $this->clock->now(), 30);                  // attempts 0
+    foreach ([1, 2] as $n) {
+      $this->clock->advance('+31 seconds');
+      [$c] = $this->store->claim(1, $this->clock->now(), 30);
+      self::assertSame([$id, $n], [$c->event_id, $c->attempts]);
+    }
+
+    $this->clock->advance('+31 seconds');
+    $claims = $this->store->claim(1, $this->clock->now(), 30);
+    self::assertSame([], $claims, 'not handed out; a claim-time dead letter is not replaced within the same limit');
+
+    $taken = $this->store->takeDeadLetteredAtClaim();
+    self::assertCount(1, $taken);
+    [$claim, $error] = $taken[0];
+    self::assertSame([$id, 3], [$claim->event_id, $claim->attempts]);
+    self::assertStringContainsString(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, $error);
+    self::assertSame([], $this->store->takeDeadLetteredAtClaim(), 'taken once');
+
+    $row = $this->row($id);
+    self::assertSame(['dlq', '3', null, null, null], [$row['status'], $row['attempts'], $row['claim_token'], $row['locked_until'], $row['locked_by']]);
+    $dlq = $this->rows($this->wpdb->prepare("SELECT event_id, attempts, final_error FROM `{$this->table('integration_dlq')}` WHERE event_id = %s", $id));
+    self::assertSame([['event_id' => $id, 'attempts' => '3', 'final_error' => $error]], $dlq);
+    [$other] = $this->store->claim(10, $this->clock->now(), 30);
+    self::assertSame('e0000000-0000-4000-8000-000000000024', $other->event_id, 'the next claim moves on');
+
+    $letters = (new WpdbOutboxAdministration($this->config->prefix(), $this->clock))->deadLetters(10);
+    self::assertSame([$id], array_map(static fn ($l) => $l->event_id, $letters));
+    self::assertSame(3, $letters[0]->attempts);
+  }
+
+  public function test_the_core_relay_emits_the_claim_time_dead_letter(): void {
+    $id = 'e0000000-0000-4000-8000-000000000025';
+    $this->store->append(new OutboxRecord(
+      $id, 'v8.fact', $this->config->integration_action('v8_fact'), '22222222-2222-4222-8222-222222222222', 1, null,
+      ['n' => 1], $this->clock->now(), false, null, 2,
+    ));
+    $this->store->claim(1, $this->clock->now(), 30);
+    $this->clock->advance('+31 seconds');
+    $this->store->claim(1, $this->clock->now(), 30);
+    $this->clock->advance('+31 seconds');
+
+    $relay = new OutboxProcessor(
+      $this->config, null, new OutboxConfig(action_scheduler_group: $this->config->as_group('outbox')), null,
+      null, null, $this->clock,
+      $this->store, new ActionSchedulerTransport($this->config->as_group('outbox')), new WpdbTransactionBoundary(NestedPolicy::Reject),
+    );
+    $result = $relay->process_batch(10);
+
+    self::assertSame([$id], $result->deadLetteredAtClaim);
+    self::assertSame([], $this->pendingActions($this->config->integration_action('v8_fact')), 'never transported');
   }
 }

@@ -230,13 +230,12 @@ final class WpWakeupsV8Test extends V8TestCase {
   public function test_a_wake_of_a_quarantined_process_closes_its_intent(): void {
     HostDefaults::provide(\TangibleDDD\Runtime\IClock::class, $this->clock);
     $this->tx(fn () => $this->wakeups->schedule(WakeupIntent::timeout('ddd8it', 5, 2, $this->clock->now())));
-    try {
-      \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($this->config, WakeKind::Timeout, 5, 2, static function (): void {
-        throw new \TangibleDDD\Runtime\Process\QuarantinedProcess('Process #5 was quarantined: gone');
-      });
-      self::fail('the wake still fails its action');
-    } catch (\TangibleDDD\Runtime\Process\QuarantinedProcess) {
-    }
+    // decode.unknown-class (wave 4): the worker continues, so the wake does
+    // not fail its Action Scheduler action; the quarantine is logged and the
+    // row (status failed, quarantine_reason) is what the operator sees.
+    \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($this->config, WakeKind::Timeout, 5, 2, static function (): void {
+      throw new \TangibleDDD\Runtime\Process\QuarantinedProcess('Process #5 was quarantined: gone');
+    });
     $row = $this->rows("SELECT status, attempts, last_error FROM `{$this->table('ddd_wakeups')}`")[0];
     self::assertSame(['cancelled', '1', 'Process #5 was quarantined: gone'], array_values($row), 'a quarantined process is never woken again');
   }

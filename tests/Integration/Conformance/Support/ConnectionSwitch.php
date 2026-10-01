@@ -41,6 +41,14 @@ final class ConnectionSwitch {
   public static function open(\wpdb $like): \wpdb {
     $db = new \wpdb(DB_USER, DB_PASSWORD, DB_NAME, DB_HOST);
     $db->set_prefix($like->prefix);
+    // Action Scheduler registers its tables as wpdb properties on the
+    // global connection at init (ActionScheduler_StoreSchema); a worker
+    // that drains on this session runs the AS store through it.
+    foreach (['actionscheduler_actions', 'actionscheduler_claims', 'actionscheduler_groups', 'actionscheduler_logs'] as $table) {
+      if (isset($like->{$table})) {
+        $db->{$table} = $like->{$table};
+      }
+    }
     $db->suppress_errors(true);
     if (!$db->check_connection(false)) {
       throw new \RuntimeException('conformance-wp: could not open a second MySQL connection');

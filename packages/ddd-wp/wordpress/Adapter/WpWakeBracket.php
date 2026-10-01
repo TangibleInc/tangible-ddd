@@ -19,7 +19,9 @@ use TangibleDDD\Runtime\Support\Log;
  * 300 s, then `exhausted`), the exception propagates (AS records the failed
  * action) and the next relay tick after the backoff re-projects the
  * intent: the wake is re-queued, never lost (`lock.contention` "later
- * succeeds"). A QuarantinedProcess closes the intents as `cancelled`.
+ * succeeds"). A QuarantinedProcess closes the intents as `cancelled` and
+ * is logged, not rethrown: the action completes and the worker continues
+ * (decode.unknown-class).
  *
  * On a consumer without schema v8 (no intent table) it only runs the wake.
  */
@@ -37,6 +39,10 @@ final class WpWakeBracket {
       $wake();
     } catch (\Throwable $e) {
       self::settle($config, static fn () => $scheduler->finish($kind, $processId, $stepIndex, $e->getMessage(), self::isTerminal($e)), false);
+      if (self::isTerminal($e)) {
+        self::noteQuarantine($config, $e);
+        return;
+      }
       throw $e;
     }
     self::settle($config, static fn () => $scheduler->finish($kind, $processId, $stepIndex, null));
@@ -49,6 +55,15 @@ final class WpWakeBracket {
    */
   private static function isTerminal(\Throwable $e): bool {
     return $e instanceof \TangibleDDD\Runtime\Process\QuarantinedProcess;
+  }
+
+  /**
+   * decode.unknown-class (wave 4): "the worker continues". A quarantined
+   * wake does not fail its Action Scheduler action (nothing to retry); the
+   * row itself (status `failed`, quarantine_reason) is the record.
+   */
+  private static function noteQuarantine(IDDDConfig $config, \Throwable $e): void {
+    Log::write(null, sprintf('[%s-process] wake closed: %s', $config->prefix(), $e->getMessage()), 'error');
   }
 
   /**
@@ -97,6 +112,10 @@ final class WpWakeBracket {
       }
     } catch (\Throwable $e) {
       self::settle($config, static fn () => $scheduler->finishKey($key, $e->getMessage(), self::isTerminal($e)), false);
+      if (self::isTerminal($e)) {
+        self::noteQuarantine($config, $e);
+        return;
+      }
       throw $e;
     }
     self::settle($config, static fn () => $scheduler->finishKey($key, null));

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Register 7.3: pending-row fixtures written by a legacy winner and drained
+  by N, and the reverse (rollback), with the N-only artifacts and the three
+  sequence fixtures. The fixtures live in tests/Compat/rollback; this file
+  is the suite entry `tests/harness/run.sh compat` runs (PK4-1), with the
+  installed legacy copies passed as DDD_ROLLBACK_LEGACY.
+
+  Files end in Rollback.php, so neither phpunit.integration.xml nor the
+  conformance suite loads them.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="../../../vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="../../Compat/rollback/bootstrap.php"
+         cacheDirectory="../../../.phpunit.cache"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnSkippedTests="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="compat-rollback">
+            <directory suffix="Rollback.php">../../Compat/rollback</directory>
+        </testsuite>
+    </testsuites>
+
+    <php>
+        <const name="DOING_TANGIBLE_TESTS" value="1" />
+    </php>
+</phpunit>

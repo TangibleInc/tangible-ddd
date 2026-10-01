@@ -15,7 +15,11 @@ use TangibleDDD\Infra\IDDDConfig;
  * - `{prefix}_ddd_redeliver` (handler retries): each either delivers or
  *   fails again and schedules its next redelivery, which the next round
  *   runs at once, so every pair ends delivered or exhausted (budget 5);
- * - `{prefix}_ddd_wakeup` (ResumeRetry intents).
+ * - `{prefix}_ddd_wakeup` (ResumeRetry intents);
+ * - due by-reference integration actions (facts over Action Scheduler's
+ *   args limit, WpLargeEnvelope): a 0.6 winner cannot resolve them. Future
+ *   ones are not run early (the delay is the fact's); they are counted in
+ *   `remaining`.
  *
  * Neither hook has a callback under 0.6, so whatever is still pending when
  * the winner switches back is failed by Action Scheduler and lost. Each
@@ -62,6 +66,7 @@ final class WpRollbackDrain {
     return [
       'ran' => $ran,
       'remaining' => count($this->pending())
+        + $this->futureByReference()
         + WpLedgeredDelivery::orphanedRedeliveries($this->config)
         + ($wakeups?->unprojected() ?? 0),
       'rounds' => $rounds,
@@ -96,7 +101,47 @@ final class WpRollbackDrain {
         $ids[] = (int) $id;
       }
     }
+    foreach ($this->byReference() as [$id, $due]) {
+      if ($due === null || $due <= $this->now()->getTimestamp()) {
+        $ids[] = $id;
+      }
+    }
     sort($ids);
     return $ids;
+  }
+
+  /**
+   * By-reference integration actions (WpLargeEnvelope, D6) still pending
+   * and due after now: N-only (a 0.6 winner cannot resolve them) and not
+   * run early, because their delay is part of the fact. The runbook waits
+   * for them.
+   */
+  public function futureByReference(): int {
+    $now = $this->now()->getTimestamp();
+    return count(array_filter($this->byReference(), static fn (array $a) => $a[1] !== null && $a[1] > $now));
+  }
+
+  /** @return list<array{0: int, 1: ?int}> [action id, due timestamp] of pending by-reference integration actions */
+  private function byReference(): array {
+    if (!function_exists('as_get_scheduled_actions') || !class_exists('ActionScheduler')) {
+      return [];
+    }
+    $store = \call_user_func(['ActionScheduler', 'store']);
+    $prefix = $this->config->hook('integration_');
+    $out = [];
+    foreach ((array) as_get_scheduled_actions([
+      'group' => $this->config->as_group('outbox'),
+      'status' => 'pending',
+      'per_page' => -1,
+    ], 'ids') as $id) {
+      $action = $store->fetch_action((string) $id);
+      $args = $action->get_args();
+      if (!str_starts_with((string) $action->get_hook(), $prefix) || !is_array($args[0] ?? null) || !WpLargeEnvelope::isReference($args[0])) {
+        continue;
+      }
+      $date = $action->get_schedule()->get_date();
+      $out[] = [(int) $id, $date === null ? null : $date->getTimestamp()];
+    }
+    return $out;
   }
 }
