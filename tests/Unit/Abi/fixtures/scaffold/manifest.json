@@ -1,0 +1,33 @@
+{
+    "args": [
+        "acme_orders",
+        "AcmeOrders",
+        "ACME_ORDERS_VERSION"
+    ],
+    "tags": {
+        "v0.6.0": {
+            "dir": "v0.6.0",
+            "scaffolder_blob": "9761c5489444ced9a9bb4557cda2dc53b9470195"
+        },
+        "v0.6.2": {
+            "dir": "v0.6.2",
+            "scaffolder_blob": "d2f63ba8fc88a3f5420da0d87e731d1ecd60dab1"
+        },
+        "v0.6.3": {
+            "dir": "v0.6.2",
+            "scaffolder_blob": "d2f63ba8fc88a3f5420da0d87e731d1ecd60dab1"
+        },
+        "v0.6.4": {
+            "dir": "v0.6.2",
+            "scaffolder_blob": "d2f63ba8fc88a3f5420da0d87e731d1ecd60dab1"
+        },
+        "v0.6.5": {
+            "dir": "v0.6.2",
+            "scaffolder_blob": "d2f63ba8fc88a3f5420da0d87e731d1ecd60dab1"
+        },
+        "v0.6.6": {
+            "dir": "v0.6.2",
+            "scaffolder_blob": "d2f63ba8fc88a3f5420da0d87e731d1ecd60dab1"
+        }
+    }
+}
