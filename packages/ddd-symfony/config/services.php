@@ -69,6 +69,7 @@ use TangibleDDD\Symfony\Runtime\Actor\SecurityUserActorProvider;
 use TangibleDDD\Symfony\Runtime\Actor\SymfonyActorProvider;
 use TangibleDDD\Symfony\Runtime\CompiledSubscriptionRegistry;
 use TangibleDDD\Symfony\Runtime\DddRuntimeReset;
+use TangibleDDD\Symfony\Runtime\ExplicitHandlerMapping;
 use TangibleDDD\Symfony\Runtime\Factory;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
@@ -382,8 +383,13 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.middleware.self_executing', SelfExecutingCommandMiddleware::class)
     ->args([abstract_arg('handle() dependency locator, set by HandlerLocatorPass')]);
 
-  $s->set('tangible_ddd.handler_mapping', MapByNamingConvention::class)
-    ->args([inline_service(HandlerClassNameInflector::class), inline_service(Handle::class)]);
+  // The naming convention, plus an explicit map for library commands outside a
+  // Commands namespace (core's stranded repairs, WP8-10; set by the bundle).
+  $s->set('tangible_ddd.handler_mapping', ExplicitHandlerMapping::class)
+    ->args([
+      param('tangible_ddd.explicit_handlers'),
+      inline_service(MapByNamingConvention::class)->args([inline_service(HandlerClassNameInflector::class), inline_service(Handle::class)]),
+    ]);
   $s->set('tangible_ddd.middleware.command_handler', CommandHandlerMiddleware::class)
     ->args([abstract_arg('command handler locator, set by HandlerLocatorPass'), service('tangible_ddd.handler_mapping')]);
   $s->set('tangible_ddd.middleware.query_handler', CommandHandlerMiddleware::class)
@@ -460,7 +466,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.process_store'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'),
       service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'], 1.0,
       // WP8-10: core's repair commands on the command bus once they exist (runtime class_exists guard).
-      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle']]),
+      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle'], CoreStrandedRepairs::RESUME, CoreStrandedRepairs::FAIL, $consumer['prefix']]),
     ])
     ->tag('console.command', ['command' => 'ddd:ops:stranded']);
   $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)

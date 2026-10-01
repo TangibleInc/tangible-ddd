@@ -106,13 +106,23 @@ final class ProcessWiringTest extends KernelTestBase {
     $store = self::getContainer()->get(IProcessStore::class);
     $resume = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(1));
     $fail = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(2));
+    $fresh = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(3));
+    // Stranded: `running` with no live intent, last touched an hour ago (findStranded's 900 s threshold).
+    $this->db->executeStatement("UPDATE ddd_processes SET status = 'running', updated_at = now() - interval '1 hour' WHERE id IN (?, ?)", [$resume, $fail]);
+    $this->db->executeStatement("UPDATE ddd_processes SET status = 'running' WHERE id = ?", [$fresh]);
 
     $t = $this->console('ddd:ops:stranded', ['--resume' => [(string) $resume], '--fail' => [(string) $fail], '--reason' => 'operator']);
 
-    self::assertSame(0, $t->getStatusCode(), $t->getDisplay());
-    // Inline repairs while core's ResumeStrandedProcess / FailStrandedProcess do not exist (WP8-10).
-    self::assertSame(1, $this->countRows('SELECT count(*) FROM ddd_wakeups WHERE process_id = ?', [$resume]));
+    self::assertSame(0, $t->getStatusCode(), $t->getDisplay() . $t->getErrorOutput());
+    // WP8-10: core's ResumeStrandedProcess / FailStrandedProcess on the bundle's command bus.
+    self::assertSame('resume_retry', $this->db->fetchOne('SELECT kind FROM ddd_wakeups WHERE process_id = ?', [$resume]));
     self::assertSame('failed', $this->db->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$fail]));
+    self::assertStringContainsString('Failed by operator: operator', (string) $this->db->fetchOne('SELECT last_error FROM ddd_processes WHERE id = ?', [$fail]));
+
+    // The core guard: a process that is not stranded is refused, and the command fails.
+    $refused = $this->console('ddd:ops:stranded', ['--fail' => [(string) $fresh]]);
+    self::assertSame(1, $refused->getStatusCode());
+    self::assertSame('running', $this->db->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$fresh]));
   }
 
   public function test_inband_start_on_a_pooled_dsn_is_refused_at_boot(): void {

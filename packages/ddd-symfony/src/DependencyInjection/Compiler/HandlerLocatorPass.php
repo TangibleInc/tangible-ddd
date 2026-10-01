@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 use Symfony\Component\DependencyInjection\Reference;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\CommandHandlers\IReturningCommandHandler;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Queries\SelfHandlingQuery;
@@ -108,7 +109,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
           continue; // default value or UnresolvableHandleDependency at dispatch, as the middleware decides
         }
         $name = $type->getName();
-        if (in_array(strtolower($name), ['self', 'static'], true) || is_a($name, ICommandHandler::class, true)) {
+        if (in_array(strtolower($name), ['self', 'static'], true) || is_a($name, ICommandHandler::class, true) || is_a($name, IReturningCommandHandler::class, true)) {
           continue; // SelfHandlingCommandWrapsHandler at dispatch
         }
         $types[$name] = true;

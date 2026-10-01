@@ -8,6 +8,8 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
+use TangibleDDD\Application\Process\Repair\FailStrandedProcess;
+use TangibleDDD\Application\Process\Repair\ResumeStrandedProcess;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Lock\IProcessLock;
@@ -49,8 +51,24 @@ final class CoreStrandedRepairsTest extends TestCase {
   }
 
   public function test_the_default_class_names_are_core_s(): void {
-    self::assertSame('TangibleDDD\\Application\\Process\\ResumeStrandedProcess', CoreStrandedRepairs::RESUME);
-    self::assertSame('TangibleDDD\\Application\\Process\\FailStrandedProcess', CoreStrandedRepairs::FAIL);
+    self::assertSame(ResumeStrandedProcess::class, CoreStrandedRepairs::RESUME);
+    self::assertSame(FailStrandedProcess::class, CoreStrandedRepairs::FAIL);
+    self::assertTrue((new CoreStrandedRepairs(static fn () => null))->available());
+  }
+
+  public function test_the_core_commands_get_the_consumer_prefix_process_id_and_reason_by_name(): void {
+    $dispatched = [];
+    $repairs = new CoreStrandedRepairs(
+      static function (object $command) use (&$dispatched): void {
+        $dispatched[] = $command;
+      },
+      consumerPrefix: 'txp',
+    );
+
+    $repairs->resume(7);
+    $repairs->fail(8, 'payment provider gone');
+
+    self::assertEquals([new ResumeStrandedProcess('txp', 7), new FailStrandedProcess('txp', 8, 'payment provider gone')], $dispatched);
   }
 
   public function test_ops_stranded_dispatches_the_core_repairs_when_available(): void {

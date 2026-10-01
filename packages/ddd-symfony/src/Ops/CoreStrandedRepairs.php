@@ -5,22 +5,24 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Ops;
 
 /**
- * The process layer's repairs as core commands (wave3-notes WP8-10): core
- * ships `ResumeStrandedProcess` / `FailStrandedProcess` in wave 4, and
- * `ddd:ops:stranded --resume|--fail` dispatches them through the command
- * bus instead of repairing inline.
+ * The process layer's repairs as core commands (wave3-notes WP8-10, core
+ * CR-W4P-4): `ddd:ops:stranded --resume|--fail` dispatches core's
+ * `Application\Process\Repair\ResumeStrandedProcess` /
+ * `FailStrandedProcess` on the bundle's command bus instead of repairing
+ * inline. The core handlers guard (zero-wait process lock, the row must be
+ * in findStranded(), optional expected version) and refuse with
+ * ProcessNotStranded.
  *
- * Until core-process merges, the classes do not exist: available() is
- * false and StrandedCommand keeps its inline repair (Continue intent /
- * locked, version-fenced fail). The commands are built from their
- * constructors: the first parameter gets the process id; a parameter named
- * `reason` gets the operator's reason. If core settles on other class names,
- * RESUME / FAIL are the one place to change.
+ * The commands are built from their constructors by parameter name:
+ * `consumer_prefix` gets this consumer's prefix, `process_id` (or
+ * `processId`, else the first parameter) the process id, `reason` the
+ * operator's reason. When the classes do not exist (an older core),
+ * available() is false and StrandedCommand keeps its inline repair.
  */
 final class CoreStrandedRepairs {
 
-  public const RESUME = 'TangibleDDD\\Application\\Process\\ResumeStrandedProcess';
-  public const FAIL = 'TangibleDDD\\Application\\Process\\FailStrandedProcess';
+  public const RESUME = 'TangibleDDD\\Application\\Process\\Repair\\ResumeStrandedProcess';
+  public const FAIL = 'TangibleDDD\\Application\\Process\\Repair\\FailStrandedProcess';
 
   /** @var \Closure(object): mixed */
   private readonly \Closure $dispatch;
@@ -30,6 +32,7 @@ final class CoreStrandedRepairs {
     callable $dispatch,
     private readonly string $resumeClass = self::RESUME,
     private readonly string $failClass = self::FAIL,
+    private readonly string $consumerPrefix = '',
   ) {
     $this->dispatch = \Closure::fromCallable($dispatch);
   }
@@ -54,11 +57,15 @@ final class CoreStrandedRepairs {
     if ($params === []) {
       throw new \LogicException("$class takes no process id.");
     }
-    $args = [$params[0]->getName() => $processId];
-    foreach (array_slice($params, 1) as $param) {
-      if ($param->getName() === 'reason' && $reason !== null) {
-        $args['reason'] = $reason;
-      }
+
+    $names = array_map(static fn (\ReflectionParameter $p) => $p->getName(), $params);
+    $idParam = array_values(array_intersect(['process_id', 'processId'], $names))[0] ?? $names[0];
+    $args = [$idParam => $processId];
+    if (in_array('consumer_prefix', $names, true)) {
+      $args['consumer_prefix'] = $this->consumerPrefix;
+    }
+    if ($reason !== null && in_array('reason', $names, true)) {
+      $args['reason'] = $reason;
     }
     return new $class(...$args);
   }
