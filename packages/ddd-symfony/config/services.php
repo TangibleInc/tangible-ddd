@@ -36,7 +36,14 @@ use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\SystemClock;
 use TangibleDDD\Symfony\Console\RelayCommand;
 use TangibleDDD\Symfony\Console\SchemaDumpCommand;
+use TangibleDDD\Runtime\Ops\IOperatorView;
+use TangibleDDD\Runtime\Ops\PortOperatorView;
+use TangibleDDD\Symfony\Console\Ops\DlqDiscardCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
+use TangibleDDD\Symfony\Console\Ops\OpsListCommand;
+use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
+use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
+use TangibleDDD\Symfony\Ops\MessengerFailureTransportSource;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
 use TangibleDDD\Symfony\Console\Ops\PauseCommand;
@@ -269,6 +276,30 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.consumer_config'),
     ]);
 
+  // ── D9 operator view (register 3.10, 5.1): core PortOperatorView over the
+  // outbox DLQ and stranded processes, plus the sf sources ───────────────
+  $failureTransport = $config['messenger']['failure_transport'];
+  $s->set('tangible_ddd.operator_view', PortOperatorView::class)
+    ->args([
+      service('tangible_ddd.consumer_config'),
+      service('tangible_ddd.outbox_administration'),
+      service('tangible_ddd.process_store'),
+      service('tangible_ddd.clock'),
+      [
+        inline_service(DbalLedgerOperatorSource::class)
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix, $config['delivery']['budget']]),
+        inline_service(DbalWakeupOperatorSource::class)
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
+        inline_service(MessengerFailureTransportSource::class)
+          ->args([
+            $failureTransport === null || $failureTransport === '' ? null : service('messenger.transport.' . $failureTransport)->nullOnInvalid(),
+            $consumer['prefix'],
+            (string) $failureTransport,
+          ]),
+      ],
+    ]);
+  $s->alias(IOperatorView::class, 'tangible_ddd.operator_view');
+
   // ── actors (D5) ──────────────────────────────────────────────────────────
   $s->set('tangible_ddd.actor_context', ActorContext::class)->public()->tag('kernel.reset', ['method' => 'reset']);
   $s->alias(ActorContext::class, 'tangible_ddd.actor_context')->public();
@@ -394,6 +425,12 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ])
     ->tag('console.command', ['command' => 'ddd:relay']);
   // ── ddd:ops:* (register 3.10, 5.1) ───────────────────────────────────────
+  $s->set('tangible_ddd.command.ops.list', OpsListCommand::class)
+    ->args([service('tangible_ddd.operator_view')])
+    ->tag('console.command', ['command' => 'ddd:ops:list']);
+  $s->set('tangible_ddd.command.ops.dlq_discard', DlqDiscardCommand::class)
+    ->args([service('tangible_ddd.outbox_administration')])
+    ->tag('console.command', ['command' => 'ddd:ops:dlq:discard']);
   $s->set('tangible_ddd.command.ops.dlq_list', DlqListCommand::class)
     ->args([service('tangible_ddd.outbox_administration')])
     ->tag('console.command', ['command' => 'ddd:ops:dlq:list']);

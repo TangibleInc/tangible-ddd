@@ -118,6 +118,7 @@ final class TestKernel extends Kernel {
       \Symfony\Component\DependencyInjection\Loader\Configurator\service(\TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger::class),
     ]])->public();
     $services->alias('test.effect_journal', \TangibleDDD\Runtime\Effects\IEffectJournal::class)->public();
+    $services->alias('test.operator_view', \TangibleDDD\Runtime\Ops\IOperatorView::class)->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.

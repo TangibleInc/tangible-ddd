@@ -11,7 +11,8 @@ Install and configure: [examples/symfony/README.md](../../examples/symfony/READM
 | `Lock` | `PostgresAdvisoryProcessLock` (session `pg_try_advisory_lock`, register 5.2) |
 | `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler`, `ProcessWakeupMessage`, `ProcessWakeupHandler` |
 | `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step), `Wakeup\WakeupRelay` (due intents → `ddd_wakeups`, stranded scan), `Wakeup\PostgresNotifyRelayWakeup` / `PostgresListenWaiter` (D14), `SymfonySignalDispatcher`, D5 actor providers |
-| `Console` | `ddd:relay`, `ddd:schema:dump`, `ddd:ops:dlq:list`, `ddd:ops:dlq:replay`, `ddd:ops:dlq:retry`, `ddd:ops:stranded`, `ddd:ops:pause`, `ddd:ops:resume` |
+| `Ops` | D9 operator-view sources: `DbalLedgerOperatorSource` (delivery), `DbalWakeupOperatorSource` (wakeup), `MessengerFailureTransportSource` (transport); the view itself is core `PortOperatorView` (service `tangible_ddd.operator_view`, alias `IOperatorView`) |
+| `Console` | `ddd:relay`, `ddd:schema:dump`, `ddd:ops:list`, `ddd:ops:dlq:list`, `ddd:ops:dlq:replay`, `ddd:ops:dlq:retry`, `ddd:ops:dlq:discard`, `ddd:ops:stranded`, `ddd:ops:pause`, `ddd:ops:resume` |
 
 Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd.table_prefix`).
 
@@ -38,6 +39,23 @@ Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd
   `APP_VERSION` unset) all mean `'0.0.0'`, both for the registered consumer and
   for the audit environment's `app` key (L4). Before wave 4 a null version was a
   `TypeError` at the first command.
+
+## Operator view (D9)
+
+`bin/console ddd:ops:list [--layer=relay|delivery|wakeup|process|workflow|transport] [--format=json]`
+lists every failure the host holds, one row per item, ordered by layer and then
+oldest first, with attempts against the layer's budget and the repairs that
+apply:
+
+| Layer | Source | Budget | Repairs |
+|---|---|---|---|
+| `relay` | outbox DLQ (`IOutboxAdministration`) | the row's `max_attempts` | `ddd:ops:dlq:retry` / `replay` / `discard` |
+| `delivery` | `ddd_delivery_ledger` pairs that failed or are exhausted | `delivery.budget` | none (Messenger is retrying, or the compensation ran) |
+| `wakeup` | `ddd_wakeups` intents that failed | 10 | `rearm` when exhausted (`ddd:ops:stranded --rearm`) |
+| `process` | stranded `running` processes (`IProcessStore::findStranded`) | - | `ddd:ops:stranded --resume` / `--fail` |
+| `transport` | the Messenger failure transport (`messenger.failure_transport`) | - (the ledger counts it) | `messenger:failed:retry` / `remove` |
+
+The same view is the `IOperatorView` service for a host's own admin page.
 
 ## Processes and wakeups
 
