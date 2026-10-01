@@ -86,10 +86,18 @@ final class WpProcessWakeE2ETest extends V8TestCase {
     do_action(V8Fact::integration_action(), IntegrationEnvelope::wrap((new V8Fact(2))->integration_payload(), '44444444-4444-4444-8444-444444444444', 1, 'f0000000-0000-4000-8000-000000000002'));
     self::assertSame('completed', $this->processStatus($id));
 
-    $this->runAction($this->pendingActions('ddd8it_await_timeout')[0]->id);
+    // The satisfied await cancels its timeout intent in the same transaction
+    // (core wave 3), and the projected Action Scheduler action goes with it.
+    self::assertSame('cancelled', $this->intent("timeout:$id:0")['status']);
+    self::assertSame([], $this->pendingActions('ddd8it_await_timeout'));
+
+    // A copy of the action that survived elsewhere (e.g. queued by a 0.6
+    // winner) still fires as a no-op. Action Scheduler passes the stored
+    // associative args positionally.
+    do_action('ddd8it_await_timeout', $id, 0);
 
     self::assertSame(1, V8AwaitingProcess::$finished, 'no resurrection');
-    self::assertSame('done', $this->intent("timeout:$id:0")['status']);
+    self::assertSame('completed', $this->processStatus($id));
   }
 
   public function test_a_contended_wake_is_re_queued_by_the_relay_tick_and_later_succeeds(): void {
