@@ -31,8 +31,10 @@ use TangibleDDD\Runtime\SystemClock;
  *   ignition_key = uuid5(event_id, process_class) under
  *   UNIQUE (process_class, ignition_key). Either hit, or a duplicate key
  *   (MySQL 1062 only), returns AlreadyIgnited and persists nothing. An
- *   event id that is not a UUID cannot be keyed: it is deduped by the
- *   ignited_by_event_id check alone.
+ *   event id that is not a UUID cannot be keyed: its check, under the same
+ *   lock, also counts N's own ignitions (start_path NULL or `ignition`,
+ *   never `manual`), so a redelivery still ignites once; such an ignition
+ *   is logged.
  * - insert(): manual start, ignition_key NULL, start_path `manual`, never
  *   deduped (process.manual-start-in-drain), so it never blocks a later
  *   #[StartsOn] ignition of its class by the same fact.
@@ -45,7 +47,8 @@ use TangibleDDD\Runtime\SystemClock;
  *   then QuarantinedProcess is thrown; the worker continues.
  * - findStranded($now): `scheduled` / `running` rows not updated for
  *   $strandedAfterSeconds (default 900) with no live (`pending` / `firing`)
- *   intent in `{prefix}_ddd_wakeups`.
+ *   intent in `{prefix}_ddd_wakeups`; a `running` row only while its
+ *   process lock is free on both names (IS_FREE_LOCK).
  *
  * Every write failure throws ProcessStoreFailed (C27). Time is the host
  * IClock (constructor, else HostDefaults, else SystemClock).
@@ -71,14 +74,23 @@ final class WpdbProcessStore implements IProcessStore {
 
     try {
       $db = self::db();
+      // Keyed: only a 0.6 copy's ignition (start_path NULL) is invisible to
+      // the UNIQUE key. Unkeyed: N's own earlier ignition must count too.
+      $paths = $key === null ? "(start_path IS NULL OR start_path = 'ignition')" : 'start_path IS NULL';
       $seen = $db->get_var($db->prepare(
         "SELECT id FROM `{$this->table()}`
-         WHERE process_class = %s AND ignited_by_event_id = %s AND start_path IS NULL LIMIT 1",
+         WHERE process_class = %s AND ignited_by_event_id = %s AND $paths LIMIT 1",
         $processClass,
         $eventId
       ));
+      if ($db->last_error !== '') {
+        throw new ProcessStoreFailed("Ignition check for $processClass / $eventId failed: {$db->last_error}");
+      }
       if ($seen !== null) {
-        return IgnitionResult::AlreadyIgnited; // a 0.6 copy ignited it (rollback window)
+        return IgnitionResult::AlreadyIgnited; // a 0.6 copy ignited it (rollback window), or an unkeyed redelivery
+      }
+      if ($key === null) {
+        \TangibleDDD\Runtime\Support\Log::write(null, sprintf('[%s-process] ignition of %s by non-UUID event id %s: no ignition key, deduped by the ignited_by_event_id check under the ignition lock only', $this->config->prefix(), $processClass, $eventId), 'notice');
       }
 
       return $this->insertRow($p, $key, 'ignition') === null
@@ -185,13 +197,26 @@ final class WpdbProcessStore implements IProcessStore {
       $cutoff
     ));
 
-    return array_map(static fn (object $r) => new StrandedProcess(
-      (int) $r->id,
-      (string) $r->process_class,
-      (string) $r->status,
-      (int) $r->step_index,
-      new \DateTimeImmutable((string) $r->updated_at, new \DateTimeZone('UTC')),
-    ), is_array($rows) ? $rows : []);
+    $out = [];
+    foreach (is_array($rows) ? $rows : [] as $r) {
+      // Register 5.3: a `running` row is stranded only when its lock is
+      // free; a long wake that holds it (either name: N or a 0.6 copy) is
+      // still running.
+      if ($r->status === 'running') {
+        $key = new \TangibleDDD\Runtime\Lock\LockKey($this->config->prefix(), '', (int) $r->id);
+        if (!WpNamedLock::isFree(GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key))) {
+          continue;
+        }
+      }
+      $out[] = new StrandedProcess(
+        (int) $r->id,
+        (string) $r->process_class,
+        (string) $r->status,
+        (int) $r->step_index,
+        new \DateTimeImmutable((string) $r->updated_at, new \DateTimeZone('UTC')),
+      );
+    }
+    return $out;
   }
 
   /** @return int|null the new id, or null when the ignition key is already taken */

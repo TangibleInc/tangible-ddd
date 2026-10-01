@@ -190,6 +190,49 @@ final class WpProcessV8Test extends V8TestCase {
     unset($fresh);
   }
 
+  public function test_a_non_uuid_event_id_still_ignites_once_and_a_manual_start_does_not_block_it(): void {
+    $legacyId = 'legacy-event-7'; // a hand-built __event_id: no ignition key can be derived
+    $manual = $this->process(new V8IgnitedProcess(1));
+    $manual->mark_ignited_by($legacyId);
+    $this->store->insert($manual);
+
+    // As ProcessRunner does: mark_ignited_by() before insertIgnited().
+    $ignite = function () use ($legacyId): array {
+      $p = $this->process(new V8IgnitedProcess(2));
+      $p->mark_ignited_by($legacyId);
+      return [$p, $this->store->insertIgnited($p, V8IgnitedProcess::class, $legacyId)];
+    };
+    [$first, $result] = $ignite();
+    self::assertSame(IgnitionResult::Inserted, $result);
+    self::assertNull($this->row((int) $first->get_id())['ignition_key']);
+    self::assertSame(IgnitionResult::AlreadyIgnited, $ignite()[1], 'a redelivery of the unkeyed fact');
+    self::assertSame('2', (string) $this->wpdb->get_var("SELECT COUNT(*) FROM `{$this->table('long_processes')}`"));
+  }
+
+  public function test_a_running_row_whose_lock_is_held_is_not_stranded(): void {
+    $old = $this->clock->now()->modify('-16 minutes')->format('Y-m-d H:i:s');
+    $running = SchemaV7::process($this->config, V8ManualProcess::class, 'running', 1, null);
+    $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET updated_at = '$old' WHERE id = $running");
+
+    $lock = new GetLockProcessLock();
+    $handle = $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1);
+    self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
+    $lock->release($handle);
+
+    self::assertWpdbLegacyHolderHides($this->wpdb, $running, fn () => $this->store->findStranded($this->clock->now()));
+    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+  }
+
+  /** A 0.6 copy holding only the legacy name hides the row too. */
+  private static function assertWpdbLegacyHolderHides(\wpdb $db, int $id, callable $find): void {
+    $db->get_var("SELECT GET_LOCK('ddd_process_$id', 1)");
+    try {
+      self::assertSame([], $find());
+    } finally {
+      $db->get_var("SELECT RELEASE_LOCK('ddd_process_$id')");
+    }
+  }
+
   public function test_the_lock_takes_the_new_and_the_legacy_name_and_releases_both(): void {
     $lock = new GetLockProcessLock();
     $key = new LockKey($this->config->prefix(), '', 41);

@@ -26,8 +26,10 @@ use TangibleDDD\Runtime\SystemClock;
  *   scheduled in its own transaction, which projects it to AS.
  * - `scheduled` with an `exhausted` wake (register 5.1): reported, never
  *   re-minted; `wp ddd ops --rearm=<key>` restarts it.
- * - `running`: reported only (operator view, ResumeStrandedProcess /
- *   FailStrandedProcess repairs); an automatic re-run would repeat effects.
+ * - `running` (old, and its process lock free on both names, so no wake
+ *   is still holding it): reported only, in the operator view; the
+ *   ResumeStrandedProcess / FailStrandedProcess repairs are pending core
+ *   (WP8-10). An automatic re-run would repeat effects.
  */
 final class WpStrandedScan {
 

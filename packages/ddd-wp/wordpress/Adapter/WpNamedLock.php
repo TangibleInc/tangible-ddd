@@ -85,6 +85,23 @@ final class WpNamedLock {
     }
   }
 
+  /**
+   * Whether every name is free (IS_FREE_LOCK = 1; held by anyone, this
+   * connection included, is not free). A query error answers false: a
+   * probe that cannot see the lock must not report the holder as gone.
+   */
+  public static function isFree(string ...$names): bool {
+    if ($names === []) {
+      return true;
+    }
+    $db = self::db();
+    $free = $db->get_var($db->prepare(
+      'SELECT ' . implode(' AND ', array_fill(0, count($names), 'IS_FREE_LOCK(%s) = 1')),
+      ...$names
+    ));
+    return $free !== null && (string) $free === '1';
+  }
+
   /** Never throws; a failed release is logged as a bug. */
   public static function release(string $name): void {
     try {
