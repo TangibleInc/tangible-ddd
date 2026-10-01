@@ -51,9 +51,9 @@ No ratified interface, frozen FQCN, persisted name, schema column or procedural 
 - **Fix needed for it (wp-internal).** The core guard takes the process lock with a zero wait and then re-reads `findStranded()` under it. `WpdbProcessStore::findStranded()` reported a `running` row only when `IS_FREE_LOCK` was true on both names, so the guard's own hold hid the row and every repair was refused. New `WpNamedLock::isFreeOrHeldHere(...$names)` (`COALESCE(IS_USED_LOCK(n) = CONNECTION_ID(), 1)`) is used by the scan. A holder in **another** session (a live wake, N or 0.6) still hides the row. `WpNamedLock::isFree()` is unchanged. `WpProcessV8Test::test_a_running_row_whose_lock_is_held_is_not_stranded` now holds the lock from a second session, which is what it models, and also pins the own-session case.
 - **Why.** WP8-10 ruling, CR-W4P-4, W4P-R5.
 
-## CR-WPC4-6: 7.3 suite location and the legacy winners (PK4-1, convention change)
+## CR-WPC4-6: 7.3 suite and the legacy winners (PK4-1)
 
-- **What.** The suite is at `tests/Compat/rollback/phpunit.xml`, not at PK4-1's `tests/Integration/Rollback/phpunit.xml`. The task places the fixtures under `tests/Compat/rollback/**`. `run.sh` `compat_rollback()` (its 7.3 block, owned by this author) points there. It also builds the legacy winners PK4-1 asked about:
+- **What.** The suite entry stays at PK4-1's `tests/Integration/Rollback/phpunit.xml`, which packaging's `HarnessCliTest` pins. Its bootstrap and test directory are `tests/Compat/rollback/**`, where the task places the fixtures. `run.sh` `compat_rollback()` (its 7.3 block, owned by this author) also builds the legacy winners PK4-1 asked about:
   - every ref of `DDD_ROLLBACK_REFS` (default `v0.6.6 v0.6.5 v0.6.2`) is exported from the clone (`h_export`), `composer install --no-dev --no-scripts`ed on the host, and mounted read-only at `/legacy`;
   - the suite receives `DDD_ROLLBACK_LEGACY="<version>=<dir> ..."`.
   - Each legacy run is a php child, `tests/Compat/rollback/bin/legacy.php`. It loads WordPress, then only that copy (its loader's late branch makes it the winner) and its Action Scheduler, and drives the consumer through 0.6 classes and hooks.
@@ -87,7 +87,7 @@ No ratified interface, frozen FQCN, persisted name, schema column or procedural 
 ## Requests to other owners
 
 - **WPC4-R1 (coordinator, register).**
-  - Record CR-WPC4-6: the 7.3 suite location `tests/Compat/rollback/phpunit.xml`, `DDD_ROLLBACK_REFS`, `DDD_ROLLBACK_LEGACY`.
+  - Record CR-WPC4-6: the 7.3 fixtures in `tests/Compat/rollback/**` behind `tests/Integration/Rollback/phpunit.xml`, plus `DDD_ROLLBACK_REFS` and `DDD_ROLLBACK_LEGACY`.
   - Add the `#[Async]` rollback note above to the runbook.
   - Add to register 3.6 / 5.1: by-reference integration actions are N-only, and are run or counted by `wp ddd drain --before-rollback`.
 - **WPC4-R2 (packaging).** `run.sh` `usage()` still says "wp ids due by wave 3 gated" for `conformance-wp`. The gate now defaults to wave 4. That line is outside the blocks this author owns.

@@ -196,9 +196,9 @@ core_pdo() {
 #               ships no tests/docs/tools/ddd-symfony/ddd-conformance
 #   7.2         `run.sh loader` unnarrowed: every 7.2 case, 0 skipped
 #   7.3         the rollback fixtures (wp, wave 4): the WordPress suite at
-#               tests/Compat/rollback/phpunit.xml of the ref, on a fresh
-#               database, with installed legacy winners; absent is a
-#               failure, not a skip
+#               tests/Integration/Rollback/phpunit.xml of the ref (fixtures in
+#               tests/Compat/rollback), on a fresh database, with installed
+#               legacy winners; absent is a failure, not a skip
 # DDD_COMPAT_SECTIONS picks a subset (for a partial local run; the gate runs
 # all). DDD_LOADER_CASES is refused: compat never narrows 7.2. With
 # DDD_DB_NAME set, the WordPress sections use <name>_l72 and <name>_r73.
@@ -284,7 +284,7 @@ compat_rollback() {
 
   H_EXPORT="$H_WORK/tangible-ddd"
   h_export "$H_EXPORT"
-  local suite=tests/Compat/rollback/phpunit.xml
+  local suite=tests/Integration/Rollback/phpunit.xml
   if [ ! -f "$H_EXPORT/$suite" ]; then
     echo "FAIL 7.3: $suite is absent from the ref under test (the wp-owned rollback fixtures of register 7.3, wave 4)"
     exit 1
