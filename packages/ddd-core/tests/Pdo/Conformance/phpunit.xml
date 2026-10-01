@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   The shared ddd-conformance scenarios on the pdo host (register section 4,
-  section 8: the 37 pdo ids of wave 3 and the 7 of wave 4), on a real MySQL 8.
+  section 8: the 37 pdo ids of wave 3, the 7 of wave 4 and the 5 of wave 5),
+  on a real MySQL 8.
 
     vendor/bin/phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml
 
