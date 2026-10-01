@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use TangibleDDD\Domain\Exceptions\BusinessConstraintException;
+use TangibleDDD\Domain\Exceptions\ConflictException;
 use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\TransactionFailed;
@@ -311,6 +313,9 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
       self::fail('expected a conflict');
     } catch (PersistenceConflict $e) {
       self::assertInstanceOf(UniqueConstraintViolationException::class, $e->getPrevious());
+      self::assertInstanceOf(ConflictException::class, $e, 'the core 409 family (L10, CR-W5CC-1)');
+      self::assertInstanceOf(BusinessConstraintException::class, $e);
+      self::assertSame(409, $e->getCode());
       self::assertSame('sf_tx_rows_pkey', $e->constraint);
       self::assertStringContainsString('sf_tx_rows_pkey', $e->getMessage());
     }
