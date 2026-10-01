@@ -10,7 +10,7 @@ use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
 use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
 use TangibleDDD\Runtime\Scheduling\ClaimedWakeup;
-use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
+use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
 
@@ -20,10 +20,15 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * transaction" rule against the required boundary (WakeupOutsideTransaction
  * otherwise); enlist it in that boundary so an intent rolls back with the
  * process save. Tests that deliberately skip the rule must say so with
- * lenient(). It keeps the WakeupIntent objects themselves, so a parked
- * fact (WakeupIntent::$fact) comes back from claim_due() (ICarriesFacts).
+ * lenient().
+ *
+ * It keeps the WakeupIntent objects themselves, so WakeupIntent::$fact
+ * survives the round trip, but it does NOT declare ICarriesFacts: the
+ * ProcessRunner keeps the wave-3 rule on it (a contended fact resume fails
+ * the subscriber and the delivery retries it). A host or test that wants
+ * the wave-5 parked-resume path (AW2) opts in with InMemoryParkingScheduler.
  */
-final class InMemoryWakeupScheduler implements ICarriesFacts, InMemoryTransactional, IOperatorItemSource {
+class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
 
   /** @var array<string, array{intent: WakeupIntent, seq: int, attempts: int, next_at: ?\DateTimeImmutable, token: ?string, lease_until: ?\DateTimeImmutable, error: ?string}> */
   private array $intents = [];
@@ -39,8 +44,8 @@ final class InMemoryWakeupScheduler implements ICarriesFacts, InMemoryTransactio
    * transaction. Never use it in conformance or runner tests, where it
    * would hide an intent written outside the process transaction (C8/C9).
    */
-  public static function lenient(): self {
-    $s = new self(new InMemoryTransactionBoundary());
+  public static function lenient(): static {
+    $s = new static(new InMemoryTransactionBoundary());
     $s->checkTransaction = false;
     return $s;
   }

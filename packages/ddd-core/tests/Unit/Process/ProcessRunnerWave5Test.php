@@ -34,6 +34,7 @@ use TangibleDDD\Runtime\Scheduling\WakeKind;
 use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
+use TangibleDDD\Testing\InMemoryParkingScheduler;
 use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\InMemoryProcessStore;
 use TangibleDDD\Testing\InMemoryTransactionBoundary;
@@ -80,7 +81,7 @@ final class ProcessRunnerWave5Test extends TestCase {
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
     $this->boundary = new InMemoryTransactionBoundary();
     $this->store = new InMemoryProcessStore($this->clock);
-    $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
+    $this->wakeups = new InMemoryParkingScheduler($this->boundary);
     $this->store->attach_intents($this->wakeups);
     $this->boundary->enlist($this->store);
     $this->boundary->enlist($this->wakeups);
@@ -132,8 +133,10 @@ final class ProcessRunnerWave5Test extends TestCase {
 
   // ── AW2 ───────────────────────────────────────────────────────────────────
 
-  public function test_the_mem_scheduler_carries_facts(): void {
+  public function test_fact_carrying_is_an_opt_in_on_the_mem_scheduler(): void {
     self::assertInstanceOf(ICarriesFacts::class, $this->wakeups);
+    self::assertNotInstanceOf(ICarriesFacts::class, new InMemoryWakeupScheduler($this->boundary));
+    self::assertInstanceOf(InMemoryParkingScheduler::class, InMemoryParkingScheduler::lenient());
   }
 
   /**
