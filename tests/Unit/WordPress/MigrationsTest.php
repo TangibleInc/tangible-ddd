@@ -44,12 +44,16 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_8(): void {
+  public function test_current_schema_version_is_9(): void {
     // Regression guard for the v3-fast-path bug lineage: bumping the schema
-    // (v8 = the wave-3 durable contracts) must move this constant, or
-    // consumers' fast-paths treat themselves as current and never create
-    // the tables.
-    $this->assertSame(8, DDD_SCHEMA_VERSION);
+    // (v8 = the wave-3 durable contracts, v9 = the wave-5 parked-fact
+    // column) must move this constant, or consumers' fast-paths treat
+    // themselves as current and never create the tables.
+    $this->assertSame(9, DDD_SCHEMA_VERSION);
+  }
+
+  public function test_v9_migration_has_an_explicit_entry(): void {
+    $this->assertArrayHasKey(9, ddd_explicit_migrations(), 'consumers already at v8 skip dbDelta on the fast path: the explicit entry adds ddd_wakeups.fact for them.');
   }
 
   public function test_v8_migration_has_an_explicit_entry(): void {
