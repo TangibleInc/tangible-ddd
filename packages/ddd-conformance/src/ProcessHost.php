@@ -25,9 +25,10 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
  *   HostFixture::boundary(), HostFixture::clock() and
  *   HostFixture::subscriptions(), plus processStore() and wakeups();
  * - deliveries on any worker use HostFixture::ledger();
- * - FixtureCommand-style step commands (Fixtures\Process\StepCommand) need
- *   no bus: they record themselves in ProcessJournal (and, once the host
- *   called ProcessJournal::bind(), in HostFixture::scenarioRows()).
+ * - step commands (Fixtures\Process\StepCommand) need no bus: they record
+ *   themselves in ProcessJournal and, once the host called
+ *   ProcessJournal::bind() in setUp(), commit a row in
+ *   HostFixture::scenarioRows().
  *
  * The start mode is the host's own (in-band on mem, pdo and wp; deferred on
  * sf, CR-W3C-1): scenarios start processes through a helper that drains
