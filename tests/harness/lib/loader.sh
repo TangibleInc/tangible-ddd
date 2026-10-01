@@ -36,6 +36,12 @@ loader_header_version() {
 # loader_copy <label> <ref> -> exports <ref> into copies/<label>, prints its version
 loader_copy() {
   local label="$1" ref="$2" copy="$H_WORK/copies/$1" version
+  # A branch that exists only as a remote-tracking ref (a CI clone) resolves
+  # through origin/.
+  if [ "$ref" != WORKTREE ] && ! git -C "$REPO_ROOT" rev-parse --verify -q "$ref^{commit}" >/dev/null \
+    && git -C "$REPO_ROOT" rev-parse --verify -q "origin/$ref^{commit}" >/dev/null; then
+    ref="origin/$ref"
+  fi
   if [ ! -d "$copy" ]; then
     DDD_HARNESS_REF="$ref" h_export "$copy"
   fi
