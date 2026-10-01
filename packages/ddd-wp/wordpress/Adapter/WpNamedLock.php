@@ -45,13 +45,19 @@ final class WpNamedLock {
    * GET_LOCK query's first argument. The acquisition ORDER is still
    * $first then $second.
    *
+   * Timeout: $second waits only for what is left of $timeoutSeconds after
+   * $first was won (NOW(6) is the statement start, SYSDATE(6) the moment
+   * the second GET_LOCK runs), so the whole call waits at most
+   * $timeoutSeconds + 1 s (whole-second truncation), never twice the
+   * timeout.
+   *
    * @throws LockNotAcquired with the same reason texts as acquire()
    */
   public static function acquireBoth(string $first, string $second, int $timeoutSeconds = 5): void {
     $db = self::db();
     $acquired = $db->get_var($db->prepare(
       'SELECT IF(b.first = 1, IF(b.second = 1, 1, IF(RELEASE_LOCK(b.name) IS NULL, b.second, b.second)), b.first) AS acquired
-       FROM (SELECT a.name, a.first, IF(a.first = 1, GET_LOCK(a.legacy, a.t), NULL) AS second
+       FROM (SELECT a.name, a.first, IF(a.first = 1, GET_LOCK(a.legacy, GREATEST(0, a.t - TIMESTAMPDIFF(SECOND, NOW(6), SYSDATE(6)))), NULL) AS second
              FROM (SELECT %s AS legacy, %s AS name, %d AS t, GET_LOCK(%s, %d) AS first LIMIT 1) a LIMIT 1) b',
       $second,
       $first,

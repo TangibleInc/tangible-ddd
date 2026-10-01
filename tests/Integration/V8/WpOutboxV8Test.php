@@ -75,6 +75,16 @@ final class WpOutboxV8Test extends V8TestCase {
     self::assertSame([], $this->repository()->fetch_pending(10, 'legacy-worker'), 'a 0.6 fetch skips the claimed row (locked_until)');
   }
 
+  public function test_the_factory_serves_the_claim_token_store_only_to_a_migrated_consumer(): void {
+    $repo = new \TangibleDDD\Infra\Persistence\OutboxRepository($this->config, new \TangibleDDD\Application\Outbox\OutboxConfig());
+    self::assertInstanceOf(WpdbOutboxStore::class, \TangibleDDD\Runtime\HostDefaults::for(\TangibleDDD\Runtime\Outbox\IOutboxStore::class, $this->config, $repo));
+    update_option($this->config->option('ddd_schema_version'), 7, false);
+    self::assertNull(
+      \TangibleDDD\Runtime\HostDefaults::for(\TangibleDDD\Runtime\Outbox\IOutboxStore::class, $this->config, $repo),
+      'a v7 outbox has no claim_token column: the caller keeps the 0.6 repository path'
+    );
+  }
+
   public function test_claim_reads_the_given_now_not_the_wall_clock(): void {
     $this->store->append($this->record('e0000000-0000-4000-8000-000000000002', $this->clock->now()->modify('+1 hour')));
 

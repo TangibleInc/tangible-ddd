@@ -39,8 +39,10 @@ use function TangibleDDD\WordPress\command_audit_enabled;
  *   on the legacy hooks at schedule time) for a migrated consumer, else the
  *   wave-2 ActionSchedulerWakeupScheduler (AS only).
  * - IOutboxStore: WpdbOutboxStore over the framework's own wpdb
- *   OutboxRepository ($legacy); a consumer-authored IOutboxRepository (LMS
- *   Doctrine) gets null, and its callers keep the 0.6 path (R3).
+ *   OutboxRepository ($legacy) of a migrated consumer (it needs v8's
+ *   claim_token); an unmigrated consumer or a consumer-authored
+ *   IOutboxRepository (LMS Doctrine) gets null, and its callers keep the
+ *   0.6 path (R3).
  * - IOutboxAdministration: WpdbOutboxAdministration for the prefix, for any
  *   consumer identity (the repair commands carry only a prefix).
  * - IRelayPauseStore: WpRelayPauseStore (v8 pause rows + the 0.6 option).
@@ -73,7 +75,9 @@ final class WpHostPortFactory implements IHostPortFactory {
     }
 
     if ($port === IOutboxStore::class) {
-      return $legacy instanceof OutboxRepository ? new WpdbOutboxStore($legacy, $consumer) : null;
+      // The store's claim / accept / retryLater / deadLetter SQL names
+      // claim_token: only for a consumer whose v8 migration has run.
+      return $legacy instanceof OutboxRepository && WpSchema::isV8($consumer) ? new WpdbOutboxStore($legacy, $consumer) : null;
     }
 
     return match ($port) {
