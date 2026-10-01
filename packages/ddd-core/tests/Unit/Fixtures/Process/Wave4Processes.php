@@ -46,6 +46,9 @@ final class KeyedJobProcess extends LongProcess {
   /** @var list<?string> checkpoints seen by the compensation */
   public static array $undone = [];
 
+  /** Runs at the top of `record` (a test simulates a worker dying there). */
+  public static ?\Closure $onRecord = null;
+
   public function __construct(public readonly int $app_id = 7) {
     parent::__construct(null);
   }
@@ -61,6 +64,9 @@ final class KeyedJobProcess extends LongProcess {
   }
 
   protected function record(mixed $payload, JobFinished $done): Result {
+    if (self::$onRecord !== null) {
+      (self::$onRecord)($done);
+    }
     Journal::note('record:' . ($done->ok ? 'ok' : 'failed'));
     if (!$done->ok) {
       throw new \RuntimeException('job failed');
@@ -92,6 +98,8 @@ final class ReadinessProcess extends LongProcess implements IPrecheckAwait {
   public static array $seenStatus = [];
   /** @var null|\Closure(): ?string reads the stored status (set by the test) */
   public static ?\Closure $statusProbe = null;
+  /** Runs at the top of `provision` (a test simulates a worker dying there). */
+  public static ?\Closure $onProvision = null;
 
   public function __construct(public readonly int $app_id = 3) {
     parent::__construct(null);
@@ -106,6 +114,9 @@ final class ReadinessProcess extends LongProcess implements IPrecheckAwait {
   }
 
   protected function provision(mixed $payload, mixed $arrival): Result {
+    if (self::$onProvision !== null) {
+      (self::$onProvision)($arrival);
+    }
     Journal::note('provision:' . get_debug_type($arrival));
     return new Result();
   }

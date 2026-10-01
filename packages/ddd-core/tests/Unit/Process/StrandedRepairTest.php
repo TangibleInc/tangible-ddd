@@ -16,7 +16,10 @@ use TangibleDDD\Application\Process\Repair\ResumeStrandedProcess;
 use TangibleDDD\Application\Process\Repair\ResumeStrandedProcessHandler;
 use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Core\Tests\Unit\Fixtures\AcmeConfig;
+use TangibleDDD\Core\Tests\Unit\Fixtures\JobFinished;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\Journal;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\KeyedJobProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\ReadinessProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\RefundingProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\TwoStepProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\RecordingCommand;
@@ -41,6 +44,7 @@ use TangibleDDD\Testing\InMemoryTransactionBoundary;
 use TangibleDDD\Testing\InMemoryWakeupScheduler;
 
 require_once dirname(__DIR__) . '/Fixtures/Process/CoreProcesses.php';
+require_once dirname(__DIR__) . '/Fixtures/Process/Wave4Processes.php';
 
 /**
  * WP8-10 / register 5.3 step 5 and 3.10: the ResumeStrandedProcess and
@@ -64,6 +68,10 @@ final class StrandedRepairTest extends TestCase {
     RecordingCommand::$sent = [];
     RecordingCommand::$hints = [];
     RecordingCommand::$onSend = null;
+    KeyedJobProcess::$onRecord = null;
+    ReadinessProcess::$ready = false;
+    ReadinessProcess::$onProvision = null;
+    ReadinessProcess::$statusProbe = null;
 
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
     $this->boundary = new InMemoryTransactionBoundary();
@@ -139,6 +147,78 @@ final class StrandedRepairTest extends TestCase {
     self::assertSame(['reserve', 'ship'], Journal::$steps);
     self::assertSame('completed', $this->store->statusOf($id));
     self::assertSame(DeterministicCommandId::forStep('acme', $id, '0', 0), RecordingCommand::$hints[0], 'the re-run step dispatches its deterministic id');
+  }
+
+  public function test_resume_re_runs_a_stranded_post_await_step_with_the_fact_it_was_resumed_with(): void {
+    // D3 crash-after-fact: the resuming save committed (`running` at `record`),
+    // then the worker died inside `record`. The repair must re-run `record`
+    // with the same JobFinished, not with null.
+    $this->runner->register_event(JobFinished::class);
+    $p = new KeyedJobProcess();
+    $this->runner->start($p);
+    $this->drainDue();
+    $id = (int) $p->get_id();
+    self::assertSame('suspended', $this->store->statusOf($id));
+    $job = RecordingCommand::$sent[0]->data;
+
+    KeyedJobProcess::$onRecord = static function (): void {
+      // A death the runner cannot catch as a business failure: the row stays as the resume saved it.
+      throw new \TangibleDDD\Runtime\Process\ConcurrentProcessModification('worker died');
+    };
+    try {
+      $this->runner->resume_with_outcome(new JobFinished($job, true));
+      self::fail('expected the simulated death');
+    } catch (\TangibleDDD\Runtime\Process\ConcurrentProcessModification) {
+    } finally {
+      KeyedJobProcess::$onRecord = null;
+    }
+    self::assertSame('running', $this->store->statusOf($id));
+    self::assertSame(1, $this->store->find($id)->current_step_index());
+
+    $seen = null;
+    KeyedJobProcess::$onRecord = static function (JobFinished $done) use (&$seen): void {
+      $seen = $done;
+    };
+    $this->clock->advance('PT16M');
+    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->versionOf($id)));
+    $this->drainDue();
+    KeyedJobProcess::$onRecord = null;
+
+    self::assertSame('completed', $this->store->statusOf($id));
+    self::assertSame(['order:' . $job, 'record:ok', 'finish'], Journal::$steps);
+    self::assertInstanceOf(JobFinished::class, $seen);
+    self::assertSame($job, $seen->job_id, 'the re-run receives the same fact');
+  }
+
+  public function test_resume_re_runs_a_stranded_step_resumed_by_the_precheck_with_its_argument(): void {
+    $this->runner->register_event(JobFinished::class);
+    ReadinessProcess::$ready = true;
+    ReadinessProcess::$onProvision = static function (): void {
+      throw new \TangibleDDD\Runtime\Process\ConcurrentProcessModification('worker died');
+    };
+    $p = new ReadinessProcess();
+    $this->runner->start($p);
+    try {
+      $this->drainDue();
+      self::fail('expected the simulated death');
+    } catch (\TangibleDDD\Runtime\Process\ConcurrentProcessModification) {
+    } finally {
+      ReadinessProcess::$onProvision = null;
+    }
+    $id = (int) $p->get_id();
+    self::assertSame('running', $this->store->statusOf($id));
+
+    $this->clock->advance('PT16M');
+    // The dead worker's Continue claim lapses; its redelivery is stale (the row is `running`) and completes.
+    $this->drainDue();
+    self::assertSame('running', $this->store->statusOf($id));
+    self::assertSame([], $this->wakeups->pending());
+
+    $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, (int) $this->store->versionOf($id)));
+    $this->drainDue();
+
+    self::assertSame('completed', $this->store->statusOf($id));
+    self::assertSame(['await_ready', 'provision:string'], Journal::$steps, 'the re-run receives the precheck argument');
   }
 
   public function test_inside_the_command_transaction_a_worker_acting_on_the_pre_repair_row_is_fenced_off(): void {

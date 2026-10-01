@@ -548,6 +548,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
           $process->advance_step();
           $this->take_resume($updated->resume_argument($event), ResumeSource::ofMechanism($updated, $event));
+          $this->stamp_resume($process);
           $process->advance(status: 'running', payload: $process->payload());
           $this->persist($process, null, $alarm);
           $resumed[] = $id;
@@ -636,6 +637,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
             $process->advance_step();
             $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+            $this->stamp_resume($process);
             $process->advance(status: 'running', payload: $process->payload());
             $this->persist($process);
             try {
@@ -741,7 +743,11 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       if (($step_index !== null && $process->current_step_index() !== $step_index) || $this->version_of($process_id) !== $version) {
         return;
       }
-      $this->in_scope($process, fn () => $this->run($process));
+      $this->in_scope($process, function () use ($process): void {
+        // A repaired post-await step (ResumeStrandedProcess) gets its argument back from the row.
+        $this->restore_resume($process);
+        $this->run($process);
+      });
     });
   }
 
@@ -944,6 +950,18 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $this->config->prefix(), (int) $process->get_id(), (string) $process->current_step_name(), $e->getMessage()
       ), 'error');
     }
+  }
+
+  /**
+   * The resuming save (a fact, an alarm PROCEED, a precheck hit, an empty
+   * gather) carries the post-await step's argument source, so a worker that
+   * dies inside that step leaves a row ResumeStrandedProcess can re-run with
+   * the same argument (WP8-10). The step's completion clears it. An
+   * unpersistable argument leaves none: the repaired re-run then gets null.
+   */
+  private function stamp_resume(LongProcess $process): void {
+    $persistable = $this->resume_source !== null && ($this->resume_source['kind'] ?? null) !== 'unpersistable';
+    $process->set_resume_source($persistable ? $this->resume_source : null);
   }
 
   /**
@@ -1273,8 +1291,9 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       $process->record_checkpoint($result->checkpoint);
       $process->advance_step();
       $process->advance(status: 'running', payload: $result->payload);
-      $this->persist($process);
       $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+      $this->stamp_resume($process);
+      $this->persist($process);
       return true;
     }
 
@@ -1323,12 +1342,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeoutKey($id, $suspended_at) : null;
     $process->advance_step();
     $process->advance(status: 'running', payload: $process->payload());
-    $this->persist($process, null, $alarm);
     if ($hit->use_mechanism_argument) {
       $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
     } else {
       $this->take_resume($hit->resume_argument, ResumeSource::ofValue($hit->resume_argument));
     }
+    $this->stamp_resume($process);
+    $this->persist($process, null, $alarm);
     return true;
   }
 
