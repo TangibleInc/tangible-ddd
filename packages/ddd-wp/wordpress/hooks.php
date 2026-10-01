@@ -9,6 +9,15 @@ use TangibleDDD\Infra\Consumers\ConsumerHandle;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 
+// ddd-wp init (register 1.3 R2): the winner includes this file from its
+// initializer inside WordPress, before any consumer container compiles, so
+// the 0.6 constructors' optional port parameters resolve to the transitional
+// WordPress adapters. Outside WordPress (no hook system) HostDefaults stays
+// empty, as the register requires; test harnesses call register() themselves.
+if (function_exists('add_action')) {
+  \TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register();
+}
+
 /**
  * A top-level consumer's whole wiring ceremony in one call: announces the
  * plugin to the top-level registry immediately, and defers register_hooks()

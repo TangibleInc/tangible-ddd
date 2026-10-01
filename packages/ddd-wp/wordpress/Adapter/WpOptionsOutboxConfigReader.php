@@ -1,32 +1,22 @@
 <?php
 
-namespace TangibleDDD\Application\Outbox;
+declare(strict_types=1);
 
+namespace TangibleDDD\WordPress\Adapter;
+
+use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Infra\IDDDConfig;
+use TangibleDDD\Runtime\Outbox\IOutboxOptionsReader;
 
 /**
- * Configuration for the transactional outbox.
+ * The wp IOutboxOptionsReader (X11): the 0.6 OutboxConfig::from_options()
+ * body, unchanged (same option names, same defaults, the consumer's
+ * `outbox` Action Scheduler group).
  */
-final class OutboxConfig {
+final class WpOptionsOutboxConfigReader implements IOutboxOptionsReader {
 
-  public function __construct(
-    public readonly int $batch_size = 50,
-    public readonly int $max_attempts = 5,
-    public readonly int $base_retry_delay_seconds = 60,
-    public readonly float $retry_multiplier = 2.0,
-    public readonly int $max_retry_delay_seconds = 3600,
-    public readonly int $processor_interval_seconds = 30,
-    public readonly int $lock_timeout_seconds = 300,
-    public readonly string $action_scheduler_group = 'ddd-outbox',
-    public readonly int $max_action_scheduler_payload_bytes = 50000,
-    public readonly bool $route_large_payloads_to_external = false,
-  ) {}
-
-  /**
-   * Create config from WordPress options using plugin config for prefixes.
-   */
-  public static function from_options(IDDDConfig $config): self {
-    return new self(
+  public function read(IDDDConfig $config): OutboxConfig {
+    return new OutboxConfig(
       batch_size: (int) get_option($config->option('outbox_batch_size'), 50),
       max_attempts: (int) get_option($config->option('outbox_max_attempts'), 5),
       base_retry_delay_seconds: (int) get_option($config->option('outbox_retry_delay'), 60),

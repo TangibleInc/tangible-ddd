@@ -322,3 +322,11 @@ if (!function_exists('as_schedule_single_action')) {
     return count($_test_scheduled_actions);
   }
 }
+
+// ── ddd-wp init ──────────────────────────────────────────────────────────────
+// Inside WordPress, packages/ddd-wp/wordpress/hooks.php fills HostDefaults
+// with the transitional WordPress port adapters when the winner includes it.
+// Here the autoloader included hooks.php BEFORE these stubs defined
+// add_action(), so its guard skipped the wiring; run it now, as WordPress
+// would, so the 0.6 constructors under test resolve to WordPress behaviour.
+\TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register();

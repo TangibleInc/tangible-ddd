@@ -55,6 +55,39 @@ final class HostAndResetTest extends TestCase {
     (new PrefixedTableNames('acme_'))->table('outbox; DROP TABLE x');
   }
 
+  public function test_host_defaults_for_asks_the_per_consumer_factory_first(): void {
+    $global = new FrozenClock(new \DateTimeImmutable('2026-01-01'));
+    $acme = new FrozenClock(new \DateTimeImmutable('2030-01-01'));
+    HostDefaults::provide(IClock::class, $global);
+
+    self::assertSame($global, HostDefaults::for(IClock::class, new StaticConsumerIdentity('acme')), 'no factory: the global default');
+
+    HostDefaults::provide(\TangibleDDD\Runtime\IHostPortFactory::class, new class($acme) implements \TangibleDDD\Runtime\IHostPortFactory {
+      public array $asked = [];
+      public function __construct(private object $acme) {}
+      public function create(string $port, IConsumerIdentity $consumer, ?object $legacy = null): ?object {
+        $this->asked[] = [$port, $consumer->prefix(), $legacy];
+        return $consumer->prefix() === 'acme' ? $this->acme : null;
+      }
+    });
+
+    $legacy = new \stdClass();
+    self::assertSame($acme, HostDefaults::for(IClock::class, new StaticConsumerIdentity('acme'), $legacy));
+    self::assertSame($global, HostDefaults::for(IClock::class, new StaticConsumerIdentity('other')), 'factory declines: the global default');
+    self::assertNull(HostDefaults::for(ITableNames::class, new StaticConsumerIdentity('other')));
+  }
+
+  public function test_host_defaults_for_rejects_a_factory_answer_of_the_wrong_type(): void {
+    HostDefaults::provide(\TangibleDDD\Runtime\IHostPortFactory::class, new class implements \TangibleDDD\Runtime\IHostPortFactory {
+      public function create(string $port, IConsumerIdentity $consumer, ?object $legacy = null): ?object {
+        return new \stdClass();
+      }
+    });
+
+    $this->expectException(\UnexpectedValueException::class);
+    HostDefaults::for(IClock::class, new StaticConsumerIdentity('acme'));
+  }
+
   public function test_host_defaults_start_empty_and_resolve_what_was_provided(): void {
     self::assertNull(HostDefaults::get(IClock::class));
     self::assertFalse(HostDefaults::has(IClock::class));

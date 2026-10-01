@@ -21,7 +21,8 @@ use wpdb;
  *   treats as an implicit commit, exactly as 0.6 did.
  *
  * @internal Only TransactionMiddleware uses it. The checked WordPress
- *   boundary for new wiring (WpdbTransactionBoundary) is round-2 port work.
+ *   boundary for new wiring is WpdbTransactionBoundary; both count their
+ *   open transactions in WpdbTransactionDepth.
  */
 final class UncheckedWpdbTransactionBoundary implements ITransactionBoundary {
 
@@ -31,6 +32,9 @@ final class UncheckedWpdbTransactionBoundary implements ITransactionBoundary {
 
   public function run(callable $work): mixed {
     $this->depth++;
+    // Shared per-request count: the checked boundary (process saves) sees a
+    // legacy command transaction as open and joins it (WpdbTransactionDepth).
+    WpdbTransactionDepth::enter();
     try {
       $this->wpdb->query('START TRANSACTION');
 
@@ -48,6 +52,7 @@ final class UncheckedWpdbTransactionBoundary implements ITransactionBoundary {
       throw $e;
     } finally {
       $this->depth--;
+      WpdbTransactionDepth::leave();
     }
   }
 

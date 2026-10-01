@@ -15,7 +15,8 @@ use TangibleDDD\Runtime\HostDefaults;
  *
  *   1. the logger the class was constructed with;
  *   2. the host logger, `HostDefaults::get(LoggerInterface::class)`;
- *   3. PHP's error_log(), so nothing is ever silent.
+ *   3. PHP's error_log() for notice and above, so no problem is ever
+ *      silent; debug/info records are dropped when there is no logger.
  *
  * Transitional: the wave-1 form `\Closure(string $message): void` is still
  * accepted for one round, so callers built against wave 1 (the conformance
@@ -45,6 +46,11 @@ final class Log {
       return;
     }
 
+    // error_log() is the never-silent floor for problems, not a debug
+    // channel: without any logger, debug/info records are dropped.
+    if ($level === 'debug' || $level === 'info') {
+      return;
+    }
     error_log($message);
   }
 
