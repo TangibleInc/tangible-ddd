@@ -17,6 +17,14 @@ use TangibleDDD\Runtime\Outbox\IOutboxOptionsReader;
  */
 final class OutboxConfig {
 
+  /**
+   * D6: the cap on one fact's JSON-encoded payload, enforced by the outbox
+   * bus at append (PayloadTooLarge, before commit); 0 disables it. The
+   * default leaves room for one LargeString at its 4 MiB default once
+   * base64-wrapped.
+   */
+  public const DEFAULT_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+
   public function __construct(
     public readonly int $batch_size = 50,
     public readonly int $max_attempts = 5,
@@ -28,6 +36,7 @@ final class OutboxConfig {
     public readonly string $action_scheduler_group = 'ddd-outbox',
     public readonly int $max_action_scheduler_payload_bytes = 50000,
     public readonly bool $route_large_payloads_to_external = false,
+    public readonly int $max_payload_bytes = self::DEFAULT_MAX_PAYLOAD_BYTES,
   ) {}
 
   /**

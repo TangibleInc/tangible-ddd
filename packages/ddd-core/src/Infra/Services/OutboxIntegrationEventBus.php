@@ -11,6 +11,8 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IOutboxRepository;
+use TangibleDDD\Runtime\Codec\PayloadTooLarge;
+use TangibleDDD\Runtime\Codec\UnencodablePayload;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\IFactObserver;
@@ -106,6 +108,7 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
   /** Port form: one record, absolute due time, appended inside the ambient transaction. */
   private function append(IIntegrationEvent $event, string $correlation, ?string $raiser): OutboxRecord {
     $payload = $event->integration_payload();
+    $this->guard_payload($event, $payload);
     $delay = max(0, $event->delay());
 
     $record = new OutboxRecord(
@@ -132,6 +135,10 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
    * blog stamp). The record handed to the observer mirrors it.
    */
   private function write_legacy(IIntegrationEvent $event, string $correlation, ?string $raiser): ?OutboxRecord {
+    // No D6 guard here: the 0.6 repositories encode with their own rules
+    // (the WordPress encoder repairs invalid UTF-8), and shipped consumers keep
+    // that behaviour (R2).
+
     // Handle is_unique: cancel existing pending events of same type
     if ($event->is_unique()) {
       $this->outbox->cancel_duplicates($event::name(), $event->integration_payload());
@@ -154,6 +161,27 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
       due_at: $this->clock()->now()->modify("+{$delay} seconds"),
       is_unique: $event->is_unique(),
     );
+  }
+
+  /**
+   * D6, at append in the port form, before commit: the payload must encode as JSON
+   * (UnencodablePayload otherwise; a binary string belongs in a LargeString
+   * field), and its encoded size must stay within
+   * OutboxConfig::$max_payload_bytes (PayloadTooLarge; 0 = no cap).
+   *
+   * @param array<string, mixed> $payload
+   */
+  private function guard_payload(IIntegrationEvent $event, array $payload): void {
+    try {
+      $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    } catch (\JsonException $e) {
+      throw new UnencodablePayload($event::name(), $e->getMessage());
+    }
+
+    $cap = ($this->outbox_config ?? new OutboxConfig())->max_payload_bytes;
+    if ($cap > 0 && strlen($json) > $cap) {
+      throw new PayloadTooLarge(sprintf('The payload of %s', $event::name()), strlen($json), $cap);
+    }
   }
 
   private function observe(IIntegrationEvent $event, OutboxRecord $record): void {
