@@ -55,6 +55,20 @@ final class Correlation {
     }
   }
 
+  /**
+   * The fact being delivered, when the ambient cause is Kind::Fact (D13);
+   * null in a flat context and inside an act or a trajectory. Never mints.
+   * eventClass is the scope's label (the delivery bracket passes the fact
+   * class), '' when the scope was opened without one.
+   */
+  public static function current_fact(): ?FactRef {
+    $ctx = self::$current;
+    if ($ctx === null || $ctx->cause?->kind !== Kind::Fact) {
+      return null;
+    }
+    return new FactRef($ctx->cause->id, $ctx->cause->label ?? '', $ctx->correlation_id);
+  }
+
   /** Mint the next story position (per-story; snapshot-restored by within). */
   public static function next_sequence(): int {
     return ++self::$sequence;

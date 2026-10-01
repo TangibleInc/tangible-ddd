@@ -17,10 +17,11 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  * is not in the future it enqueues for immediate delivery.
  *
  * Error behaviour: submit() must return an acceptance or throw
- * (TransportRejected or the driver error). A null return means "accepted
- * but no reference" only for transports that have none; the relay treats a
- * missing ref from a transport that should have one (a `0` AS action id) as
- * a rejection (`relay.invalid-acceptance`) and never marks the row accepted.
+ * (TransportRejected or the driver error). Every transport MUST issue a
+ * reference (ruling CONF-4): a return of null, '' or '0' (e.g. a `0` Action
+ * Scheduler action id) is ALWAYS a rejection. The relay retries it per the
+ * relay budget and never marks the row accepted (`relay.invalid-acceptance`).
+ * The `?string` return type is kept for signature stability only.
  *
  * Connection rules: sharesConnectionWith() returns true when submit writes
  * through the same connection as the store (AS on the WordPress connection, pdo jobs table,
