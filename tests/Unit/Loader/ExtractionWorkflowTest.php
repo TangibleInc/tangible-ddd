@@ -66,6 +66,20 @@ class ExtractionWorkflowTest extends TestCase
         $this->assertStringContainsString('tests/harness/run.sh wp-integration', self::run_lines($job));
     }
 
+    public function test_core_pdo_runs_on_the_host_php_with_pdo_mysql_against_a_mysql_8_0_service(): void
+    {
+        // wave3-pdo-conformance change requests (packaging): the runner image
+        // has no pdo_mysql, so core-pdo runs on setup-php with a MySQL service.
+        $job = self::workflow()['jobs']['core-pdo'] ?? [];
+
+        $this->assertStringStartsWith('mysql:8.0', (string) ($job['services']['mysql']['image'] ?? ''));
+        $setup = array_values(array_filter($job['steps'] ?? [], static fn(array $s): bool => str_starts_with((string) ($s['uses'] ?? ''), 'shivammathur/setup-php@')));
+        $this->assertSame('8.2', $setup[0]['with']['php-version'] ?? null);
+        $this->assertStringContainsString('pdo_mysql', (string) ($setup[0]['with']['extensions'] ?? ''));
+        $this->assertStringContainsString('posix', (string) ($setup[0]['with']['extensions'] ?? ''));
+        $this->assertStringContainsString('tests/harness/run.sh core-pdo', self::run_lines($job));
+    }
+
     public function test_static_runs_phpstan_with_the_ci_config_and_validates_every_manifest(): void
     {
         $lines = self::run_lines(self::workflow()['jobs']['static'] ?? []);
