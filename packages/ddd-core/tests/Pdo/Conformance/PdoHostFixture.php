@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Core\Tests\Pdo\Conformance;
 
 use League\Tactician\CommandBus;
+use League\Tactician\Middleware;
 use Psr\Log\LoggerInterface;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
@@ -21,10 +22,16 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
+use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\Fixtures\Codec\BlobAttached;
+use TangibleDDD\Conformance\Fixtures\Process\ChildPurged;
+use TangibleDDD\Conformance\Fixtures\Process\JobFinished;
 use TangibleDDD\Conformance\Fixtures\Process\PartArrived;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\Fixtures\Process\WidgetOrdered;
 use TangibleDDD\Conformance\Fixtures\Process\WidgetPacked;
+use TangibleDDD\Conformance\Fixtures\Process\WidgetScrapped;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\Fixtures\WidgetRegistered;
 use TangibleDDD\Conformance\Fixtures\WidgetShipped;
 use TangibleDDD\Conformance\FreshProcesses;
@@ -62,6 +69,7 @@ use TangibleDDD\Defaults\Pdo\MySqlNamedLock;
 use TangibleDDD\Defaults\Pdo\PdoConnection;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryLedger;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryWorker;
+use TangibleDDD\Defaults\Pdo\PdoEffectJournal;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
 use TangibleDDD\Defaults\Pdo\PdoOperatorView;
 use TangibleDDD\Defaults\Pdo\PdoOutboxAdministration;
@@ -77,8 +85,12 @@ use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
-use TangibleDDD\Runtime\Audit\AuditEverything;
+use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IAuditPolicy;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\RecordEffect;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\Delivery\DeliveryOutcome;
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
@@ -113,7 +125,11 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
 
 /**
  * The pdo host of the shared conformance scenarios (register section 4,
- * section 8 wave 3): ddd-core's Defaults/Pdo adapters on a real MySQL 8.
+ * section 8 waves 3-4): ddd-core's Defaults/Pdo adapters on a real MySQL 8.
+ * Wave 4 adds the EffectHost seam (EffectMiddleware over PdoEffectJournal,
+ * where compose() puts it) and ProcessDecodeFaults (the `process_class`
+ * and `quarantine_reason` columns); the audit policy is compose()'s
+ * fallback, AttributeAuditPolicy.
  *
  * - Fresh schema per test: setUp() creates a database of its own
  *   (ScenarioContext::uniqueName('pdo', 'ddd_w3_conf')), applies
@@ -147,13 +163,15 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *   connection (a second MySQL session) with its own adapter set, runner,
  *   ReentrantProcessLock and registry, over the same database.
  */
-final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, RelayRace, StatementErrors {
+final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, RelayRace, StatementErrors, EffectHost, ProcessDecodeFaults {
 
   public const CONSUMER_VERSION = '0.7.0-conformance';
 
   /** @var list<class-string<IIntegrationEvent>> the conformance facts a drain's delivery stage may hydrate by name */
   public const FACT_CLASSES = [
     WidgetRegistered::class, WidgetShipped::class, WidgetOrdered::class, WidgetPacked::class, PartArrived::class,
+    // wave 4: D6 and the D3 answers / cancellations
+    BlobAttached::class, JobFinished::class, ChildPurged::class, WidgetScrapped::class,
   ];
 
   private string $database;
@@ -190,6 +208,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   private FaultInjectingAuditSink $auditPort;
   private OutboxConfig $outboxConfig;
   private WakeHandoffFaults $wakeFaults;
+  private PdoEffectJournal $effectJournal;
 
   /** A session that is neither worker: holds locks "elsewhere", runs RelayRace's competitor. */
   private ?\PDO $side = null;
@@ -277,6 +296,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     $this->audit = new InMemoryAuditSink();
     $this->auditPort = new FaultInjectingAuditSink($this->audit);
     $this->wakeFaults = new WakeHandoffFaults();
+    $this->effectJournal = new PdoEffectJournal($this->db, $this->tablePrefix, $this->clock);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -356,7 +376,20 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── command pipeline ─────────────────────────────────────────────────────
 
   public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
-    $policy = $options->audit ? new AuditEverything() : new class implements IAuditPolicy {
+    return $this->bus($handlers, $options, null);
+  }
+
+  /**
+   * compose()'s bus, by hand: Correlation → [Effect] → Transaction →
+   * DomainEventsPublish → the handler map. The audit policy is compose()'s
+   * fallback, AttributeAuditPolicy (CR-W4CE-3; compose() passes none and
+   * CorrelationMiddleware falls back to it), or none at all for
+   * BusOptions::$audit = false.
+   *
+   * @param array<class-string, callable(object): mixed> $handlers
+   */
+  private function bus(array $handlers, BusOptions $options, ?Middleware $effects): CommandBus {
+    $policy = $options->audit ? new AttributeAuditPolicy() : new class implements IAuditPolicy {
       public function audits(object $command): bool {
         return false;
       }
@@ -366,7 +399,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
       }
     };
 
-    return new CommandBus(
+    return new CommandBus(...array_filter([
       new CorrelationMiddleware(
         $this->config,
         $this->events,
@@ -376,6 +409,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
         $policy,
         new PhpEnvironmentProvider(['host' => 'pdo']),
       ),
+      $effects,
       new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
@@ -385,7 +419,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
         )),
       ),
       new HandlerMapMiddleware($handlers),
-    );
+    ]));
   }
 
   public function listen(string $eventClassOrMarker, callable $listener, int $priority = 10): void {
@@ -545,6 +579,47 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     }
     // MySQL rejects the statement (1048, NOT NULL) and keeps the transaction usable.
     $this->db->execute("INSERT INTO `{$this->tablePrefix}scenario_rows` (id, value) VALUES (?, NULL)", ['statement-error']);
+  }
+
+  // ── EffectHost (CR-W4C4-2, D1) ───────────────────────────────────────────
+
+  /** compose()'s journal: PdoEffectJournal on the fixture connection, so a repair's invalidate() rolls back with it. */
+  public function effectJournal(): IEffectJournal {
+    return $this->effectJournal;
+  }
+
+  /**
+   * The command bus with EffectMiddleware where compose() puts it
+   * (Correlation → Effect → Transaction, CR-PDO4-4). compose() reaches
+   * RecordEffect through its SelfExecuting stage; the handler map here
+   * routes it to RecordEffect::apply().
+   */
+  public function effectBus(array $handlers): CommandBus {
+    return $this->bus(
+      [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
+      new BusOptions(),
+      new EffectMiddleware($this->effectJournal, $this->boundary),
+    );
+  }
+
+  // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
+
+  /** The class lives in `process_class` only (business_data holds constructor arguments, no class). */
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    $this->db->execute(
+      "UPDATE `{$this->tablePrefix}ddd_processes` SET process_class = ? WHERE id = ?",
+      [$missingClass, $processId],
+    );
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    $row = $this->db->fetchOne("SELECT status FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
+    return $row === null ? null : (string) $row['status'];
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    $row = $this->db->fetchOne("SELECT quarantine_reason FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
+    return $row === null || $row['quarantine_reason'] === null ? null : (string) $row['quarantine_reason'];
   }
 
   // ── ProcessHost ──────────────────────────────────────────────────────────

@@ -105,7 +105,7 @@ conformance_wp() {
 #   1. the adapter suite (phpunit.pdo.xml, both prepare modes);
 #   2. the shared conformance scenarios on the pdo host, both prepare modes,
 #      a fresh database per test, then the per-id gate: every id due on pdo
-#      by DDD_CONFORMANCE_WAVE (default 3) must have PASSED in both modes;
+#      by DDD_CONFORMANCE_WAVE (default 4: 44 ids) must have PASSED in both modes;
 #   3. the two-process example: produce.php, then two drain.php runs with
 #      the clock past the 60 s timeout (DDD_CLOCK_OFFSET=120); the scripts
 #      assert the process completed and the stale timeout was a no-op.
@@ -161,7 +161,7 @@ core_pdo() {
 
   log "phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml"
   (cd "$H_EXPORT" && php vendor/bin/phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml --do-not-cache-result --log-junit "$junit") || conformance_rc=$?
-  (cd "$H_EXPORT" && php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php "$junit" "${DDD_CONFORMANCE_WAVE:-3}") || gate_rc=$?
+  (cd "$H_EXPORT" && php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php "$junit" "${DDD_CONFORMANCE_WAVE:-4}") || gate_rc=$?
 
   log "two-process example: produce.php, then two drain.php runs with DDD_CLOCK_OFFSET=120"
   (
