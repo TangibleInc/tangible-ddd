@@ -27,6 +27,11 @@ Author: conformance-cleanup (branch `wave2/conformance-cleanup`, based on `6258c
 - **CR-SP-1 follow-up.** `MemHostFixture` passes a PSR-3 logger to `InMemoryTransactionBoundary`, `ReentrantProcessLock`, `IntegrationDelivery` and `OutboxProcessor`. No conformance code passes a closure logger any more. Once ddd-symfony's `RuntimeLog` also stops passing a closure, the coordinator can drop `\Closure` from those signatures.
 - **HostDefaults on mem.** The fixture registers `LoggerInterface`, `IInfrastructureSignalDispatcher` and `IClock`, never `ITransactionBoundary` (so `cmd.no-boundary` still sees no boundary). `tearDown()` resets HostDefaults as before.
 
+## Open for core (not changed here)
+
+- **CR sf-3 is still open on the core relay step.** With a shared-connection transport, `OutboxProcessor::relay_batch()` runs `boundary()->run(fn () => submit_and_accept(...))`. When `accept()` matches 0 rows because the lease was lost, the closure returns `false` and the transaction commits, so the submission stays and the new lease holder submits the same fact a second time. A probe confirms it on the mem doubles: a store whose `accept()` returns `false`, plus `InMemoryTransport(true, $boundary)`, leaves 1 submission held where 0 are expected. The fix belongs to core: throw inside the transaction on a lost accept, then report the row as lost, as ddd-symfony's `Relay` does.
+- **Why there is no conformance scenario yet.** Writing one needs a host seam for "another relay re-claims between submit and accept". On mem that cannot be expressed through the ports, because `claim()` refuses to run inside the open relay transaction (single simulated connection). It would also need a new optional seam (for example `RelayInterleaving::beforeNextAccept(callable)`). I left it out because this round's acceptance requires the 18 mem ids green with zero skips. Suggested for the next round, after the core fix.
+
 ## Notes for reviewers
 
 - The relay report now comes from the real processor. `retried` and `deadLettered` are recorded only when the fenced write matched, and a fenced write that matched nothing is reported as `leaseLost` (the stand-in did the same).
