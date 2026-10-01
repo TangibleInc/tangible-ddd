@@ -36,13 +36,15 @@ use TangibleDDD\Runtime\Support\Log;
  * (IntegrationHookName); add() skips it with the usual once-per-class note.
  * Marker interfaces have no WordPress hook (O9) and are skipped with a note.
  *
- * Dedup: a second Subscriber with an id already bound is ignored while its
- * hook still has callbacks (a double boot); if the hook table was cleared
- * since, it binds again.
+ * Dedup: a second Subscriber with an id already bound is ignored while the
+ * first one's callback is still on its hook (`has_action($hook, $callback)`;
+ * a double boot); if that callback was removed since (remove_all_actions,
+ * a reset hook table), it binds again. The newer Subscriber then replaces
+ * the old one in for().
  */
 final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
 
-  /** @var array<string, array{sub: Subscriber, hook: string, seq: int}> */
+  /** @var array<string, array{sub: Subscriber, hook: string, callback: \Closure, seq: int}> */
   private array $bound = [];
 
   private int $seq = 0;
@@ -64,11 +66,12 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
       return;
     }
 
-    if (isset($this->bound[$s->id]) && has_action($this->bound[$s->id]['hook'])) {
+    $existing = $this->bound[$s->id] ?? null;
+    if ($existing !== null && has_action($existing['hook'], $existing['callback']) !== false) {
       return;
     }
 
-    add_action($hook, function (array $payload) use ($s, $class, $hook): void {
+    $callback = function (array $payload) use ($s, $class, $hook): void {
       $envelope = IntegrationEnvelope::unwrap($payload);
       $eventId = $envelope->event_id;
       if ($eventId === null || $eventId === '') {
@@ -86,9 +89,10 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
       };
 
       $ctx !== null ? Correlation::within($ctx, $run) : $run();
-    }, $s->priority, 1);
+    };
+    add_action($hook, $callback, $s->priority, 1);
 
-    $this->bound[$s->id] = ['sub' => $s, 'hook' => $hook, 'seq' => ++$this->seq];
+    $this->bound[$s->id] = ['sub' => $s, 'hook' => $hook, 'callback' => $callback, 'seq' => ++$this->seq];
   }
 
   public function for(string $eventClass): array {

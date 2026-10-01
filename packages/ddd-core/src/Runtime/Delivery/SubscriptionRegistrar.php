@@ -10,7 +10,6 @@ use TangibleDDD\Application\EventHandlers\IntegrationTranslator;
 use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
-use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Application\Process\StartsOn;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
@@ -43,37 +42,25 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * listener / LongProcess, an event class that is neither an
  * IIntegrationEvent nor an interface, or #[StartsOn] without a static
  * from_event(); \LogicException for registerProcess() without a process
- * entry, and at construction for a ProcessRunner that does not implement
- * IProcessEntry yet (the 0.6 runner keeps its ignition dedup inside its own
- * hook closure, so wrapping it here would lose bug-2 protection).
+ * entry.
  *
- * Transitional (wave 1): the register 3.5 sketch is
- * `__construct(ISubscriptionRegistry, ProcessRunner $runner, ?ContainerInterface)`.
- * Until wave 2 makes ProcessRunner implement IProcessEntry, the runner
- * parameter is `ProcessRunner|IProcessEntry|null` and a plain ProcessRunner
- * is refused. Wave 2 narrows it to IProcessEntry and removes the
- * LogicException branch (UNRATIFIED; CR-3 in Runtime/API-CHANGE-REQUESTS.md).
+ * The register 3.5 sketch takes `ProcessRunner $runner`; CR-3 (ratified)
+ * types it as the IProcessEntry port, which ProcessRunner implements from
+ * wave 2 (so `new SubscriptionRegistrar($registry, $runner)` is the sketch's
+ * call). Use one registration path per runner: the runner's own
+ * register_event()/register_start() subscribe under consumer-prefixed ids,
+ * so registering the same process through both would resume it twice.
  *
  * Lifetime: boot time; registering the same listener or process twice is
  * idempotent (the registry ignores duplicate ids).
  */
 final class SubscriptionRegistrar {
 
-  private readonly ?IProcessEntry $processes;
-
   public function __construct(
     private readonly ISubscriptionRegistry $registry,
-    ProcessRunner|IProcessEntry|null $runner = null,
+    private readonly ?IProcessEntry $processes = null,
     private readonly ?ContainerInterface $services = null,
-  ) {
-    if ($runner !== null && !$runner instanceof IProcessEntry) {
-      throw new \LogicException(
-        'This ProcessRunner does not implement ' . IProcessEntry::class
-        . ' yet (wave 2/3); pass an IProcessEntry to SubscriptionRegistrar.'
-      );
-    }
-    $this->processes = $runner;
-  }
+  ) {}
 
   public function registerListener(string|object $listener): void {
     $instance = is_object($listener) ? $listener : $this->resolve($listener);

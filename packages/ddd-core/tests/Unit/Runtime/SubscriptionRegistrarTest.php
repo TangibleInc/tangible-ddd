@@ -189,14 +189,17 @@ final class SubscriptionRegistrarTest extends TestCase {
     (new SubscriptionRegistrar($this->registry))->registerProcess(FulfilmentProcess::class);
   }
 
-  public function test_a_legacy_process_runner_is_refused_until_it_implements_the_entry_port(): void {
+  public function test_the_process_runner_is_accepted_as_the_process_entry(): void {
+    // CR-3, wave 2: ProcessRunner implements IProcessEntry, so the register
+    // 3.5 call `new SubscriptionRegistrar($registry, $runner)` works.
     $config = $this->createStub(IDDDConfig::class);
     $repo = $this->createStub(IProcessRepository::class);
     $runner = new ProcessRunner($config, $repo);
 
-    $this->expectException(\LogicException::class);
-    $this->expectExceptionMessage('IProcessEntry');
-    new SubscriptionRegistrar($this->registry, $runner);
+    $registrar = new SubscriptionRegistrar($this->registry, $runner);
+    $registrar->registerProcess(FulfilmentProcess::class);
+
+    self::assertCount(1, $this->registry->for(OrderPlaced::class));
   }
 
   public function test_exhausted_external_effect_listener_dispatches_its_failure_command_once(): void {

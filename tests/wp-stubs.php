@@ -126,10 +126,21 @@ if (!function_exists('do_action')) {
 }
 
 if (!function_exists('has_action')) {
-  /** Real WP returns priority|false for a specific callback; bool for any. Tests only need the any-listener form. */
-  function has_action(string $hook, $callback = false): bool {
-    global $_test_actions;
-    return !empty($_test_actions[$hook]);
+  /** As real WP: bool for "any callback"; for a specific callback, its priority or false. */
+  function has_action(string $hook, $callback = false): bool|int {
+    global $_test_actions, $_test_action_registrations;
+    if ($callback === false) {
+      return !empty($_test_actions[$hook]);
+    }
+    if (!in_array($callback, $_test_actions[$hook] ?? [], true)) {
+      return false;
+    }
+    foreach ($_test_action_registrations[$hook] ?? [] as $registration) {
+      if ($registration['callback'] === $callback) {
+        return $registration['priority'];
+      }
+    }
+    return 10;
   }
 }
 
