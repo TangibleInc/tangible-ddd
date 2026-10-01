@@ -31,7 +31,8 @@ final class LegacyOutboxStoreTest extends TestCase {
 
   protected function setUp(): void {
     HostDefaults::resetForTests();
-    $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
+    HostDefaults::provide(\Psr\Log\LoggerInterface::class, new RecordingLogger());
+    $this->clock =new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
   }
 
   protected function tearDown(): void {
