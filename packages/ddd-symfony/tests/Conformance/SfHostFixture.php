@@ -43,6 +43,7 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
+use TangibleDDD\Conformance\EffectHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
@@ -107,7 +108,12 @@ use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\RecordEffect;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
@@ -188,7 +194,7 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost {
 
   public const CONSUMER = 'sfc';
 
@@ -221,6 +227,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private LockCounter $locks;
   private ?PostgresAdvisoryProcessLock $webLock = null;
   private ?Connection $elsewhere = null;
+  private ?DbalEffectJournal $effectJournal = null;
 
   /** @var array<int, SfWorkerPorts> */
   private array $ports = [];
@@ -376,6 +383,18 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── command pipeline ─────────────────────────────────────────────────────
 
   public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+    return $this->bundleBus($handlers, $options, null);
+  }
+
+  /**
+   * The bundle's command bus (config/services.php): act bracket → [effect] →
+   * transaction → domain events → handler map. $effects is the bundle's
+   * `tangible_ddd.middleware.effect` (EffectHost only); commandBus() keeps
+   * the frozen HostFixture order without it.
+   *
+   * @param array<class-string, callable(object): mixed> $handlers
+   */
+  private function bundleBus(array $handlers, BusOptions $options, ?EffectMiddleware $effects): CommandBus {
     // The bundle's default policy (D12); no conformance command carries #[Audit].
     $policy = $options->audit ? new AttributeAuditPolicy() : new class implements IAuditPolicy {
       public function audits(object $command): bool {
@@ -388,7 +407,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     };
 
     $w = $this->ports[1];
-    return new CommandBus(
+    return new CommandBus(...array_values(array_filter([
       new CorrelationMiddleware(
         $this->consumer,
         $this->events,
@@ -398,12 +417,29 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         $policy,
         new PhpEnvironmentProvider(['host' => 'sf']),
       ),
+      $effects,
       new TransactionalCommandMiddleware($options->withBoundary ? $w->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
         new EventRouter($this->dispatcher, Factory::integrationBus($w->outbox, $this->clock, $this->consumer, $this->outboxConfig)),
       ),
       new HandlerMapMiddleware($handlers),
+    ])));
+  }
+
+  // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
+
+  /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
+  public function effectJournal(): IEffectJournal {
+    return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
+  }
+
+  public function effectBus(array $handlers): CommandBus {
+    return $this->bundleBus(
+      // The bundle's terminal is SelfExecuting (RecordEffect is a SelfHandlingCommand); the handler map routes it to apply().
+      [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
+      new BusOptions(),
+      new EffectMiddleware($this->effectJournal(), $this->boundary()),
     );
   }
 
@@ -777,6 +813,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->awaits = [];
     $this->ports = [];
     $this->workers = [];
+    $this->effectJournal = null;
     $this->provideHostDefaults();
 
     $this->composeWorker(1, $this->connection);
