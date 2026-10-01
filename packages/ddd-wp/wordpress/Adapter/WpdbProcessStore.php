@@ -104,12 +104,19 @@ final class WpdbProcessStore implements IProcessStore {
       return $this->repository->hydrate_row($row);
     } catch (\Throwable $e) {
       $reason = sprintf('%s: %s (stored class %s)', get_class($e), $e->getMessage(), (string) $row->process_class);
-      $db->query($db->prepare(
+      if ($row->status === 'failed' && ($row->quarantine_reason ?? null) !== null) {
+        // Already quarantined: no second write, no version churn.
+        throw new QuarantinedProcess("Process #$id is quarantined: {$row->quarantine_reason}", 0, $e);
+      }
+      $ok = $db->query($db->prepare(
         "UPDATE `{$this->table()}` SET status = 'failed', quarantine_reason = %s, version = version + 1, updated_at = %s WHERE id = %d",
         $reason,
         $this->stamp(),
         $id
       ));
+      if ($ok === false) {
+        throw new ProcessStoreFailed("Process #$id does not decode ($reason) and its quarantine was not written: " . (string) $db->last_error, 0, $e);
+      }
       throw new QuarantinedProcess("Process #$id was quarantined: $reason", 0, $e);
     }
   }

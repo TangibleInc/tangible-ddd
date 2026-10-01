@@ -24,6 +24,8 @@ use TangibleDDD\Runtime\SystemClock;
  *   index, so a second continuation would re-run a step after a rollback.
  *   Otherwise a fresh Continue intent (continuation is stale-safe) is
  *   scheduled in its own transaction, which projects it to AS.
+ * - `scheduled` with an `exhausted` wake (register 5.1): reported, never
+ *   re-minted; `wp ddd ops --rearm=<key>` restarts it.
  * - `running`: reported only (operator view, ResumeStrandedProcess /
  *   FailStrandedProcess repairs); an automatic re-run would repeat effects.
  */
@@ -38,11 +40,15 @@ final class WpStrandedScan {
 
   public function run(): WpStrandedReport {
     $now = ($this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock())->now();
-    $minted = $queued = $running = [];
+    $minted = $queued = $running = $exhausted = [];
 
     foreach ($this->store->findStranded($now) as $s) {
       if ($s->status === 'running') {
         $running[] = $s;
+        continue;
+      }
+      if ($this->wakeups instanceof WpdbWakeupScheduler && $this->wakeups->hasExhaustedIntent($s->processId)) {
+        $exhausted[] = $s->processId; // the wake budget is spent: the operator re-arms it, the scan does not
         continue;
       }
       if (function_exists('as_has_scheduled_action')
@@ -56,6 +62,6 @@ final class WpStrandedScan {
       $minted[] = $s->processId;
     }
 
-    return new WpStrandedReport($minted, $queued, $running);
+    return new WpStrandedReport($minted, $queued, $running, $exhausted);
   }
 }

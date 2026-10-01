@@ -153,6 +153,13 @@ final class WpProcessV8Test extends V8TestCase {
     self::assertSame('failed', $row['status']);
     self::assertStringContainsString('Gone\\Process\\ClassName', (string) $row['quarantine_reason']);
     self::assertNull($this->store->find(999999));
+
+    try {
+      $this->store->find($id);
+      self::fail('still quarantined');
+    } catch (QuarantinedProcess) {
+    }
+    self::assertSame($row['version'], $this->row($id)['version'], 'a second find does not write again');
   }
 
   public function test_find_waiting_for_returns_suspended_ids(): void {

@@ -189,12 +189,32 @@ class DDD_Command {
    *   - csv
    * ---
    *
+   * [--rearm=<key>]
+   * : Repair: re-arm the exhausted wakeup intent with this idempotency key
+   *   (fresh budget, due now). Needs --consumer.
+   *
    * ## EXAMPLES
    *
    *     wp ddd ops
    *     wp ddd ops --layer=delivery --format=json
+   *     wp ddd ops --consumer=tgbl_cred --rearm=timeout:42:3
    */
   public function ops( $args, $assoc_args ) {
+    if ( isset( $assoc_args['rearm'] ) ) {
+      if ( ! isset( $assoc_args['consumer'] ) ) {
+        \WP_CLI::error( '--rearm needs --consumer=<prefix>.' );
+      }
+      [ $handle ] = $this->selected_consumers( $assoc_args );
+      $scheduler = \TangibleDDD\Runtime\HostDefaults::for( \TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $handle->config() );
+      if ( ! $scheduler instanceof \TangibleDDD\WordPress\Adapter\WpdbWakeupScheduler ) {
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no wakeup intents (schema v8 not installed)." );
+      }
+      $scheduler->rearm( (string) $assoc_args['rearm'] )
+        ? \WP_CLI::success( "Re-armed wakeup {$assoc_args['rearm']}." )
+        : \WP_CLI::error( "No exhausted wakeup {$assoc_args['rearm']} for '{$handle->prefix()}'." );
+      return;
+    }
+
     $layer = $assoc_args['layer'] ?? null;
     $limit = (int) ( $assoc_args['limit'] ?? 100 );
     $rows = [];

@@ -19,7 +19,8 @@ use TangibleDDD\Runtime\SystemClock;
  * Layers (the core `Runtime\Ops\Layer` values):
  * - relay:    DLQ rows (budget = max_attempts) and pending rows retrying;
  * - delivery: ledger pairs `failed` or `exhausted` (budget 5);
- * - wakeup:   intents that failed at least once or died while firing (budget 10);
+ * - wakeup:   intents that failed at least once or died while firing, and
+ *             exhausted intents (budget 10, repair `rearm`);
  * - process:  stranded `scheduled`/`running` rows and quarantined rows.
  *
  * Schema v8 only for the delivery, wakeup and process layers; the relay
@@ -81,7 +82,9 @@ final class WpOperatorView {
       IntegrationDelivery::DEFAULT_BUDGET,
       $r['last_error'],
       $r['updated_at'],
-      $r['status'] === 'exhausted' ? [] : ['redeliver'],
+      // A failed pair is redelivered on its own (`{prefix}_ddd_redeliver`,
+      // restored by the relay tick when lost); an exhausted one is terminal.
+      [],
     ), (new WpDeliveryLedger($this->config->prefix(), $this->clock))->problems($limit));
   }
 
@@ -91,11 +94,21 @@ final class WpOperatorView {
     }
     $db = self::db();
     $rows = $db->get_results($db->prepare(
-      "SELECT idempotency_key, attempts, last_error, created_at FROM `{$this->config->table('ddd_wakeups')}`
-       WHERE status IN ('pending', 'firing') AND attempts > 0 ORDER BY updated_at DESC LIMIT %d",
+      "SELECT idempotency_key, status, attempts, last_error, created_at FROM `{$this->config->table('ddd_wakeups')}`
+       WHERE (status IN ('pending', 'firing') AND attempts > 0) OR status = 'exhausted' ORDER BY updated_at DESC LIMIT %d",
       $limit
     ));
-    return array_map(fn (object $r) => $this->item('wakeup', (string) $r->idempotency_key, (int) $r->attempts, 10, $r->last_error, (string) $r->created_at, ['reproject']), is_array($rows) ? $rows : []);
+    // Pending and firing rows retry on their own (backoff, relay tick);
+    // an exhausted one waits for `wp ddd ops --rearm=<key>`.
+    return array_map(fn (object $r) => $this->item(
+      'wakeup',
+      (string) $r->idempotency_key,
+      (int) $r->attempts,
+      WpdbWakeupScheduler::WAKE_BUDGET,
+      $r->last_error,
+      (string) $r->created_at,
+      $r->status === 'exhausted' ? ['rearm'] : [],
+    ), is_array($rows) ? $rows : []);
   }
 
   private function process(int $limit): array {
