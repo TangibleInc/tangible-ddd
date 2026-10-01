@@ -54,7 +54,7 @@ None of the following has a callback under 0.6. If any of it is still pending wh
 
 3. **Future-dated by-reference facts.** The drain does not run them early, because the delay belongs to the fact, so they keep `remaining` above zero until they are due. You can wait until they are due and re-run the drain. Or you can accept that those facts will not reach their subscribers under 0.6. Their payload stays in the `{prefix}_integration_outbox` row (`completed`), so it can be announced again after the roll-forward.
 
-4. **Note processes that are at an `#[Async]` step** (`wp ddd ops --layer=process`, or the dashboard). They stall under 0.6, as explained below.
+4. **Note processes that are waiting at an `#[Async]` step.** These are `scheduled` rows in `{prefix}_long_processes`, visible in the dashboard's process list. They stall under 0.6, as explained below. Also look for processes suspended on an `AwaitAlarm` (query below).
 
 ## Switch the winner
 
@@ -73,7 +73,11 @@ The winner is authoritative. `TANGIBLE_DDD_VERSION` and the dashboard can show a
   - A NULL or failed `GET_LOCK` can run a process step unlocked.
   - `#[StartsOn]` ignition is check-then-insert again, so two concurrent deliveries can ignite twice.
   - Facts that 0.6 writes are delayed twice again (tangible-cred's `EndpointAuthRefresh` and `BehaviourWorkflowReschedule`). Facts that 0.7 wrote keep their single delay.
-- **D3 awaits.** On WordPress, keyed awaits (`AwaitEvent::keyed`, `AwaitAll::keyed`), `AwaitAny` and a dynamic `AwaitAll` are not supported (register section 4, wp `-`), because 0.6 cannot decode them. A WordPress consumer that used them anyway has processes that 0.6 cannot resume.
+- **D3 awaits and alarms.** On WordPress, keyed awaits (`AwaitEvent::keyed`, `AwaitAll::keyed`), `AwaitAny` and a dynamic `AwaitAll` are not supported (register section 4, wp `-`), because 0.6 cannot decode them. A WordPress consumer that used them anyway has processes that 0.6 cannot resume. `AwaitAlarm` does run on WordPress, but 0.6 does not know the class: it reads a process suspended on one as having no await, and the rollback fixtures do not cover what its alarm then does. Before switching, list such processes:
+
+  ```sh
+  wp db query "SELECT id, process_class FROM $(wp db prefix)<consumer prefix>_long_processes WHERE status = 'suspended' AND await_mechanism LIKE '%AwaitAlarm%'"
+  ```
 
 ## Roll forward again
 
