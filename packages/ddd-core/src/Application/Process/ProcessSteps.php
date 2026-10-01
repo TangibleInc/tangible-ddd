@@ -36,6 +36,12 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
 
     /** Error message when process failed */
     public ?string $failure_msg = null,
+
+    /** @var array<string, int> step_name => retries used (RetryStep, D1; wave 4) */
+    public array $attempts = [],
+
+    /** The current await's alarm instant, ISO 8601 UTC, fixed at suspension (D7; wave 4) */
+    public ?string $await_due_at = null,
   ) {
     parent::__construct();
   }
@@ -65,6 +71,8 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
       step_index: $data['step_index'] ?? 0,
       undo_index: $data['undo_index'] ?? -1,
       failure_msg: $data['failure_msg'] ?? null,
+      attempts: array_map('intval', (array) ($data['attempts'] ?? [])),
+      await_due_at: isset($data['await_due_at']) ? (string) $data['await_due_at'] : null,
     );
   }
 

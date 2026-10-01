@@ -33,7 +33,16 @@ use TangibleDDD\Application\Process\LongProcess;
  * - versionOf(): the current version for the runner's fence, null for an
  *   unknown id. (UNRATIFIED addition; CR-5.)
  * - findWaitingFor(): ids only (E F14), of `suspended` processes waiting for
- *   the class; $awaitKey narrows keyed awaits (D3, wave 4).
+ *   the class (or one of its parents / interfaces); $awaitKey narrows keyed
+ *   awaits (D3, wave 4). A store may index per route
+ *   (LongProcess::await_routes(): one (event_class, await_key) row each,
+ *   key '' = unkeyed) and match $awaitKey exactly, with null = any key; or
+ *   index only the `waiting_for` column and ignore $awaitKey. Both are
+ *   correct: the runner asks for (class, key) and (class, '') and filters
+ *   every candidate through the await's accepts(). For AwaitAny the
+ *   `waiting_for` value is the branches' common class or interface, so a
+ *   column store must match the fact's parents and interfaces (all of mem,
+ *   pdo, wp and sf do).
  * - findStranded(): `running`/`scheduled` rows with no live intent past the
  *   threshold (default 15 min).
  *
