@@ -110,4 +110,12 @@ class ExtractionWorkflowTest extends TestCase
         $this->assertStringContainsString('tests/Compat/release-artifact.sh HEAD', $lines);
         $this->assertStringNotContainsString('DDD_GATE', (string) file_get_contents(dirname(__DIR__, 3) . '/.github/workflows/extraction.yml'));
     }
+
+    public function test_static_fails_on_code_style_drift(): void
+    {
+        // The 0.6 style of .php-cs-fixer.dist.php holds for the new code.
+        $lines = self::run_lines(self::workflow()['jobs']['static'] ?? []);
+
+        $this->assertStringContainsString('composer cs', $lines);
+    }
 }

@@ -28,7 +28,7 @@ class ReleaseArtifactTest extends TestCase
             'packages/ddd-core/tests', 'packages/ddd-wp/tests',
             '.github', 'phpunit.xml', 'phpunit.integration.xml', 'phpstan.neon',
             'phpstan-deadcode.neon', 'phpstan-baseline.neon', 'phpstan-core.neon', 'deptrac.yaml',
-            '.gitattributes', '.gitignore',
+            '.php-cs-fixer.dist.php', '.gitattributes', '.gitignore',
         ];
 
         return array_combine($paths, array_map(static fn(string $p): array => [$p], $paths));

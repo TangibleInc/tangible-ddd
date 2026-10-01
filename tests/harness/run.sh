@@ -4,7 +4,7 @@
 #   tests/harness/run.sh wp-integration   WP integration suite on MySQL 8.0 from an empty database
 #   tests/harness/run.sh loader           loader fixtures of register 7.2, all kinds (lib/loader.sh)
 #   tests/harness/run.sh core-pdo         Defaults/Pdo suite + two-process drain  (wave 3)
-#   tests/harness/run.sh compat           the wave-4 compatibility gate: CR-PK-5, artifact, 7.2, 7.3
+#   tests/harness/run.sh compat           the wave-4 compatibility gate: code style, CR-PK-5, artifact, 7.2, 7.3
 #   tests/harness/run.sh conformance-wp   conformance scenarios on WordPress      (wave 2)
 #
 # Environment knobs are documented in tests/harness/lib/common.sh. Pinned
@@ -19,7 +19,7 @@ usage: tests/harness/run.sh <subcommand>
   wp-integration   WordPress integration suite on MySQL 8.0, fresh database
   loader           loader fixtures of register 7.2 on WordPress + MySQL 8.0 (every kind, no skips)
   core-pdo         ddd-core Defaults/Pdo: adapter suite, pdo conformance (both prepare modes, gated per id), two-process example
-  compat           wave-4 compatibility gate: CR-PK-5 allowances expired, release artifact, every 7.2 case, 7.3 rollback fixtures
+  compat           wave-4 compatibility gate: no code-style drift, CR-PK-5 allowances expired, release artifact, every 7.2 case, 7.3 rollback fixtures
   conformance-wp   conformance scenarios on WordPress + MySQL 8.0, fresh database (wp ids due by wave 3 gated)
 EOF
   exit 64
@@ -189,6 +189,9 @@ core_pdo() {
 
 # compat: the wave-4 compatibility gate (register section 8 wave 4; 7.2,
 # 7.3; CR-PK-5 in wave2-notes). Sections, all by default, in this order:
+#   cs          php-cs-fixer check of the ref's new code against its
+#               .php-cs-fixer.dist.php (the 0.6 style): any drift fails
+#               (`composer cs` runs the same check on the working tree)
 #   allowances  tests/Compat/check-allowances.php: no CR-PK-5 transitional
 #               allowance remains (deptrac skips, phpstan-core scanning
 #               ddd-wp, the clean install's PENDING/SKIP)
@@ -202,7 +205,7 @@ core_pdo() {
 # DDD_COMPAT_SECTIONS picks a subset (for a partial local run; the gate runs
 # all). DDD_LOADER_CASES is refused: compat never narrows 7.2. With
 # DDD_DB_NAME set, the WordPress sections use <name>_l72 and <name>_r73.
-COMPAT_SECTIONS="allowances artifact 7.2 7.3"
+COMPAT_SECTIONS="cs allowances artifact 7.2 7.3"
 
 compat() {
   local sections="${DDD_COMPAT_SECTIONS:-$COMPAT_SECTIONS}" s
@@ -232,6 +235,28 @@ compat() {
   for s in $sections; do
     rc=0
     case "$s" in
+      cs)
+        # The config's finder is relative to the config file, so checking an
+        # export of the ref judges exactly the ref's files.
+        [ -x "$root/vendor/bin/php-cs-fixer" ] || { echo "FAIL cs: vendor/bin/php-cs-fixer missing (composer install)"; rc=1; }
+        if [ "$rc" -eq 0 ] && [ "$ref" = WORKTREE ]; then
+          php "$root/vendor/bin/php-cs-fixer" check --config="$root/.php-cs-fixer.dist.php" \
+            --using-cache=no --diff --show-progress=none || rc=$?
+        elif [ "$rc" -eq 0 ]; then
+          tree="$(mktemp -d "${TMPDIR:-/tmp}/ddd-compat.XXXXXX")"
+          GIT_INDEX_FILE="$tree/.index" git -C "$root" read-tree "$sha"
+          GIT_INDEX_FILE="$tree/.index" git -C "$root" checkout-index -a --prefix="$tree/src/"
+          if [ -f "$tree/src/.php-cs-fixer.dist.php" ]; then
+            php "$root/vendor/bin/php-cs-fixer" check --config="$tree/src/.php-cs-fixer.dist.php" \
+              --using-cache=no --diff --show-progress=none || rc=$?
+          else
+            echo "FAIL cs: .php-cs-fixer.dist.php is absent from $sha"
+            rc=1
+          fi
+          rm -rf "$tree"
+        fi
+        if [ "$rc" -eq 0 ]; then echo "code style: no drift from .php-cs-fixer.dist.php"; fi
+        ;;
       allowances)
         if [ "$ref" = WORKTREE ]; then
           php "$root/tests/Compat/check-allowances.php" "$root" || rc=$?
