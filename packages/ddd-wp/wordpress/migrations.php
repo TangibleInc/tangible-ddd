@@ -35,8 +35,30 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 4: long_processes gains await_mechanism
  *  - 7: behaviour_workflows_meta side table; JSON meta column write-dead,
  *       existing values pivoted into rows
+ *  - 8: durable contracts (register section 8 wave 3, additive only, R5):
+ *       ddd_wakeups, ddd_delivery_ledger, ddd_relay_pauses; outbox
+ *       claim_token; long_processes version, ignition_key (UNIQUE with
+ *       process_class) and quarantine_reason; ignition keys and wakeup
+ *       intents backfilled (ddd_migrate_v8)
  */
-const DDD_SCHEMA_VERSION = 7;
+const DDD_SCHEMA_VERSION = 8;
+
+/**
+ * The schema version installed for this consumer (0 when never migrated).
+ */
+function ddd_schema_installed(IDDDConfig $config): int {
+  return (int) get_option(ddd_schema_version_key($config), 0);
+}
+
+/**
+ * Whether this consumer's tables are at least at $version. The v8 adapters
+ * (fenced outbox claim, intent table, ledger, version-fenced process store)
+ * are wired only for consumers whose migration has run; until then the
+ * 0.6-schema paths stay in use.
+ */
+function ddd_schema_at_least(IDDDConfig $config, int $version): bool {
+  return ddd_schema_installed($config) >= $version;
+}
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -146,7 +168,258 @@ function ddd_explicit_migrations(): array {
         }
       }
     },
+
+    // v8 — durable contracts (wave 3). Additive only (R5); see ddd_migrate_v8().
+    8 => static function (IDDDConfig $config): void {
+      ddd_migrate_v8($config);
+    },
   ];
+}
+
+/**
+ * Schema v8 (register section 8 wave 3, 3.4-3.8, 5.3; rulings on statuses
+ * and rollback). Additive only: new tables, nullable or defaulted columns,
+ * one UNIQUE key over a column that starts NULL. Nothing is renamed,
+ * narrowed or deleted, so a 0.6 winner keeps running on the v8 tables after
+ * a rollback (it tolerates installed > DDD_SCHEMA_VERSION, B18).
+ *
+ * 1. Tables ddd_wakeups, ddd_delivery_ledger, ddd_relay_pauses (dbDelta).
+ * 2. Columns: outbox claim_token; long_processes version (default 1),
+ *    ignition_key, quarantine_reason; UNIQUE (process_class, ignition_key).
+ * 3. ignition_key backfill (ddd_backfill_ignition_keys): ignition-path rows
+ *    only, in id order; the first row per (class, event) keeps the key,
+ *    later ones are REPORTED and left NULL, never deleted.
+ * 4. Wakeup intents backfilled from pending Action Scheduler actions on the
+ *    legacy hooks (ddd_backfill_wakeup_intents), so a `scheduled` row left
+ *    by 0.6 is not stranded and its queued action is the intent's projection.
+ *
+ * The report is stored in the `{prefix}_ddd_v8_migration_report` option and
+ * duplicates are logged. Idempotent: safe to run again.
+ *
+ * @return array{ignition_backfilled: int, ignition_skipped: int, ignition_duplicates: list<array{process_class: string, event_id: string, kept: int, duplicate: int}>, wakeups_backfilled: int}
+ */
+function ddd_migrate_v8(IDDDConfig $config): array {
+  if (!function_exists('dbDelta')) {
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+  }
+
+  install_wakeups_table($config);
+  install_delivery_ledger_table($config);
+  install_relay_pauses_table($config);
+
+  $outbox = $config->table('integration_outbox');
+  ddd_add_column_if_missing($outbox, 'claim_token', 'VARCHAR(64) NULL', 'locked_by');
+
+  $processes = $config->table('long_processes');
+  ddd_add_column_if_missing($processes, 'version', 'INT UNSIGNED NOT NULL DEFAULT 1', 'status');
+  ddd_add_column_if_missing($processes, 'ignition_key', 'CHAR(36) NULL', 'ignited_by_event_id');
+  ddd_add_column_if_missing($processes, 'quarantine_reason', 'TEXT NULL', 'last_error');
+  ddd_add_unique_index_if_missing($processes, 'uniq_ignition_key', '`process_class`, `ignition_key`');
+
+  $ignition = ddd_backfill_ignition_keys($config);
+  $report = [
+    'ignition_backfilled' => $ignition['backfilled'],
+    'ignition_skipped' => $ignition['skipped'],
+    'ignition_duplicates' => $ignition['duplicates'],
+    'wakeups_backfilled' => ddd_backfill_wakeup_intents($config),
+  ];
+
+  foreach ($report['ignition_duplicates'] as $dup) {
+    error_log(sprintf(
+      '[%s-ddd] schema v8: process #%d is a duplicate ignition of %s by event %s (kept #%d); left without ignition_key, not deleted',
+      $config->prefix(), $dup['duplicate'], $dup['process_class'], $dup['event_id'], $dup['kept']
+    ));
+  }
+  update_option($config->option('ddd_v8_migration_report'), $report, false);
+
+  return $report;
+}
+
+/**
+ * Backfill long_processes.ignition_key = uuid5(event_id, process_class) for
+ * rows that came from the #[StartsOn] ignition path, in id order.
+ *
+ * "Ignition path": ignited_by_event_id is a UUID and the stored class still
+ * exists and declares #[StartsOn]. Other rows (manual starts outside a
+ * drain, unknown classes, non-UUID ids) are skipped. A manual start made
+ * inside a drain of a #[StartsOn] class is indistinguishable from an
+ * ignition in 0.6 data; if it shares (class, event) with an earlier row it
+ * is reported as a duplicate, which is the conservative outcome (no row is
+ * touched beyond keeping its key NULL).
+ *
+ * @return array{backfilled: int, skipped: int, duplicates: list<array{process_class: string, event_id: string, kept: int, duplicate: int}>}
+ */
+function ddd_backfill_ignition_keys(IDDDConfig $config): array {
+  global $wpdb;
+
+  $table = $config->table('long_processes');
+  $backfilled = $skipped = 0;
+  $duplicates = [];
+  $starts_on = [];
+  $last = 0;
+
+  do {
+    $rows = $wpdb->get_results($wpdb->prepare(
+      "SELECT id, process_class, ignited_by_event_id FROM `{$table}`
+       WHERE id > %d AND ignited_by_event_id IS NOT NULL AND ignition_key IS NULL
+       ORDER BY id ASC LIMIT 500",
+      $last
+    ));
+    $rows = is_array($rows) ? $rows : [];
+
+    foreach ($rows as $row) {
+      $last = (int) $row->id;
+      $class = (string) $row->process_class;
+      $event_id = (string) $row->ignited_by_event_id;
+
+      $starts_on[$class] ??= class_exists($class)
+        && (new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\StartsOn::class) !== [];
+      if (!$starts_on[$class]) {
+        $skipped++;
+        continue;
+      }
+
+      try {
+        $key = \TangibleDDD\Runtime\Process\IgnitionKey::for($event_id, $class);
+      } catch (\InvalidArgumentException) {
+        $skipped++;
+        continue;
+      }
+
+      $kept = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM `{$table}` WHERE process_class = %s AND ignition_key = %s LIMIT 1",
+        $class,
+        $key
+      ));
+      if ($kept !== null) {
+        $duplicates[] = ['process_class' => $class, 'event_id' => $event_id, 'kept' => (int) $kept, 'duplicate' => $last];
+        continue;
+      }
+
+      $suppress = $wpdb->suppress_errors(true);
+      $updated = $wpdb->query($wpdb->prepare(
+        "UPDATE `{$table}` SET ignition_key = %s WHERE id = %d AND ignition_key IS NULL",
+        $key,
+        $last
+      ));
+      $wpdb->suppress_errors($suppress);
+
+      if ($updated === false) {
+        // A new ignition took the key between the check and the update.
+        $winner = (int) $wpdb->get_var($wpdb->prepare(
+          "SELECT id FROM `{$table}` WHERE process_class = %s AND ignition_key = %s LIMIT 1",
+          $class,
+          $key
+        ));
+        $duplicates[] = ['process_class' => $class, 'event_id' => $event_id, 'kept' => $winner, 'duplicate' => $last];
+        continue;
+      }
+      $backfilled++;
+    }
+  } while (count($rows) === 500);
+
+  return ['backfilled' => $backfilled, 'skipped' => $skipped, 'duplicates' => $duplicates];
+}
+
+/**
+ * Backfill ddd_wakeups rows from PENDING Action Scheduler actions on the
+ * legacy process hooks (register 5.3 step 5, 7.3 sequence 3):
+ *
+ * - `{prefix}_await_timeout` ['process_id' => int, 'step_index' => int]
+ *   → `timeout:{pid}:{step}`, expected status `suspended`;
+ * - `{prefix}_process_continue` ['process_id' => int] → `continue:{pid}:{step}`
+ *   with the row's current step_index, expected status `scheduled`.
+ *
+ * The queued action stays exactly as it is and becomes the intent's
+ * projection (as_action_id). Idempotent (INSERT IGNORE on the key).
+ *
+ * @return int intents inserted
+ */
+function ddd_backfill_wakeup_intents(IDDDConfig $config): int {
+  global $wpdb;
+
+  if (!function_exists('as_get_scheduled_actions') || !class_exists('ActionScheduler_Store')) {
+    return 0;
+  }
+
+  $wakeups = $config->table('ddd_wakeups');
+  $processes = $config->table('long_processes');
+  $inserted = 0;
+  $now = gmdate('Y-m-d H:i:s');
+
+  foreach (['await_timeout' => 'timeout', 'process_continue' => 'continue'] as $hook_name => $kind) {
+    $hook = $config->hook($hook_name);
+    $ids = as_get_scheduled_actions([
+      'hook' => $hook,
+      'status' => \ActionScheduler_Store::STATUS_PENDING,
+      'per_page' => -1,
+    ], 'ids');
+
+    foreach ((array) $ids as $action_id) {
+      $action = \ActionScheduler::store()->fetch_action((string) $action_id);
+      $args = $action->get_args();
+      $process_id = (int) ($args['process_id'] ?? ($args[0] ?? 0));
+      if ($process_id <= 0) {
+        continue;
+      }
+
+      if ($kind === 'timeout') {
+        $step = (int) ($args['step_index'] ?? ($args[1] ?? 0));
+        $expected = 'suspended';
+        $proj_args = ['process_id' => $process_id, 'step_index' => $step];
+      } else {
+        $step = (int) $wpdb->get_var($wpdb->prepare("SELECT step_index FROM `{$processes}` WHERE id = %d", $process_id));
+        $expected = 'scheduled';
+        $proj_args = ['process_id' => $process_id];
+      }
+
+      $date = $action->get_schedule()?->get_date();
+      $due = $date instanceof \DateTimeInterface
+        ? (new \DateTimeImmutable('@' . $date->getTimestamp()))->format('Y-m-d H:i:s')
+        : $now;
+
+      $result = $wpdb->query($wpdb->prepare(
+        "INSERT IGNORE INTO `{$wakeups}`
+          (idempotency_key, kind, process_id, step_index, expected_status, due_at, status, attempts, hook, args, as_action_id, created_at, updated_at, blog_id)
+         VALUES (%s, %s, %d, %d, %s, %s, 'pending', 0, %s, %s, %d, %s, %s, %d)",
+        "$kind:$process_id:$step",
+        $kind,
+        $process_id,
+        $step,
+        $expected,
+        $due,
+        $hook,
+        (string) wp_json_encode($proj_args),
+        (int) $action_id,
+        $now,
+        $now,
+        is_multisite() ? get_current_blog_id() : 1
+      ));
+      $inserted += (int) $result;
+    }
+  }
+
+  return $inserted;
+}
+
+/**
+ * Add a UNIQUE index only if no index of that name exists. Idempotent.
+ */
+function ddd_add_unique_index_if_missing(string $table, string $index, string $columns): void {
+  global $wpdb;
+
+  $exists = (int) $wpdb->get_var($wpdb->prepare(
+    'SELECT COUNT(*) FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s',
+    $table,
+    $index
+  ));
+
+  if ($exists > 0) {
+    return;
+  }
+
+  $wpdb->query("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$index}` ({$columns})");
 }
 
 /**

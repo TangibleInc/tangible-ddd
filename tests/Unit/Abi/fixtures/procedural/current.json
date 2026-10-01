@@ -266,6 +266,62 @@
                 }
             ]
         },
+        "TangibleDDD\\WordPress\\ddd_add_unique_index_if_missing": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "index",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "columns",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_backfill_ignition_keys": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_backfill_wakeup_intents": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "int",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
         "TangibleDDD\\WordPress\\ddd_explicit_migrations": {
             "file": "migrations.php",
             "byRef": false,
@@ -276,6 +332,20 @@
             "file": "migrations.php",
             "byRef": false,
             "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_migrate_v8": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "array",
             "params": [
                 {
                     "name": "config",
@@ -301,6 +371,41 @@
                 {
                     "name": "current",
                     "type": "int",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_schema_at_least": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "version",
+                    "type": "int",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_schema_installed": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "int",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
                     "default": null,
                     "byRef": false,
                     "variadic": false
@@ -489,6 +594,20 @@
                 }
             ]
         },
+        "TangibleDDD\\WordPress\\install_delivery_ledger_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
         "TangibleDDD\\WordPress\\install_outbox_tables": {
             "file": "tables.php",
             "byRef": false,
@@ -517,6 +636,20 @@
                 }
             ]
         },
+        "TangibleDDD\\WordPress\\install_relay_pauses_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
         "TangibleDDD\\WordPress\\install_tables": {
             "file": "tables.php",
             "byRef": false,
@@ -532,6 +665,20 @@
             ]
         },
         "TangibleDDD\\WordPress\\install_touches_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_wakeups_table": {
             "file": "tables.php",
             "byRef": false,
             "returnType": "void",
@@ -1210,6 +1357,6 @@
         }
     },
     "constants": {
-        "TangibleDDD\\WordPress\\DDD_SCHEMA_VERSION": "7"
+        "TangibleDDD\\WordPress\\DDD_SCHEMA_VERSION": "8"
     }
 }

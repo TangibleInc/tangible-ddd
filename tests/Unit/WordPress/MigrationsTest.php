@@ -44,12 +44,48 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_7(): void {
+  public function test_current_schema_version_is_8(): void {
     // Regression guard for the v3-fast-path bug lineage: bumping the schema
-    // (v7 = the workflow meta side table) must move this constant, or
+    // (v8 = the wave-3 durable contracts) must move this constant, or
     // consumers' fast-paths treat themselves as current and never create
-    // the table.
-    $this->assertSame(7, DDD_SCHEMA_VERSION);
+    // the tables.
+    $this->assertSame(8, DDD_SCHEMA_VERSION);
+  }
+
+  public function test_v8_migration_has_an_explicit_entry(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(8, $migrations, 'consumers already at v7 skip dbDelta on the fast path — the explicit entry creates the v8 tables, columns and backfills for them.');
+  }
+
+  public function test_v8_adds_only_nullable_or_defaulted_columns(): void {
+    // R5: a rolled-back 0.6 winner inserts rows naming none of the v8
+    // columns, so every one must be NULL-able or defaulted.
+    $spy = new class extends \wpdb {
+      public array $queries = [];
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return 0;
+      }
+      public function query(string $query) {
+        $this->queries[] = $query;
+        return true;
+      }
+    };
+    $GLOBALS['wpdb'] = $spy;
+
+    foreach ([
+      ['wp_test_integration_outbox', 'claim_token', 'VARCHAR(64) NULL'],
+      ['wp_test_long_processes', 'version', 'INT UNSIGNED NOT NULL DEFAULT 1'],
+      ['wp_test_long_processes', 'ignition_key', 'CHAR(36) NULL'],
+      ['wp_test_long_processes', 'quarantine_reason', 'TEXT NULL'],
+    ] as [$table, $column, $definition]) {
+      \TangibleDDD\WordPress\ddd_add_column_if_missing($table, $column, $definition);
+    }
+    \TangibleDDD\WordPress\ddd_add_unique_index_if_missing('wp_test_long_processes', 'uniq_ignition_key', '`process_class`, `ignition_key`');
+
+    foreach (array_slice($spy->queries, 0, 4) as $sql) {
+      $this->assertMatchesRegularExpression('/ADD COLUMN `\w+` [A-Z0-9() ]+ (NULL|NOT NULL DEFAULT \d+)$/', $sql);
+    }
+    $this->assertSame('ALTER TABLE `wp_test_long_processes` ADD UNIQUE KEY `uniq_ignition_key` (`process_class`, `ignition_key`)', $spy->queries[4]);
   }
 
   public function test_v6_migration_installs_the_touches_table(): void {

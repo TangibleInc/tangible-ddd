@@ -23,6 +23,8 @@ function install_tables(IDDDConfig $config): void {
   install_behaviour_workflow_tables($config);
   install_behaviour_workflow_meta_table($config);
   install_behaviour_workflow_item_tables($config);
+  install_wakeups_table($config);
+  install_delivery_ledger_table($config);
 }
 
 /**
@@ -58,6 +60,7 @@ function install_outbox_tables(IDDDConfig $config): void {
     next_attempt_at DATETIME NULL,
     locked_until DATETIME NULL,
     locked_by VARCHAR(64) NULL,
+    claim_token VARCHAR(64) NULL,
     last_error TEXT NULL,
     error_history JSON NULL,
     created_at DATETIME NOT NULL,
@@ -91,6 +94,110 @@ function install_outbox_tables(IDDDConfig $config): void {
 
   dbDelta($outbox_sql);
   dbDelta($dlq_sql);
+  install_relay_pauses_table($config);
+}
+
+/**
+ * Install the relay pause rows table (schema v8, register 3.4 / C25): one
+ * row per (holder, selector); `until_at` NULL = until released. The 0.6
+ * `{prefix}_outbox_pauses` option is still read beside it until drained, so
+ * a 0.6 copy's pause keeps holding and a rollback keeps the legacy holds.
+ */
+function install_relay_pauses_table(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('ddd_relay_pauses');
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
+    holder VARCHAR(191) NOT NULL,
+    selector VARCHAR(191) NOT NULL,
+    until_at DATETIME NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_hold (holder, selector)
+  ) $charset";
+
+  dbDelta($sql);
+}
+
+/**
+ * Install the durable wakeup intents table (schema v8, register 3.6, 5.3).
+ *
+ * One row per intent, unique on its idempotency key. The row is the
+ * recovery ledger and the fencing source; the Action Scheduler action on
+ * the legacy hook (as_action_id, hook, args) is its projection, made at
+ * schedule time so a rolled-back 0.6 winner still fires it.
+ *
+ * status: pending (armed) | firing (its wake is running) | done | cancelled.
+ */
+function install_wakeups_table(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('ddd_wakeups');
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
+    idempotency_key VARCHAR(191) NOT NULL,
+    kind VARCHAR(16) NOT NULL,
+    process_id BIGINT UNSIGNED NULL,
+    step_index INT UNSIGNED NULL,
+    expected_status VARCHAR(16) NULL,
+    due_at DATETIME NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    claim_token VARCHAR(64) NULL,
+    locked_until DATETIME NULL,
+    hook VARCHAR(191) NULL,
+    args LONGTEXT NULL,
+    as_action_id BIGINT UNSIGNED NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    UNIQUE KEY uniq_idempotency_key (idempotency_key),
+    KEY idx_status_due (status, due_at),
+    KEY idx_process (process_id, status)
+  ) $charset";
+
+  dbDelta($sql);
+}
+
+/**
+ * Install the per-subscriber delivery ledger (schema v8, register 3.5, 5.1;
+ * CR-1): one row per (subscriber, event_id). `subscriber_key` is
+ * sha1(subscriber_id), so long ids stay uniquely indexable.
+ *
+ * status: failed (attempts counted) | delivered | exhausted.
+ */
+function install_delivery_ledger_table(IDDDConfig $config): void {
+  global $wpdb;
+
+  $table = $config->table('ddd_delivery_ledger');
+  $charset = $wpdb->get_charset_collate();
+
+  $sql = "CREATE TABLE $table (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (id),
+    subscriber_key CHAR(40) NOT NULL,
+    subscriber_id VARCHAR(512) NOT NULL,
+    event_id VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'failed',
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    delivered_at DATETIME NULL,
+    exhausted_at DATETIME NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_subscriber_event (subscriber_key, event_id),
+    KEY idx_event (event_id),
+    KEY idx_status (status)
+  ) $charset";
+
+  dbDelta($sql);
 }
 
 /**
@@ -101,6 +208,11 @@ function install_outbox_tables(IDDDConfig $config): void {
  * - steps: JSON with ProcessSteps state
  * - payload: JSON with polymorphic format {_class, _data}
  * - step_index + step_name: denormalized for debugging/querying
+ * - version (v8): the fence every save checks (register 3.7, 3.8)
+ * - ignition_key (v8): uuid5(event_id, process_class), set ONLY by the
+ *   #[StartsOn] ignition path; UNIQUE (process_class, ignition_key) is the
+ *   ignition gate (X7). NULL for manual starts (never deduped).
+ * - quarantine_reason (v8): set with status `failed` for an undecodable row
  */
 function install_process_tables(IDDDConfig $config): void {
   global $wpdb;
@@ -117,18 +229,22 @@ function install_process_tables(IDDDConfig $config): void {
     step_index INT UNSIGNED NOT NULL DEFAULT 0,
     step_name VARCHAR(128) NULL,
     status ENUM('pending', 'running', 'scheduled', 'suspended', 'completed', 'failed') NOT NULL DEFAULT 'pending',
+    version INT UNSIGNED NOT NULL DEFAULT 1,
     waiting_for VARCHAR(255) NULL,
     match_criteria JSON NULL,
     await_mechanism JSON NULL,
     payload JSON NULL,
     correlation_id CHAR(36) NOT NULL,
     ignited_by_event_id VARCHAR(64) NULL,
+    ignition_key CHAR(36) NULL,
     source VARCHAR(16) NULL,
     last_error TEXT NULL,
+    quarantine_reason TEXT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     blog_id BIGINT UNSIGNED NOT NULL DEFAULT 1,
     KEY idx_ignition (ignited_by_event_id),
+    UNIQUE KEY uniq_ignition_key (process_class, ignition_key),
     KEY idx_status (status),
     KEY idx_waiting (waiting_for, status),
     KEY idx_correlation (correlation_id),
