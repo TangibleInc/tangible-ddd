@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ddd-symfony: unit, Postgres integration and kernel suites.
+
+  Integration and kernel tests need Postgres 16. Point DDD_SF_PG_URL at a
+  server (default below); the bootstrap creates the database named in the URL
+  when it is missing. Every test drops and re-creates the tables it uses.
+  Nothing is wrapped in a per-test transaction: the adapters under test own
+  their transactions (register 3.2, E section 5).
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnSkippedTests="true"
+         colors="true">
+    <php>
+        <env name="DDD_SF_PG_URL" value="pgsql://postgres:ddd@127.0.0.1:55432/ddd_w2_symfony_adapters" force="false"/>
+        <env name="APP_ENV" value="test" force="true"/>
+        <env name="SHELL_VERBOSITY" value="-1" force="true"/>
+    </php>
+    <testsuites>
+        <testsuite name="unit">
+            <directory suffix="Test.php">tests/Unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory suffix="Test.php">tests/Integration</directory>
+        </testsuite>
+        <testsuite name="kernel">
+            <directory suffix="Test.php">tests/Kernel</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+</phpunit>
