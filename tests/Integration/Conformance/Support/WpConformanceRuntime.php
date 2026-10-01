@@ -50,7 +50,8 @@ use TangibleDDD\WordPress\Adapter\WpdbOutboxAdministration;
 use TangibleDDD\WordPress\Adapter\WpdbOutboxStore;
 use TangibleDDD\WordPress\Adapter\WpdbProcessStore;
 use TangibleDDD\WordPress\Adapter\WpdbTransactionBoundary;
-use TangibleDDD\WordPress\Adapter\WpdbWakeupScheduler;
+use TangibleDDD\WordPress\Adapter\WpdbParkingScheduler;
+use TangibleDDD\WordPress\Adapter\WpSchema;
 use TangibleDDD\WordPress\Adapter\WpDeliveryLedger;
 use TangibleDDD\WordPress\Adapter\WpEnvironmentProvider;
 use TangibleDDD\WordPress\Adapter\WpHookSignalDispatcher;
@@ -68,7 +69,7 @@ use function TangibleDDD\WordPress\register_delivery_hooks;
 use function TangibleDDD\WordPress\register_process_hooks;
 
 /**
- * The conformance consumer composed on the FINAL (schema v8) wp adapters,
+ * The conformance consumer composed on the FINAL (schema v9) wp adapters,
  * shared by WpHostFixture (the test process) and bin/fresh.php (every
  * fresh php process), so both boot the same way production does.
  *
@@ -81,7 +82,9 @@ use function TangibleDDD\WordPress\register_process_hooks;
  *                         DDD-registered callback through
  *   subscriptions         WpHookSubscriptionRegistry (one add_action per subscriber)
  *   process_store         WpdbProcessStore (ignition_key, version fencing, stranded scan)
- *   wakeups               WpdbWakeupScheduler (intent rows + AS projection at schedule time)
+ *   wakeups               WpdbParkingScheduler (intent rows + AS projection at schedule time;
+ *                         ICarriesFacts, the v9 `fact` column: what WpHostPortFactory
+ *                         serves at v9, so a contended fact resume is parked, AW2)
  *   lock                  ReentrantProcessLock over GetLockProcessLock (both names)
  *   runner                the core ProcessRunner on those ports, StartMode::InBand
  *   wake path             the ddd-wp Action Scheduler hooks (register_process_hooks:
@@ -115,7 +118,7 @@ final class WpConformanceRuntime {
   public readonly WpHookDomainDispatcher $dispatcher;
   public readonly ProcessRepository $processRepository;
   public readonly WpdbProcessStore $processStore;
-  public readonly WpdbWakeupScheduler $wakeups;
+  public readonly WpdbParkingScheduler $wakeups;
   public readonly ProcessRunner $runner;
 
   /** The runner the Action Scheduler wake hooks resolve (the worker draining right now). */
@@ -139,7 +142,7 @@ final class WpConformanceRuntime {
     $this->dispatcher = new WpHookDomainDispatcher();
     $this->processRepository = new ProcessRepository($this->config);
     $this->processStore = new WpdbProcessStore($this->processRepository, $this->config, $clock);
-    $this->wakeups = new WpdbWakeupScheduler($this->config, $clock);
+    $this->wakeups = new WpdbParkingScheduler($this->config, $clock);
     $this->runner = $this->runnerOn($this->lock, $this->subscriptions);
   }
 
@@ -152,7 +155,7 @@ final class WpConformanceRuntime {
   }
 
   /**
-   * The schema v8 tables of the consumer and its schema version option, as
+   * The schema v9 tables of the consumer and its schema version option, as
    * a migrated install has them; process ids start at $firstProcessId.
    *
    * The legacy lock name `ddd_process_<id>` that GetLockProcessLock also
@@ -164,7 +167,7 @@ final class WpConformanceRuntime {
   public function installSchema(int $firstProcessId): void {
     global $wpdb;
     install_tables($this->config);
-    update_option(ddd_schema_version_key($this->config), 8, false);
+    update_option(ddd_schema_version_key($this->config), WpSchema::V9, false);
     $this->rows->create();
     if ($wpdb->query(sprintf('ALTER TABLE `%s` AUTO_INCREMENT = %d', $this->config->table('long_processes'), $firstProcessId)) === false) {
       throw new \RuntimeException("conformance-wp: could not set the process id base: {$wpdb->last_error}");

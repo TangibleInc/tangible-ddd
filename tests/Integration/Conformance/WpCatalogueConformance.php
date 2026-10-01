@@ -8,6 +8,10 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Conformance\ScenarioCatalogue;
 use TangibleDDD\Conformance\ScenarioId;
+use TangibleDDD\Conformance\WorkItemHost;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
+use TangibleDDD\Tests\Integration\Conformance\Support\WpConformanceRuntime;
+use TangibleDDD\WordPress\Adapter\WpdbParkingScheduler;
 
 /**
  * Pins the wp host classes to register section 8: every scenario id due on
@@ -43,6 +47,34 @@ final class WpCatalogueConformance extends TestCase {
 
   /** Register section 8, wave 4, wp (3 ids; D1, D10 and the D3 ids are `-` on wp, O9 and CR-W4C4-1). */
   private const WP_WAVE_4 = ['process.alarm-long', 'codec.large-payload', 'decode.unknown-class'];
+
+  /** Register section 8, wave 5, wp (2 ids, CR-W5C5-1; AW2 and E2 are `-` on wp, cross-consumer is sf only). */
+  private const WP_WAVE_5 = ['process.resume-cause', 'workflow.item-deterministic-id'];
+
+  public function test_wp_wave_5_matches_register_section_8(): void {
+    self::assertEqualsCanonicalizing(self::WP_WAVE_5, ScenarioCatalogue::first_due_at('wp', 5));
+    $due = ScenarioCatalogue::due_by('wp', 5);
+    self::assertEqualsCanonicalizing([...self::WP_WAVE_2, ...self::WP_WAVE_3, ...self::WP_WAVE_4, ...self::WP_WAVE_5], $due);
+    foreach (['lock.parked-answer', 'process.resume-contention-keeps-answer', 'effect.performed-not-recorded', 'delivery.cross-consumer-once'] as $outOfScope) {
+      self::assertNotContains($outOfScope, $due, "$outOfScope is - on wp");
+    }
+  }
+
+  public function test_every_id_due_on_wp_by_wave_5_has_a_wp_scenario_and_a_wp_class(): void {
+    $implemented = ScenarioId::implemented_by(self::wpHostClasses());
+    self::assertSame([], array_values(array_diff(ScenarioCatalogue::due_by('wp', 5), array_keys($implemented))), 'due on wp by wave 5 but no wp scenario method carries the id');
+
+    $extended = array_values(array_filter(array_map(static fn (string $c) => get_parent_class($c), self::wpHostClasses())));
+    self::assertSame([], array_values(array_diff(ScenarioCatalogue::cases_for('wp', 5), $extended)));
+  }
+
+  /** lock.acquire-error takes its parked branch: the wp fixture schedules on the v9 WpdbParkingScheduler. */
+  public function test_the_fixture_wakeups_carry_facts(): void {
+    self::assertTrue(is_subclass_of(WpdbParkingScheduler::class, ICarriesFacts::class));
+    $type = (new \ReflectionProperty(WpConformanceRuntime::class, 'wakeups'))->getType();
+    self::assertSame(WpdbParkingScheduler::class, $type instanceof \ReflectionNamedType ? $type->getName() : null);
+    self::assertContains(WorkItemHost::class, class_implements(WpHostFixture::class), 'workflow.item-deterministic-id (CR-W5C5-3)');
+  }
 
   public function test_wp_wave_4_matches_register_section_8(): void {
     self::assertEqualsCanonicalizing(self::WP_WAVE_4, ScenarioCatalogue::first_due_at('wp', 4));
