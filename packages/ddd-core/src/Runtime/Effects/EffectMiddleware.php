@@ -82,7 +82,7 @@ final class EffectMiddleware implements Middleware {
 
     $key = $command->idempotency_key();
     if ($key === '') {
-      throw new \InvalidArgumentException(get_class($command) . '::idempotencyKey() returned an empty key');
+      throw new \InvalidArgumentException(get_class($command) . '::idempotency_key() returned an empty key');
     }
 
     $result = $journal->find($key);

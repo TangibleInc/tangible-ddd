@@ -509,7 +509,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   public function fail_statement(): void {
     if (!$this->boundary->is_active()) {
-      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+      throw new \LogicException('fail_statement() runs inside the open transaction');
     }
     // mem has no aborted-transaction state, like MySQL: the statement fails
     // and the transaction stays usable.

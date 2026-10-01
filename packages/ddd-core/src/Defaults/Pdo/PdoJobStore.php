@@ -86,7 +86,7 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
    */
   public function claiming(WakeKind ...$kinds): self {
     if ($kinds === []) {
-      throw new \InvalidArgumentException('withClaimKinds() needs at least one WakeKind');
+      throw new \InvalidArgumentException('claiming() needs at least one WakeKind');
     }
     $view = clone $this;
     $view->claimKinds = array_values(array_unique(array_map(static fn (WakeKind $k) => $k->value, $kinds)));
@@ -114,7 +114,7 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
 
   public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     if ($this->db->in_transaction()) {
-      throw new NestedTransactionRejected('IWakeupScheduler::claimDue() must run outside any open transaction.');
+      throw new NestedTransactionRejected('IWakeupScheduler::claim_due() must run outside any open transaction.');
     }
     if ($limit <= 0) {
       return [];

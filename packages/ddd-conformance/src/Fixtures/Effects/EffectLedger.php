@@ -48,7 +48,7 @@ final class EffectLedger {
   }
 
   public static function bus(): CommandBus {
-    return self::$bus ?? throw new \LogicException('EffectLedger::$bus is not set (EffectHost::effectBus())');
+    return self::$bus ?? throw new \LogicException('EffectLedger::$bus is not set (EffectHost::effect_bus())');
   }
 
   public static function rows(): ScenarioRows {

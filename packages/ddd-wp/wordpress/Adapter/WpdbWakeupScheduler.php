@@ -156,7 +156,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
 
   public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     if (WpdbTransactionDepth::current() > 0) {
-      throw new \TangibleDDD\Runtime\NestedTransactionRejected('IWakeupScheduler::claimDue() runs its own transaction and must be called outside one.');
+      throw new \TangibleDDD\Runtime\NestedTransactionRejected('IWakeupScheduler::claim_due() runs its own transaction and must be called outside one.');
     }
     $at = self::utc($now);
     $until = self::utc($now->modify('+' . max(0, $leaseSeconds) . ' seconds'));

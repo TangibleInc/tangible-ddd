@@ -75,7 +75,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
 
   public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     if ($this->connection->isTransactionActive()) {
-      throw new NestedTransactionRejected('DbalWakeupScheduler::claimDue() must run outside an open transaction (it commits its own lease).');
+      throw new NestedTransactionRejected('DbalWakeupScheduler::claim_due() must run outside an open transaction (it commits its own lease).');
     }
     if ($limit <= 0) {
       return [];

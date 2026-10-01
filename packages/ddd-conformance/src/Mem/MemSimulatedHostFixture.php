@@ -162,7 +162,7 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
 
   public function relay_until(string $eventId, float $timeoutSeconds): ?float {
     if (!$this->listening) {
-      throw new \LogicException('startRelayWorker() first');
+      throw new \LogicException('start_relay() first');
     }
     // Woken at once by a wakeup, else after one poll interval.
     $elapsed = $this->takeWakeups() ? 0.0 : self::SIMULATED_POLL_SECONDS;
