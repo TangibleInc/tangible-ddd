@@ -23,8 +23,10 @@ use TangibleDDD\Runtime\SystemClock;
  * own holds. The option's selectors are matched with the same glob rule (a
  * superset of 0.6's exact-or-`*` match).
  *
- * Errors: hold()/release() throw OutboxWriteFailed on a wpdb failure;
- * isPaused() never throws.
+ * Errors: hold()/release() throw OutboxWriteFailed on a wpdb failure. A
+ * failed read of the rows fails CLOSED: activeSelectors() / exclusion()
+ * throw \RuntimeException (so WpdbOutboxStore::claim() throws and the tick
+ * reports it), and isPaused() never throws but answers true.
  */
 final class WpRelayPauseStore implements IRelayPauseStore {
 
@@ -57,7 +59,14 @@ final class WpRelayPauseStore implements IRelayPauseStore {
   }
 
   public function isPaused(string $eventType, \DateTimeImmutable $now): bool {
-    foreach ($this->activeSelectors($now) as $selector) {
+    try {
+      $selectors = $this->activeSelectors($now);
+    } catch (\RuntimeException $e) {
+      // Fail closed: a hold that cannot be read is assumed to be there.
+      \TangibleDDD\Runtime\Support\Log::write(null, "[ddd relay] {$e->getMessage()}; treating $eventType as paused", 'error');
+      return true;
+    }
+    foreach ($selectors as $selector) {
       if ($selector === '*' || $selector === $eventType || fnmatch($selector, $eventType)) {
         return true;
       }
@@ -70,16 +79,27 @@ final class WpRelayPauseStore implements IRelayPauseStore {
    * unexpired holds of the 0.6 option.
    *
    * @return list<string>
+   * @throws \RuntimeException when the pause rows cannot be read: the relay
+   *         fails closed (claim() throws, isPaused() says paused) rather
+   *         than relaying event types that may be held
    */
   public function activeSelectors(\DateTimeImmutable $now): array {
     $db = self::db();
     $at = $now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-    $suppress = $db->suppress_errors(true);
+    $suppress = $db->suppress_errors(true); // reported below, not printed
     $rows = $db->get_col($db->prepare(
       "SELECT selector FROM `{$this->table()}` WHERE until_at IS NULL OR until_at > %s",
       $at
     ));
     $db->suppress_errors($suppress);
+    if ($db->last_error !== '') {
+      if (WpSchema::isV8($this->config)) {
+        throw new \RuntimeException("Relay pause read failed on {$this->table()}: {$db->last_error}");
+      }
+      // Before the v8 migration the table may not exist yet (no hold can
+      // be in it then): the 0.6 option is the whole truth.
+      $rows = [];
+    }
 
     $selectors = is_array($rows) ? array_map('strval', $rows) : [];
 

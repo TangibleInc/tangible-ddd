@@ -153,7 +153,9 @@ final class WpdbOutboxStore implements IOutboxStore {
          FOR UPDATE SKIP LOCKED",
         ...[$stamp, $stamp, $stamp, ...$params, $limit]
       ));
-      if ($rows === null && $db->last_error !== '') {
+      // wpdb::get_results() returns [] (not null) on a query error: the error
+      // is only in last_error, which get_results() resets on success.
+      if ($db->last_error !== '') {
         throw new OutboxWriteFailed('Outbox claim failed: ' . (string) $db->last_error);
       }
 

@@ -157,6 +157,41 @@ final class WpOutboxV8Test extends V8TestCase {
     self::assertSame(['e0000000-0000-4000-8000-000000000006'], array_map(static fn (Claim $c) => $c->event_id, $this->store->claim(10, $this->clock->now()->modify('+301 seconds'), 60)), 'expiry honoured against the given now');
   }
 
+  public function test_a_failed_claim_query_throws_instead_of_reporting_nothing_due(): void {
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000020'));
+    $outbox = $this->table('integration_outbox');
+    $this->wpdb->query("ALTER TABLE `$outbox` RENAME COLUMN next_attempt_at TO next_attempt_at_gone");
+    $suppress = $this->wpdb->suppress_errors(true);
+    try {
+      $this->store->claim(10, $this->clock->now(), 60);
+      self::fail('a failed claim SELECT must throw');
+    } catch (\TangibleDDD\Runtime\Outbox\OutboxWriteFailed $e) {
+      self::assertStringContainsString('Outbox claim failed', $e->getMessage());
+    } finally {
+      $this->wpdb->suppress_errors($suppress);
+      $this->wpdb->query("ALTER TABLE `$outbox` RENAME COLUMN next_attempt_at_gone TO next_attempt_at");
+    }
+  }
+
+  public function test_an_unreadable_pause_table_fails_closed(): void {
+    $this->store->append($this->record('e0000000-0000-4000-8000-000000000021'));
+    $this->wpdb->query("DROP TABLE `{$this->table('ddd_relay_pauses')}`");
+    $suppress = $this->wpdb->suppress_errors(true);
+    try {
+      self::assertTrue($this->pauses->isPaused('v8.fact', $this->clock->now()), 'a pause that cannot be read is assumed held');
+      try {
+        $this->store->claim(10, $this->clock->now(), 60);
+        self::fail('the relay must not claim past an unreadable pause table');
+      } catch (\RuntimeException $e) {
+        self::assertStringContainsString('Relay pause read failed', $e->getMessage());
+      }
+    } finally {
+      $this->wpdb->suppress_errors($suppress);
+    }
+    self::assertSame('pending', $this->row('e0000000-0000-4000-8000-000000000021')['status']);
+    self::assertNull($this->row('e0000000-0000-4000-8000-000000000021')['claim_token']);
+  }
+
   public function test_a_0_6_option_hold_is_read_until_it_is_drained(): void {
     $this->store->append($this->record('e0000000-0000-4000-8000-000000000008'));
     $this->repository()->set_pause('legacy-holder', 'v8.fact');
