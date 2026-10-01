@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\WebStartScenarios;
 #[Group('simulated')]
 final class SimulatedWebStartScenariosTest extends WebStartScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::Deferred);
   }
 }

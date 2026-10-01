@@ -35,21 +35,21 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
   #[TestDox('process.ignition-race: two workers deliver the same igniting fact concurrently; one process row, the loser runs no step')]
   public function test_process_ignition_race(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
+    $processes->wire_processes([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
     $wrapped = self::wrap(new WidgetOrdered('w-1'), Uuid::v4());
 
     // Worker 1 has inserted the ignited row and is about to lock it for the
     // first step; worker 2 delivers the same fact right then.
     $second = null;
-    $processes->beforeNextProcessLockAcquire(function () use ($processes, $wrapped, &$second): void {
-      $second = $processes->worker(2)->deliverFact(WidgetOrdered::class, $wrapped);
+    $processes->before_next_lock(function () use ($processes, $wrapped, &$second): void {
+      $second = $processes->worker(2)->deliver(WidgetOrdered::class, $wrapped);
     });
-    $first = $processes->worker(1)->deliverFact(WidgetOrdered::class, $wrapped);
+    $first = $processes->worker(1)->deliver(WidgetOrdered::class, $wrapped);
 
     self::assertInstanceOf(DeliveryOutcome::class, $second, 'the two deliveries overlapped');
-    self::assertTrue($first->isComplete());
-    self::assertTrue($second->isComplete(), 'the loser\'s ignition returned quietly (AlreadyIgnited)');
-    self::assertCount(1, $processes->processIds(OrderedWidgetProcess::class), 'exactly one process row');
+    self::assertTrue($first->is_complete());
+    self::assertTrue($second->is_complete(), 'the loser\'s ignition returned quietly (AlreadyIgnited)');
+    self::assertCount(1, $processes->process_ids(OrderedWidgetProcess::class), 'exactly one process row');
     self::assertSame(1, ProcessJournal::runs('open:w-1'), 'the loser ran no step');
     self::assertSame(['open'], ProcessJournal::labels());
   }
@@ -58,8 +58,8 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
   #[TestDox('process.manual-start-in-drain: two manual start() calls inside a fact drain make two rows, ignition_key NULL, never deduped; the #[StartsOn] ignition still ignites once')]
   public function test_process_manual_start_in_drain(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
-    $runner = $processes->worker()->processRunner();
+    $processes->wire_processes([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
+    $runner = $processes->worker()->runner();
     $this->host->subscriptions()->add(new Subscriber('conformance.manual-starter', Subscriber::LISTENER, WidgetOrdered::class,
       static function () use ($runner): void {
         $runner->start(new OrderedWidgetProcess('w-1'));
@@ -69,30 +69,30 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
     $fact = new WidgetOrdered('w-1');
 
     $outcome = $this->host->deliver(WidgetOrdered::class, self::wrap($fact, $eventId));
-    $processes->worker()->drainOnce(); // runs deferred first steps (sf); a no-op where starts are in-band
+    $processes->worker()->drain_once(); // runs deferred first steps (sf); a no-op where starts are in-band
 
-    self::assertTrue($outcome->isComplete());
-    $ids = $processes->processIds(OrderedWidgetProcess::class);
+    self::assertTrue($outcome->is_complete());
+    $ids = $processes->process_ids(OrderedWidgetProcess::class);
     self::assertCount(3, $ids, 'two manual starts and one ignition');
     [$manual1, $manual2, $ignited] = array_map(fn (int $id) => $this->row($id), $ids);
     foreach ([$manual1, $manual2] as $manual) {
-      self::assertNull($manual->ignitionKey, 'a manual start is never deduped (ignition_key NULL)');
-      self::assertSame($eventId, $manual->ignitedByEventId, 'the drain\'s fact is recorded as the igniter');
+      self::assertNull($manual->ignition_key, 'a manual start is never deduped (ignition_key NULL)');
+      self::assertSame($eventId, $manual->ignited_by, 'the drain\'s fact is recorded as the igniter');
     }
-    self::assertNotNull($ignited->ignitionKey, 'the #[StartsOn] ignition carries its key');
-    self::assertSame($eventId, $ignited->ignitedByEventId);
+    self::assertNotNull($ignited->ignition_key, 'the #[StartsOn] ignition carries its key');
+    self::assertSame($eventId, $ignited->ignited_by);
     self::assertSame(3, ProcessJournal::runs('open:w-1'));
 
     // A later ignition of the class by the same fact is still deduped.
     $runner->ignite(OrderedWidgetProcess::class, $fact, $eventId);
-    self::assertCount(3, $processes->processIds(OrderedWidgetProcess::class), 'still ignited once');
+    self::assertCount(3, $processes->process_ids(OrderedWidgetProcess::class), 'still ignited once');
   }
 
   #[Group('process.timeout-vs-event')]
   #[TestDox('process.timeout-vs-event: when the timeout and the awaited fact race exactly one applies, and a compensated process is never resurrected')]
   public function test_process_timeout_vs_event(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [PartArrived::class]);
+    $processes->wire_processes([], [PartArrived::class]);
 
     // 1. The race: the due timeout wake is about to lock; the last part
     //    arrives on worker 2 at that moment.
@@ -100,14 +100,14 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
     self::assertSame('suspended', $this->row($raced)->status);
     self::assertCount(1, $this->intents($raced, WakeKind::Timeout), 'the alarm is a durable intent');
     $this->host->deliver(PartArrived::class, self::wrap(new PartArrived('w-1', 'a'), Uuid::v4()));
-    $this->host->advanceClock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
+    $this->host->advance_clock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
 
     $late = null;
-    $processes->beforeNextProcessLockAcquire(function () use ($processes, &$late): void {
-      $late = $processes->worker(2)->deliverFact(PartArrived::class, self::wrap(new PartArrived('w-1', 'b'), Uuid::v4()));
+    $processes->before_next_lock(function () use ($processes, &$late): void {
+      $late = $processes->worker(2)->deliver(PartArrived::class, self::wrap(new PartArrived('w-1', 'b'), Uuid::v4()));
     });
-    $processes->worker()->drainOnce();
-    if ($late !== null && $late->needsRetry()) {
+    $processes->worker()->drain_once();
+    if ($late !== null && $late->needs_retry()) {
       // the fact lost the lock: the delivery runner retries it
       $this->host->deliver(PartArrived::class, self::wrap(new PartArrived('w-1', 'b'), Uuid::v4()));
     }
@@ -121,8 +121,8 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
 
     // 2. Timeout first, then the facts: compensated, never resurrected.
     $timedOut = $this->start(new GatherPartsProcess('w-2', ['a', 'b'], AwaitAll::TIMEOUT_FAIL));
-    $this->host->advanceClock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
-    $processes->worker()->drainOnce();
+    $this->host->advance_clock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
+    $processes->worker()->drain_once();
     self::assertSame('failed', $this->row($timedOut)->status);
     $version = $this->row($timedOut)->version;
 
@@ -139,29 +139,29 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
   #[TestDox('process.await-before-dispatch: the awaited fact delivered synchronously inside the step\'s dispatch still resumes the process')]
   public function test_process_await_before_dispatch(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [WidgetPacked::class]);
+    $processes->wire_processes([], [WidgetPacked::class]);
     $statusAtDispatch = [];
     $id = null;
-    ProcessJournal::$onSend = function (StepCommand $c) use ($processes, &$statusAtDispatch, &$id): void {
+    ProcessJournal::$on_send = function (StepCommand $c) use ($processes, &$statusAtDispatch, &$id): void {
       if ($id !== null && in_array($c->label, ['ask', 'ask-2'], true)) {
-        $statusAtDispatch[$c->label] = $processes->processRow($id)?->status;
+        $statusAtDispatch[$c->label] = $processes->process_row($id)?->status;
       }
       if ($c->label === 'ask') {
         // the command's handler causes the awaited fact synchronously
-        $processes->worker()->deliverFact(WidgetPacked::class, self::wrap(new WidgetPacked('w-1'), Uuid::v4()));
+        $processes->worker()->deliver(WidgetPacked::class, self::wrap(new WidgetPacked('w-1'), Uuid::v4()));
       }
     };
     $process = new PackWidgetProcess('w-1');
-    $this->processes()->worker()->processRunner()->start($process);
+    $this->processes()->worker()->runner()->start($process);
     $id = (int) $process->get_id();
     if ($this->row($id)->status === 'scheduled') {
-      $processes->worker()->drainOnce(); // deferred first step (sf)
+      $processes->worker()->drain_once(); // deferred first step (sf)
     }
 
     self::assertSame(['ask', 'ship'], ProcessJournal::$steps, 'resumed although the fact arrived before the dispatch returned');
     self::assertSame(['ask', 'ship', 'ask-2'], ProcessJournal::labels());
     self::assertSame('completed', $this->row($id)->status);
-    self::assertSame(0, $processes->worker()->processLock()->heldCount());
+    self::assertSame(0, $processes->worker()->lock()->held_count());
   }
 
   #[Group('process.intent-survives-queue-failure')]
@@ -173,21 +173,21 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
     // after a committed save fails, wherever it happens. HopWidgetProcess
     // always leaves a Continue intent behind its committed save (the start
     // under StartMode::Deferred, else the #[Async] second step).
-    $processes->failNextWakeHandoff('wake transport down');
+    $processes->fail_next_handoff('wake transport down');
     $process = new HopWidgetProcess('w-1');
-    $processes->worker()->processRunner()->start($process);
+    $processes->worker()->runner()->start($process);
     $id = (int) $process->get_id();
 
-    $processes->worker()->drainOnce();
+    $processes->worker()->drain_once();
 
     self::assertSame('scheduled', $this->row($id)->status, 'the save committed; the process waits on its intent');
     self::assertSame(0, ProcessJournal::runs('second'), 'the failed hand-off woke nothing');
-    $survivor = $this->intentKeys($id, WakeKind::Continue);
+    $survivor = $this->intent_keys($id, WakeKind::Continue);
     self::assertCount(1, $survivor, 'the intent row remains');
 
     for ($run = 0; $run < 3 && $this->row($id)->status !== 'completed'; $run++) {
-      $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
-      $processes->worker()->drainOnce();
+      $this->host->advance_clock(self::PAST_WAKE_BACKOFF);
+      $processes->worker()->drain_once();
     }
 
     self::assertSame('completed', $this->row($id)->status, 'a later run woke the process');
@@ -202,13 +202,13 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
     $processes = $this->processes();
     $id = $this->start(new HopWidgetProcess('w-1'));
     [$continuation] = $this->intents($id, WakeKind::Continue);
-    $processes->worker()->drainOnce();
+    $processes->worker()->drain_once();
     self::assertSame(['first', 'second'], ProcessJournal::$steps);
     self::assertSame('completed', $this->row($id)->status);
     $version = $this->row($id)->version;
-    $consumer = $processes->processConsumer();
+    $consumer = $processes->consumer_prefix();
     $now = $this->host->clock()->now();
-    $runner = $processes->worker()->processRunner();
+    $runner = $processes->worker()->runner();
 
     $runner->wake(WakeupIntent::continuation($consumer, $id, 0, $now));       // a step already passed
     $runner->wake($continuation);                                             // the one that already ran
@@ -217,15 +217,15 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
     // ... and through the host's drain, as a redelivered queue message would arrive.
     $stale = WakeupIntent::continuation($consumer, $id, 1, $now, 'stale-copy');
     $this->host->boundary()->run(static fn () => $processes->wakeups()->schedule($stale));
-    $report = $processes->worker()->drainOnce();
+    $report = $processes->worker()->drain_once();
 
-    self::assertContains($stale->idempotencyKey, $report->wakesCompleted, 'a stale wake completes as a no-op');
+    self::assertContains($stale->key, $report->wakes_completed, 'a stale wake completes as a no-op');
     self::assertSame(['first', 'second'], ProcessJournal::$steps, 'no step ran again');
     self::assertSame($version, $this->row($id)->version, 'nothing was written');
     self::assertSame([], $this->intents($id));
 
     // Stale against a LIVE process: suspended at step 1 of its gather.
-    $processes->wireProcesses([], [PartArrived::class]);
+    $processes->wire_processes([], [PartArrived::class]);
     $gather = $this->start(new GatherPartsProcess('w-2', ['a', 'b'], AwaitAll::TIMEOUT_FAIL));
     $steps = ProcessJournal::$steps;
     $version = $this->row($gather)->version;

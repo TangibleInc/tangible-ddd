@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\LockScenarios;
 #[Group('simulated')]
 final class DeferredStartLockScenariosTest extends LockScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::Deferred);
   }
 }

@@ -15,30 +15,30 @@ use TangibleDDD\Runtime\Ids\NameBasedUuid;
 /**
  * Base of every abstract scenario case. A host plugs in by extending a
  * scenario case with a concrete class that carries `#[Group('<host>')]` and
- * returns its fixture from createFixture(); nothing else is host-specific.
+ * returns its fixture from create_fixture(); nothing else is host-specific.
  *
  *   #[Group('sf')]
  *   final class SfRelayScenariosTest extends RelayScenarios {
- *     protected function createFixture(): HostFixture { return new SfHostFixture(...); }
+ *     protected function create_fixture(): HostFixture { return new SfHostFixture(...); }
  *   }
  *
  * A scenario that a host cannot express yet is skipped with the id of the
- * API change request that would unblock it (skipForChangeRequest()).
+ * API change request that would unblock it (skip_for()).
  */
 abstract class ConformanceTestCase extends TestCase {
 
   protected HostFixture $host;
 
-  abstract protected function createFixture(): HostFixture;
+  abstract protected function create_fixture(): HostFixture;
 
   protected function setUp(): void {
     parent::setUp();
-    $this->host = $this->createFixture();
-    $this->host->setUp(new ScenarioContext(static::class, $this->name(), ScenarioId::of(new \ReflectionMethod($this, $this->name()))));
+    $this->host = $this->create_fixture();
+    $this->host->set_up(new ScenarioContext(static::class, $this->name(), ScenarioId::of(new \ReflectionMethod($this, $this->name()))));
   }
 
   protected function tearDown(): void {
-    $this->host->tearDown();
+    $this->host->tear_down();
     parent::tearDown();
   }
 
@@ -65,8 +65,8 @@ abstract class ConformanceTestCase extends TestCase {
    * whose handler records it, committed through the host bus into the
    * host outbox. Returns the outbox event id.
    */
-  protected function publishFact(DomainEvent&IIntegrationEvent $fact): string {
-    $bus = $this->host->commandBus([CreateWidget::class => function () use ($fact): void {
+  protected function publish(DomainEvent&IIntegrationEvent $fact): string {
+    $bus = $this->host->command_bus([CreateWidget::class => function () use ($fact): void {
       $this->host->events()->record($fact);
     }]);
     $bus->handle(new CreateWidget('publish-' . spl_object_id($fact)));
@@ -75,7 +75,7 @@ abstract class ConformanceTestCase extends TestCase {
   }
 
   /** What $fn threw, or null. */
-  protected static function catchThrowable(callable $fn): ?\Throwable {
+  protected static function thrown(callable $fn): ?\Throwable {
     try {
       $fn();
     } catch (\Throwable $e) {
@@ -84,7 +84,7 @@ abstract class ConformanceTestCase extends TestCase {
     return null;
   }
 
-  protected function skipForChangeRequest(string $requestId, string $why): never {
+  protected function skip_for(string $requestId, string $why): never {
     self::markTestSkipped("blocked on $requestId: $why");
   }
 }

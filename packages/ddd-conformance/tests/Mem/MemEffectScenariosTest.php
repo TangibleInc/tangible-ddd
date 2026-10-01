@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\EffectScenarios;
 #[Group('mem')]
 final class MemEffectScenariosTest extends EffectScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemHostFixture();
   }
 }

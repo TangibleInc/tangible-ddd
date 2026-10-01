@@ -9,7 +9,7 @@ use TangibleDDD\Application\Commands\ITransactionalCommand;
 
 /**
  * The explicit D1 repair (TXP's RepairStripeCustomer shape): its handler
- * calls IEffectJournal::invalidate(ChargeWidget::keyFor(widget), reason)
+ * calls IEffectJournal::invalidate(ChargeWidget::key_for(widget), reason)
  * inside its own transaction. `abort` makes the handler throw after the
  * invalidate, so the transaction rolls back with it.
  */

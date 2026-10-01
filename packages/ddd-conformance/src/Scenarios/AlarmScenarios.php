@@ -31,31 +31,31 @@ abstract class AlarmScenarios extends ProcessScenarioCase {
     self::assertCount(1, $alarms, 'one durable alarm intent');
     self::assertSame(
       $armedAt->modify('+' . LongAlarmProcess::ALARM_SECONDS . ' seconds')->getTimestamp(),
-      $alarms[0]->dueAt->getTimestamp(),
+      $alarms[0]->due_at->getTimestamp(),
       'due exactly 25 h after suspension (absolute UTC instant)',
     );
-    $deadline = $processes->processStore()->find($id)?->await_deadline();
+    $deadline = $processes->process_store()->find($id)?->await_deadline();
     self::assertNotNull($deadline, 'the instant is stored with the process');
-    self::assertSame($alarms[0]->dueAt->getTimestamp(), $deadline->getTimestamp());
+    self::assertSame($alarms[0]->due_at->getTimestamp(), $deadline->getTimestamp());
 
     // The worker restarts: worker 2 drains from here on.
     $restarted = $processes->worker(2);
-    $this->host->advanceClock(LongAlarmProcess::ALARM_SECONDS - 1);
-    $restarted->drainOnce();
+    $this->host->advance_clock(LongAlarmProcess::ALARM_SECONDS - 1);
+    $restarted->drain_once();
     self::assertSame(0, ProcessJournal::runs('fire'), 'not due 1 s before the instant');
     self::assertSame('suspended', $this->row($id)->status);
     self::assertCount(1, $this->intents($id, WakeKind::Timeout), 'the intent is not re-delayed');
 
-    $this->host->advanceClock(1);
-    $restarted->drainOnce();
+    $this->host->advance_clock(1);
+    $restarted->drain_once();
     self::assertSame(1, ProcessJournal::runs('fire'), 'fires at the instant');
     self::assertSame('completed', $this->row($id)->status);
     $version = $this->row($id)->version;
 
-    $this->host->advanceClock(48 * 3600);
-    $restarted->drainOnce();
-    $processes->worker()->drainOnce();
-    $restarted->processRunner()->wake($alarms[0]); // a surviving duplicate of the wake
+    $this->host->advance_clock(48 * 3600);
+    $restarted->drain_once();
+    $processes->worker()->drain_once();
+    $restarted->runner()->wake($alarms[0]); // a surviving duplicate of the wake
 
     self::assertSame(['arm', 'fire'], ProcessJournal::$steps, 'fired once, no re-arm');
     self::assertSame(['fired'], ProcessJournal::labels());

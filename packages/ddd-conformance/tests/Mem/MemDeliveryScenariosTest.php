@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\DeliveryScenarios;
 #[Group('mem')]
 final class MemDeliveryScenariosTest extends DeliveryScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemHostFixture();
   }
 }

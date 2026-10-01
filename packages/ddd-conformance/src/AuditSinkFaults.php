@@ -21,5 +21,5 @@ interface AuditSinkFaults {
    * Make the NEXT IAuditSink::close() throw. The act bracket closes the row
    * after the command's transaction, so the failure lands after commit.
    */
-  public function failNextAuditClose(string $reason): void;
+  public function fail_next_audit_close(string $reason): void;
 }

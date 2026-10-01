@@ -10,11 +10,11 @@ final class ScenarioContext {
   private readonly string $unique;
 
   public function __construct(
-    public readonly string $testClass,
-    public readonly string $testMethod,
-    public readonly ?string $scenarioId,
+    public readonly string $test_class,
+    public readonly string $test_method,
+    public readonly ?string $scenario_id,
   ) {
-    $this->unique = substr(sha1($testClass . '::' . $testMethod . '|' . getmypid() . '|' . hrtime(true)), 0, 12);
+    $this->unique = substr(sha1($test_class . '::' . $test_method . '|' . getmypid() . '|' . hrtime(true)), 0, 12);
   }
 
   /**
@@ -22,7 +22,7 @@ final class ScenarioContext {
    * schema name: lowercase [a-z0-9_], at most 63 characters, e.g.
    * `ddd_conf_mem_3f9a0c1b2d4e`.
    */
-  public function uniqueName(string $host, string $prefix = 'ddd_conf'): string {
+  public function unique_name(string $host, string $prefix = 'ddd_conf'): string {
     return substr(strtolower(preg_replace('/[^a-z0-9_]/i', '_', "{$prefix}_{$host}_{$this->unique}")), 0, 63);
   }
 }

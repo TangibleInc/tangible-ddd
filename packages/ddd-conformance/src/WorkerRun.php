@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Conformance;
 
-/** What HostFixture::runWorker() observed, one slot per message. */
+/** What HostFixture::run_worker() observed, one slot per message. */
 final class WorkerRun {
 
   /**

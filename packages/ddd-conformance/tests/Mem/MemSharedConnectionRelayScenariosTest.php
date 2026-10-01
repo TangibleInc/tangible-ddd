@@ -19,7 +19,7 @@ use TangibleDDD\Conformance\Scenarios\RelayScenarios;
 #[Group('mem')]
 final class MemSharedConnectionRelayScenariosTest extends RelayScenarios {
 
-  protected function createFixture(): HostFixture {
-    return new MemHostFixture(transportSharesConnection: true);
+  protected function create_fixture(): HostFixture {
+    return new MemHostFixture(shared_connection: true);
   }
 }

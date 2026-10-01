@@ -19,7 +19,7 @@ final class FaultInjectingAuditSink implements IAuditSink {
 
   public function __construct(private readonly IAuditSink $inner) {}
 
-  public function failNextClose(string $reason): void {
+  public function fail_next_close(string $reason): void {
     $this->failNextClose = $reason;
   }
 

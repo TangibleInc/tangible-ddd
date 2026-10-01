@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\AlarmScenarios;
 #[Group('simulated')]
 final class DeferredStartAlarmScenariosTest extends AlarmScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::Deferred);
   }
 }

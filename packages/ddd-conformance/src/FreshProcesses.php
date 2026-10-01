@@ -18,7 +18,7 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * a separate WP-CLI / loopback request; sf: a separate `bin/console`
  * process) against the fixture's per-test schema. Nothing is shared with
  * the test process except the database and the clock (EnvOffsetClock,
- * `DDD_CLOCK_OFFSET`, follows HostFixture::advanceClock()). The fresh
+ * `DDD_CLOCK_OFFSET`, follows HostFixture::advance_clock()). The fresh
  * process boots like production does, plus Support\FreshProcessBoot::boot()
  * (the conformance subscribers, process wiring and journal binding), so its
  * effects are visible to the test as scenario rows.
@@ -34,13 +34,13 @@ interface FreshProcesses {
    * fresh process, then exit; with $killAfterCommit the process is killed
    * right after the COMMIT, before any relay. Returns the event id.
    */
-  public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string;
+  public function publish_fresh(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string;
 
-  /** One worker pass in a fresh process: Drain::runOnce() plus the host's delivery of what it relayed. */
-  public function drainInFreshProcess(): FreshRun;
+  /** One worker pass in a fresh process: Drain::run_once() plus the host's delivery of what it relayed. */
+  public function drain_fresh(): FreshRun;
 
   /** Deliver one wrapped fact with the host delivery runner in a fresh process. */
-  public function deliverInFreshProcess(string $eventClass, array $wrapped): FreshRun;
+  public function deliver_fresh(string $eventClass, array $wrapped): FreshRun;
 
   /**
    * Start $process (in-band: the first step runs in this fresh process) and
@@ -48,5 +48,5 @@ interface FreshProcesses {
    * step command with that label committed (Fixtures\Process\StepCommand),
    * before the step's checkpoint is saved.
    */
-  public function startInFreshProcess(LongProcess $process, ?string $dieAfterCommand = null): FreshRun;
+  public function start_fresh(LongProcess $process, ?string $dieAfterCommand = null): FreshRun;
 }

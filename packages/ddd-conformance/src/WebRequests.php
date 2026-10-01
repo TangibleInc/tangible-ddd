@@ -14,15 +14,15 @@ interface WebRequests {
   /**
    * Run $fn as a web request: on the host's POOLED web connection (sf: the
    * DSN behind PgBouncer / a `-pooler` host) with the host's default start
-   * mode (sf: StartMode::Deferred). The command bus HostFixture::commandBus()
+   * mode (sf: StartMode::Deferred). The command bus HostFixture::command_bus()
    * builds and worker(1)'s runner are the request's.
    */
-  public function inWebRequest(callable $fn): mixed;
+  public function in_web_request(callable $fn): mixed;
 
   /**
    * Boot the host with the in-band start opt-in (`ddd.process.inband_start:
    * true`) on a pooled DSN, and return what refused the boot, or null if it
    * booted.
    */
-  public function bootInBandStartOnPooledDsn(): ?\Throwable;
+  public function boot_inband_pooled(): ?\Throwable;
 }

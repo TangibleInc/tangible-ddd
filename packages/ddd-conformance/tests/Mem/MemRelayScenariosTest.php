@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\RelayScenarios;
 #[Group('mem')]
 final class MemRelayScenariosTest extends RelayScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemHostFixture();
   }
 }

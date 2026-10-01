@@ -76,23 +76,23 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     parent::__construct(false, $startMode);
   }
 
-  public function runFailingStatement(): void {
+  public function fail_statement(): void {
     if ($this->abortOnStatementError) {
-      $this->boundary->failNextCommit('current transaction is aborted (25P02, simulated)');
+      $this->boundary->fail_next_commit('current transaction is aborted (25P02, simulated)');
     }
-    parent::runFailingStatement();
+    parent::fail_statement();
   }
 
-  public function hostName(): string {
+  public function name(): string {
     return 'mem-simulated';
   }
 
   // ── FreshProcesses ───────────────────────────────────────────────────────
 
-  public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
+  public function publish_fresh(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
     $id = null;
     $this->inFreshProcess(function () use ($fact, &$id): void {
-      $bus = $this->commandBus([CreateWidget::class => function () use ($fact): void {
+      $bus = $this->command_bus([CreateWidget::class => function () use ($fact): void {
         $this->events()->record($fact);
       }]);
       $bus->handle(new CreateWidget('fresh-publish'));
@@ -102,19 +102,19 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     return $id ?? throw new \LogicException('the fresh process published nothing');
   }
 
-  public function drainInFreshProcess(): FreshRun {
+  public function drain_fresh(): FreshRun {
     $report = null;
     $errors = [];
     $this->inFreshProcess(function (ProcessRunner $runner, ISubscriptionRegistry $registry) use (&$report, &$errors): void {
       $report = (new Drain(
-        $this->relayProcessor($this->outbox, $this->outboxConfig->batch_size),
+        $this->relay_processor($this->outbox, $this->outbox_config->batch_size),
         $this->wakeups,
-        $this->wakeFaults->wrap($runner),
+        $this->wake_faults->wrap($runner),
         $this->queueConsumer($registry, $errors),
         $runner,
         $this->clock,
         $this->logger,
-      ))->runOnce();
+      ))->run_once();
     });
     return new FreshRun(
       relayed: $report?->relay?->accepted ?? [],
@@ -123,7 +123,7 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     );
   }
 
-  public function deliverInFreshProcess(string $eventClass, array $wrapped): FreshRun {
+  public function deliver_fresh(string $eventClass, array $wrapped): FreshRun {
     $outcome = null;
     $this->inFreshProcess(function (ProcessRunner $runner, ISubscriptionRegistry $registry) use ($eventClass, $wrapped, &$outcome): void {
       $outcome = (new IntegrationDelivery($registry, $this->ledger, IntegrationDelivery::DEFAULT_BUDGET, $this->logger))->deliver($eventClass, $wrapped);
@@ -131,20 +131,20 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     return new FreshRun(delivered: 1, errors: array_map(static fn (string $s) => "subscriber $s failed", $outcome?->failed ?? []));
   }
 
-  public function startInFreshProcess(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
+  public function start_fresh(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
     $died = $this->inFreshProcess(static function (ProcessRunner $runner) use ($process): void {
       $runner->start($process);
     }, $dieAfterCommand);
-    return new FreshRun(died: $died, processId: $process->get_id());
+    return new FreshRun(died: $died, process_id: $process->get_id());
   }
 
   // ── WebRequests ──────────────────────────────────────────────────────────
 
-  public function inWebRequest(callable $fn): mixed {
+  public function in_web_request(callable $fn): mixed {
     return $fn();
   }
 
-  public function bootInBandStartOnPooledDsn(): ?\Throwable {
+  public function boot_inband_pooled(): ?\Throwable {
     // sf's boot rule, restated: an in-band first step needs the direct connection.
     return new \LogicException('ddd.process.inband_start: true requires a direct (non-pooled) connection (simulated)');
   }
@@ -154,13 +154,13 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
   /** Simulated poll interval: "waiting" for it costs no wall time here. */
   public const SIMULATED_POLL_SECONDS = 5.0;
 
-  public function startRelayWorker(): void {
+  public function start_relay(): void {
     $this->listening = true;
-    $this->notified = array_fill_keys($this->outbox->eventIds(), true);
-    $this->relayOnce(); // the first, empty pass
+    $this->notified = array_fill_keys($this->outbox->event_ids(), true);
+    $this->relay_once(); // the first, empty pass
   }
 
-  public function relayUntilTransported(string $eventId, float $timeoutSeconds): ?float {
+  public function relay_until(string $eventId, float $timeoutSeconds): ?float {
     if (!$this->listening) {
       throw new \LogicException('startRelayWorker() first');
     }
@@ -169,33 +169,33 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     if ($elapsed > $timeoutSeconds) {
       return null;
     }
-    return in_array($eventId, $this->relayOnce()->accepted, true) ? $elapsed : null;
+    return in_array($eventId, $this->relay_once()->accepted, true) ? $elapsed : null;
   }
 
-  public function wakeupArrives(float $timeoutSeconds): bool {
+  public function await_wakeup(float $timeoutSeconds): bool {
     return $this->takeWakeups();
   }
 
-  public function suppressNextWakeup(): void {
+  public function drop_next_wakeup(): void {
     $this->suppressNextWakeup = true;
   }
 
-  public function relayPollIntervalSeconds(): float {
+  public function poll_seconds(): float {
     return self::SIMULATED_POLL_SECONDS;
   }
 
-  public function stopRelayWorker(): void {
+  public function stop_relay(): void {
     $this->listening = false;
   }
 
   /**
    * The simulated transactional NOTIFY: every outbox row committed since the
-   * last look is one wakeup, unless suppressNextWakeup() swallowed it. A
+   * last look is one wakeup, unless drop_next_wakeup() swallowed it. A
    * rolled-back row never reaches the outbox, so it wakes nothing.
    */
   private function takeWakeups(): bool {
     $woken = false;
-    foreach ($this->outbox->eventIds() as $id) {
+    foreach ($this->outbox->event_ids() as $id) {
       if (isset($this->notified[$id])) {
         continue;
       }
@@ -217,24 +217,24 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
    * @param callable(ProcessRunner, ISubscriptionRegistry): void $fn
    */
   private function inFreshProcess(callable $fn, ?string $dieAfterCommand = null): bool {
-    $journal = [ProcessJournal::$steps, ProcessJournal::$sent, ProcessJournal::$onSend];
+    $journal = [ProcessJournal::$steps, ProcessJournal::$sent, ProcessJournal::$on_send];
     ProcessJournal::$steps = [];
     ProcessJournal::$sent = [];
-    ProcessJournal::$onSend = null;
+    ProcessJournal::$on_send = null;
 
     $registry = new SubscriptionRegistry();
-    $lock = new ReentrantProcessLock($this->rawLock, $this->logger);
+    $lock = new ReentrantProcessLock($this->raw_lock, $this->logger);
     $runner = new ProcessRunner(
-      $this->config, null, $lock, $this->processStore, $this->wakeups, $registry,
+      $this->config, null, $lock, $this->process_store, $this->wakeups, $registry,
       $this->boundary, $this->clock, StartMode::InBand, $this->logger,
     );
     FreshProcessBoot::boot($runner, $registry, $this->rows, $this->boundary);
 
     $killedAt = null;
     if ($dieAfterCommand !== null) {
-      ProcessJournal::$onSend = function (StepCommand $c) use ($dieAfterCommand, &$killedAt): void {
+      ProcessJournal::$on_send = function (StepCommand $c) use ($dieAfterCommand, &$killedAt): void {
         if ($killedAt === null && $c->label === $dieAfterCommand) {
-          $killedAt = array_map(static fn (InMemoryTransactional $p) => [$p, $p->snapshotState()], $this->participants());
+          $killedAt = array_map(static fn (InMemoryTransactional $p) => [$p, $p->snapshot()], $this->participants());
           throw new \RuntimeException("killed after $dieAfterCommand committed (simulated SIGKILL)");
         }
       };
@@ -248,11 +248,11 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
       }
     } finally {
       foreach ($killedAt ?? [] as [$participant, $state]) {
-        $participant->restoreState($state);
+        $participant->restore($state);
       }
-      $lock->forceReleaseAll();
+      $lock->release_all();
       Correlation::reset();
-      [ProcessJournal::$steps, ProcessJournal::$sent, ProcessJournal::$onSend] = $journal;
+      [ProcessJournal::$steps, ProcessJournal::$sent, ProcessJournal::$on_send] = $journal;
       ProcessJournal::bind($this->rows, $this->boundary);
     }
     return $killedAt !== null;
@@ -260,7 +260,7 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
 
   /** @return list<InMemoryTransactional> */
   private function participants(): array {
-    return [...$this->competitorParticipants(), $this->transport];
+    return [...$this->competitor_participants(), $this->transport];
   }
 
   /** The fresh worker's delivery stage: consume due transport messages like a queue. */
@@ -271,7 +271,7 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
       foreach ($this->facts->observed as $o) {
         $types[$o['record']->event_id] = $o['record']->event_type;
       }
-      $classes = FreshProcessBoot::factClasses();
+      $classes = FreshProcessBoot::fact_classes();
       $n = 0;
       foreach ($this->transport->submissions as $i => $s) {
         if ($n >= $limit || isset($this->consumed[$i]) || $s['ref'] === null || $s['due_at'] > $now) {
@@ -293,7 +293,7 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
     return new class($consume) implements IDeliveryWorker {
       public function __construct(private readonly \Closure $consume) {}
 
-      public function runDue(\DateTimeImmutable $now, int $limit): int {
+      public function run_due(\DateTimeImmutable $now, int $limit): int {
         return ($this->consume)($now, $limit);
       }
     };

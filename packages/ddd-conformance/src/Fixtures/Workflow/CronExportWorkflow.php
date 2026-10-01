@@ -15,7 +15,7 @@ use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 /**
  * D10 (workflow.fact-ignition-once; TXP's cron-ignited workflows): a
  * workflow ignited by CronEntryDue with the (workflow, minute) dedup key
- * WorkflowIgnitionKey::perMinute(kind:entry, due_at). Entry `skip` is
+ * WorkflowIgnitionKey::per_minute(kind:entry, due_at). Entry `skip` is
  * declined.
  *
  * The workflow row is ref_type `cron:{entry}` in the host's workflow
@@ -30,16 +30,16 @@ final class CronExportWorkflow implements IStartsFromFact, ILoadsIgnitedWorkflow
   /** @var list<int> workflow ids whose start completed, in order */
   public static array $started = [];
 
-  public static int $failStarts = 0;
+  public static int $fail_starts = 0;
 
   public function __construct(private readonly IBehaviourWorkflowRepository $workflows) {}
 
   public static function reset(): void {
     self::$started = [];
-    self::$failStarts = 0;
+    self::$fail_starts = 0;
   }
 
-  public static function refType(string $entry): string {
+  public static function ref_type(string $entry): string {
     return "cron:$entry";
   }
 
@@ -51,12 +51,12 @@ final class CronExportWorkflow implements IStartsFromFact, ILoadsIgnitedWorkflow
     if (!$fact instanceof CronEntryDue || $fact->entry === 'skip') {
       return null;
     }
-    return new BehaviourWorkflow(null, 1, self::refType($fact->entry), []);
+    return new BehaviourWorkflow(null, 1, self::ref_type($fact->entry), []);
   }
 
   public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
     /** @var CronEntryDue $fact */
-    return WorkflowIgnitionKey::perMinute(self::KIND . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
+    return WorkflowIgnitionKey::per_minute(self::KIND . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
   }
 
   public function save_ignited(BehaviourWorkflow $workflow): void {
@@ -64,8 +64,8 @@ final class CronExportWorkflow implements IStartsFromFact, ILoadsIgnitedWorkflow
   }
 
   public function start_ignited(BehaviourWorkflow $workflow): void {
-    if (self::$failStarts > 0) {
-      self::$failStarts--;
+    if (self::$fail_starts > 0) {
+      self::$fail_starts--;
       throw new \RuntimeException('workflow start failed');
     }
     self::$started[] = (int) $workflow->get_id();

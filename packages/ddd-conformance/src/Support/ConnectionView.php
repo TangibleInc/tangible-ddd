@@ -9,7 +9,7 @@ use TangibleDDD\Runtime\ITransactionBoundary;
 /**
  * The mem host's answer to "is a transaction open on the connection this
  * store is used from?". It is the host boundary, except while
- * asAnotherConnection() runs: then the caller acts as a second connection
+ * run_elsewhere() runs: then the caller acts as a second connection
  * on which no transaction is open (RelayRace's competitor runs inside the
  * relay's shared-connection transaction on mem, but stands for another
  * connection, whose claim() must not see the relay's open transaction).
@@ -27,8 +27,8 @@ final class ConnectionView implements ITransactionBoundary {
     return $this->inner->run($work);
   }
 
-  public function isActive(): bool {
-    return $this->elsewhere === 0 && $this->inner->isActive();
+  public function is_active(): bool {
+    return $this->elsewhere === 0 && $this->inner->is_active();
   }
 
   /**
@@ -36,7 +36,7 @@ final class ConnectionView implements ITransactionBoundary {
    * @param callable(): T $fn
    * @return T
    */
-  public function asAnotherConnection(callable $fn): mixed {
+  public function run_elsewhere(callable $fn): mixed {
     $this->elsewhere++;
     try {
       return $fn();

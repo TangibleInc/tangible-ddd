@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\WorkflowScenarios;
 #[Group('mem')]
 final class MemWorkflowScenariosTest extends WorkflowScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemHostFixture();
   }
 }

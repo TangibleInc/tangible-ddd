@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\AwaitScenarios;
 #[Group('simulated')]
 final class DeferredStartAwaitScenariosTest extends AwaitScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::Deferred);
   }
 }

@@ -12,7 +12,7 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  * The fact-triggered effect (IntegrationTranslator shape, registered through
  * the core SubscriptionRegistrar): WidgetRegistered → ChargeWidget. The
  * registrar sends the command under uuid5(event_id, subscriber id) and, on
- * budget exhaustion, sends its failureCommand() under
+ * budget exhaustion, sends its failure_command() under
  * uuid5(event_id, "{subscriber id}#failure").
  */
 final class ChargeOnWidgetRegistered {

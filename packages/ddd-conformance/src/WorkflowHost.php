@@ -16,20 +16,20 @@ use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
  *
  * All three bind to the fixture's per-test schema and connection:
  *
- * - workflowIgnitionLedger(): the host's IWorkflowIgnitionLedger (sf
+ * - ignition_ledger(): the host's IWorkflowIgnitionLedger (sf
  *   DbalWorkflowIgnitionLedger on `ddd_workflow_ignitions`);
- * - workflowRepository(): the host's behaviour-workflow store;
- * - workflowIgniter(): the core WorkflowIgniter the host wires (over that
+ * - workflows(): the host's behaviour-workflow store;
+ * - igniter(): the core WorkflowIgniter the host wires (over that
  *   ledger, HostFixture::boundary() and HostFixture::clock()).
  *
- * The scenario registers its workflow with workflowIgniter()->register()
+ * The scenario registers its workflow with igniter()->register()
  * on HostFixture::subscriptions() and delivers through HostFixture::deliver().
  */
 interface WorkflowHost {
 
-  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger;
+  public function ignition_ledger(): IWorkflowIgnitionLedger;
 
-  public function workflowRepository(): IBehaviourWorkflowRepository;
+  public function workflows(): IBehaviourWorkflowRepository;
 
-  public function workflowIgniter(): WorkflowIgniter;
+  public function igniter(): WorkflowIgniter;
 }

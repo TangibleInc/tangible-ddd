@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\CommandScenarios;
 #[Group('simulated')]
 final class AbortingEngineCommandScenariosTest extends CommandScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::InBand, abortOnStatementError: true);
   }
 }

@@ -8,7 +8,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Commands\ITransactionalCommand;
 use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 
-/** ChargeWidget's failureCommand(): its handler (per scenario) commits `charge-failed:{widget}`. */
+/** ChargeWidget's failure_command(): its handler (per scenario) commits `charge-failed:{widget}`. */
 final class ChargeFailed implements ICommand, ITransactionalCommand {
 
   public function __construct(
@@ -17,7 +17,7 @@ final class ChargeFailed implements ICommand, ITransactionalCommand {
   ) {}
 
   public function send(): mixed {
-    EffectLedger::$failureSends[] = DeterministicCommandId::peek();
+    EffectLedger::$failure_sends[] = DeterministicCommandId::peek();
     return EffectLedger::bus()->handle($this);
   }
 }
