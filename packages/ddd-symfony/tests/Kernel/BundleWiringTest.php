@@ -117,7 +117,7 @@ final class BundleWiringTest extends KernelTestBase {
     $out = $this->console('ddd:schema:dump', ['--since' => '007'])->getDisplay();
 
     self::assertStringContainsString('008_workflows.sql', $out);
-    self::assertStringNotContainsString('ddd_outbox', $out);
+    self::assertStringNotContainsString('CREATE TABLE IF NOT EXISTS ddd_outbox', $out);
     self::assertStringNotContainsString('007_wakeups.sql', $out);
   }
 

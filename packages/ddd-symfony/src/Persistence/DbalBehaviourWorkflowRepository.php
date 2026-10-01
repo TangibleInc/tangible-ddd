@@ -15,7 +15,6 @@ use TangibleDDD\Domain\Shared\Aggregate;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionResult;
 use TangibleDDD\Infra\Persistence\Shared\PersistsAggregatesRepository;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IBehaviourWorkflowRepository on Postgres 16 (D10, ruling #78): the
@@ -41,7 +40,7 @@ final class DbalBehaviourWorkflowRepository extends PersistsAggregatesRepository
     string $tablePrefix = '',
   ) {
     parent::__construct($events);
-    $tables = new PrefixedTableNames($tablePrefix);
+    $tables = TableNames::of($tablePrefix);
     $this->table = $tables->table('ddd_behaviour_workflows');
     $this->meta = $tables->table('ddd_behaviour_workflow_meta');
   }

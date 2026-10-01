@@ -10,7 +10,7 @@ use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
 use TangibleDDD\Runtime\Ops\IOperatorItemSource;
 use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
-use TangibleDDD\Runtime\PrefixedTableNames;
+use TangibleDDD\Symfony\Persistence\TableNames;
 use TangibleDDD\Symfony\Persistence\Time;
 
 /**
@@ -36,7 +36,7 @@ final class DbalLedgerOperatorSource implements IOperatorItemSource {
     string $tablePrefix = '',
     private readonly int $budget = IntegrationDelivery::DEFAULT_BUDGET,
   ) {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_delivery_ledger');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_delivery_ledger');
   }
 
   public function items(?Layer $layer, int $limit): array {

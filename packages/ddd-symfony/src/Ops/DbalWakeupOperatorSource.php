@@ -9,8 +9,8 @@ use Doctrine\DBAL\ParameterType;
 use TangibleDDD\Runtime\Ops\IOperatorItemSource;
 use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
-use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
+use TangibleDDD\Symfony\Persistence\TableNames;
 use TangibleDDD\Symfony\Persistence\Time;
 
 /**
@@ -31,7 +31,7 @@ final class DbalWakeupOperatorSource implements IOperatorItemSource {
     string $tablePrefix = '',
     private readonly int $budget = WakeRetryPolicy::BUDGET,
   ) {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_wakeups');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_wakeups');
   }
 
   public function items(?Layer $layer, int $limit): array {
