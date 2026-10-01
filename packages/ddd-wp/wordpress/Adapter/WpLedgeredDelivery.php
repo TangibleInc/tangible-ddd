@@ -162,6 +162,8 @@ final class WpLedgeredDelivery {
       if ($eventId === null || $ledger === null) {
         if ($eventId === null) {
           self::noteIdless($hook);
+        } else {
+          $params[0] = WpLargeEnvelope::resolve($params[0]);
         }
         ($entry['invoke'])(...$params);
         return;
@@ -315,7 +317,9 @@ final class WpLedgeredDelivery {
     }
 
     try {
-      ($entry['invoke'])($wrapped);
+      // A by-reference envelope (D6) is resolved inside the gate, so a
+      // payload that cannot be loaded fails this attempt like any error.
+      ($entry['invoke'])(WpLargeEnvelope::resolve($wrapped));
     } catch (\Throwable $e) {
       $attempt = $attempts + 1;
       if ($ledger instanceof WpDeliveryLedger) {
@@ -344,7 +348,7 @@ final class WpLedgeredDelivery {
     if ($entry['onExhausted'] !== null) {
       try {
         $class = $entry['event'];
-        $event = $class::from_payload(\TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($wrapped)->payload);
+        $event = $class::from_payload(\TangibleDDD\Application\Events\IntegrationEnvelope::unwrap(WpLargeEnvelope::resolve($wrapped))->payload);
       } catch (\Throwable $e) {
         // The fact no longer decodes: the compensation can never be built.
         // Terminal without it, as core IntegrationDelivery::poisoned() does.
