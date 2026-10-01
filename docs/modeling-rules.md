@@ -59,13 +59,19 @@ layer does not matter.
 ### DDD-L1: The domain depends on nothing outside itself
 
 Code in the Domain layer references only the consumer's own Domain code, the
-`TangibleDDD\Domain` contracts, and PHP itself. It does not reference the
-consumer's Application, Infra, or adapter code, WordPress functions or
-classes, or persistence libraries.
+`TangibleDDD\Domain` contracts, PHP itself, and the pure libraries the
+consumer lists. It does not reference the consumer's Application, Infra, or
+adapter code, WordPress functions or classes, or persistence libraries.
+
+A **pure library** does its work in memory: it has no WordPress, I/O, or
+persistence dependencies of its own (a rule evaluator or a validation
+library, for example). The consumer lists the ones its domain uses in its
+overlay and its layer configuration, so each one is a visible decision.
 
 - **Why:** domain rules must be testable without WordPress or a database, and
   every other layer depends on the domain. A domain that reaches outward
-  couples the most stable code to the least stable.
+  couples the most stable code to the least stable. A pure library keeps
+  both properties, so using one does not break the rule.
 - **Enforced by:** Phan (planned).
 
 ### DDD-L2: Only domain services use repositories
@@ -272,7 +278,9 @@ stack, its API format) in a thin local document. It does not copy this one.
 
 - Local rules use the consumer's own ID prefix, for example `LMS-A1`, so a
   report shows which document a rule comes from.
-- The overlay names the consumer's adapter namespaces for DDD-L4 and DDD-L5.
+- The overlay names the consumer's adapter namespaces for DDD-L4 and DDD-L5,
+  and the pure libraries its domain uses under DDD-L1. Listing a pure library
+  applies DDD-L1 as written; it does not relax it.
 - An overlay may make a rule here stricter. It never relaxes one; a consumer
   that cannot follow a rule records the violations in its Phan baseline and
   says why.
