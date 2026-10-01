@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace TangibleDDD\WordPress\Adapter;
 
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Infra\Consumers\ConsumerRegistry;
+use TangibleDDD\Infra\DDDConfig;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Runtime\Delivery\DeliveryBudgetExhausted;
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
 use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
+use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\Support\Log;
+use TangibleDDD\Runtime\SystemClock;
 
 /**
  * Per-callback invoker wrapping of DDD-registered callbacks on wp (register
@@ -59,6 +65,65 @@ final class WpLedgeredDelivery {
 
   /** @var array<string, true> hook|event_id with a redelivery scheduled this request */
   private static array $redeliveryScheduled = [];
+
+  /** @var array<string, IDDDConfig> prefix => the consumer config register_delivery_hooks() saw */
+  private static array $configs = [];
+
+  /** The consumer whose `{prefix}_ddd_redeliver` hook is registered (register_delivery_hooks()). */
+  public static function registerConsumer(IDDDConfig $config): void {
+    self::$configs[$config->prefix()] = $config;
+  }
+
+  /**
+   * The relay-tick step for handler retries (register 5.1, delivery
+   * layer): for every fact with a `failed` subscriber whose
+   * `{prefix}_ddd_redeliver` action is gone (Action Scheduler failed it:
+   * fatal, timeout, a ledger write that threw; or it was never stored),
+   * schedule it again at max(now, last failure + backoff(attempts)).
+   * Never while a pending or running redelivery exists for the same args.
+   *
+   * @return int redeliveries scheduled
+   */
+  public static function restoreRedeliveries(IDDDConfig $config, ?\DateTimeImmutable $now = null, int $limit = 100): int {
+    if (!WpSchema::isV8($config) || !function_exists('as_schedule_single_action')) {
+      return 0;
+    }
+    $now ??= self::clock()->now();
+    $n = 0;
+    foreach (self::orphans($config, $limit) as $row) {
+      $failedAt = (new \DateTimeImmutable($row['updated_at'], new \DateTimeZone('UTC')))->getTimestamp();
+      $due = max($now->getTimestamp(), $failedAt + IntegrationDelivery::backoffSeconds(max(1, $row['attempts'])));
+      $id = as_schedule_single_action($due, $config->hook('ddd_redeliver'), $row['redelivery'], $config->as_group('outbox'));
+      if ((int) $id === 0) {
+        Log::write(null, sprintf('[ddd delivery] could not re-schedule the redelivery of event %s on %s', $row['event_id'], $config->prefix()), 'error');
+        continue;
+      }
+      $n++;
+    }
+    return $n;
+  }
+
+  /**
+   * Facts with a `failed` subscriber and no pending or running
+   * `{prefix}_ddd_redeliver` action: what a 0.6 winner would never retry
+   * (WpRollbackDrain counts them as remaining).
+   */
+  public static function orphanedRedeliveries(IDDDConfig $config, int $limit = 1000): int {
+    return WpSchema::isV8($config) ? count(self::orphans($config, $limit)) : 0;
+  }
+
+  /** @return list<array{event_id: string, attempts: int, updated_at: string, redelivery: array<string, mixed>}> */
+  private static function orphans(IDDDConfig $config, int $limit): array {
+    if (!function_exists('as_has_scheduled_action')) {
+      return [];
+    }
+    $hook = $config->hook('ddd_redeliver');
+    $group = $config->as_group('outbox');
+    return array_values(array_filter(
+      (new WpDeliveryLedger($config->prefix()))->restorable($limit),
+      static fn (array $row) => !as_has_scheduled_action($hook, $row['redelivery'], $group)
+    ));
+  }
 
   /**
    * Register a DDD callback on $hook and return the add_action callback.
@@ -150,6 +215,7 @@ final class WpLedgeredDelivery {
     self::$seq = 0;
     self::$idlessNoted = [];
     self::$redeliveryScheduled = [];
+    self::$configs = [];
   }
 
   /**
@@ -176,7 +242,11 @@ final class WpLedgeredDelivery {
       ($entry['invoke'])($wrapped);
     } catch (\Throwable $e) {
       $attempt = $attempts + 1;
-      $ledger->markFailed($id, $eventId, $e->getMessage(), $attempt);
+      if ($ledger instanceof WpDeliveryLedger) {
+        $ledger->markFailedFor($id, $eventId, $e->getMessage(), $attempt, self::redeliveryArgs($hook, $entry['event'], $wrapped));
+      } else {
+        $ledger->markFailed($id, $eventId, $e->getMessage(), $attempt);
+      }
       Log::write(null, sprintf(
         '[ddd delivery] subscriber %s failed on %s event %s (attempt %d/%d): %s',
         $id, $hook, $eventId, $attempt, self::BUDGET, $e->getMessage()
@@ -222,13 +292,45 @@ final class WpLedgeredDelivery {
     if ($prefix === null) {
       return;
     }
+    $config = self::configFor($prefix);
     self::$redeliveryScheduled["$hook|$eventId"] = true;
-    as_schedule_single_action(
-      time() + IntegrationDelivery::backoffSeconds($attempt),
-      $prefix . '_ddd_redeliver',
-      ['hook' => $hook, 'event_class' => $eventClass, 'payload' => $wrapped],
-      $prefix . '-outbox'
+    $id = as_schedule_single_action(
+      self::clock()->now()->getTimestamp() + IntegrationDelivery::backoffSeconds($attempt),
+      $config->hook('ddd_redeliver'),
+      self::redeliveryArgs($hook, $eventClass, $wrapped),
+      $config->as_group('outbox')
     );
+    if ((int) $id === 0) {
+      // The ledger row stays `failed` with its redelivery args: the next
+      // relay tick (restoreRedeliveries()) schedules it again.
+      unset(self::$redeliveryScheduled["$hook|$eventId"]);
+      Log::write(null, sprintf('[ddd delivery] Action Scheduler did not store the redelivery of %s event %s; the relay tick re-schedules it', $hook, $eventId), 'error');
+    }
+  }
+
+  /**
+   * @param array<string, mixed> $wrapped
+   * @return array{hook: string, event_class: string, payload: array<string, mixed>}
+   */
+  private static function redeliveryArgs(string $hook, string $eventClass, array $wrapped): array {
+    return ['hook' => $hook, 'event_class' => $eventClass, 'payload' => $wrapped];
+  }
+
+  /** The consumer config of $prefix: the one register_delivery_hooks() saw, the registry's, or the 0.6 naming. */
+  private static function configFor(string $prefix): IDDDConfig {
+    if (isset(self::$configs[$prefix])) {
+      return self::$configs[$prefix];
+    }
+    try {
+      return ConsumerRegistry::config_for($prefix);
+    } catch (\Throwable) {
+      return new DDDConfig($prefix, '', '');
+    }
+  }
+
+  private static function clock(): IClock {
+    $clock = HostDefaults::get(IClock::class);
+    return $clock instanceof IClock ? $clock : new SystemClock();
   }
 
   private static function ledgerFor(string $hook, string $eventClass): ?IDeliveryLedger {

@@ -133,6 +133,25 @@ final class WpRelayTickV8Test extends V8TestCase {
     self::assertCount(1, (new WpOperatorView($this->config))->list('delivery'));
   }
 
+  public function test_the_tick_restores_a_lost_redelivery(): void {
+    $down = 1;
+    integration_action(V8Fact::class, static function () use (&$down): void {
+      if ($down-- > 0) {
+        throw new \RuntimeException('down');
+      }
+    });
+    register_delivery_hooks($this->config);
+    do_action(V8Fact::integration_action(), IntegrationEnvelope::wrap(['n' => 1], '44444444-4444-4444-8444-444444444444', 1, 'f1000000-0000-4000-8000-000000000002'));
+    as_unschedule_all_actions('ddd8it_ddd_redeliver'); // Action Scheduler failed it
+
+    $report = WpRelayTick::for($this->config, $this->container($this->frameworkServices()))->run();
+
+    self::assertTrue($report->ok(), $report->summary());
+    self::assertSame(1, $report->redeliveriesRestored);
+    self::assertCount(1, $this->pendingActions('ddd8it_ddd_redeliver'));
+    self::assertStringContainsString('1 lost redeliveries re-scheduled', $report->summary());
+  }
+
   public function test_the_pre_rollback_drain_runs_every_pending_redelivery_to_an_end(): void {
     $down = 2;
     $runs = 0;

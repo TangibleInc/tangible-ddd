@@ -47,17 +47,62 @@ final class WpDeliveryLedger implements IDeliveryLedger {
   }
 
   public function markFailed(string $subscriberId, string $eventId, string $error, int $attempt): void {
+    $this->markFailedFor($subscriberId, $eventId, $error, $attempt, null);
+  }
+
+  /**
+   * markFailed() that also keeps the `{prefix}_ddd_redeliver` args of the
+   * fact (['hook', 'event_class', 'payload']), so a redelivery Action
+   * Scheduler lost can be scheduled again (restorable()).
+   *
+   * @param array<string, mixed>|null $redelivery
+   */
+  public function markFailedFor(string $subscriberId, string $eventId, string $error, int $attempt, ?array $redelivery): void {
     $now = $this->stamp();
     $this->write(
-      "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, last_error, created_at, updated_at)
-       VALUES (%s, %s, %s, 'failed', %d, %s, %s, %s)
+      "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, last_error, redelivery, created_at, updated_at)
+       VALUES (%s, %s, %s, 'failed', %d, %s, " . ($redelivery === null ? 'NULL' : '%s') . ", %s, %s)
        ON DUPLICATE KEY UPDATE
          attempts = IF(status = 'delivered', attempts, VALUES(attempts)),
          last_error = IF(status = 'delivered', last_error, VALUES(last_error)),
+         redelivery = COALESCE(VALUES(redelivery), redelivery),
          updated_at = VALUES(updated_at)",
-      [sha1($subscriberId), $subscriberId, $eventId, $attempt, $error, $now, $now],
+      array_merge(
+        [sha1($subscriberId), $subscriberId, $eventId, $attempt, $error],
+        $redelivery === null ? [] : [(string) wp_json_encode($redelivery)],
+        [$now, $now]
+      ),
       'markFailed'
     );
+  }
+
+  /**
+   * Facts with at least one `failed` subscriber and known redelivery args,
+   * oldest first: one row per event_id with the highest attempt count and
+   * the latest failure time (the next redelivery is due at
+   * updated_at + backoff(attempts)).
+   *
+   * @return list<array{event_id: string, attempts: int, updated_at: string, redelivery: array<string, mixed>}>
+   */
+  public function restorable(int $limit = 100): array {
+    $db = self::db();
+    $rows = $db->get_results($db->prepare(
+      "SELECT event_id, MAX(attempts) AS attempts, MAX(updated_at) AS updated_at, MIN(id) AS id FROM `{$this->table()}`
+       WHERE status = 'failed' AND redelivery IS NOT NULL GROUP BY event_id ORDER BY MAX(updated_at) ASC LIMIT %d",
+      max(0, $limit)
+    ), ARRAY_A);
+    if ($db->last_error !== '') {
+      throw new \RuntimeException("Delivery ledger read failed: {$db->last_error}");
+    }
+    $out = [];
+    foreach (is_array($rows) ? $rows : [] as $r) {
+      $args = json_decode((string) $db->get_var($db->prepare("SELECT redelivery FROM `{$this->table()}` WHERE id = %d", (int) $r['id'])), true);
+      if (!is_array($args) || !isset($args['hook'], $args['event_class'], $args['payload'])) {
+        continue;
+      }
+      $out[] = ['event_id' => (string) $r['event_id'], 'attempts' => (int) $r['attempts'], 'updated_at' => (string) $r['updated_at'], 'redelivery' => $args];
+    }
+    return $out;
   }
 
   public function attempts(string $subscriberId, string $eventId): int {

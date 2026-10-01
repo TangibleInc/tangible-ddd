@@ -18,8 +18,11 @@ use TangibleDDD\Infra\IDDDConfig;
  * - `{prefix}_ddd_wakeup` (ResumeRetry intents).
  *
  * Neither hook has a callback under 0.6, so whatever is still pending when
- * the winner switches back is failed by Action Scheduler and lost. The
- * report says how many remain; the runbook stops the rollback while any do.
+ * the winner switches back is failed by Action Scheduler and lost. Each
+ * round first re-schedules redeliveries Action Scheduler lost
+ * (WpLedgeredDelivery::restoreRedeliveries()). The report says how many
+ * remain: pending actions plus ledger facts still `failed` with no
+ * redelivery queued; the runbook stops the rollback while any do.
  */
 final class WpRollbackDrain {
 
@@ -33,6 +36,9 @@ final class WpRollbackDrain {
     // (phpstan scans only its procedural API): resolve the runner dynamically.
     $runner = class_exists('ActionScheduler') ? \call_user_func(['ActionScheduler', 'runner']) : null;
     while ($runner !== null && $rounds < $maxRounds) {
+      // A redelivery Action Scheduler lost is scheduled again first, so the
+      // drain runs it too.
+      WpLedgeredDelivery::restoreRedeliveries($this->config);
       $ids = $this->pending();
       if ($ids === []) {
         break;
@@ -43,7 +49,11 @@ final class WpRollbackDrain {
         $ran++;
       }
     }
-    return ['ran' => $ran, 'remaining' => count($this->pending()), 'rounds' => $rounds];
+    return [
+      'ran' => $ran,
+      'remaining' => count($this->pending()) + WpLedgeredDelivery::orphanedRedeliveries($this->config),
+      'rounds' => $rounds,
+    ];
   }
 
   /** @return list<int> */

@@ -207,6 +207,9 @@ function ddd_migrate_v8(IDDDConfig $config): array {
   install_wakeups_table($config);
   install_delivery_ledger_table($config);
   install_relay_pauses_table($config);
+  // The ledger is new in v8; the explicit add heals a ledger created by an
+  // earlier v8 build before the column existed.
+  ddd_add_column_if_missing($config->table('ddd_delivery_ledger'), 'redelivery', 'LONGTEXT NULL', 'last_error');
 
   $outbox = $config->table('integration_outbox');
   ddd_add_column_if_missing($outbox, 'claim_token', 'VARCHAR(64) NULL', 'locked_by');

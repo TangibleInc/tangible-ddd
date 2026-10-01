@@ -17,6 +17,7 @@ final class WpRelayTickReport {
     public readonly ?int $reprojected,
     public readonly ?WpStrandedReport $stranded,
     public readonly array $errors,
+    public readonly ?int $redeliveriesRestored = null,
   ) {}
 
   public function ok(): bool {
@@ -32,10 +33,13 @@ final class WpRelayTickReport {
     if ($this->reprojected !== null) {
       $parts[] = sprintf('; %d wakeups re-projected', $this->reprojected);
     }
+    if ($this->redeliveriesRestored !== null) {
+      $parts[] = sprintf('; %d lost redeliveries re-scheduled', $this->redeliveriesRestored);
+    }
     if ($this->stranded !== null) {
       $parts[] = sprintf(
-        '; stranded: %d continued, %d already queued, %d running (operator view)',
-        count($this->stranded->minted), count($this->stranded->alreadyQueued), count($this->stranded->running)
+        '; stranded: %d continued, %d already queued, %d running, %d wake budget exhausted (operator view)',
+        count($this->stranded->minted), count($this->stranded->alreadyQueued), count($this->stranded->running), count($this->stranded->exhausted)
       );
     }
     foreach ($this->errors as $step => $message) {

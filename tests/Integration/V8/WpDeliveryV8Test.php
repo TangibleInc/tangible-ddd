@@ -121,6 +121,37 @@ final class WpDeliveryV8Test extends V8TestCase {
     self::assertSame([], $this->pendingActions('ddd8it_ddd_redeliver'));
   }
 
+  public function test_a_lost_redelivery_is_restored_by_the_relay_tick_and_held_against_the_drain(): void {
+    $down = 99;
+    $this->listen('a', $down);
+    register_delivery_hooks($this->config);
+    $clock = new \TangibleDDD\Runtime\FrozenClock(new \DateTimeImmutable('@' . time()));
+    HostDefaults::provide(\TangibleDDD\Runtime\IClock::class, $clock);
+
+    do_action($this->hook, $this->wrapped());
+    [$first] = $this->pendingActions('ddd8it_ddd_redeliver');
+    self::assertSame($clock->now()->getTimestamp() + 30, $first->due, 'scheduled on the host clock');
+    self::assertSame($this->config->as_group('outbox'), \ActionScheduler::store()->fetch_action((string) $first->id)->get_group());
+
+    // Action Scheduler failed (or lost) the redelivery: nothing is pending.
+    as_unschedule_all_actions('ddd8it_ddd_redeliver');
+    $drain = new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config);
+    self::assertSame(['ran' => 0, 'remaining' => 1, 'rounds' => 0], $drain->run(0), 'the drain counts a failed pair with no redelivery as remaining');
+
+    self::assertSame(1, WpLedgeredDelivery::restoreRedeliveries($this->config, $clock->now()));
+    $restored = $this->pendingActions('ddd8it_ddd_redeliver');
+    self::assertSame(['hook' => $this->hook, 'event_class' => V8Fact::class, 'payload' => $this->wrapped()], $restored[0]->args);
+    self::assertSame($clock->now()->getTimestamp() + 30, $restored[0]->due, 'at the backoff after the last failure');
+    self::assertSame(0, WpLedgeredDelivery::restoreRedeliveries($this->config, $clock->now()), 'never while one is pending');
+
+    as_unschedule_all_actions('ddd8it_ddd_redeliver');
+    $result = $drain->run(10);
+    self::assertSame(0, $result['remaining'], 'the drain restores lost redeliveries and runs them to the budget');
+    [$a] = WpLedgeredDelivery::subscribers($this->hook);
+    self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
+    self::assertSame(5, $this->runs['a']);
+  }
+
   public function test_a_double_delivery_runs_each_subscriber_once(): void {
     $none = 0;
     $this->listen('a', $none);

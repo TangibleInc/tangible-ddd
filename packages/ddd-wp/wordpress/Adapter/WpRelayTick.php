@@ -33,9 +33,11 @@ use TangibleDDD\Runtime\SystemClock;
  *    migrated) the container's 0.6-form OutboxProcessor, unchanged.
  * 2. Re-projection of due wakeup intents whose Action Scheduler action is
  *    gone (WpdbWakeupScheduler::reproject()).
- * 3. The stranded scan (WpStrandedScan) over the framework process table.
+ * 3. Re-scheduling of handler redeliveries Action Scheduler lost
+ *    (WpLedgeredDelivery::restoreRedeliveries()), on any schema v8 consumer.
+ * 4. The stranded scan (WpStrandedScan) over the framework process table.
  *
- * Steps 2 and 3 run only on a schema v8 consumer with the framework
+ * Steps 2 and 4 run only on a schema v8 consumer with the framework
  * ProcessRepository. Each step's failure is caught and reported; one
  * step never blocks the next.
  */
@@ -48,6 +50,7 @@ final class WpRelayTick {
     private readonly ?WpdbWakeupScheduler $wakeups,
     private readonly ?WpStrandedScan $stranded,
     private readonly ?IClock $clock = null,
+    private readonly bool $ledger = false,
   ) {}
 
   /** @param object $container the consumer's container (get()/has()) */
@@ -86,7 +89,7 @@ final class WpRelayTick {
       }
     }
 
-    return new self($config, $relay, $portForm, $wakeups, $stranded, $clock);
+    return new self($config, $relay, $portForm, $wakeups, $stranded, $clock, $v8);
   }
 
   public function run(): WpRelayTickReport {
@@ -107,6 +110,15 @@ final class WpRelayTick {
       }
     }
 
+    $restored = null;
+    if ($this->ledger) {
+      try {
+        $restored = WpLedgeredDelivery::restoreRedeliveries($this->config, $this->now());
+      } catch (\Throwable $e) {
+        $errors['redeliveries'] = $e->getMessage();
+      }
+    }
+
     $stranded = null;
     if ($this->stranded !== null) {
       try {
@@ -116,7 +128,7 @@ final class WpRelayTick {
       }
     }
 
-    return new WpRelayTickReport($this->config->prefix(), $this->portForm, $relay, $reprojected, $stranded, $errors);
+    return new WpRelayTickReport($this->config->prefix(), $this->portForm, $relay, $reprojected, $stranded, $errors, $restored);
   }
 
   public function isPortForm(): bool {

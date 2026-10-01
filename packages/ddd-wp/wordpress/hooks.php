@@ -151,6 +151,8 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
 function register_delivery_hooks(IDDDConfig $config): void {
   // Named parameters $hook, $event_class, $payload match the action's args keys.
   $callback = [\TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class, 'redeliver'];
+  // Redeliveries are scheduled on this config's hook() and as_group('outbox').
+  \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::registerConsumer($config);
   if (has_action($config->hook('ddd_redeliver'), $callback) === false) {
     add_action($config->hook('ddd_redeliver'), $callback, 10, 3);
   }

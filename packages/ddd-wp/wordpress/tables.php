@@ -188,6 +188,7 @@ function install_delivery_ledger_table(IDDDConfig $config): void {
     status VARCHAR(16) NOT NULL DEFAULT 'failed',
     attempts INT UNSIGNED NOT NULL DEFAULT 0,
     last_error TEXT NULL,
+    redelivery LONGTEXT NULL,
     delivered_at DATETIME NULL,
     exhausted_at DATETIME NULL,
     created_at DATETIME NOT NULL,
