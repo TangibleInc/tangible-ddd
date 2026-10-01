@@ -20,9 +20,15 @@ use TangibleDDD\Infra\IDDDConfig;
  * Neither hook has a callback under 0.6, so whatever is still pending when
  * the winner switches back is failed by Action Scheduler and lost. Each
  * round first re-schedules redeliveries Action Scheduler lost
- * (WpLedgeredDelivery::restoreRedeliveries()). The report says how many
- * remain: pending actions plus ledger facts still `failed` with no
- * redelivery queued; the runbook stops the rollback while any do.
+ * (WpLedgeredDelivery::restoreRedeliveries()) and re-projects every pending
+ * wakeup intent that has no Action Scheduler action, ignoring its retry
+ * backoff (a Timeout or Continue whose wake just failed is back in
+ * `pending` with its action gone; re-projected, it sits future-dated on its
+ * legacy hook, which 0.6 fires; a ResumeRetry lands on `{prefix}_ddd_wakeup`
+ * and the round runs it). The report says how many remain: pending actions
+ * on the N-only hooks, ledger facts still `failed` with no redelivery
+ * queued, and pending intents still without an action; the runbook stops
+ * the rollback while any do.
  */
 final class WpRollbackDrain {
 
@@ -35,10 +41,13 @@ final class WpRollbackDrain {
     // Action Scheduler is a runtime dependency of ddd-wp, not a static one
     // (phpstan scans only its procedural API): resolve the runner dynamically.
     $runner = class_exists('ActionScheduler') ? \call_user_func(['ActionScheduler', 'runner']) : null;
+    $wakeups = $this->wakeups();
     while ($runner !== null && $rounds < $maxRounds) {
-      // A redelivery Action Scheduler lost is scheduled again first, so the
-      // drain runs it too.
+      // A redelivery Action Scheduler lost is scheduled again first, and
+      // every intent without an action is projected again, so the drain
+      // (or, on a legacy hook, the 0.6 winner) runs them too.
       WpLedgeredDelivery::restoreRedeliveries($this->config);
+      $wakeups?->reproject($this->now(), 1000, true);
       $ids = $this->pending();
       if ($ids === []) {
         break;
@@ -49,11 +58,27 @@ final class WpRollbackDrain {
         $ran++;
       }
     }
+    $wakeups?->reproject($this->now(), 1000, true);
     return [
       'ran' => $ran,
-      'remaining' => count($this->pending()) + WpLedgeredDelivery::orphanedRedeliveries($this->config),
+      'remaining' => count($this->pending())
+        + WpLedgeredDelivery::orphanedRedeliveries($this->config)
+        + ($wakeups?->unprojected() ?? 0),
       'rounds' => $rounds,
     ];
+  }
+
+  private function wakeups(): ?WpdbWakeupScheduler {
+    if (!WpSchema::isV8($this->config) || !function_exists('as_has_scheduled_action')) {
+      return null;
+    }
+    $scheduler = \TangibleDDD\Runtime\HostDefaults::for(\TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $this->config);
+    return $scheduler instanceof WpdbWakeupScheduler ? $scheduler : new WpdbWakeupScheduler($this->config);
+  }
+
+  private function now(): \DateTimeImmutable {
+    $clock = \TangibleDDD\Runtime\HostDefaults::get(\TangibleDDD\Runtime\IClock::class);
+    return ($clock instanceof \TangibleDDD\Runtime\IClock ? $clock : new \TangibleDDD\Runtime\SystemClock())->now();
   }
 
   /** @return list<int> */

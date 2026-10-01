@@ -255,9 +255,14 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
    * Never re-projects while a pending or running action exists for the
    * same hook and args. Exhausted rows are left alone.
    *
+   * $ignoreBackoff (the pre-rollback drain): also re-project pending
+   * intents whose retry backoff is not due yet, future-dated to their
+   * due_at, so a wake that just failed (its action is gone) is still on its
+   * legacy hook when a 0.6 winner takes over.
+   *
    * @return int intents re-projected
    */
-  public function reproject(\DateTimeImmutable $now, int $limit = 100): int {
+  public function reproject(\DateTimeImmutable $now, int $limit = 100, bool $ignoreBackoff = false): int {
     $db = self::db();
     $at = self::utc($now);
     $this->fail(
@@ -269,8 +274,8 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
     );
 
     $rows = $db->get_results($db->prepare(
-      "SELECT * FROM `{$this->table()}` WHERE status = 'pending' AND due_at <= %s AND hook IS NOT NULL ORDER BY due_at ASC, id ASC LIMIT %d",
-      $at, max(0, $limit)
+      "SELECT * FROM `{$this->table()}` WHERE status = 'pending' AND (%d = 1 OR due_at <= %s) AND hook IS NOT NULL ORDER BY due_at ASC, id ASC LIMIT %d",
+      (int) $ignoreBackoff, $at, max(0, $limit)
     ));
     if ($db->last_error !== '') {
       throw new \RuntimeException("reproject on {$this->table()} failed: {$db->last_error}");
@@ -289,6 +294,30 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
         'reproject'
       );
       $n++;
+    }
+    return $n;
+  }
+
+  /**
+   * Pending intents with no pending or running Action Scheduler action on
+   * their hook (what a 0.6 winner would never fire); the pre-rollback drain
+   * counts them as remaining.
+   */
+  public function unprojected(int $limit = 1000): int {
+    $db = self::db();
+    $rows = $db->get_results($db->prepare(
+      "SELECT hook, args FROM `{$this->table()}` WHERE status = 'pending' AND hook IS NOT NULL ORDER BY id ASC LIMIT %d",
+      max(0, $limit)
+    ));
+    if ($db->last_error !== '') {
+      throw new \RuntimeException("unprojected on {$this->table()} failed: {$db->last_error}");
+    }
+    $n = 0;
+    foreach (is_array($rows) ? $rows : [] as $row) {
+      $args = json_decode((string) $row->args, true);
+      if (!as_has_scheduled_action((string) $row->hook, is_array($args) ? $args : [], $this->group())) {
+        $n++;
+      }
     }
     return $n;
   }

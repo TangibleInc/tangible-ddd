@@ -72,6 +72,25 @@ final class WpWakeupsV8Test extends V8TestCase {
     ]], $this->intents());
   }
 
+  public function test_the_pre_rollback_drain_re_projects_a_failed_wake_still_in_its_backoff(): void {
+    $this->tx(fn () => $this->wakeups->schedule(WakeupIntent::timeout('ddd8it', 5, 2, $this->clock->now()->modify('-1 second'))));
+    // The wake ran and failed (lock contention): the intent is pending again
+    // with a backoff, and its Action Scheduler action is gone.
+    $this->wpdb->query("UPDATE `{$this->table('ddd_wakeups')}` SET attempts = 1, last_error = 'lock', due_at = '" . gmdate('Y-m-d H:i:s', time() + 120) . "'");
+    as_unschedule_all_actions('ddd8it_await_timeout');
+    self::assertSame(0, $this->wakeups->reproject($this->clock->now()), 'the tick waits for the backoff');
+    self::assertSame(1, $this->wakeups->unprojected());
+
+    $result = (new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config))->run();
+
+    self::assertSame(0, $result['remaining']);
+    $actions = $this->pendingActions('ddd8it_await_timeout');
+    self::assertCount(1, $actions, 'on its legacy hook, which a 0.6 winner fires');
+    self::assertSame(['process_id' => 5, 'step_index' => 2], $actions[0]->args);
+    self::assertEqualsWithDelta(time() + 120, $actions[0]->due, 5, 'future-dated to its backoff');
+    self::assertSame(0, $this->wakeups->unprojected());
+  }
+
   public function test_a_due_continuation_is_enqueued_on_the_legacy_hook(): void {
     $this->tx(fn () => $this->wakeups->schedule(WakeupIntent::continuation('ddd8it', 6, 1, $this->clock->now()->modify('-1 second'))));
 
