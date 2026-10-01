@@ -17,7 +17,7 @@ use TangibleDDD\Runtime\PrefixedTableNames;
 final class SchemaSql {
 
   /** The logical tables, in file order. */
-  public const TABLES = ['ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger', 'ddd_processes', 'ddd_jobs'];
+  public const TABLES = ['ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger', 'ddd_processes', 'ddd_jobs', 'ddd_process_waits'];
 
   public static function directory(): string {
     return dirname(__DIR__, 3) . '/schema/mysql8';
