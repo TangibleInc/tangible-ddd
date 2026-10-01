@@ -14,6 +14,7 @@ use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\ProcessStoreFailed;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
@@ -41,19 +42,29 @@ use TangibleDDD\Runtime\SystemClock;
  *   gone, corrupt JSON) is quarantined, status `failed` + quarantine_reason
  *   (and a version bump, so a stale holder cannot overwrite it), and
  *   QuarantinedProcess is thrown; the worker continues (R5).
- * - findWaitingFor(): ids of `suspended` rows whose waiting_for is the
- *   class or one of its parents/interfaces (is_a, D2). $awaitKey is reserved
- *   for keyed awaits (D3, wave 4) and ignored.
+ * - Await routes (D3, wave 4): every insert and save rewrites the
+ *   process's rows in `{prefix}ddd_process_waits`, one per
+ *   LongProcess::await_routes() route (event class, await key; '' =
+ *   unkeyed), none unless the process is `suspended`. The process write and
+ *   its routes share the caller's transaction, or one of the store's own
+ *   when none is open.
+ * - findWaitingFor(): ids of `suspended` processes with a route whose class
+ *   is the fact class or one of its parents/interfaces (is_a, D2; the store
+ *   declares IMatchesFactAncestry). $awaitKey: null = any key, '' = unkeyed
+ *   routes only, otherwise that key. A suspended row with no routes at all
+ *   (written before 007_process_waits) is matched by its `waiting_for`
+ *   column for a null or '' key.
  * - findStranded(): `running`/`scheduled` rows not updated for the
  *   threshold (default 15 min) with no row in `{prefix}ddd_jobs`.
  *
  * Every write runs on the host connection (inside the runner's transaction
  * when one is open). Times are UTC from IClock.
  */
-final class PdoProcessStore implements IProcessStore {
+final class PdoProcessStore implements IProcessStore, IMatchesFactAncestry {
 
   private readonly string $table;
   private readonly string $jobs;
+  private readonly string $waits;
   private readonly IClock $clock;
   private readonly LoggerInterface $logger;
 
@@ -67,6 +78,7 @@ final class PdoProcessStore implements IProcessStore {
     $tables = new PrefixedTableNames($tablePrefix);
     $this->table = $tables->table('ddd_processes');
     $this->jobs = $tables->table('ddd_jobs');
+    $this->waits = $tables->table('ddd_process_waits');
     $this->clock = $clock ?? new SystemClock();
     $this->logger = $logger ?? new NullLogger();
   }
@@ -101,6 +113,7 @@ final class PdoProcessStore implements IProcessStore {
         "UPDATE `{$this->table}` SET status = 'failed', quarantine_reason = ?, version = version + 1, updated_at = ? WHERE id = ?",
         [$reason, Utc::toDb($this->clock->now()), $id]
       );
+      $this->db->execute("DELETE FROM `{$this->waits}` WHERE process_id = ?", [$id]);
       $this->logger->error("[ddd process] #$id quarantined: $reason");
       throw new QuarantinedProcess("Process #$id quarantined: $reason", 0, $e);
     }
@@ -115,10 +128,16 @@ final class PdoProcessStore implements IProcessStore {
       $columns = ProcessCodec::encode($p) + ['updated_at' => Utc::toDb($this->clock->now())];
       unset($columns['process_class']);
       $set = implode(', ', array_map(static fn (string $c) => "`$c` = ?", array_keys($columns)));
-      $n = $this->db->execute(
-        "UPDATE `{$this->table}` SET $set, version = version + 1 WHERE id = ? AND version = ?",
-        [...array_values($columns), $id, $expectedVersion]
-      );
+      $n = $this->atomically(function () use ($set, $columns, $id, $expectedVersion, $p): int {
+        $n = $this->db->execute(
+          "UPDATE `{$this->table}` SET $set, version = version + 1 WHERE id = ? AND version = ?",
+          [...array_values($columns), $id, $expectedVersion]
+        );
+        if ($n === 1) {
+          $this->writeRoutes($id, $p);
+        }
+        return $n;
+      });
     } catch (\Throwable $e) {
       throw new ProcessStoreFailed("Saving process #$id failed: " . $e->getMessage(), 0, $e);
     }
@@ -148,10 +167,21 @@ final class PdoProcessStore implements IProcessStore {
       $names = array_values(array_unique([$eventClass, ...array_values(class_parents($eventClass) ?: []), ...array_values(class_implements($eventClass) ?: [])]));
     }
     $in = implode(', ', array_fill(0, count($names), '?'));
-    $rows = $this->db->fetchAll(
-      "SELECT id FROM `{$this->table}` WHERE status = 'suspended' AND waiting_for IN ($in) ORDER BY id",
-      $names
-    );
+
+    $keySql = $awaitKey === null ? '' : ' AND w.await_key = ?';
+    $sql = "SELECT w.process_id AS id FROM `{$this->waits}` w JOIN `{$this->table}` p ON p.id = w.process_id
+            WHERE w.event_class IN ($in)$keySql AND p.status = 'suspended'";
+    $params = $awaitKey === null ? $names : [...$names, $awaitKey];
+
+    if ($awaitKey === null || $awaitKey === '') {
+      // A suspended row with no routes at all predates 007_process_waits: its waiting_for column decides.
+      $sql .= " UNION SELECT p.id AS id FROM `{$this->table}` p
+                WHERE p.status = 'suspended' AND p.waiting_for IN ($in)
+                  AND NOT EXISTS (SELECT 1 FROM `{$this->waits}` w2 WHERE w2.process_id = p.id)";
+      $params = [...$params, ...$names];
+    }
+
+    $rows = $this->db->fetchAll("$sql ORDER BY id", $params);
     return array_map(static fn (array $r) => (int) $r['id'], $rows);
   }
 
@@ -187,8 +217,14 @@ final class PdoProcessStore implements IProcessStore {
       ];
       $names = implode(', ', array_map(static fn (string $c) => "`$c`", array_keys($columns)));
       $marks = implode(', ', array_fill(0, count($columns), '?'));
-      $this->db->execute("INSERT INTO `{$this->table}` ($names) VALUES ($marks)", array_values($columns));
-      $id = (int) $this->db->lastInsertId();
+      $id = $this->atomically(function () use ($names, $marks, $columns, $p): int {
+        $this->db->execute("INSERT INTO `{$this->table}` ($names) VALUES ($marks)", array_values($columns));
+        $id = (int) $this->db->lastInsertId();
+        if ($id > 0) {
+          $this->writeRoutes($id, $p);
+        }
+        return $id;
+      });
     } catch (\Throwable $e) {
       throw new ProcessStoreFailed("Inserting $class failed: " . $e->getMessage(), 0, $e);
     }
@@ -197,6 +233,58 @@ final class PdoProcessStore implements IProcessStore {
     }
     $p->set_id($id);
     return $id;
+  }
+
+  /** Replace the process's rows in ddd_process_waits with its current await routes (D3). */
+  private function writeRoutes(int $id, LongProcess $p): void {
+    $this->db->execute("DELETE FROM `{$this->waits}` WHERE process_id = ?", [$id]);
+    $routes = [];
+    foreach ($p->await_routes() as $route) {
+      $routes[$route->eventClass . "\0" . $route->awaitKey] = $route;
+    }
+    if ($routes === []) {
+      return;
+    }
+    $now = Utc::toDb($this->clock->now());
+    $step = $p->current_step_index();
+    $params = [];
+    foreach ($routes as $route) {
+      array_push($params, $id, $route->eventClass, $route->awaitKey, $step, $now);
+    }
+    $this->db->execute(
+      "INSERT INTO `{$this->waits}` (process_id, event_class, await_key, step_index, created_at) VALUES "
+        . implode(', ', array_fill(0, count($routes), '(?, ?, ?, ?, ?)')),
+      $params
+    );
+  }
+
+  /**
+   * Run $work in the caller's open transaction, or in one of the store's
+   * own, so a process row and its routes are written together.
+   *
+   * @template T
+   * @param callable():T $work
+   * @return T
+   */
+  private function atomically(callable $work): mixed {
+    if ($this->db->inTransaction()) {
+      return $work();
+    }
+    $this->db->begin();
+    try {
+      $result = $work();
+      $this->db->commit();
+      return $result;
+    } catch (\Throwable $e) {
+      try {
+        if ($this->db->inTransaction()) {
+          $this->db->rollBack();
+        }
+      } catch (\Throwable $rollback) {
+        $this->logger->error('[ddd process] rollback failed: ' . $rollback->getMessage());
+      }
+      throw $e;
+    }
   }
 
   private function fenced(int $affected, int $id, int $expectedVersion, string $what): int {

@@ -20,8 +20,9 @@ use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
  * - layer `wakeup`: continue / timeout / resume_retry intents, attempts
  *   against the wake budget (10), repair `retry_wake`;
  * - layer `delivery`: `deliver` jobs (key `deliver:{event_id}`), attempts
- *   against the handler budget (5). The per-subscriber verdicts are in the
- *   ledger (PdoLedgerOperatorSource); this row is the fact still queued.
+ *   against the handler budget (5), repair `redeliver` (wave 4: due now).
+ *   The per-subscriber verdicts are in the ledger
+ *   (PdoLedgerOperatorSource); this row is the fact still queued.
  *
  * Oldest first (created_at), at most $limit items. Storage errors propagate.
  */
@@ -64,7 +65,7 @@ final class PdoJobsOperatorSource implements IOperatorItemSource {
         $deliver ? $this->deliveryBudget : $this->wakeBudget,
         $r['last_error'] === null ? null : (string) $r['last_error'],
         Utc::fromDb((string) $r['created_at']),
-        $deliver ? [] : ['retry_wake'],
+        $deliver ? ['redeliver'] : ['retry_wake'],
       );
     }, $rows);
   }

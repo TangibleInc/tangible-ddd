@@ -9,6 +9,8 @@ use TangibleDDD\Application\Process\IAwaitMechanism;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
+use TangibleDDD\Runtime\Codec\LargeString;
+use TangibleDDD\Runtime\Codec\UndecodableLargeString;
 
 /**
  * LongProcess ↔ `ddd_processes` row, in the same column format as the wp
@@ -18,7 +20,13 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  *
  * decode() throws \UnexpectedValueException with a human-readable reason
  * when the row cannot become a process (class gone, not a LongProcess,
- * constructor arguments missing, corrupt JSON); the store quarantines it.
+ * constructor arguments missing, corrupt JSON, a LargeString that fails its
+ * length/sha256 check); the store quarantines it.
+ *
+ * D6 (wave 4, CR-W4CE-5): a promoted constructor parameter holding a
+ * LargeString is stored as LargeString::toPayload() and revived by the
+ * parameter's type; UndecodableLargeString::$quarantineReason becomes the
+ * quarantine reason.
  *
  * @internal
  */
@@ -77,6 +85,8 @@ final class ProcessCodec {
       } elseif ($row['waiting_for'] !== null && $row['status'] === 'suspended') {
         $mechanism = new AwaitEvent((string) $row['waiting_for'], $match ?? []);
       }
+    } catch (UndecodableLargeString $e) {
+      throw new \UnexpectedValueException("row of $class cannot be decoded: " . $e->quarantineReason, 0, $e);
     } catch (\Throwable $e) {
       throw new \UnexpectedValueException("row of $class cannot be decoded: " . $e->getMessage(), 0, $e);
     }
@@ -105,7 +115,9 @@ final class ProcessCodec {
     $constructor = (new \ReflectionClass($process))->getConstructor();
     foreach ($constructor?->getParameters() ?? [] as $param) {
       if ($param->isPromoted()) {
-        $data[$param->getName()] = (new \ReflectionProperty($process, $param->getName()))->getValue($process);
+        $value = (new \ReflectionProperty($process, $param->getName()))->getValue($process);
+        // D6: a LargeString is stored in its wire form (base64 + length + sha256).
+        $data[$param->getName()] = $value instanceof LargeString ? $value->toPayload() : $value;
       }
     }
     return $data;
@@ -122,7 +134,7 @@ final class ProcessCodec {
     foreach ($constructor->getParameters() as $param) {
       $name = $param->getName();
       if (array_key_exists($name, $data)) {
-        $args[] = $data[$name];
+        $args[] = self::revive($param, $data[$name]);
       } elseif ($param->isDefaultValueAvailable()) {
         $args[] = $param->getDefaultValue();
       } else {
@@ -130,6 +142,19 @@ final class ProcessCodec {
       }
     }
     return $reflection->newInstanceArgs($args);
+  }
+
+  /**
+   * D6: a constructor parameter typed LargeString (nullable or not) is
+   * revived from its wire form; a corrupt one throws UndecodableLargeString,
+   * which decode() turns into the quarantine reason.
+   */
+  private static function revive(\ReflectionParameter $param, mixed $value): mixed {
+    $type = $param->getType();
+    if ($type instanceof \ReflectionNamedType && $type->getName() === LargeString::class && $value !== null) {
+      return LargeString::fromPayload($value);
+    }
+    return $value;
   }
 
   private static function decodeJson(mixed $value): mixed {

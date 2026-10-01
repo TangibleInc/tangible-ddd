@@ -4,14 +4,25 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Core\Tests\Pdo\Cases;
 
+use TangibleDDD\Application\Process\AwaitAlarm;
+use TangibleDDD\Application\Process\AwaitAll;
+use TangibleDDD\Application\Process\AwaitAny;
 use TangibleDDD\Application\Process\AwaitEvent;
+use TangibleDDD\Application\Process\IAwaitMechanism;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Core\Tests\Pdo\PdoTestCase;
 use TangibleDDD\Core\Tests\Pdo\Support\FaultyConnection;
+use TangibleDDD\Core\Tests\Pdo\Support\LargeStringProcess;
+use TangibleDDD\Runtime\Codec\LargeString;
+use TangibleDDD\Core\Tests\Unit\Fixtures\AppDestroyScheduled;
 use TangibleDDD\Core\Tests\Unit\Fixtures\BillingFact;
+use TangibleDDD\Core\Tests\Unit\Fixtures\ChildPurged;
+use TangibleDDD\Core\Tests\Unit\Fixtures\JobFinished;
 use TangibleDDD\Core\Tests\Unit\Fixtures\FulfilmentProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\OnboardingProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\OrderPlaced;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\MemberJoined;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\VipJoined;
 use TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined;
 use TangibleDDD\Defaults\Pdo\IHostConnection;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
@@ -21,6 +32,7 @@ use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\ProcessStoreFailed;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
@@ -292,6 +304,168 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
     sort($billing);
     self::assertSame([$marker, $marker + 2], $billing, 'OrderPlaced implements BillingFact (D2)');
     self::assertSame([], $store->findWaitingFor('App\\Unknown\\Fact'));
+  }
+
+  /** A FulfilmentProcess suspended on $await, as the runner leaves it. */
+  private function suspendedOn(IAwaitMechanism $await, int $order = 1): FulfilmentProcess {
+    $p = $this->process($order);
+    $class = $await->event_class();
+    $p->advance('suspended', waiting_for: $class === '' ? null : $class, await_mechanism: $await);
+    return $p;
+  }
+
+  /** @return list<array{event_class: string, await_key: string}> */
+  private function waitsOf(int $id): array {
+    return array_map(
+      static fn (array $r) => ['event_class' => (string) $r['event_class'], 'await_key' => (string) $r['await_key']],
+      $this->db->fetchAll('SELECT event_class, await_key FROM `' . $this->table('ddd_process_waits') . '` WHERE process_id = ? ORDER BY event_class, await_key', [$id])
+    );
+  }
+
+  public function test_the_store_declares_that_it_matches_fact_ancestry(): void {
+    self::assertInstanceOf(IMatchesFactAncestry::class, $this->store(), 'W4P-R6: one lookup per fact');
+  }
+
+  public function test_keyed_awaits_are_indexed_per_route_and_found_by_their_key(): void {
+    $store = $this->store();
+    $one = $store->insert($this->suspendedOn(AwaitEvent::keyed(JobFinished::class, 'job-1'), 1));
+    $two = $store->insert($this->suspendedOn(AwaitEvent::keyed(JobFinished::class, 'job-2'), 2));
+    $unkeyed = $store->insert($this->suspendedOn(new AwaitEvent(JobFinished::class), 3));
+
+    self::assertSame([['event_class' => JobFinished::class, 'await_key' => 'job-1']], $this->waitsOf($one));
+    self::assertSame([$one], $store->findWaitingFor(JobFinished::class, 'job-1'));
+    self::assertSame([$two], $store->findWaitingFor(JobFinished::class, 'job-2'));
+    self::assertSame([], $store->findWaitingFor(JobFinished::class, 'job-3'));
+    self::assertSame([$unkeyed], $store->findWaitingFor(JobFinished::class, ''), "'' = unkeyed rows only");
+    self::assertSame([$one, $two, $unkeyed], $store->findWaitingFor(JobFinished::class), 'null = any key');
+  }
+
+  public function test_saving_rewrites_the_routes_and_a_process_that_is_not_suspended_has_none(): void {
+    $store = $this->store();
+    $p = $this->suspendedOn(AwaitAll::keyed(ChildPurged::class, ['c1', 'c2'], 3600));
+    $id = $store->insert($p);
+    self::assertSame([
+      ['event_class' => ChildPurged::class, 'await_key' => 'c1'],
+      ['event_class' => ChildPurged::class, 'await_key' => 'c2'],
+    ], $this->waitsOf($id));
+
+    $gather = $p->await_mechanism();
+    self::assertInstanceOf(AwaitAll::class, $gather);
+    $p->update_await($gather->accumulate(new ChildPurged('c1')));
+    $version = $store->save($p, 1);
+    self::assertSame([['event_class' => ChildPurged::class, 'await_key' => 'c2']], $this->waitsOf($id), 'a partial arrival leaves the missing key');
+    self::assertSame([], $store->findWaitingFor(ChildPurged::class, 'c1'));
+    self::assertSame([$id], $store->findWaitingFor(ChildPurged::class, 'c2'));
+
+    $p->advance('running');
+    $store->save($p, $version);
+    self::assertSame([], $this->waitsOf($id));
+    self::assertSame([], $store->findWaitingFor(ChildPurged::class));
+  }
+
+  public function test_an_any_of_await_is_found_by_each_branch_class_and_not_by_its_common_ancestor(): void {
+    $store = $this->store();
+    $any = AwaitAny::of(AwaitEvent::keyed(JobFinished::class, 'job-9'))
+      ->cancelledBy(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 4]));
+    $id = $store->insert($this->suspendedOn($any));
+
+    self::assertSame([$id], $store->findWaitingFor(JobFinished::class, 'job-9'));
+    self::assertSame([$id], $store->findWaitingFor(AppDestroyScheduled::class, ''));
+    self::assertSame([$id], $store->findWaitingFor(AppDestroyScheduled::class));
+    self::assertSame([], $store->findWaitingFor(UserJoined::class), 'the waiting_for column holds the common ancestor; the routes are exact');
+  }
+
+  public function test_a_parent_class_route_matches_a_subclass_fact(): void {
+    require_once dirname(__DIR__, 2) . '/Unit/Fixtures/Process/Wave4Processes.php';
+    $store = $this->store();
+    $id = $store->insert($this->suspendedOn(new AwaitEvent(MemberJoined::class)));
+
+    self::assertSame([$id], $store->findWaitingFor(VipJoined::class));
+    self::assertSame([$id], $store->findWaitingFor(VipJoined::class, ''));
+    self::assertSame([], $store->findWaitingFor(VipJoined::class, 'some-key'));
+  }
+
+  public function test_a_suspended_row_without_routes_is_still_found_by_its_waiting_for_column(): void {
+    $store = $this->store();
+    $id = $store->insert($this->suspendedOn(new AwaitEvent(UserJoined::class)));
+    $this->db->execute('DELETE FROM `' . $this->table('ddd_process_waits') . '` WHERE process_id = ?', [$id]); // written before 007
+
+    self::assertSame([$id], $store->findWaitingFor(UserJoined::class));
+    self::assertSame([$id], $store->findWaitingFor(UserJoined::class, ''));
+    self::assertSame([], $store->findWaitingFor(UserJoined::class, 'k'), 'a keyed lookup needs a route');
+  }
+
+  public function test_a_pure_alarm_has_no_route(): void {
+    $store = $this->store();
+    $id = $store->insert($this->suspendedOn(AwaitAlarm::after(90000)));
+
+    self::assertSame([], $this->waitsOf($id));
+    self::assertNull($this->row('ddd_processes', 'id = ?', [$id])['waiting_for']);
+  }
+
+  public function test_routes_are_written_in_the_callers_transaction(): void {
+    $store = $this->store();
+    $boundary = new PdoTransactionBoundary($this->db);
+    try {
+      $boundary->run(function () use ($store): void {
+        $store->insert($this->suspendedOn(AwaitEvent::keyed(JobFinished::class, 'job-1')));
+        throw new \DomainException('rolled back');
+      });
+    } catch (\DomainException) {
+    }
+
+    self::assertSame(0, $this->countRows('ddd_processes'));
+    self::assertSame(0, $this->countRows('ddd_process_waits'));
+  }
+
+  // ── D6: LargeString business data (codec.large-payload, decode.unknown-class) ──
+
+  private function largeStringProcess(LargeString $blob, ?LargeString $optional = null): LargeStringProcess {
+    $p = new LargeStringProcess($blob, $optional, 'big');
+    $p->initialize_lifecycle('corr-ls', new ProcessSteps(['begin'], []));
+    return $p;
+  }
+
+  public function test_a_one_megabyte_binary_large_string_round_trips(): void {
+    $bytes = random_bytes(1024 * 1024);
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString($bytes)));
+
+    $found = $store->find($id);
+
+    self::assertInstanceOf(LargeStringProcess::class, $found);
+    self::assertSame($bytes, $found->blob->value);
+    self::assertNull($found->optional);
+    self::assertSame('big', $found->label);
+    $stored = json_decode((string) $this->row('ddd_processes', 'id = ?', [$id])['business_data'], true);
+    self::assertTrue(LargeString::isEncoded($stored['blob']), 'stored in the LargeString wire form, base64 with sha256');
+  }
+
+  public function test_a_nullable_large_string_round_trips_when_set(): void {
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString('a'), new LargeString("\x00\xff", 16)));
+
+    $found = $store->find($id);
+
+    self::assertSame("\x00\xff", $found?->optional?->value);
+  }
+
+  public function test_a_corrupted_large_string_quarantines_the_row_with_its_reason(): void {
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString('payload')));
+    $data = json_decode((string) $this->row('ddd_processes', 'id = ?', [$id])['business_data'], true);
+    $data['blob']['data'] = base64_encode('tampered');
+    $this->db->execute('UPDATE `' . $this->table('ddd_processes') . '` SET business_data = ? WHERE id = ?', [json_encode($data), $id]);
+
+    try {
+      $store->find($id);
+      self::fail('expected QuarantinedProcess');
+    } catch (QuarantinedProcess) {
+    }
+
+    $row = $this->row('ddd_processes', 'id = ?', [$id]);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('LargeString length mismatch', (string) $row['quarantine_reason']);
   }
 
   public function test_find_stranded_reports_old_running_or_scheduled_rows_with_no_live_intent(): void {

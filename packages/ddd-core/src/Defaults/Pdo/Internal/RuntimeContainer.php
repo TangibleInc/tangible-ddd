@@ -90,6 +90,14 @@ final class RuntimeContainer implements ContainerInterface {
     throw new class("DurableRuntime has no service $id (pass it in \$handlers)") extends \RuntimeException implements NotFoundExceptionInterface {};
   }
 
+  /**
+   * A runtime default handler for a message class (the core repair commands,
+   * wave 4); the host's own array-form handler for the class wins.
+   */
+  public function setDefaultHandler(string $messageClass, callable|object $handler): void {
+    $this->handlers[$messageClass] ??= $handler;
+  }
+
   /** The array-form handler registered for this message class, if any. */
   public function handlerFor(string $messageClass): callable|object|null {
     return $this->handlers[$messageClass] ?? null;
