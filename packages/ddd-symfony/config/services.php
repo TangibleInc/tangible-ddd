@@ -296,7 +296,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.audit.sink', NullAuditSink::class);
   $s->set('tangible_ddd.audit.policy', AuditEverything::class);
   $s->set('tangible_ddd.audit.environment', PhpEnvironmentProvider::class)
-    ->args([['env' => param('kernel.environment'), 'app' => $consumer['version']]]);
+    ->factory([Factory::class, 'auditEnvironment'])
+    ->args([param('kernel.environment'), $consumer['version']]);
 
   // The act bracket: core CorrelationMiddleware with the audit ports (CONF-1).
   $s->set('tangible_ddd.middleware.act_bracket', CorrelationMiddleware::class)

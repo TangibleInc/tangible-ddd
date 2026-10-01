@@ -15,6 +15,14 @@ Install and configure: [examples/symfony/README.md](../../examples/symfony/READM
 
 Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd.table_prefix`).
 
+## Configuration notes
+
+- `consumer.version` is optional. Absent, `null`, `''`, or an env placeholder
+  that resolves to null at runtime (`'%env(default::APP_VERSION)%'` with
+  `APP_VERSION` unset) all mean `'0.0.0'`, both for the registered consumer and
+  for the audit environment's `app` key (L4). Before wave 4 a null version was a
+  `TypeError` at the first command.
+
 ## Processes and wakeups
 
 - `ProcessRunner` (service `tangible_ddd.process_runner`, public) runs on

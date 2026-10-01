@@ -24,6 +24,7 @@ use TangibleDDD\Symfony\DependencyInjection\Compiler\HandlerLocatorPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\MessengerHealthPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\SubscriptionMapPass;
 use TangibleDDD\Symfony\DependencyInjection\DddTags;
+use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
 
 /**
  * The Symfony host for tangible/ddd-core (register 1.2, 3.2-3.5, 5.1).
@@ -58,7 +59,13 @@ final class TangibleDddBundle extends AbstractBundle {
               ->info('Stable [a-z0-9_]+ consumer prefix; names hooks, integration actions and ledger keys (e.g. "txp").')->end()
             ->scalarNode('namespace_root')->isRequired()->cannotBeEmpty()
               ->info('PHP namespace the consumer owns (e.g. "App"); send() and Event::prefix() resolve by it.')->end()
-            ->scalarNode('version')->defaultValue('0.0.0')->end()
+            ->scalarNode('version')->defaultValue(SymfonyConsumerConfig::DEFAULT_VERSION)
+              ->info('Consumer version (audit environment "app"). Null or empty, also from an unset %env()%, is "0.0.0".')
+              ->beforeNormalization()
+                ->ifTrue(static fn ($v) => $v === null || $v === '')
+                ->then(static fn () => SymfonyConsumerConfig::DEFAULT_VERSION)
+              ->end()
+            ->end()
             ->scalarNode('label')->defaultNull()->end()
           ->end()
         ->end()

@@ -21,18 +21,32 @@ use TangibleDDD\Infra\IDDDConfig;
  */
 final class SymfonyConsumerConfig implements IDDDConfig, IConsumerIdentity {
 
+  /** What an absent, null or empty `consumer.version` means (L4). */
+  public const DEFAULT_VERSION = '0.0.0';
+
+  private readonly string $version;
+
+  /**
+   * @param string|null $version null or '' (e.g. an unset `%env(default::APP_VERSION)%`,
+   *   which resolves at runtime, after config processing) is DEFAULT_VERSION
+   */
   public function __construct(
     private readonly string $prefix,
     private readonly string $namespaceRoot,
-    private readonly string $version = '0.0.0',
+    ?string $version = self::DEFAULT_VERSION,
     private readonly string $tablePrefix = '',
   ) {
+    $this->version = self::normaliseVersion($version);
     if (!preg_match('/^[a-z0-9_]+$/', $prefix)) {
       throw new \InvalidArgumentException("Consumer prefix '$prefix' must match [a-z0-9_]+");
     }
     if (trim($namespaceRoot, '\\') === '') {
       throw new \InvalidArgumentException('The consumer namespace root must not be empty');
     }
+  }
+
+  public static function normaliseVersion(?string $version): string {
+    return $version === null || $version === '' ? self::DEFAULT_VERSION : $version;
   }
 
   public function prefix(): string {

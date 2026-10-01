@@ -95,7 +95,8 @@ final class TestKernel extends Kernel {
       'consumer' => [
         'prefix' => 'sfk',
         'namespace_root' => __NAMESPACE__,
-        'version' => '0.7.0-test',
+        // version_env: the README's env form, with the variable unset (resolves to null, L4).
+        'version' => $this->variant === 'version_env' ? '%env(default::DDD_SF_TEST_UNSET_VERSION)%' : '0.7.0-test',
       ],
       'connection' => 'default',
       'transaction' => match ($this->variant) {

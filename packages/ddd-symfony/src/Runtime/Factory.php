@@ -23,6 +23,7 @@ use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Symfony\Lock\PostgresAdvisoryProcessLock;
 use TangibleDDD\Symfony\Persistence\PoolerPolicy;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
+use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\OrderedListenerDispatcher;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
@@ -34,6 +35,11 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
  * @internal
  */
 final class Factory {
+
+  /** The audit environment: kernel env plus the consumer version, an unset env version as '0.0.0' (L4). */
+  public static function auditEnvironment(string $env, ?string $version): PhpEnvironmentProvider {
+    return new PhpEnvironmentProvider(['env' => $env, 'app' => SymfonyConsumerConfig::normaliseVersion($version)]);
+  }
 
   public static function delivery(ISubscriptionRegistry $registry, IDeliveryLedger $ledger, int $budget, ?LoggerInterface $logger = null): IntegrationDelivery {
     return new IntegrationDelivery($registry, $ledger, $budget, $logger);
