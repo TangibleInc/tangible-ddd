@@ -78,6 +78,35 @@ The same view is the `IOperatorView` service for a host's own admin page.
   lock, a version fence or a transient DB error is retried (2 s x 2^n, 10
   attempts); then, or on any other error, the intent is kept as exhausted for
   `ddd:ops:stranded`.
+- `ddd:ops:stranded --resume|--fail` dispatch core's
+  `Application\Process\Repair\ResumeStrandedProcess` / `FailStrandedProcess`
+  (WP8-10) on the command bus; the core handlers refuse a process that is not
+  stranded or whose lock is held.
+
+## Wave 4: D1, D3, D7, D10, D13, D14 on this host
+
+- **D3** `ddd_process_waits` holds one row per `LongProcess::await_routes()`
+  route (fact class, await key): a keyed `AwaitEvent` by its key, an `AwaitAny`
+  by each branch class, a keyed `AwaitAll` by each missing key, an `AwaitAlarm`
+  none. `DbalProcessStore` matches a fact's parents and interfaces and declares
+  `IMatchesFactAncestry`. Precheck and the dynamic `AwaitAll` are core's and
+  run unchanged here.
+- **D7** an alarm is one `timeout` row in `ddd_wakeups`, `due_at` the absolute
+  UTC instant fixed at suspension (no chain of short timers, no Messenger
+  `DelayStamp`); `ddd:relay` projects it when due.
+- **D1** the command bus is act bracket → `EffectMiddleware` (journal
+  `tangible_ddd.effect_journal`) → transaction → domain events →
+  self-executing → handler.
+- **D10** services implementing `IStartsFromFact` (tag `tangible_ddd.workflow`,
+  autoconfigured) get one core `WorkflowIgniter` subscriber per `#[StartsOn]`
+  fact; `DbalWorkflowIgnitionLedger` is the core `IWorkflowIgnitionLedger`.
+- **D14** outbox appends and wakeup intents `NOTIFY` in their transaction;
+  `ddd:relay` waits in `LISTEN` and falls back to its poll interval.
+- `LongProcess` subclasses loaded as services are autoconfigured with
+  `ddd.long_process`; `IReturningCommandHandler` with the command-handler tag (L1).
+
+Usage, including D13 (cause, process id, step index): [examples/symfony/README.md](../../examples/symfony/README.md).
+The E section 10 reference scenario is `tests/Kernel/ReferenceScenarioTest.php`.
 
 ## Tests
 

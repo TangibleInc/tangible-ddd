@@ -1,8 +1,8 @@
 # tangible/ddd on Symfony 7.4 (ddd-symfony)
 
 How a Symfony app (TXP is the first) installs and configures `TangibleDddBundle`.
-State: wave 2, round 1 of the extraction. Nothing is published; the app consumes
-the packages through Composer path repositories.
+State: wave 4 of the extraction. Nothing is published; the app consumes the
+packages through Composer path repositories.
 
 What the bundle gives you, all on one Doctrine DBAL connection to Postgres 16:
 
@@ -16,8 +16,12 @@ What the bundle gives you, all on one Doctrine DBAL connection to Postgres 16:
 - a Messenger handler that delivers each fact to its subscribers in priority
   order (listeners, then process ignition, then resume), each at most once per
   fact through the ledger, even when Messenger delivers the message twice;
-- compile-time discovery of listeners and processes (no constructor side
-  effects), marker-interface subscriptions, worker reset, and audit actors.
+- compile-time discovery of listeners, processes and fact-ignited workflows (no
+  constructor side effects), marker-interface subscriptions, worker reset, and
+  audit actors;
+- long-running processes on a Postgres advisory lock, with keyed and any-of
+  awaits, durable alarms (`ddd_wakeups`), external effects with a result
+  journal, and `LISTEN`/`NOTIFY` wakeup of the relay (sections 5-9).
 
 ## 1. Install
 
@@ -66,14 +70,14 @@ tangible_ddd:
     consumer:
         prefix: txp               # [a-z0-9_]+; names integration actions and ledger keys. Never change it.
         namespace_root: App       # send() and Event::prefix() resolve the consumer by namespace
-        version: '%env(default::APP_VERSION)%'
+        version: '%env(default::APP_VERSION)%'   # unset = '0.0.0'
         label: null
     connection: default           # the DoctrineBundle connection the repositories use
     connection_service: null      # or an explicit DBAL Connection service id
-    table_prefix: ''              # ddd_outbox, ddd_dlq, ddd_relay_pauses, ddd_delivery_ledger
+    table_prefix: ''              # prefixes every ddd_* table
     transaction:
         nested: reject            # reject | savepoint (only for test suites that wrap each test in a transaction)
-        entity_manager: null      # e.g. doctrine.orm.default_entity_manager: flushed before COMMIT
+        entity_manager: null      # e.g. doctrine.orm.default_entity_manager: flushed before COMMIT; cleared, or reset when closed, after a rollback
     relay:                        # relay budget (register 5.1): submission failures only
         batch_size: 50
         lease_seconds: 300
@@ -81,7 +85,14 @@ tangible_ddd:
         base_retry_delay_seconds: 60
         retry_multiplier: 2.0
         max_retry_delay_seconds: 3600
-        idle_sleep_seconds: 1
+        idle_sleep_seconds: 1     # poll interval of ddd:relay (the D14 fallback)
+        listen: true              # D14: NOTIFY at commit, ddd:relay LISTENs
+    process:
+        inband_start: false       # false: start() persists + a Continue intent, the first step runs in a worker
+        pooled_connection: warn   # warn | refuse: advisory lock and LISTEN on a pooled DSN
+        stranded_after_seconds: 900
+        wakeup_lease_seconds: 300
+        stranded_scan_seconds: 60
     delivery:                     # handler budget per (subscriber, fact), counted in the ledger
         budget: 5
         retry_delay_ms: 30000
@@ -89,6 +100,7 @@ tangible_ddd:
         max_retry_delay_ms: 3600000
     messenger:
         transport: ddd_facts
+        wakeup_transport: ddd_wakeups       # due wakeup intents (Messenger retries off; the intent row owns them)
         failure_transport: ddd_failed
         bus: messenger.bus.default          # must NOT carry doctrine_transaction (compilation fails if it does)
         configure_transports: true          # prepend the two transports below
@@ -98,14 +110,15 @@ tangible_ddd:
     self_handling:
         classes: []               # self-handling commands/queries NOT registered by resource loading
         locate_all: false         # true: every class-named service is injectable into handle() (keeps them all compiled)
-    process_entry: null           # IProcessEntry service id (the process runner arrives in wave 3)
+    process_entry: null           # IProcessEntry service id; default: the bundle's ProcessRunner
     audit:
         sink: null                # IAuditSink service id (default NullAuditSink)
         policy: null              # IAuditPolicy service id (default AuditEverything)
 ```
 
 With `configure_transports: true` the bundle prepends this Messenger config, so
-the handler retry strategy equals the delivery budget:
+the handler retry strategy equals the delivery budget (it also adds
+`ddd_wakeups` on the same connection with `max_retries: 0`):
 
 ```yaml
 framework:
@@ -153,7 +166,8 @@ transaction, where Messenger's `auto_setup` cannot work (hence
 
 Commands and handlers follow the naming convention
 `App\...\Commands\XCommand` → `App\...\CommandHandlers\XHandler`. Handlers
-implementing `ICommandHandler` are autoconfigured; they may stay private.
+implementing `ICommandHandler` (or `IReturningCommandHandler`, whose
+`handle()` value `send()` returns) are autoconfigured; they may stay private.
 
 ```php
 namespace App\Tenancy\Commands;
@@ -231,9 +245,10 @@ back):
 final class CreateMembership { public function __invoke(InviteAccepted $e): void { /* ... */ } }
 ```
 
-**Processes** are tagged `ddd.long_process`; their `#[StartsOn]` / `#[Awaits]`
+**Processes** (`LongProcess` subclasses your resource loading registers) are
+autoconfigured with `ddd.long_process`; their `#[StartsOn]` / `#[Awaits]`
 attributes are read at compile time (ignition at priority 50, resume at 99).
-They need `tangible_ddd.process_entry` (the wave-3 runner).
+The bundle's `ProcessRunner` is the process entry. See section 7.
 
 **Machine actors** (D5): the audit actor is the Security user, else the console
 operator (`DDD_OPERATOR`, else the OS user), else Cli/System. A machine
@@ -251,8 +266,17 @@ endpoint:
 ```bash
 bin/console ddd:relay --time-limit=3600          # loop; supervisor restarts it
 bin/console ddd:relay --once --limit=100         # one step (cron, deploy hooks, tests)
-bin/console messenger:consume ddd_facts --time-limit=3600
+bin/console messenger:consume ddd_facts ddd_wakeups --time-limit=3600
 ```
+
+`ddd:relay` does three things per step: it relays due outbox rows to
+`ddd_facts`, projects due wakeup intents (`ddd_wakeups` rows: process
+continuations, alarms, retries) to the `ddd_wakeups` transport, and re-queues
+stranded `scheduled` processes. When a step finds nothing it waits in
+`LISTEN` (D14): an outbox append or a wakeup intent sends `NOTIFY` in its own
+transaction, so the relay wakes when that transaction commits and never for a
+rolled-back one. A lost notification costs at most `idle_sleep_seconds`, the
+poll interval (`relay.listen: false` turns NOTIFY off and only polls).
 
 `ddd:relay` survives transient database errors: it logs the DBAL exception,
 backs off 1, 2, 4 ... 30 s and carries on; after 10 failed steps in a row (or
@@ -266,16 +290,172 @@ runs only the subscribers the ledger has not recorded as delivered. The worker
 resets the DDD runtime (correlation scope, unit of work, actor) after every
 message and logs a leak at CRITICAL.
 
-## 6. Tests in the app
+## 6. External effects (D1)
+
+A command that calls something outside the database (Stripe, Cloudflare)
+implements `IExternalEffectCommand`. The bus runs it as act bracket →
+`EffectMiddleware` → transaction: `perform()` runs **outside** any
+transaction and its result is stored in `ddd_effect_journal` under
+`idempotencyKey()` at once; `record()` then runs **inside** the command's
+transaction. A retry under the same key (a redelivered fact, a re-run process
+step, a second dispatch) finds the journaled result and goes straight to
+`record()`: `perform()` is not called again.
+
+```php
+final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffectCommand {
+    public function __construct(public readonly string $customerId, public readonly int $amount, public readonly string $key) {}
+
+    public function idempotencyKey(): string { return $this->key; }
+
+    public function perform(): EffectResult {            // no transaction open here
+        $charge = $this->stripe()->charges->create([...], ['idempotency_key' => $this->key]);
+        return new EffectResult(['amount' => $this->amount], $charge->id);
+    }
+
+    public function record(EffectResult $r): void {      // inside the transaction
+        $this->event(new CustomerCharged($this->customerId, (string) $r->externalRef));
+    }
+
+    public function failureCommand(\Throwable $last): ?ICommand {
+        return new FlagChargeFailed($this->customerId);  // fired once when a listener's handler budget is spent
+    }
+
+    protected function handle(): void { throw new \LogicException('runs through EffectMiddleware'); }
+}
+```
+
+- Keys: inside a process step use `$this->step_ref('charge')` (stable across
+  re-runs of the step); for a listener, derive it from the fact in
+  `translate()` (`Correlation::current_fact()->eventId`, section 9).
+- Failure command: fired by the core delivery invoker when the listener's
+  handler budget (`delivery.budget`) is spent, never from a Messenger failure
+  event. Inside a process step the step's `#[RetryStep]` policy governs and the
+  failure command is not used.
+- Repair: a repair command calls `IEffectJournal::invalidate($key, $reason)`
+  (service `tangible_ddd.effect_journal`) in its own transaction, then
+  re-dispatches; only then does `perform()` run again.
+
+## 7. Processes, keyed awaits and alarms (D3, D7)
+
+```php
+#[StartsOn(MembershipGranted::class)]            // one process per fact (the ignition gate holds under redelivery)
+#[Awaits(JobFinished::class)]                    // one #[Awaits] per fact class any await waits for
+final class ProvisionApp extends LongProcess {
+
+    public function __construct(public readonly string $appId) { parent::__construct(null); }
+
+    public static function from_event(MembershipGranted $e): ?static { return new static($e->appId); }
+
+    protected function order(): Result {
+        $job = $this->step_ref('job');           // D13: uuid5(process, step index, purpose)
+        return new Result(
+            commands: [new OrderJob($this->appId, $job)],
+            // persisted with the checkpoint and the alarm BEFORE OrderJob dispatches
+            await: AwaitEvent::keyed(JobFinished::class, $job, timeout_seconds: 1800),
+        );
+    }
+
+    #[RetryStep(attempts: 2, backoff_seconds: 30)]
+    protected function charge(mixed $payload, JobFinished $done): Result {
+        if (!$done->ok) { throw new \RuntimeException('job failed'); }   // retried, then compensated
+        return new Result(commands: [new ChargeCustomer($this->appId, 500, $this->step_ref('charge'))]);
+    }
+
+    #[Compensates('order')]
+    protected function cancel(\Throwable $cause, mixed $checkpoint): Result {
+        return new Result(commands: [new CancelJob($this->appId)]);
+    }
+}
+```
+
+- The fact answering a keyed await implements `IAwaitKeyed`
+  (`await_key(): ?string`, e.g. the job id). `ddd_process_waits` stores one row
+  per (fact class, key), so the answer reaches only the process that minted
+  the key; a key nobody waits for is "unheard" (`resume_with_outcome()`
+  reports it) and is acked without error.
+- Any-of with cancellation:
+  `AwaitAny::of(AwaitEvent::keyed(JobFinished::class, $job))->cancelledBy(new AwaitEvent(AppDestroyed::class, ['app_id' => $id]))`.
+  The first answer resumes the next step with that fact; a cancellation fact
+  compensates every process it names. `->within(3600)` / `->until($instant)`
+  add an alarm.
+- Dynamic set: `AwaitAll::keyed(ChildPurged::class, $childIds, 3600)` waits for
+  every key computed at step time; an empty set does not suspend; the next step
+  receives the `AwaitAll` (`gathered()`).
+- Register-then-check: a process implementing `IPrecheckAwait` answers
+  `already_satisfied($await)` after the await committed and the step's commands
+  dispatched; `PrecheckSatisfied::with($value)` resumes in place (the alarm is
+  cancelled), so a fact that committed before the suspension is not missed.
+- Alarms (D7): `timeout_seconds`, `AwaitAny::until()` and
+  `AwaitAlarm::at(new \DateTimeImmutable('2026-10-04T12:00:00Z'))` /
+  `AwaitAlarm::after(25 * 3600)` (no fact, just time) are one `timeout` row in
+  `ddd_wakeups` with an absolute UTC `due_at`, fixed at suspension. There is no
+  upper bound and no chain of short timers; a worker restart changes nothing.
+  `on_timeout` is `fail` (compensate the completed steps) or `proceed` (the
+  next step receives `null`).
+- `start()` from a web request persists the process and a `Continue` intent in
+  the caller's transaction; the first step runs in a worker
+  (`process.inband_start: false`, the default).
+- Repairs: `bin/console ddd:ops:stranded` lists stranded processes;
+  `--resume=<id>` re-runs the stranded step with the same deterministic command
+  ids, `--fail=<id> --reason=...` fails it (core's repair commands).
+
+## 8. Workflows started by facts (D10)
+
+A behaviour workflow handler that a fact starts implements `IStartsFromFact`
+(the `StartsFromFacts` trait gives the defaults) and declares its facts with
+`#[StartsOn]`. Registered as a service (resource loading), it is
+autoconfigured and gets one ignition subscriber per fact. The dedup key goes
+through `ddd_workflow_ignitions` (`DbalWorkflowIgnitionLedger`): exactly one
+workflow per key, whatever the redeliveries or concurrent workers.
+
+```php
+#[StartsOn(CronEntryDue::class)]
+final class NightlyReport extends WorkflowHandler implements IStartsFromFact {
+    use StartsFromFacts;
+
+    public function workflow_from_fact(IIntegrationEvent $fact): ?BehaviourWorkflow {
+        return new BehaviourWorkflow(null, 0, 'nightly-report', [new BuildReportConfig()]);   // null declines
+    }
+
+    public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
+        // default (trait): once per fact, uuid5(event_id, kind); here: once per (workflow, minute)
+        return WorkflowIgnitionKey::perMinute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
+    }
+    // get_workflows(), execute_one(), generate_work_items(), reschedule(): as for any WorkflowHandler
+}
+```
+
+The claim, the workflow save and the attach commit together; the start
+(`start_ignited()`, by default `handle_workflow()`) runs after the commit. A
+start that throws is retried by the fact's redelivery, which restarts the
+attached workflow (it must tolerate a re-run).
+
+## 9. Cause, process id and step index (D13)
+
+| Where | What you can read |
+|---|---|
+| a listener's `translate()` (the fact scope) | `Correlation::current_fact()` → `FactRef{eventId, eventClass, correlationId}`; put what the handler needs (the event id, a key derived from it) in the command |
+| the translated command's handler | `Correlation::peek()->cause->id` is the command id, deterministic: `DeterministicCommandId::forFact($eventId, $subscriberId)` (`current_fact()` is null inside an act) |
+| a process step | `$this->get_id()` (process id), `$this->current_step_index()`, `$this->step_ref('purpose')` (uuid5 over class, id, step index and purpose: the same on a re-run) |
+| a step command's handler | `Correlation::peek()->cause->id` is the command id, `DeterministicCommandId::forStep($prefix, $processId, $stepIndex, $ordinal)`; pass the process id, step index or ref in the command when the handler needs them |
+| anywhere | `Uuid::v5($namespaceUuid, $name)` (`TangibleDDD\Domain\Shared\Uuid`) for your own deterministic ids |
+
+Use these for job ids and notification dedup: a redelivered fact or a re-run
+step produces the same ids, so idempotent handlers and the D1 journal absorb
+the repeat.
+
+## 10. Tests in the app
 
 Run DDD tests **without** a per-test transaction wrapper (DAMA and similar): the
 code under test owns its transactions. If you must keep a wrapper, set
 `tangible_ddd.transaction.nested: savepoint` in the test environment and keep
 relay/delivery tests out of it.
 
-## What is not here yet
-
-Process lock, process store, wakeups, `LISTEN`/`NOTIFY` relay wakeup, the pooler
-warning, `ddd:ops:*` and the effect journal are wave 3 and 4. The act bracket,
-outbox bus and relay step are bundle-local stand-ins until core ships their
-port-based forms (round 3 switches the same service ids).
+The bundle's own kernel tests show the whole path on Postgres 16:
+`packages/ddd-symfony/tests/Kernel/ReferenceScenarioTest.php` (a fact-started
+saga with a keyed await, an alarm, a D1 effect retried with its journaled
+result and a compensation), `WorkflowIgnitionTest.php` (D10) and
+`PostCommitWakeupTest.php` / `PostCommitPollFallbackTest.php` (D14). To move
+time in a test, replace the `tangible_ddd.clock` service with a
+`TangibleDDD\Runtime\FrozenClock` (the reference test does it in a compiler
+pass).
