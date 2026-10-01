@@ -50,8 +50,14 @@ final class SubscriptionMapPass implements CompilerPassInterface {
       return;
     }
 
-    $specs = [];
-    $listenerRefs = [];
+    // Wave 5: one map per consumer; a subscription belongs to the consumer whose
+    // namespace root contains its listener, process or workflow class (longest
+    // root; the primary consumer for a class outside every root).
+    $consumers = $container->hasParameter('tangible_ddd.consumers')
+      ? array_values((array) $container->getParameter('tangible_ddd.consumers'))
+      : [['name' => '', 'primary' => true, 'prefix' => (string) (((array) ($container->hasParameter('tangible_ddd.consumer') ? $container->getParameter('tangible_ddd.consumer') : []))['prefix'] ?? ''), 'namespace_root' => '']];
+    /** @var array<int, array{specs: list<array<string, mixed>>, refs: array<string, Reference>, seen: array<string, true>}> $groups */
+    $groups = array_fill_keys(array_keys($consumers), ['specs' => [], 'refs' => [], 'seen' => []]);
     $bag = $container->getParameterBag();
 
     foreach ($container->findTaggedServiceIds(DddTags::INTEGRATION_LISTENER) as $id => $tags) {
@@ -72,36 +78,35 @@ final class SubscriptionMapPass implements CompilerPassInterface {
         $priority = $attr[0]->newInstance()->priority;
       }
 
-      $specs[] = CompiledSubscriptionRegistry::listener_spec($id, $class, $event, $priority);
-      $listenerRefs[$id] = new Reference($id);
+      $g = self::owner($class, $consumers);
+      $groups[$g]['specs'][] = CompiledSubscriptionRegistry::listener_spec($id, $class, $event, $priority);
+      $groups[$g]['refs'][$id] = new Reference($id);
     }
 
-    $seen = [];
     foreach ($container->findTaggedServiceIds(DddTags::LONG_PROCESS) as $id => $tags) {
       $class = $bag->resolveValue($container->getDefinition($id)->getClass() ?? $id);
       if (!is_string($class) || !is_subclass_of($class, LongProcess::class)) {
         continue; // LongProcessCatalogPass reports misuse of the tag
       }
       $reflection = new \ReflectionClass($class);
+      $g = self::owner($class, $consumers);
       foreach ($reflection->getAttributes(StartsOn::class) as $a) {
         $event = $a->newInstance()->event_class;
         self::assertSubscribable($event, $class);
-        $specs[] = CompiledSubscriptionRegistry::process_spec($class, 'ignition', $event);
+        $groups[$g]['specs'][] = CompiledSubscriptionRegistry::process_spec($class, 'ignition', $event);
       }
       foreach ($reflection->getAttributes(Awaits::class) as $a) {
         $event = $a->newInstance()->event_class;
         self::assertSubscribable($event, $class);
         $spec = CompiledSubscriptionRegistry::process_spec($class, 'resume', $event);
-        if (!isset($seen[$spec['id']])) {
-          $seen[$spec['id']] = true;
-          $specs[] = $spec;
+        if (!isset($groups[$g]['seen'][$spec['id']])) {
+          $groups[$g]['seen'][$spec['id']] = true;
+          $groups[$g]['specs'][] = $spec;
         }
       }
     }
 
     // D10: behaviour workflows ignited by facts (core WorkflowIgniter).
-    $consumer = $container->hasParameter('tangible_ddd.consumer') ? (array) $container->getParameter('tangible_ddd.consumer') : [];
-    $prefix = (string) ($consumer['prefix'] ?? '');
     foreach ($container->findTaggedServiceIds(DddTags::WORKFLOW) as $id => $tags) {
       $class = $bag->resolveValue($container->getDefinition($id)->getClass() ?? $id);
       if (!is_string($class) || !is_a($class, IStartsFromFact::class, true)) {
@@ -114,28 +119,63 @@ final class SubscriptionMapPass implements CompilerPassInterface {
       if ($facts === []) {
         throw new InvalidArgumentException("$class implements IStartsFromFact but declares no #[StartsOn(SomeFact::class)].");
       }
+      $g = self::owner($class, $consumers);
       foreach ($facts as $event) {
         if (!is_a($event, IIntegrationEvent::class, true)) {
           throw new InvalidArgumentException("$class #[StartsOn($event)]: $event must implement IIntegrationEvent.");
         }
-        $specs[] = CompiledSubscriptionRegistry::workflow_spec($id, $class, $event, $prefix);
+        $groups[$g]['specs'][] = CompiledSubscriptionRegistry::workflow_spec($id, $class, $event, (string) $consumers[$g]['prefix']);
       }
-      $listenerRefs[$id] = new Reference($id);
+      $groups[$g]['refs'][$id] = new Reference($id);
     }
 
-    $container->getDefinition('tangible_ddd.subscriptions')
-      ->replaceArgument(0, $specs)
-      ->replaceArgument(1, ServiceLocatorTagPass::register($container, $listenerRefs));
+    $extra = $container->hasParameter('tangible_ddd.facts') ? (array) $container->getParameter('tangible_ddd.facts') : [];
+    foreach ($consumers as $g => $c) {
+      $subscriptions = self::id($c, 'subscriptions');
+      if (!$container->hasDefinition($subscriptions)) {
+        continue;
+      }
+      $specs = $groups[$g]['specs'];
+      $container->getDefinition($subscriptions)
+        ->replaceArgument(0, $specs)
+        ->replaceArgument(1, ServiceLocatorTagPass::register($container, $groups[$g]['refs']));
 
-    if ($container->hasDefinition('tangible_ddd.fact_class_resolver')) {
-      $facts = $container->hasParameter('tangible_ddd.facts') ? (array) $container->getParameter('tangible_ddd.facts') : [];
-      foreach ($specs as $spec) {
-        if (class_exists($spec['event'])) {
-          $facts[] = $spec['event'];
+      $resolver = self::id($c, 'fact_class_resolver');
+      if ($container->hasDefinition($resolver)) {
+        $facts = $extra;
+        foreach ($specs as $spec) {
+          if (class_exists($spec['event'])) {
+            $facts[] = $spec['event'];
+          }
         }
+        $container->getDefinition($resolver)->replaceArgument(1, array_values(array_unique($facts)));
       }
-      $container->getDefinition('tangible_ddd.fact_class_resolver')->replaceArgument(1, array_values(array_unique($facts)));
     }
+  }
+
+  /** @param array<string, mixed> $consumer */
+  private static function id(array $consumer, string $service): string {
+    return ($consumer['primary'] ?? true) ? 'tangible_ddd.' . $service : sprintf('tangible_ddd.consumer.%s.%s', $consumer['name'], $service);
+  }
+
+  /**
+   * The index of the consumer that owns $class: the longest namespace root
+   * containing it (whole segments), else the primary consumer (0).
+   *
+   * @param list<array<string, mixed>> $consumers
+   */
+  public static function owner(string $class, array $consumers): int {
+    $best = 0;
+    $length = -1;
+    $class = ltrim($class, '\\');
+    foreach ($consumers as $i => $c) {
+      $root = trim((string) ($c['namespace_root'] ?? ''), '\\');
+      if ($root !== '' && ($class === $root || str_starts_with($class, $root . '\\')) && strlen($root) > $length) {
+        $best = $i;
+        $length = strlen($root);
+      }
+    }
+    return $best;
   }
 
   private static function eventOf(string $class, string $id): string {

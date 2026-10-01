@@ -38,6 +38,20 @@ final class DddTags {
    */
   public const WORKFLOW = 'tangible_ddd.workflow';
 
+  /**
+   * W1: WorkflowHandler services that continue through the wakeup scheduler
+   * (IContinuesWorkflows, autoconfigured; the ReschedulesThroughWakeups
+   * trait). Located by class for the workflow wake target.
+   */
+  public const CONTINUES_WORKFLOW = 'tangible_ddd.continues_workflow';
+
+  /**
+   * W2: BaseBehaviourConfig subclasses found by the app's resource loading
+   * (autoconfigured). Values, not services: BehaviourTypePass reads each
+   * class's get_behaviour_type() and the bundle registers the types at boot.
+   */
+  public const BEHAVIOUR_CONFIG = 'tangible_ddd.behaviour_config';
+
   /** LongProcess classes (the existing core tag read by LongProcessCatalogPass). */
   public const LONG_PROCESS = 'ddd.long_process';
 }

@@ -6,6 +6,9 @@ namespace TangibleDDD\Symfony\Runtime;
 
 use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
+use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistrar;
@@ -36,6 +39,13 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * workflow subscription without a WorkflowIgniter does the same.
  * add() keeps boot-time additions after the compiled subscribers; duplicate
  * ids are ignored (first wins), like the core registry.
+ *
+ * Wave 5, with DeliveryNotes: a resume subscriber keeps the runner's
+ * ResumeReport (LazyProcessEntry::resume_with_outcome()) and notes an
+ * unheard fact (AW3); a listener's compensation notes which D1 failure
+ * command it sent (E3). Ids, priorities and outcomes are unchanged.
+ * has_subscribers() answers "does anything subscribe to this class" without building a
+ * subscriber (the relay's SubscriptionProbe).
  */
 final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
 
@@ -54,7 +64,23 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     private readonly ContainerInterface $listeners,
     private readonly ?IProcessEntry $processes = null,
     private readonly ?WorkflowIgniter $workflows = null,
+    private readonly ?DeliveryNotes $notes = null,
   ) {}
+
+  /** True when a compiled spec or a boot-time subscriber takes $eventClass (by is_a); builds nothing. */
+  public function has_subscribers(string $eventClass): bool {
+    foreach ($this->specs as $spec) {
+      if (is_a($eventClass, $spec['event'], true)) {
+        return true;
+      }
+    }
+    foreach ($this->added as $s) {
+      if (is_a($eventClass, $s->event_class, true)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /**
    * D10: a behaviour workflow ignited by $eventClass through the core
@@ -133,8 +159,10 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     }
 
     $capture = new CapturingRegistry();
+    $listener = null;
     if ($spec['kind'] === 'listener') {
-      (new SubscriptionRegistrar($capture))->register_listener($this->listeners->get($spec['service']));
+      $listener = $this->listeners->get($spec['service']);
+      (new SubscriptionRegistrar($capture))->register_listener($listener);
     } elseif ($spec['kind'] === 'workflow') {
       if ($this->workflows === null) {
         throw new \LogicException("Workflow subscription {$spec['id']} needs a WorkflowIgniter (tangible_ddd.workflow_igniter); none is configured.");
@@ -145,12 +173,68 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     }
 
     foreach ($capture->subscribers as $s) {
-      $this->built[$s->id] ??= $s;
+      $this->built[$s->id] ??= match (true) {
+        $listener !== null && $s->on_exhausted !== null => $this->noting_compensation($s, $listener),
+        $spec['kind'] === 'process' && str_starts_with($s->id, 'resume:') => $this->reporting_resume($s),
+        default => $s,
+      };
     }
     return $this->built[$spec['id']] ?? throw new \LogicException(sprintf(
       'Compiled subscription %s was not produced by SubscriptionRegistrar for %s (got: %s); the compile-time map and the registrar disagree.',
       $spec['id'], $spec['class'], implode(', ', array_map(fn (Subscriber $s) => $s->id, $capture->subscribers))
     ));
+  }
+
+  /** AW3: the resume door with the runner's report; an unheard fact is noted, never failed. */
+  private function reporting_resume(Subscriber $s): Subscriber {
+    $entry = $this->processes;
+    if ($this->notes === null || !$entry instanceof LazyProcessEntry) {
+      return $s;
+    }
+    $notes = $this->notes;
+    return new Subscriber($s->id, $s->priority, $s->event_class,
+      static function (IIntegrationEvent $event, string $eventId = '') use ($entry, $notes, $s): void {
+        if ($entry->resume_with_outcome($event)?->is_unheard()) {
+          $notes->unheard($s->id, $event, $eventId);
+        }
+      },
+      $s->on_exhausted,
+    );
+  }
+
+  /** E3: after the registrar's compensation returned, note the D1 failure command it sent. */
+  private function noting_compensation(Subscriber $s, object $listener): Subscriber {
+    if ($this->notes === null) {
+      return $s;
+    }
+    $notes = $this->notes;
+    $inner = $s->on_exhausted;
+    return new Subscriber($s->id, $s->priority, $s->event_class, $s->handle,
+      static function (IIntegrationEvent $event, \Throwable $last) use ($inner, $listener, $notes, $s): void {
+        $inner($event, $last); // a throw keeps the compensation pending, as before
+        $failure = self::failure_command_of($listener, $event, $last);
+        if ($failure !== null) {
+          $notes->compensated($s->id, Correlation::current_fact()?->event_id ?? '', $failure);
+        }
+      },
+    );
+  }
+
+  /** The class of the failure command the registrar's compensation sends for $event; null when none. */
+  private static function failure_command_of(object $listener, IIntegrationEvent $event, \Throwable $last): ?string {
+    try {
+      if (is_callable([$listener, 'translate'])) {
+        $command = $listener->translate($event);
+      } elseif (method_exists($listener, 'get_command')) {
+        $command = (new \ReflectionMethod($listener, 'get_command'))->invoke($listener, $event);
+      } else {
+        return null;
+      }
+      $failure = $command instanceof IExternalEffectCommand ? $command->failure_command($last) : null;
+      return $failure === null ? null : get_class($failure);
+    } catch (\Throwable) {
+      return null;
+    }
   }
 
   private function hasSpec(string $id): bool {

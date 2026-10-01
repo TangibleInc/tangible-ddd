@@ -9,7 +9,6 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Runtime\IClock;
-use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
@@ -71,7 +70,7 @@ final class DbalProcessStore implements IProcessStore, IMatchesFactAncestry {
     string $tablePrefix = '',
     private readonly int $strandedAfterSeconds = 900,
   ) {
-    $tables = new PrefixedTableNames($tablePrefix);
+    $tables = TableNames::of($tablePrefix);
     $this->processes = $tables->table('ddd_processes');
     $this->waits = $tables->table('ddd_process_waits');
     $this->wakeups = $tables->table('ddd_wakeups');

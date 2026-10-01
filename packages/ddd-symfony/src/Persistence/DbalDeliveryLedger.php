@@ -7,7 +7,6 @@ namespace TangibleDDD\Symfony\Persistence;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IDeliveryLedger on `{prefix}ddd_delivery_ledger` (register 3.5, 5.1, CR-1):
@@ -27,7 +26,7 @@ final class DbalDeliveryLedger implements IDeliveryLedger {
   private readonly string $table;
 
   public function __construct(private readonly Connection $connection, string $tablePrefix = '') {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_delivery_ledger');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_delivery_ledger');
   }
 
   public function delivered(string $subscriberId, string $eventId): bool {
@@ -68,6 +67,34 @@ final class DbalDeliveryLedger implements IDeliveryLedger {
        ON CONFLICT (subscriber_id, event_id) DO UPDATE
          SET exhausted_at = COALESCE({$this->table}.exhausted_at, now()), updated_at = now()",
       [$subscriberId, $eventId]
+    );
+  }
+
+  /**
+   * AW3 (sf, not on the port): the pair's handler ran but its fact reached no
+   * waiting process (a resume subscriber's ResumeReport::is_unheard()). A note
+   * for forensics; it changes nothing about delivery. Idempotent.
+   */
+  public function note_unheard(string $subscriberId, string $eventId): void {
+    $this->connection->executeStatement(
+      "INSERT INTO {$this->table} (subscriber_id, event_id, unheard_at, updated_at) VALUES (?, ?, now(), now())
+       ON CONFLICT (subscriber_id, event_id) DO UPDATE
+         SET unheard_at = COALESCE({$this->table}.unheard_at, now())",
+      [$subscriberId, $eventId]
+    );
+  }
+
+  /**
+   * E3 (sf, not on the port): the D1 failure command $commandClass that the
+   * exhausted pair's compensation sent. Written after it returned; the latest
+   * one wins (a re-fired compensation sends the same command again).
+   */
+  public function note_failure_command(string $subscriberId, string $eventId, string $commandClass): void {
+    $this->connection->executeStatement(
+      "INSERT INTO {$this->table} (subscriber_id, event_id, failure_command, failure_command_at, updated_at) VALUES (?, ?, ?, now(), now())
+       ON CONFLICT (subscriber_id, event_id) DO UPDATE
+         SET failure_command = EXCLUDED.failure_command, failure_command_at = now()",
+      [$subscriberId, $eventId, $commandClass]
     );
   }
 

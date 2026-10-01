@@ -15,7 +15,7 @@ final class PostgresSchemaTest extends TestCase {
     self::assertSame([
       '001_outbox.sql', '002_dlq.sql', '003_relay_pauses.sql', '004_delivery_ledger.sql',
       '005_processes.sql', '006_process_waits.sql', '007_wakeups.sql', '008_workflows.sql',
-      '009_effect_journal.sql',
+      '009_effect_journal.sql', '010_delivery_notes.sql',
     ], $names);
     self::assertSame([
       'ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger',
@@ -45,6 +45,33 @@ final class PostgresSchemaTest extends TestCase {
     self::assertStringContainsString('CREATE TABLE IF NOT EXISTS app_ddd_outbox', $sql);
     self::assertStringContainsString('CREATE TABLE IF NOT EXISTS app_ddd_delivery_ledger', $sql);
     self::assertStringNotContainsString('{{prefix}}', $sql);
+  }
+
+  public function test_a_schema_qualified_prefix_qualifies_tables_but_not_index_or_constraint_names(): void {
+    $sql = PostgresSchema::render('billing.b_');
+
+    self::assertStringStartsWith('CREATE SCHEMA IF NOT EXISTS billing;', $sql);
+    self::assertStringContainsString('CREATE TABLE IF NOT EXISTS billing.b_ddd_outbox', $sql);
+    self::assertStringContainsString('CONSTRAINT b_ddd_outbox_event_id_key UNIQUE', $sql);
+    self::assertStringContainsString('CREATE INDEX IF NOT EXISTS b_ddd_outbox_claim_idx', $sql);
+    self::assertStringContainsString('ON billing.b_ddd_outbox', $sql);
+    self::assertStringContainsString('REFERENCES billing.b_ddd_behaviour_workflows', $sql);
+    self::assertStringContainsString('ALTER TABLE billing.b_ddd_outbox ADD COLUMN IF NOT EXISTS unheard_at', $sql);
+    self::assertStringNotContainsString('{{prefix}}', $sql);
+    self::assertStringNotContainsString('billing.billing', $sql);
+  }
+
+  public function test_since_with_a_schema_still_creates_the_schema_first(): void {
+    $sql = PostgresSchema::render('billing.', 9);
+
+    self::assertStringStartsWith('CREATE SCHEMA IF NOT EXISTS billing;', $sql);
+    self::assertStringContainsString('010_delivery_notes.sql', $sql);
+    self::assertStringNotContainsString('009_effect_journal.sql', $sql);
+  }
+
+  public function test_rejects_a_schema_that_is_not_an_identifier(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    PostgresSchema::render('Bad-Schema.x_');
   }
 
   public function test_statements_split_into_executable_sql_without_comments(): void {

@@ -52,24 +52,50 @@ final class PostgresSchema {
 
   /**
    * The schema DDL, file by file in number order, each headed by a comment
-   * naming its file. $since = N emits only the files numbered above N.
+   * naming its file. $since = N emits only the files numbered above N;
+   * $until = M only those up to M (a host's history at release M).
+   *
+   * $prefix is `[schema.]prefix` (TableNames): with a schema, the output
+   * starts with `CREATE SCHEMA IF NOT EXISTS`, tables are schema-qualified,
+   * index and constraint names are not.
    */
-  public static function render(string $prefix = '', ?int $since = null): string {
-    self::assertPrefix($prefix);
+  public static function render(string $prefix = '', ?int $since = null, ?int $until = null): string {
+    $names = self::names($prefix);
     $out = [];
     foreach (self::files() as $file) {
-      if ($since !== null && self::number($file) <= $since) {
+      if (($since !== null && self::number($file) <= $since) || ($until !== null && self::number($file) > $until)) {
         continue;
       }
       $out[] = '-- tangible/ddd-symfony schema/postgres/' . basename($file) . "\n"
-        . str_replace('{{prefix}}', $prefix, (string) file_get_contents($file));
+        . self::substitute((string) file_get_contents($file), $names);
     }
-    return implode("\n", $out);
+    if ($out === []) {
+      return '';
+    }
+    // A consumer in its own Postgres schema (wave 5): the schema comes first.
+    $schema = $names->schema() === null ? '' : "CREATE SCHEMA IF NOT EXISTS {$names->schema()};\n\n";
+    return $schema . implode("\n", $out);
+  }
+
+  /**
+   * `{{prefix}}` → `[schema.]prefix` for table references, but only the bare
+   * prefix where Postgres takes an unqualified name: an index name (it lives
+   * in its table's schema) and a constraint name.
+   */
+  private static function substitute(string $sql, TableNames $names): string {
+    $sql = preg_replace('/\b(CONSTRAINT|INDEX IF NOT EXISTS|INDEX) \{\{prefix\}\}/', '$1 ' . $names->prefix(), $sql) ?? $sql;
+    return str_replace('{{prefix}}', $names->qualified(), $sql);
   }
 
   /** @return list<string> executable statements, comments stripped */
-  public static function statements(string $prefix = ''): array {
-    return self::split(self::render($prefix));
+  public static function statements(string $prefix = '', ?int $since = null, ?int $until = null): array {
+    return self::split(self::render($prefix, $since, $until));
+  }
+
+  /** The number of the newest schema file (the head of the append-only history). */
+  public static function head(): int {
+    $files = self::files();
+    return $files === [] ? 0 : self::number(end($files));
   }
 
   /**
@@ -102,8 +128,8 @@ final class PostgresSchema {
     return hash('sha256', implode(";\n", $statements));
   }
 
-  public static function apply(Connection $connection, string $prefix = ''): void {
-    foreach (self::statements($prefix) as $sql) {
+  public static function apply(Connection $connection, string $prefix = '', ?int $since = null, ?int $until = null): void {
+    foreach (self::statements($prefix, $since, $until) as $sql) {
       $connection->executeStatement($sql);
     }
   }
@@ -132,9 +158,12 @@ final class PostgresSchema {
     return $statements;
   }
 
-  private static function assertPrefix(string $prefix): void {
-    if (!preg_match('/^[a-z0-9_]*$/', $prefix)) {
-      throw new \InvalidArgumentException("Table prefix '$prefix' must match [a-z0-9_]*");
+  /** `[schema.]prefix`; the prefix part is lower case here (it names Postgres objects). */
+  private static function names(string $prefix): TableNames {
+    $names = TableNames::of($prefix);
+    if (!preg_match('/^[a-z0-9_]*$/', $names->prefix())) {
+      throw new \InvalidArgumentException("Table prefix '{$names->prefix()}' must match [a-z0-9_]*");
     }
+    return $names;
   }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Runtime;
 
+use TangibleDDD\Application\Process\ResumeReport;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Runtime\Process\IProcessEntry;
 
@@ -29,6 +30,20 @@ final class LazyProcessEntry implements IProcessEntry {
 
   public function resume(IIntegrationEvent $event): void {
     $this->entry()->resume($event);
+  }
+
+  /**
+   * AW3: resume() with what it did, when the runner reports it
+   * (ProcessRunner::resume_with_outcome()); null when the entry cannot say.
+   */
+  public function resume_with_outcome(IIntegrationEvent $event): ?ResumeReport {
+    $entry = $this->entry();
+    if (method_exists($entry, 'resume_with_outcome')) {
+      $report = $entry->resume_with_outcome($event);
+      return $report instanceof ResumeReport ? $report : null;
+    }
+    $entry->resume($event);
+    return null;
   }
 
   private function entry(): IProcessEntry {

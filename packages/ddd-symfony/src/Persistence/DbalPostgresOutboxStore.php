@@ -17,7 +17,6 @@ use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IOutboxStore on Postgres 16 through DBAL 4 (register 3.4, E F4, F13).
@@ -49,6 +48,10 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  *
  * D14: with an IRelayWakeup, every append pokes it for $wakeupConsumer on
  * the same connection (a transactional NOTIFY, delivered at COMMIT).
+ *
+ * AW3: class_of_action() answers the subscriber probe from the latest claims
+ * (no query), and note_unheard() marks an accepted row the relay found no
+ * subscriber for (`unheard_at`, schema 010), for the operator view.
  */
 final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
@@ -61,6 +64,9 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
 
   /** @var array<string, ?string> event_id → class, from the latest claims */
   private array $claimedClasses = [];
+
+  /** @var array<string, string> integration_action → class, from the latest claims */
+  private array $claimed_actions = [];
 
   /** @var list<array{0: Claim, 1: string}> dead-lettered by claim() and not yet taken */
   private array $claim_dead_letters = [];
@@ -75,7 +81,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
     private readonly ?IRelayWakeup $wakeup = null,
     private readonly string $wakeupConsumer = '',
   ) {
-    $tables = new PrefixedTableNames($tablePrefix);
+    $tables = TableNames::of($tablePrefix);
     $this->outbox = $tables->table('ddd_outbox');
     $this->dlq = $tables->table('ddd_dlq');
     $this->logger = $logger ?? new NullLogger();
@@ -231,6 +237,9 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
         continue;
       }
       $this->claimedClasses[$claim->event_id] = $row['event_class'] === null ? null : (string) $row['event_class'];
+      if ($row['event_class'] !== null) {
+        $this->claimed_actions[$claim->record->integration_action] = (string) $row['event_class'];
+      }
       $claims[] = $claim;
     }
 
@@ -318,6 +327,19 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
     }
     $class = $this->connection->fetchOne("SELECT event_class FROM {$this->outbox} WHERE event_id = ?", [$eventId]);
     return is_string($class) ? $class : null;
+  }
+
+  /** The fact class of the latest claimed row with $action; null when no claim named one. */
+  public function class_of_action(string $action): ?string {
+    return $this->claimed_actions[$action] ?? null;
+  }
+
+  /** AW3: the relay delivered $eventId with no subscriber in any consumer. Idempotent. */
+  public function note_unheard(string $eventId): void {
+    $this->connection->executeStatement(
+      "UPDATE {$this->outbox} SET unheard_at = COALESCE(unheard_at, now()) WHERE event_id = ?",
+      [$eventId]
+    );
   }
 
   /** @param array<string, mixed> $row */
