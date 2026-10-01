@@ -4,9 +4,12 @@ Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owne
 
 ## Status of the acceptance
 
-- `tests/harness/run.sh conformance-wp` runs 22 tests (17 shared scenario methods on four wp classes, 3 wp audit cases and 2 catalogue checks; 2 wave-3 scenarios skipped, see "Scenarios not due on wp in wave 2"). **11 of the 12 wave-2 wp ids pass.** `relay.invalid-acceptance` fails on a defect in the transitional `WpdbOutboxStore` (WPC-5). With WPC-5's patch applied in a scratch worktree, all 12 pass and the gate prints `check-due: 12 of 12 scenario ids due on wp by wave 2 passed`.
-- `vendor/bin/phpunit` (root): green except `tests/Unit/Loader/HarnessCliTest`'s data set `conformance-wp`, which pins the placeholder this task replaces (WPC-6).
+- `tests/harness/run.sh conformance-wp` runs 24 tests (17 shared scenario methods on four wp classes, 3 wp audit cases, 2 catalogue checks and 2 fixture-parameter checks; 2 wave-3 scenarios skipped, see "Scenarios not due on wp in wave 2"). **On this branch alone, 11 of the 12 wave-2 wp ids pass.** `relay.invalid-acceptance` fails on a defect in the transitional `WpdbOutboxStore` (WPC-5), which is outside this branch's owned paths. On a trial worktree of this branch with only the WPC-5 and WPC-6 patches below applied, the run is 24 tests, 0 failures, 2 skipped, and the gate prints `check-due: 12 of 12 scenario ids due on wp by wave 2 passed`.
+- `vendor/bin/phpunit` (root): 874 tests. On this branch alone, it is green except `tests/Unit/Loader/HarnessCliTest`'s data set `conformance-wp`, which pins the placeholder this task replaces (WPC-6). That data set also starts the real Docker harness from the unit suite. With WPC-6 applied in the trial worktree it is green (874 tests) and runs no Docker.
+- **Merge order (coordinator).** Merge WPC-5 (wp) and WPC-6 (packaging) with this branch or before it. Merging this branch alone turns the integration branch's unit suite red, and `conformance-wp` stays at 11 of 12.
 - `tests/harness/run.sh wp-integration`: green, unchanged (27 tests). Files under `tests/Integration/Conformance/` end in `Conformance.php`, so `phpunit.integration.xml` never loads them.
+- **What the green relay/delivery ids prove (WPC-1, WPC-2, WPC-3).** `relay.*` and `delivery.*` run the core port-form `OutboxProcessor` over a fixture `ITransport` (`Support/ActionSchedulerTransport.php`). Shipped wp still relays through `legacy_batch()` / `IOutboxPublisher`. `relay.replay-keeps-identity` and the delivery ids also go through a fixture ledger gate over `InMemoryDeliveryLedger` (`Support/LedgerGatedSubscriptions.php`). Scenario time reaches the 0.6 outbox code through namespaced `time()`/`gmdate()` shims (`Support/clock-functions.php`). On wp in wave 2, these ids pass on fixture stand-ins over the real wpdb store, the real Action Scheduler and real `add_action`/`do_action`. They do not prove the shipped wp relay path. Wave 3 replaces the stand-ins with ddd-wp code (WPC-1..WPC-3).
+- **Fixture parameters (review minor).** `relayOnce($limit)` is now honoured: `RecordingOutboxStore::start($limit)` caps the relay step's claim, because the core step claims `OutboxConfig::$batch_size`. `deliverTransported($eventClass)` runs only the Action Scheduler actions whose hook is that class's `integration_action`. `WpFixtureParametersConformance` pins both. These checks are not catalogue ids, and `check-due` ignores them.
 
 ## WPC-5 (defect, blocks `relay.invalid-acceptance`): `WpdbOutboxStore::deadLetter()` does not count the final attempt
 
@@ -44,6 +47,15 @@ Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owne
       $this->assertStringContainsString('tests/Integration/Conformance/bin/check-due.php', $source);
   }
   ```
+
+## WPC-7 (packaging, acknowledge): `run.sh` lines outside the `conformance-wp` function block
+
+- **What.** Besides the new `conformance_wp()` function, this branch changes two lines of `tests/harness/run.sh` that packaging owns:
+  - the `usage()` line for `conformance-wp`. It said "(not yet implemented)" and now says "conformance scenarios on WordPress + MySQL 8.0, fresh database (wave-2 wp ids gated)".
+  - the dispatch. `conformance-wp` moves out of the `not_yet` case arm into its own arm, `conformance-wp) conformance_wp ;;`.
+- **Why.** Leaving either line as it was would have left the subcommand advertised as unimplemented, or still routed to `not_yet`. The function itself is the placeholder this task replaces.
+- **Request.** Packaging acknowledges both lines. WPC-6's static test pins the dispatch arm.
+- **Compatibility.** None. The harness CLI is internal.
 
 ## WPC-4 (coordinator, after merging `wave2/conformance-cleanup`): declare the CR-CC-1 seams on `WpHostFixture`
 
