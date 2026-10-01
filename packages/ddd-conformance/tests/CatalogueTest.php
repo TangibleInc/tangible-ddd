@@ -196,11 +196,11 @@ final class CatalogueTest extends TestCase {
   }
 
   /** @return array<string, array{int}> */
-  public static function laterWaves(): array {
+  public static function later_waves(): array {
     return ['wave 4' => [4], 'wave 5' => [5]];
   }
 
-  #[DataProvider('laterWaves')]
+  #[DataProvider('later_waves')]
   public function test_later_wave_ids_live_in_new_cases_so_earlier_host_classes_run_unchanged(int $wave): void {
     $earlierCases = [];
     foreach (ScenarioCatalogue::HOSTS as $host) {
