@@ -105,6 +105,22 @@ use Throwable;
  * - Step commands carry deterministic ids (DeterministicCommandId::forStep):
  *   a step re-run after a crash dispatches the same command ids.
  *
+ * Wave 4 (register section 8 wave 4 core; D1, D3, D7, D13):
+ *
+ * - D3 keyed awaits: AwaitEvent::keyed() / AwaitAll::keyed() on refs the
+ *   process mints (LongProcess::step_ref()); the suspending step's
+ *   checkpoint commits with its await. resume_with_outcome() looks up
+ *   (class, key) and (class, ''), and every process whose await accepts the
+ *   fact takes it. AwaitAny: the first accepted branch resumes, a
+ *   cancellation branch compensates. An AwaitAll over an empty key set does
+ *   not suspend. IPrecheckAwait: register-then-check after the await
+ *   committed and the step dispatched.
+ * - D7 alarms: the Timeout intent is due at an absolute UTC instant fixed
+ *   once at suspension (IHasDeadline, else now + timeout_seconds), stored
+ *   as LongProcess::await_deadline(); AwaitAlarm waits for no fact.
+ * - D1 inside steps: #[RetryStep] re-runs a failed step through a durable
+ *   Continue intent before compensating (default 0 retries).
+ *
  * Constructor (R2): the 0.6.5 `(IDDDConfig, IProcessRepository)` call stays
  * valid; the repository became optional and the ports, the start mode and
  * the logger are optional trailing parameters. The config stays typed
