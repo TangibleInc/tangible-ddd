@@ -114,6 +114,7 @@ final class CatalogueTest extends TestCase {
     'process.resume-cause'                   => [5, 5, 5, 5],
     'effect.performed-not-recorded'          => [5, 5, null, 5],
     'workflow.item-deterministic-id'         => [5, 5, 5, 5],
+    'delivery.cross-consumer-once'           => [null, null, null, 5],
   ];
 
   public function test_the_catalogue_has_the_44_register_ids_the_3_d3_ids_and_the_wave_5_ids(): void {

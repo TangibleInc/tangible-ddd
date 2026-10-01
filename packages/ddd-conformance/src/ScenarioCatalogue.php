@@ -75,6 +75,7 @@ final class ScenarioCatalogue {
     'process.resume-cause'                    => [5, 5, 5, 5],
     'effect.performed-not-recorded'           => [5, 5, null, 5],
     'workflow.item-deterministic-id'          => [5, 5, 5, 5],
+    'delivery.cross-consumer-once'            => [null, null, null, 5],
   ];
 
   private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
@@ -142,6 +143,7 @@ final class ScenarioCatalogue {
     'process.resume-cause'                    => self::S . 'ResumeCauseScenarios',
     'effect.performed-not-recorded'           => self::S . 'EffectStateScenarios',
     'workflow.item-deterministic-id'          => self::S . 'WorkItemScenarios',
+    'delivery.cross-consumer-once'            => self::S . 'CrossConsumerScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null for an unknown id. */
