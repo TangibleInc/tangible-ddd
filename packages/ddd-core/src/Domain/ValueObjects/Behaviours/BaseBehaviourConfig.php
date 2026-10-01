@@ -4,6 +4,7 @@ namespace TangibleDDD\Domain\ValueObjects\Behaviours;
 
 use stdClass;
 use TangibleDDD\Domain\Shared\DirectJsonLifecycleValue;
+use TangibleDDD\Runtime\HostDefaults;
 
 /**
  * Base class for workflow behaviour configs.
@@ -14,11 +15,18 @@ use TangibleDDD\Domain\Shared\DirectJsonLifecycleValue;
  *   BaseBehaviourConfig::register_type('retry', MyRetryBehaviourConfig::class);
  *
  * This keeps the framework generic while preserving Cred's polymorphic JSON deserialization pattern.
+ *
+ * Wave 5 (TXP demand W2): the map lives behind the IBehaviourTypes port the
+ * host provides through HostDefaults. register_type() and class_for_type()
+ * stay as a facade for 0.6 callers: register_type() writes to the host's
+ * registry, or, before the host provided one, to a process-wide fallback;
+ * class_for_type() asks the host's registry first, then the fallback, so a
+ * type registered at include time stays resolvable after the host boots.
  */
 abstract class BaseBehaviourConfig extends DirectJsonLifecycleValue {
 
-  /** @var array<string, class-string<BaseBehaviourConfig>> */
-  private static array $type_map = [];
+  /** Registrations made before (or without) a host registry. */
+  private static ?BehaviourTypes $early = null;
 
   /**
    * Register a behaviour config class for a given type.
@@ -27,20 +35,26 @@ abstract class BaseBehaviourConfig extends DirectJsonLifecycleValue {
    * @param class-string<BaseBehaviourConfig> $class
    */
   public static function register_type(string $type, string $class): void {
-    self::$type_map[$type] = $class;
+    (self::host_types() ?? self::$early ??= new BehaviourTypes())->register($type, $class);
   }
 
   /**
    * Resolve a behaviour config class for a type.
    *
    * @return class-string<BaseBehaviourConfig>
+   * @throws \InvalidArgumentException for a type no registry knows
    */
   public static function class_for_type(string $type): string {
-    $class = self::$type_map[$type] ?? null;
+    $class = self::host_types()?->find($type) ?? self::$early?->find($type);
     if (!$class) {
       throw new \InvalidArgumentException("Invalid behaviour type: {$type}");
     }
     return $class;
+  }
+
+  private static function host_types(): ?IBehaviourTypes {
+    $types = HostDefaults::get(IBehaviourTypes::class);
+    return $types instanceof IBehaviourTypes ? $types : null;
   }
 
   /**
