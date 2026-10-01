@@ -61,6 +61,11 @@ final class BundleWiringTest extends KernelTestBase {
     self::assertSame('new', $this->db->fetchOne("SELECT name FROM app_widgets WHERE id = 'w1'"));
   }
 
+  public function test_a_returning_command_handler_is_autoconfigured_and_its_value_comes_back(): void {
+    // L1 (wave3-notes): IReturningCommandHandler carries the command-handler tag (D11 for plain handlers).
+    self::assertSame(['team' => 't-1', 'quote' => 500], (new \TangibleDDD\Symfony\Tests\Kernel\App\Commands\QuoteToyCommand('t-1'))->send());
+  }
+
   public function test_the_handle_locator_does_not_keep_unused_private_services_alive(): void {
     self::assertFalse(self::getContainer()->has(UnusedReport::class), 'unused private services are removed');
     self::assertTrue(self::getContainer()->has(WidgetRepository::class), 'handle() dependencies are kept');

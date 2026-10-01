@@ -11,8 +11,11 @@ use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
+use TangibleDDD\Application\BehaviourWorkflows\IStartsFromFact;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\CommandHandlers\IReturningCommandHandler;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Queries\SelfHandlingQuery;
 use TangibleDDD\Application\QueryHandlers\IQueryHandler;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
@@ -223,6 +226,11 @@ final class TangibleDddBundle extends AbstractBundle {
     $container->import($this->getPath() . '/config/services.php');
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
+    $builder->registerForAutoconfiguration(IReturningCommandHandler::class)->addTag(DddTags::COMMAND_HANDLER); // L1
+    $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
+    // Process classes found by the app's resource loading are processes, not services:
+    // the tag feeds the compile-time map; the unused definitions are removed afterwards.
+    $builder->registerForAutoconfiguration(LongProcess::class)->addTag(DddTags::LONG_PROCESS);
     $builder->registerForAutoconfiguration(IQueryHandler::class)->addTag(DddTags::QUERY_HANDLER);
     $builder->setParameter('tangible_ddd.self_handling', self::withCoreRepairCommands($config['self_handling'], $builder));
     $builder->registerForAutoconfiguration(SelfHandlingCommand::class)->addTag(DddTags::SELF_HANDLING);
@@ -252,14 +260,18 @@ final class TangibleDddBundle extends AbstractBundle {
   /**
    * Core's stranded-process repair commands (WP8-10), once they exist, are
    * dispatchable on the bundle's command bus: a self-handling one joins the
-   * handle() locator's classes, a plain one gets its convention-named
-   * handler registered (autowired, tagged). Nothing happens while core does
-   * not ship them.
+   * handle() locator's classes; a plain one gets its handler registered
+   * (autowired over the bundle's port aliases, tagged), found by the naming
+   * convention or, for core's `Application\Process\Repair\XHandler` next to
+   * `X`, through the explicit handler map (parameter
+   * `tangible_ddd.explicit_handlers`, read by ExplicitHandlerMapping).
+   * Nothing happens while core does not ship them.
    *
    * @param array{classes: list<string>, locate_all: bool} $selfHandling
    * @return array{classes: list<string>, locate_all: bool}
    */
   private static function withCoreRepairCommands(array $selfHandling, ContainerBuilder $builder): array {
+    $explicit = [];
     foreach ([CoreStrandedRepairs::RESUME, CoreStrandedRepairs::FAIL] as $class) {
       if (!class_exists($class)) {
         continue;
@@ -273,12 +285,16 @@ final class TangibleDddBundle extends AbstractBundle {
       try {
         $handler = (new HandlerClassNameInflector())->getClassName($class);
       } catch (\LogicException) {
-        continue; // not in a Commands namespace: nothing the convention could map
+        $handler = $class . 'Handler'; // not in a Commands namespace: core keeps the handler beside the command
+        $explicit[$class] = $handler;
       }
       if (class_exists($handler) && !$builder->has($handler)) {
         $builder->register($handler, $handler)->setAutowired(true)->addTag(DddTags::COMMAND_HANDLER);
+      } elseif (!class_exists($handler)) {
+        unset($explicit[$class]);
       }
     }
+    $builder->setParameter('tangible_ddd.explicit_handlers', $explicit);
     return $selfHandling;
   }
 

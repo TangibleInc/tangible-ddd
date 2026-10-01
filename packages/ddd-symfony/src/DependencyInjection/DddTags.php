@@ -30,6 +30,14 @@ final class DddTags {
   /** In-transaction domain-event reactions: attributes `event`, `priority`, `method`. */
   public const DOMAIN_LISTENER = 'tangible_ddd.domain_listener';
 
+  /**
+   * D10: behaviour workflow services implementing IStartsFromFact
+   * (autoconfigured). Each #[StartsOn] fact on the class becomes a core
+   * WorkflowIgniter subscriber in the compiled subscription map; the service
+   * is built at the first delivery of a matching fact.
+   */
+  public const WORKFLOW = 'tangible_ddd.workflow';
+
   /** LongProcess classes (the existing core tag read by LongProcessCatalogPass). */
   public const LONG_PROCESS = 'ddd.long_process';
 }

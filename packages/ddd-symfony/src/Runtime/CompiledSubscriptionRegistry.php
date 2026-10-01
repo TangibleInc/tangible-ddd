@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Runtime;
 
 use Psr\Container\ContainerInterface;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistrar;
@@ -26,8 +27,13 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * `ignition:<process>@<fact>`, `resume:<fact>`, #[SubscriberPriority]), so
  * the delivery ledger keys agree with every other host.
  *
+ * Workflow specs (D10) are built through the core WorkflowIgniter::register()
+ * with the workflow service from the same locator, so their ids are the
+ * igniter's (`{prefix}/workflow-ignition:<class>@<fact>`).
+ *
  * A process subscription without an IProcessEntry throws the registrar's
- * LogicException at delivery: loud, never a silently dropped ignition.
+ * LogicException at delivery: loud, never a silently dropped ignition; a
+ * workflow subscription without a WorkflowIgniter does the same.
  * add() keeps boot-time additions after the compiled subscribers; duplicate
  * ids are ignored (first wins), like the core registry.
  */
@@ -47,7 +53,22 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     private readonly array $specs,
     private readonly ContainerInterface $listeners,
     private readonly ?IProcessEntry $processes = null,
+    private readonly ?WorkflowIgniter $workflows = null,
   ) {}
+
+  /**
+   * D10: a behaviour workflow ignited by $eventClass through the core
+   * WorkflowIgniter. The id is the igniter's own subscriber id.
+   *
+   * @return array{id: string, kind: string, event: string, priority: int, service: string, class: string, prefix: string}
+   */
+  public static function workflowSpec(string $serviceId, string $class, string $eventClass, string $consumerPrefix): array {
+    return [
+      'id' => $consumerPrefix . '/workflow-ignition:' . $class . '@' . $eventClass,
+      'kind' => 'workflow', 'event' => $eventClass, 'priority' => Subscriber::IGNITION,
+      'service' => $serviceId, 'class' => $class, 'prefix' => $consumerPrefix,
+    ];
+  }
 
   /** @return array{id: string, kind: string, event: string, priority: int, service: string, class: string} */
   public static function listenerSpec(string $serviceId, string $class, string $eventClassOrMarker, int $priority): array {
@@ -114,6 +135,11 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     $capture = new CapturingRegistry();
     if ($spec['kind'] === 'listener') {
       (new SubscriptionRegistrar($capture))->registerListener($this->listeners->get($spec['service']));
+    } elseif ($spec['kind'] === 'workflow') {
+      if ($this->workflows === null) {
+        throw new \LogicException("Workflow subscription {$spec['id']} needs a WorkflowIgniter (tangible_ddd.workflow_igniter); none is configured.");
+      }
+      $this->workflows->register($this->listeners->get($spec['service']), $capture, (string) $spec['prefix']);
     } else {
       (new SubscriptionRegistrar($capture, $this->processes))->registerProcess($spec['class']);
     }

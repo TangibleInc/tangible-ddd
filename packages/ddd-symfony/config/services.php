@@ -54,6 +54,7 @@ use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
 use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
@@ -68,6 +69,7 @@ use TangibleDDD\Symfony\Runtime\Actor\SecurityUserActorProvider;
 use TangibleDDD\Symfony\Runtime\Actor\SymfonyActorProvider;
 use TangibleDDD\Symfony\Runtime\CompiledSubscriptionRegistry;
 use TangibleDDD\Symfony\Runtime\DddRuntimeReset;
+use TangibleDDD\Symfony\Runtime\ExplicitHandlerMapping;
 use TangibleDDD\Symfony\Runtime\Factory;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
@@ -84,6 +86,8 @@ use TangibleDDD\Symfony\Persistence\DbalProcessStore;
 use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
@@ -228,7 +232,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $config['messenger']['bus'],
     ]);
 
-  // ── D10 workflow stores (ruling #78; core contract wiring is wave 4) ─────
+  // ── D10 workflow stores and ignition (ruling #78; core WorkflowIgniter) ──
   $s->set('tangible_ddd.workflow_repository', DbalBehaviourWorkflowRepository::class)
     ->args([service(EventsUnitOfWork::class), service('tangible_ddd.connection'), $prefix]);
   $s->alias(IBehaviourWorkflowRepository::class, 'tangible_ddd.workflow_repository');
@@ -236,12 +240,18 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.connection'), $prefix]);
   $s->alias(IWorkItemRepository::class, 'tangible_ddd.work_item_repository');
   $s->set('tangible_ddd.workflow_ignitions', DbalWorkflowIgnitionLedger::class)
-    ->args([service('tangible_ddd.connection'), $prefix]);
+    ->args([service('tangible_ddd.connection'), $prefix, service('tangible_ddd.clock')]);
   $s->alias(DbalWorkflowIgnitionLedger::class, 'tangible_ddd.workflow_ignitions');
+  $s->alias(IWorkflowIgnitionLedger::class, 'tangible_ddd.workflow_ignitions');
+  // Claim + save + attach in one boundary run; IStartsFromFact services
+  // (tag tangible_ddd.workflow) get one ignition subscriber per #[StartsOn] fact.
+  $s->set('tangible_ddd.workflow_igniter', WorkflowIgniter::class)
+    ->args([service('tangible_ddd.workflow_ignitions'), service('tangible_ddd.transaction_boundary'), $logger, service('tangible_ddd.clock')]);
+  $s->alias(WorkflowIgniter::class, 'tangible_ddd.workflow_igniter');
 
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
   $s->set('tangible_ddd.subscriptions', CompiledSubscriptionRegistry::class)
-    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry')]);
+    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry'), service('tangible_ddd.workflow_igniter')]);
   $s->alias(ISubscriptionRegistry::class, 'tangible_ddd.subscriptions');
 
   $s->set('tangible_ddd.delivery', IntegrationDelivery::class)
@@ -315,7 +325,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.actor_context'), service('tangible_ddd.actor.security'), $console ? service('tangible_ddd.actor.console') : null]);
   $s->alias(IActorProvider::class, 'tangible_ddd.actor_provider');
 
-  // ── command pipeline (frozen order: act → tx → events → self → handler) ──
+  // ── command pipeline (frozen order: act → effect → tx → events → self → handler) ──
   $s->set(EventsUnitOfWork::class)->public();
 
   $s->set('tangible_ddd.domain_dispatcher', IDomainEventDispatcher::class)
@@ -362,6 +372,10 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $logger,
     ])
     ->public();
+  // D1: between the act bracket and the transaction (register 3.11): perform()
+  // outside any transaction, journaled; record() through the transaction.
+  $s->set('tangible_ddd.middleware.effect', EffectMiddleware::class)
+    ->args([service('tangible_ddd.effect_journal'), service('tangible_ddd.transaction_boundary')]);
   $s->set('tangible_ddd.middleware.transaction', TransactionalCommandMiddleware::class)
     ->args([service('tangible_ddd.transaction_boundary')]);
   $s->set('tangible_ddd.middleware.domain_events', DomainEventsPublishMiddleware::class)
@@ -369,8 +383,13 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.middleware.self_executing', SelfExecutingCommandMiddleware::class)
     ->args([abstract_arg('handle() dependency locator, set by HandlerLocatorPass')]);
 
-  $s->set('tangible_ddd.handler_mapping', MapByNamingConvention::class)
-    ->args([inline_service(HandlerClassNameInflector::class), inline_service(Handle::class)]);
+  // The naming convention, plus an explicit map for library commands outside a
+  // Commands namespace (core's stranded repairs, WP8-10; set by the bundle).
+  $s->set('tangible_ddd.handler_mapping', ExplicitHandlerMapping::class)
+    ->args([
+      param('tangible_ddd.explicit_handlers'),
+      inline_service(MapByNamingConvention::class)->args([inline_service(HandlerClassNameInflector::class), inline_service(Handle::class)]),
+    ]);
   $s->set('tangible_ddd.middleware.command_handler', CommandHandlerMiddleware::class)
     ->args([abstract_arg('command handler locator, set by HandlerLocatorPass'), service('tangible_ddd.handler_mapping')]);
   $s->set('tangible_ddd.middleware.query_handler', CommandHandlerMiddleware::class)
@@ -379,6 +398,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.command_bus', CommandBus::class)
     ->args([
       service('tangible_ddd.middleware.act_bracket'),
+      service('tangible_ddd.middleware.effect'),
       service('tangible_ddd.middleware.transaction'),
       service('tangible_ddd.middleware.domain_events'),
       service('tangible_ddd.middleware.self_executing'),
@@ -446,7 +466,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.process_store'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'),
       service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'], 1.0,
       // WP8-10: core's repair commands on the command bus once they exist (runtime class_exists guard).
-      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle']]),
+      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle'], CoreStrandedRepairs::RESUME, CoreStrandedRepairs::FAIL, $consumer['prefix']]),
     ])
     ->tag('console.command', ['command' => 'ddd:ops:stranded']);
   $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)

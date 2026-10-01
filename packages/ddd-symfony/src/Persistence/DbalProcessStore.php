@@ -13,6 +13,7 @@ use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\ProcessStoreFailed;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
@@ -40,11 +41,15 @@ use TangibleDDD\Runtime\SystemClock;
  *   on a missing id = ProcessStoreFailed.
  * - Every insert and save rewrites the process's ddd_process_waits rows in
  *   the same transaction (the caller's when one is open, else its own):
- *   one row (waiting_for or the mechanism's event_class, await key '') while
- *   the status is `suspended`, none otherwise.
+ *   while the status is `suspended`, one row per LongProcess::await_routes()
+ *   route (D3: the fact class and the await key, '' when unkeyed; an
+ *   AwaitAny has a row per branch, a keyed AwaitAll one per missing key, an
+ *   AwaitAlarm none); none otherwise.
  * - findWaitingFor(): ids of `suspended` processes whose wait row names the
  *   class, one of its parents or one of its interfaces (marker awaits, D2);
- *   a non-null $awaitKey narrows to that key (D3, wave 4).
+ *   $awaitKey null = any key, '' = unkeyed rows only, else that key (D3).
+ *   Because the lookup matches the fact's ancestry, the store declares
+ *   IMatchesFactAncestry and the runner makes one lookup per fact.
  * - findStranded(): `running`/`scheduled` rows whose updated_at is at or
  *   before now - threshold (default 900 s) and that have no live row in
  *   ddd_wakeups (an exhausted intent is not live).
@@ -53,7 +58,7 @@ use TangibleDDD\Runtime\SystemClock;
  * threshold follows the same clock as the wakeups. Every storage failure
  * throws ProcessStoreFailed with the driver error as previous (C27).
  */
-final class DbalProcessStore implements IProcessStore {
+final class DbalProcessStore implements IProcessStore, IMatchesFactAncestry {
 
   private readonly string $processes;
   private readonly string $waits;
@@ -232,18 +237,41 @@ final class DbalProcessStore implements IProcessStore {
 
   private function writeWaits(LongProcess $p, int $id): void {
     $this->guard(fn () => $this->connection->executeStatement("DELETE FROM {$this->waits} WHERE process_id = ?", [$id], [ParameterType::INTEGER]), "clear waits of process #$id");
+    foreach (self::routes($p) as [$class, $awaitKey]) {
+      $this->guard(fn () => $this->connection->executeStatement(
+        "INSERT INTO {$this->waits} (process_id, event_class, await_key, step_index) VALUES (?, ?, ?, ?)",
+        [$id, $class, $awaitKey, $p->current_step_index()],
+        [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
+      ), "write waits of process #$id");
+    }
+  }
+
+  /**
+   * The wait rows of a process (D3, CR-W4P-1): one per LongProcess::await_routes()
+   * route (fact class, await key), so a keyed await is found by its key and an
+   * AwaitAny by each branch class rather than by the branches' common ancestor
+   * in `waiting_for`. An alarm (AwaitAlarm) has no route and no row. A
+   * suspended row without a mechanism (an old 0.6 row) keeps its `waiting_for`.
+   *
+   * @return array<string, array{0: string, 1: string}> deduplicated by "class|key"
+   */
+  private static function routes(LongProcess $p): array {
     if ($p->status() !== 'suspended') {
-      return;
+      return [];
     }
-    $class = $p->waiting_for() ?? $p->await_mechanism()?->event_class();
-    if ($class === null) {
-      return;
+    $rows = [];
+    if ($p->await_mechanism() === null) {
+      if ($p->waiting_for() !== null && $p->waiting_for() !== '') {
+        $rows[$p->waiting_for() . '|'] = [$p->waiting_for(), ''];
+      }
+      return $rows;
     }
-    $this->guard(fn () => $this->connection->executeStatement(
-      "INSERT INTO {$this->waits} (process_id, event_class, await_key, step_index) VALUES (?, ?, '', ?)",
-      [$id, $class, $p->current_step_index()],
-      [ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER]
-    ), "write waits of process #$id");
+    foreach ($p->await_routes() as $route) {
+      if ($route->eventClass !== '') {
+        $rows[$route->eventClass . '|' . $route->awaitKey] = [$route->eventClass, $route->awaitKey];
+      }
+    }
+    return $rows;
   }
 
   private function failFence(int $id, int $expectedVersion, string $op): never {

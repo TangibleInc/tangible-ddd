@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 use Symfony\Component\DependencyInjection\Reference;
+use TangibleDDD\Application\BehaviourWorkflows\IStartsFromFact;
 use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\StartsOn;
@@ -30,6 +31,11 @@ use TangibleDDD\Symfony\Runtime\CompiledSubscriptionRegistry;
  *   the first delivery of a matching fact, never at boot.
  * - Processes tagged `ddd.long_process`: each #[StartsOn(E)] is an ignition
  *   (IGNITION = 50), each #[Awaits(E)] a resume (RESUME = 99, one per fact).
+ * - Behaviour workflows tagged `tangible_ddd.workflow` (IStartsFromFact,
+ *   autoconfigured; D10): each #[StartsOn(E)] is a core WorkflowIgniter
+ *   subscriber (IGNITION), id `{prefix}/workflow-ignition:{class}@{fact}`,
+ *   deduped by the workflow ignition ledger. Like listeners, the workflow
+ *   service is built at the first matching delivery.
  *
  * The specs feed `tangible_ddd.subscriptions` (CompiledSubscriptionRegistry,
  * which builds each Subscriber through the core SubscriptionRegistrar) and
@@ -91,6 +97,30 @@ final class SubscriptionMapPass implements CompilerPassInterface {
           $specs[] = $spec;
         }
       }
+    }
+
+    // D10: behaviour workflows ignited by facts (core WorkflowIgniter).
+    $consumer = $container->hasParameter('tangible_ddd.consumer') ? (array) $container->getParameter('tangible_ddd.consumer') : [];
+    $prefix = (string) ($consumer['prefix'] ?? '');
+    foreach ($container->findTaggedServiceIds(DddTags::WORKFLOW) as $id => $tags) {
+      $class = $bag->resolveValue($container->getDefinition($id)->getClass() ?? $id);
+      if (!is_string($class) || !is_a($class, IStartsFromFact::class, true)) {
+        throw new InvalidArgumentException("Workflow service \"$id\" is tagged " . DddTags::WORKFLOW . ' but does not implement ' . IStartsFromFact::class . '.');
+      }
+      $facts = array_values(array_unique(array_map(
+        static fn (\ReflectionAttribute $a) => $a->newInstance()->event_class,
+        (new \ReflectionClass($class))->getAttributes(StartsOn::class),
+      )));
+      if ($facts === []) {
+        throw new InvalidArgumentException("$class implements IStartsFromFact but declares no #[StartsOn(SomeFact::class)].");
+      }
+      foreach ($facts as $event) {
+        if (!is_a($event, IIntegrationEvent::class, true)) {
+          throw new InvalidArgumentException("$class #[StartsOn($event)]: $event must implement IIntegrationEvent.");
+        }
+        $specs[] = CompiledSubscriptionRegistry::workflowSpec($id, $class, $event, $prefix);
+      }
+      $listenerRefs[$id] = new Reference($id);
     }
 
     $container->getDefinition('tangible_ddd.subscriptions')

@@ -5,7 +5,14 @@ declare(strict_types=1);
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
 use Doctrine\DBAL\Connection;
+use TangibleDDD\Application\Process\AwaitAlarm;
+use TangibleDDD\Application\Process\AwaitAll;
+use TangibleDDD\Application\Process\AwaitAny;
 use TangibleDDD\Application\Process\AwaitEvent;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
+use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\AppDestroyed;
+use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\ChildGone;
+use TangibleDDD\Symfony\Tests\Support\Fixtures\Wave4\JobDone;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionKey;
@@ -278,6 +285,76 @@ final class DbalProcessStoreTest extends PostgresTestCase {
 
     self::assertSame([$p->get_id()], $this->store()->findWaitingFor(PingFact::class, null));
     self::assertSame([], $this->store()->findWaitingFor(PingFact::class, 'order:9'));
+  }
+
+  public function test_the_store_declares_that_its_lookup_matches_fact_ancestry(): void {
+    self::assertInstanceOf(IMatchesFactAncestry::class, $this->store());
+  }
+
+  public function test_a_keyed_await_writes_one_wait_row_with_its_key(): void {
+    $p = OrderProcess::started(1);
+    $p->advance(status: 'suspended', waiting_for: JobDone::class, await_mechanism: AwaitEvent::keyed(JobDone::class, 'job-1'));
+    $this->store()->insert($p);
+
+    self::assertSame([[JobDone::class, 'job-1']], $this->waitRows((int) $p->get_id()));
+    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class, 'job-1'));
+    self::assertSame([], $this->store()->findWaitingFor(JobDone::class, 'job-2'));
+    self::assertSame([], $this->store()->findWaitingFor(JobDone::class, ''), 'not an unkeyed row');
+    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class), 'null = any key');
+  }
+
+  public function test_an_any_of_await_writes_one_row_per_branch_class_and_key(): void {
+    $p = OrderProcess::started(1);
+    $any = AwaitAny::of(AwaitEvent::keyed(JobDone::class, 'job-1'))->cancelledBy(new AwaitEvent(AppDestroyed::class, ['app_id' => 4]));
+    $p->advance(status: 'suspended', waiting_for: $any->event_class(), await_mechanism: $any);
+    $this->store()->insert($p);
+    $other = OrderProcess::started(2);
+    $other->advance(status: 'suspended', waiting_for: PingFact::class, await_mechanism: new AwaitEvent(PingFact::class));
+    $this->store()->insert($other);
+
+    self::assertSame([[AppDestroyed::class, ''], [JobDone::class, 'job-1']], $this->waitRows((int) $p->get_id()));
+    // The index names the branch classes, not the common ancestor in waiting_for:
+    // a PingFact (also an IntegrationEvent) does not reach the any-of row.
+    self::assertSame([$other->get_id()], $this->store()->findWaitingFor(PingFact::class));
+    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(AppDestroyed::class));
+    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class, 'job-1'));
+
+    $found = $this->store()->find((int) $p->get_id());
+    self::assertInstanceOf(AwaitAny::class, $found->await_mechanism());
+    self::assertEquals($any->routes(), $found->await_routes());
+  }
+
+  public function test_a_keyed_await_all_keeps_one_row_per_missing_key(): void {
+    $p = OrderProcess::started(1);
+    $all = AwaitAll::keyed(ChildGone::class, ['c1', 'c2', 'c3'], 3600);
+    $p->advance(status: 'suspended', waiting_for: ChildGone::class, await_mechanism: $all);
+    $id = $this->store()->insert($p);
+    self::assertSame([[ChildGone::class, 'c1'], [ChildGone::class, 'c2'], [ChildGone::class, 'c3']], $this->waitRows($id));
+
+    $p->update_await($all->accumulate(new ChildGone('c2')));
+    $this->store()->save($p, 1);
+
+    self::assertSame([[ChildGone::class, 'c1'], [ChildGone::class, 'c3']], $this->waitRows($id));
+    self::assertSame([], $this->store()->findWaitingFor(ChildGone::class, 'c2'));
+    self::assertSame([$id], $this->store()->findWaitingFor(ChildGone::class, 'c3'));
+  }
+
+  public function test_an_alarm_writes_no_wait_row(): void {
+    $p = OrderProcess::started(1);
+    $p->advance(status: 'suspended', await_mechanism: AwaitAlarm::after(90000));
+    $id = $this->store()->insert($p);
+
+    self::assertSame([], $this->waitRows($id));
+    self::assertSame('suspended', $this->db->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$id]));
+    self::assertInstanceOf(AwaitAlarm::class, $this->store()->find($id)->await_mechanism());
+  }
+
+  /** @return list<array{0: string, 1: string}> (event_class, await_key) rows of one process, sorted */
+  private function waitRows(int $id): array {
+    return array_map(
+      static fn (array $r) => [(string) $r['event_class'], (string) $r['await_key']],
+      $this->db->fetchAllAssociative('SELECT event_class, await_key FROM ddd_process_waits WHERE process_id = ? ORDER BY event_class, await_key', [$id])
+    );
   }
 
   public function test_find_stranded_reports_old_running_and_scheduled_rows_without_a_live_intent(): void {

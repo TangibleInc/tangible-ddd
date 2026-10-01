@@ -8,7 +8,10 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use TangibleDDD\Runtime\FrozenClock;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use TangibleDDD\Symfony\Bundle\TangibleDddBundle;
@@ -52,6 +55,18 @@ final class TestKernel extends Kernel {
   }
 
   protected function configureRoutes(RoutingConfigurator $routes): void {}
+
+  /** frozen_clock: the bundle's clock is a FrozenClock (public), so a test can move time (alarms, backoff). */
+  protected function build(ContainerBuilder $container): void {
+    if ($this->variant !== 'frozen_clock') {
+      return;
+    }
+    $container->addCompilerPass(new class implements CompilerPassInterface {
+      public function process(ContainerBuilder $container): void {
+        $container->getDefinition('tangible_ddd.clock')->setClass(FrozenClock::class)->setArguments([])->setPublic(true);
+      }
+    });
+  }
 
   protected function configureContainer(ContainerConfigurator $container): void {
     $container->extension('framework', [
@@ -105,6 +120,8 @@ final class TestKernel extends Kernel {
         default => [],
       },
       'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
+      // no_listen: D14 off (no NOTIFY, ddd:relay polls), the "NOTIFY suppressed" case.
+      'relay' => $this->variant === 'no_listen' ? ['listen' => false] : [],
     ]);
 
     $services = $container->services();
@@ -119,7 +136,12 @@ final class TestKernel extends Kernel {
     ]])->public();
     $services->alias('test.effect_journal', \TangibleDDD\Runtime\Effects\IEffectJournal::class)->public();
     $services->alias('test.operator_view', \TangibleDDD\Runtime\Ops\IOperatorView::class)->public();
-    $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
+    $services->alias('test.workflow_ledger', \TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger::class)->public();
+    $services->alias('test.workflow_igniter', 'tangible_ddd.workflow_igniter')->public();
+    $services->alias('test.subscriptions', 'tangible_ddd.subscriptions')->public();
+    $services->alias('test.effect_middleware', 'tangible_ddd.middleware.effect')->public();
+    $services->alias('test.process_lock', \TangibleDDD\Runtime\Lock\IProcessLock::class)->public();
+    $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Process,Reactions,Workflows}/')
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.
       ->exclude(__DIR__ . '/Events/');
