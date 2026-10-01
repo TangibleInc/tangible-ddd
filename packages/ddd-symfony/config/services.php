@@ -41,6 +41,7 @@ use TangibleDDD\Runtime\Ops\PortOperatorView;
 use TangibleDDD\Symfony\Console\Ops\DlqDiscardCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
 use TangibleDDD\Symfony\Console\Ops\OpsListCommand;
+use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
 use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
 use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
 use TangibleDDD\Symfony\Ops\MessengerFailureTransportSource;
@@ -443,7 +444,9 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.command.ops.stranded', StrandedCommand::class)
     ->args([
       service('tangible_ddd.process_store'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'),
-      service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'],
+      service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'], 1.0,
+      // WP8-10: core's repair commands on the command bus once they exist (runtime class_exists guard).
+      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle']]),
     ])
     ->tag('console.command', ['command' => 'ddd:ops:stranded']);
   $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)

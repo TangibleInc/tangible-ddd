@@ -102,6 +102,19 @@ final class ProcessWiringTest extends KernelTestBase {
     self::assertSame(1, $this->console('ddd:ops:dlq:retry', ['event-id' => ['nope']])->getStatusCode());
   }
 
+  public function test_ops_stranded_repairs_run_through_the_bundle_wiring(): void {
+    $store = self::getContainer()->get(IProcessStore::class);
+    $resume = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(1));
+    $fail = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(2));
+
+    $t = $this->console('ddd:ops:stranded', ['--resume' => [(string) $resume], '--fail' => [(string) $fail], '--reason' => 'operator']);
+
+    self::assertSame(0, $t->getStatusCode(), $t->getDisplay());
+    // Inline repairs while core's ResumeStrandedProcess / FailStrandedProcess do not exist (WP8-10).
+    self::assertSame(1, $this->countRows('SELECT count(*) FROM ddd_wakeups WHERE process_id = ?', [$resume]));
+    self::assertSame('failed', $this->db->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$fail]));
+  }
+
   public function test_inband_start_on_a_pooled_dsn_is_refused_at_boot(): void {
     $kernel = new TestKernel('test', true, 'inband_pooled');
     try {
