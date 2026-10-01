@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Tests\Unit\Loader;
 
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,12 +37,44 @@ class HarnessCliTest extends TestCase
         $this->assertSame(0, $code, implode("\n", $out));
     }
 
-    /** @return array<string, array{string}> */
-    public static function later_waves(): array
+    public function test_the_compat_subcommand_runs_every_section_of_the_wave_4_gate(): void
     {
-        return [
-            'compat' => ['compat'],
-        ];
+        // Register section 8 wave 4: compat is green for every case of 7.2
+        // (and 7.3), the CR-PK-5 allowances have expired, the release
+        // artifact is clean. The WordPress sections need Docker (CI, by hand).
+        $source = (string) file_get_contents(self::script());
+        $this->assertMatchesRegularExpression('/^\s*compat\) compat ;;$/m', $source);
+        $this->assertStringContainsString('tests/Compat/check-allowances.php', $source);
+        $this->assertStringContainsString('tests/Compat/release-artifact.sh', $source);
+        $this->assertStringContainsString('tests/Integration/Rollback/phpunit.xml', $source);
+        $this->assertStringContainsString('COMPAT_SECTIONS="allowances artifact 7.2 7.3"', $source);
+        $this->assertStringNotContainsString('compat           compatibility fixtures (not yet implemented)', $source);
+    }
+
+    public function test_compat_runs_the_static_sections_without_docker(): void
+    {
+        $root = dirname(__DIR__, 3);
+        if (!is_dir($root . '/.git') && !is_file($root . '/.git')) {
+            $this->markTestSkipped('not a git checkout (e.g. a git-archive export)');
+        }
+        exec('DDD_COMPAT_SECTIONS="allowances artifact" bash ' . escapeshellarg(self::script()) . ' compat 2>&1', $lines, $code);
+        $out = implode("\n", $lines);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertStringContainsString('CR-PK-5 transitional allowances: none remain', $out);
+        $this->assertStringContainsString('release artifact of', $out);
+        $this->assertStringContainsString('compat: allowances ok, artifact ok', $out);
+    }
+
+    public function test_compat_refuses_a_narrowed_or_unknown_run(): void
+    {
+        foreach (['DDD_LOADER_CASES=load.new-alone' => 'DDD_LOADER_CASES', 'DDD_COMPAT_SECTIONS=bogus' => 'unknown compat section bogus'] as $env => $needle) {
+            exec($env . ' bash ' . escapeshellarg(self::script()) . ' compat 2>&1', $lines, $code);
+            $out = implode("\n", $lines);
+            $this->assertSame(64, $code, $out);
+            $this->assertStringContainsString($needle, $out);
+            $lines = [];
+        }
     }
 
     public function test_the_core_pdo_subcommand_is_wired(): void
@@ -70,15 +101,6 @@ class HarnessCliTest extends TestCase
         $this->assertMatchesRegularExpression('/^\s*conformance-wp\) conformance_wp ;;$/m', $source);
         $this->assertStringContainsString('tests/Integration/Conformance/phpunit.xml', $source);
         $this->assertStringContainsString('tests/Integration/Conformance/bin/check-due.php', $source);
-    }
-
-    #[DataProvider('later_waves')]
-    public function test_subcommands_of_later_waves_exit_2_not_yet_implemented(string $sub): void
-    {
-        [$code, $out] = self::run_harness($sub);
-
-        $this->assertSame(2, $code, $out);
-        $this->assertStringContainsString("{$sub}: not yet implemented", $out);
     }
 
     public function test_the_loader_subcommand_is_wired_to_the_fixture_driver(): void
