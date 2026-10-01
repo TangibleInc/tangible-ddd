@@ -97,6 +97,15 @@ final class BundleWiringTest extends KernelTestBase {
 
     self::assertStringContainsString('CREATE TABLE IF NOT EXISTS app_ddd_outbox', $out);
     self::assertStringContainsString('CREATE TABLE IF NOT EXISTS app_ddd_delivery_ledger', $out);
+    self::assertLessThan(strpos($out, '002_dlq.sql'), strpos($out, '001_outbox.sql'), 'files in number order');
+  }
+
+  public function test_schema_dump_since_prints_only_the_later_files(): void {
+    $out = $this->console('ddd:schema:dump', ['--since' => '007'])->getDisplay();
+
+    self::assertStringContainsString('008_workflows.sql', $out);
+    self::assertStringNotContainsString('ddd_outbox', $out);
+    self::assertStringNotContainsString('007_wakeups.sql', $out);
   }
 
   public function test_relay_limit_and_time_limit(): void {

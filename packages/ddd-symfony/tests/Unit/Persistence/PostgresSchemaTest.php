@@ -51,8 +51,85 @@ final class PostgresSchemaTest extends TestCase {
     self::assertNotEmpty($statements);
     foreach ($statements as $statement) {
       self::assertStringNotContainsString('--', $statement);
-      self::assertMatchesRegularExpression('/^CREATE (TABLE|INDEX|UNIQUE INDEX)/', $statement);
+      self::assertMatchesRegularExpression('/^(CREATE (TABLE|INDEX|UNIQUE INDEX)|ALTER TABLE) /', $statement);
     }
+  }
+
+  // ── L5: schema evolution is append-only ───────────────────────────────────
+
+  /**
+   * The guard: a shipped file's statements never change. To change the schema,
+   * add the next numbered file (ALTER TABLE ... IF NOT EXISTS, CREATE ... IF NOT
+   * EXISTS) and append its line to schema/postgres/released.txt.
+   */
+  public function test_no_released_statement_file_has_changed(): void {
+    $released = PostgresSchema::released();
+
+    self::assertNotEmpty($released);
+    foreach ($released as $file => $digest) {
+      self::assertFileExists(PostgresSchema::dir() . '/' . $file, "released schema file $file was removed");
+      self::assertSame($digest, PostgresSchema::digest(PostgresSchema::dir() . '/' . $file),
+        "released schema file $file changed. Shipped statements are frozen: put the change in a new numbered file.");
+    }
+  }
+
+  public function test_every_schema_file_is_in_the_released_list_in_file_order(): void {
+    self::assertSame(
+      array_map('basename', PostgresSchema::files()),
+      array_keys(PostgresSchema::released()),
+      'append the new file\'s line (PostgresSchema::digest) to schema/postgres/released.txt'
+    );
+  }
+
+  public function test_files_are_numbered_contiguously_from_001(): void {
+    foreach (array_map('basename', PostgresSchema::files()) as $i => $name) {
+      self::assertMatchesRegularExpression('/^\d{3}_[a-z0-9_]+\.sql$/', $name);
+      self::assertSame($i + 1, (int) substr($name, 0, 3), "$name is out of sequence");
+    }
+  }
+
+  public function test_every_statement_is_idempotent_and_nothing_is_dropped(): void {
+    foreach (PostgresSchema::statements('') as $sql) {
+      $flat = preg_replace('/\s+/', ' ', $sql);
+      self::assertDoesNotMatchRegularExpression('/\bDROP (TABLE|INDEX)\b/i', $flat);
+      if (str_starts_with($flat, 'CREATE ')) {
+        self::assertMatchesRegularExpression('/^CREATE (UNIQUE )?(TABLE|INDEX) IF NOT EXISTS /', $flat);
+      } else {
+        self::assertMatchesRegularExpression('/^ALTER TABLE (IF EXISTS )?\S+ (ADD COLUMN IF NOT EXISTS|DROP CONSTRAINT IF EXISTS|ALTER COLUMN) /', $flat);
+      }
+    }
+  }
+
+  public function test_the_digest_ignores_comments_and_layout_but_not_statements(): void {
+    $dir = sys_get_temp_dir() . '/ddd-sf-digest-' . bin2hex(random_bytes(4));
+    mkdir($dir);
+    try {
+      file_put_contents("$dir/a.sql", "-- one\nCREATE TABLE IF NOT EXISTS {{prefix}}t (id INT);\n");
+      file_put_contents("$dir/b.sql", "-- another comment\nCREATE TABLE IF NOT EXISTS {{prefix}}t\n    (id INT);\n");
+      file_put_contents("$dir/c.sql", "-- one\nCREATE TABLE IF NOT EXISTS {{prefix}}t (id BIGINT);\n");
+
+      self::assertSame(PostgresSchema::digest("$dir/a.sql"), PostgresSchema::digest("$dir/b.sql"));
+      self::assertNotSame(PostgresSchema::digest("$dir/a.sql"), PostgresSchema::digest("$dir/c.sql"));
+    } finally {
+      array_map('unlink', glob("$dir/*.sql"));
+      rmdir($dir);
+    }
+  }
+
+  public function test_render_since_emits_only_the_later_files_in_order(): void {
+    $all = PostgresSchema::files();
+    $last = (int) substr(basename(end($all)), 0, 3);
+
+    self::assertSame('', PostgresSchema::render('', $last));
+    $tail = PostgresSchema::render('', $last - 2);
+    self::assertStringContainsString(basename($all[count($all) - 2]), $tail);
+    self::assertStringContainsString(basename($all[count($all) - 1]), $tail);
+    self::assertStringNotContainsString(basename($all[count($all) - 3]), $tail);
+    self::assertLessThan(
+      strpos($tail, basename($all[count($all) - 1])),
+      strpos($tail, basename($all[count($all) - 2])),
+      'files are emitted in number order'
+    );
   }
 
   public function test_rejects_a_prefix_that_is_not_an_identifier(): void {

@@ -15,6 +15,22 @@ Install and configure: [examples/symfony/README.md](../../examples/symfony/READM
 
 Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd.table_prefix`).
 
+## Schema evolution (append-only, L5)
+
+- `ddd:schema:dump` prints every file in number order, each headed by
+  `-- tangible/ddd-symfony schema/postgres/<file>`. Copy it into the host's
+  migrations (Doctrine Migrations `addSql()`, a SQL file).
+- A shipped file never changes. `schema/postgres/released.txt` lists each one
+  with the digest of its statements, and `PostgresSchemaTest` fails if a listed
+  file's statements change (comments and whitespace do not count) or if a file
+  is not listed.
+- A schema change is the next numbered file (`NNN_what.sql`, contiguous) with
+  idempotent statements only (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`,
+  `CREATE ... IF NOT EXISTS`; no `DROP TABLE` / `DROP INDEX`), plus its
+  `released.txt` line (`PostgresSchema::digest()`).
+- Upgrading: `bin/console ddd:schema:dump --since=NNN`, where NNN is the last
+  file the host already applied, is the host's next migration.
+
 ## Configuration notes
 
 - `consumer.version` is optional. Absent, `null`, `''`, or an env placeholder

@@ -1,0 +1,15 @@
+# tangible/ddd-symfony: released schema files (L5, append-only).
+#
+# One line per shipped file: `<file> <digest>`, digest = PostgresSchema::digest()
+# (sha256 of the file's statements; comments and whitespace do not count).
+# A listed file's statements are frozen: PostgresSchemaTest fails when they
+# change. A schema change is the next numbered file with idempotent ALTER /
+# CREATE statements, and its line appended here. Never edit or remove a line.
+001_outbox.sql f551686a4d2ea5385adf0b1e7c79cc6cd79acf2ca3d7c4170c8e4148e7ab5aa6
+002_dlq.sql 6b305a8257908839db7512cc650db28f854fc07f285f3b8675029cf374965738
+003_relay_pauses.sql 6fdf40932b5477153aec2f67a750c1af46f71a2b0dc2deda4d6a5276935f8fbe
+004_delivery_ledger.sql 18102f2018cb66b1dc38725988da09c50c850aac7c2d289f109fc2f9150b6fdd
+005_processes.sql 986b7dd835b9920e60de5db961f840bd4cd8bc566f449fe4ce2bd09f534c5d0b
+006_process_waits.sql 9ccc2db7c09170303d1a421b5cf005b4386d461335d26864a2e6200aa88c6b96
+007_wakeups.sql 27046ce736df47784e3e29d1a9d716e196ec75a29d91556fb191d158fe0884f2
+008_workflows.sql 281f380a361ba1d944f93fabd5fb50d550968c6da9c110301c010969c6c69405
