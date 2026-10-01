@@ -131,7 +131,12 @@ final class PdoConnection implements IHostConnection {
     return (string) $this->db->getAttribute(\PDO::ATTR_DRIVER_NAME);
   }
 
-  private function assertErrmode(): void {
+  /**
+   * Throws PdoConfigurationError unless the PDO is (still) in
+   * ERRMODE_EXCEPTION. Every call checks it; PdoTransactionBoundary also
+   * calls it at its own construction (register 3.2).
+   */
+  public function assertErrmode(): void {
     if ($this->db->getAttribute(\PDO::ATTR_ERRMODE) !== \PDO::ERRMODE_EXCEPTION) {
       throw new PdoConfigurationError(
         'TangibleDDD\Defaults\Pdo needs the host PDO in PDO::ERRMODE_EXCEPTION '
