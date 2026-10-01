@@ -12,7 +12,8 @@ final class RecordingLogger extends AbstractLogger {
   /** @var list<array{level: string, message: string}> */
   public array $records = [];
 
-  public function log($level, \Stringable|string $message, array $context = []): void {
+  /** Signature valid against psr/log 1, 2 and 3. @param string|\Stringable $message */
+  public function log($level, $message, array $context = []): void {
     $this->records[] = ['level' => (string) $level, 'message' => (string) $message];
   }
 

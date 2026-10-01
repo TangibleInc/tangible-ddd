@@ -14,11 +14,14 @@ use Psr\Log\AbstractLogger;
  * WP_DEBUG"), applied to every runtime class. Context arrays are appended as
  * JSON (json_encode, not the WordPress encoder, which is unguarded outside WP).
  *
- * Registered only when psr/log is installed (HostDefaultsWiring).
+ * Registered only when psr/log is installed (HostDefaultsWiring). The
+ * log() signature is the one valid against psr/log 1, 2 and 3 (untyped
+ * $message, `: void`): another plugin's vendor may load psr/log 1.x first.
  */
 final class ErrorLogLogger extends AbstractLogger {
 
-  public function log($level, \Stringable|string $message, array $context = []): void {
+  /** @param string|\Stringable $message */
+  public function log($level, $message, array $context = []): void {
     if (in_array((string) $level, ['debug', 'info'], true) && !(defined('WP_DEBUG') && WP_DEBUG)) {
       return;
     }
