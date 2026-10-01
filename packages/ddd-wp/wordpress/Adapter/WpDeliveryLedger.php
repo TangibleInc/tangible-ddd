@@ -151,7 +151,7 @@ final class WpDeliveryLedger implements IDeliveryLedger {
   }
 
   /**
-   * Operator repair (`wp ddd ops --abandon=<subscriber@event>`): a `failed`
+   * Operator repair (`wp ddd ops --abandon=<pair>`): a `failed`
    * pair becomes terminal (`exhausted`, the reason in last_error) without a
    * compensation; its pending redelivery then skips it.
    *

@@ -38,25 +38,82 @@ use TangibleDDD\Runtime\SystemClock;
  * consumer container compiles). Idempotent: a second call replaces the
  * instances with equivalent ones, except the subscription registry, which
  * is kept so its bindings are not forgotten.
+ *
+ * Late WordPress (register_lazily): when hooks.php is included before
+ * WordPress is up (the loader runs from vendor/autoload.php, and a consumer
+ * test bootstrap loads WorDBless or its own add_action/get_option stubs
+ * afterwards), it registers a HostDefaults miss resolver instead. The first
+ * HostDefaults miss after WordPress functions exist fills every port this
+ * class wires that is still unprovided (fill_missing) and removes the
+ * resolver, so the 0.6 constructors and OutboxConfig::from_options() get
+ * WordPress behaviour wherever 0.6.5 had it, with no plugins_loaded.
  */
 final class HostDefaultsWiring {
 
   public static function register(): void {
-    HostDefaults::provide(IClock::class, new SystemClock());
-    HostDefaults::provide(ITransactionBoundary::class, new WpdbTransactionBoundary());
-    HostDefaults::provide(IProcessLock::class, new GetLockProcessLock());
-    if (!HostDefaults::get(ISubscriptionRegistry::class) instanceof WpHookSubscriptionRegistry) {
-      HostDefaults::provide(ISubscriptionRegistry::class, new WpHookSubscriptionRegistry());
+    foreach (self::defaults() as $port => $make) {
+      if ($port === ISubscriptionRegistry::class
+        && HostDefaults::has(ISubscriptionRegistry::class)
+        && HostDefaults::get(ISubscriptionRegistry::class) instanceof WpHookSubscriptionRegistry) {
+        continue;
+      }
+      HostDefaults::provide($port, $make());
     }
-    HostDefaults::provide(IInfrastructureSignalDispatcher::class, new WpHookSignalDispatcher());
-    HostDefaults::provide(ISubscriberProbe::class, new HasActionSubscriberProbe());
-    HostDefaults::provide(IActorProvider::class, new WpActorProvider());
-    HostDefaults::provide(IEnvironmentProvider::class, new WpEnvironmentProvider());
-    HostDefaults::provide(IOutboxOptionsReader::class, new WpOptionsOutboxConfigReader());
-    HostDefaults::provide(IHostPortFactory::class, new WpHostPortFactory());
+  }
 
-    if (interface_exists(LoggerInterface::class)) {
-      HostDefaults::provide(LoggerInterface::class, new ErrorLogLogger());
+  /**
+   * Provide each WordPress default whose port has nothing yet; never replaces
+   * an implementation a host or test provided explicitly.
+   */
+  private static function fill_missing(): void {
+    foreach (self::defaults() as $port => $make) {
+      if (!HostDefaults::has($port)) {
+        HostDefaults::provide($port, $make());
+      }
     }
+  }
+
+  /**
+   * Install the one-shot miss resolver described in the class doc. Called by
+   * hooks.php when it is included with no WordPress functions defined yet;
+   * idempotent (a second call replaces the resolver with an equivalent one).
+   */
+  public static function register_lazily(): void {
+    HostDefaults::onMiss(static function (): void {
+      if (!self::wordpress_is_present()) {
+        return;
+      }
+      HostDefaults::onMiss(null);
+      self::fill_missing();
+    });
+  }
+
+  /**
+   * The WordPress surfaces the 0.6.5 constructors and factories touched:
+   * the hook API (add_action, has_action, do_action) or the options API
+   * (OutboxConfig::from_options read get_option directly).
+   */
+  private static function wordpress_is_present(): bool {
+    return function_exists('add_action') || function_exists('get_option');
+  }
+
+  /** @return array<class-string, \Closure(): object> */
+  private static function defaults(): array {
+    $defaults = [
+      IClock::class => static fn (): object => new SystemClock(),
+      ITransactionBoundary::class => static fn (): object => new WpdbTransactionBoundary(),
+      IProcessLock::class => static fn (): object => new GetLockProcessLock(),
+      ISubscriptionRegistry::class => static fn (): object => new WpHookSubscriptionRegistry(),
+      IInfrastructureSignalDispatcher::class => static fn (): object => new WpHookSignalDispatcher(),
+      ISubscriberProbe::class => static fn (): object => new HasActionSubscriberProbe(),
+      IActorProvider::class => static fn (): object => new WpActorProvider(),
+      IEnvironmentProvider::class => static fn (): object => new WpEnvironmentProvider(),
+      IOutboxOptionsReader::class => static fn (): object => new WpOptionsOutboxConfigReader(),
+      IHostPortFactory::class => static fn (): object => new WpHostPortFactory(),
+    ];
+    if (interface_exists(LoggerInterface::class)) {
+      $defaults[LoggerInterface::class] = static fn (): object => new ErrorLogLogger();
+    }
+    return $defaults;
   }
 }
