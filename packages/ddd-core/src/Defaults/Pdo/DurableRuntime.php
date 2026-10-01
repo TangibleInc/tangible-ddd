@@ -16,8 +16,17 @@ use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
 use TangibleDDD\Application\Process\LongProcess;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Application\Process\Repair\FailStrandedProcess;
+use TangibleDDD\Application\Process\Repair\FailStrandedProcessHandler;
+use TangibleDDD\Application\Process\Repair\ResumeStrandedProcess;
+use TangibleDDD\Application\Process\Repair\ResumeStrandedProcessHandler;
 use TangibleDDD\Application\Process\StartMode;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Defaults\Pdo\Internal\HandlerMiddleware;
 use TangibleDDD\Defaults\Pdo\Internal\IdentityConfig;
 use TangibleDDD\Defaults\Pdo\Internal\RecordingSubscriptionRegistry;
@@ -62,10 +71,18 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * - tables `{prefix}_ddd_*` (prefix = $consumer->prefix(); apply
  *   schema/mysql8 with SchemaSql::statements($prefix . '_') first);
- * - the command bus in the frozen core order Correlation → Transaction
- *   (PdoTransactionBoundary) → DomainEventsPublish (OrderedListenerDispatcher
- *   + the outbox integration bus, recording the fact class) →
- *   SelfExecuting → handler; and the query bus (SelfExecuting → handler);
+ * - the command bus in the frozen core order Correlation → Effect (D1,
+ *   wave 4: EffectMiddleware over PdoEffectJournal; other commands pass
+ *   through) → Transaction (PdoTransactionBoundary) → DomainEventsPublish
+ *   (OrderedListenerDispatcher + the outbox integration bus, recording the
+ *   fact class) → SelfExecuting → handler; and the query bus
+ *   (SelfExecuting → handler);
+ * - the core repair commands ResumeStrandedProcess / FailStrandedProcess
+ *   (WP8-10) handled on that bus with the runtime's store, jobs, lock,
+ *   clock and boundary, unless $handlers maps them itself;
+ * - the D10 stores (O8): PdoBehaviourWorkflowRepository,
+ *   PdoWorkItemRepository and PdoWorkflowIgnitionLedger, as services and
+ *   accessors, for a host's WorkflowHandler / WorkflowIgniter;
  * - the consumer in ConsumerRegistry (so `$command->send()` and fact names
  *   route here; the namespace root comes from the identity, as for every
  *   consumer);
@@ -90,7 +107,9 @@ use TangibleDDD\Runtime\SystemClock;
  * container; object = instance). The runtime's own services (CommandBus,
  * the query bus id, EventsUnitOfWork, ProcessRunner, IProcessEntry,
  * IHostConnection and the connection's class, ITransactionBoundary,
- * IClock, IConsumerIdentity, DurableRuntime) resolve first.
+ * IClock, IConsumerIdentity, DurableRuntime, IEffectJournal,
+ * IBehaviourWorkflowRepository, IWorkItemRepository,
+ * IWorkflowIgnitionLedger and their pdo classes) resolve first.
  *
  * Logging: HostDefaults' LoggerInterface when provided, else each
  * component's default (core: the host logger or error_log; never silent).
@@ -117,6 +136,10 @@ final class DurableRuntime {
     private readonly OrderedListenerDispatcher $localListeners,
     private readonly ContainerInterface $container,
     private readonly IConsumerIdentity $consumer,
+    private readonly PdoEffectJournal $effectJournal,
+    private readonly PdoBehaviourWorkflowRepository $workflows,
+    private readonly PdoWorkItemRepository $workItems,
+    private readonly PdoWorkflowIgnitionLedger $workflowIgnitions,
   ) {}
 
   /**
@@ -151,6 +174,7 @@ final class DurableRuntime {
     $ledger = new PdoDeliveryLedger($db, $tablePrefix, $clock);
     $lock = new ReentrantProcessLock(new MySqlNamedLock($db, $logger), $logger);
     RuntimeReset::guardLock($lock);
+    $effectJournal = new PdoEffectJournal($db, $tablePrefix, $clock);
 
     // ── command and query buses (register 3.2 frozen order) ──────────────
     $events = new EventsUnitOfWork();
@@ -164,6 +188,7 @@ final class DurableRuntime {
     $selfExecuting = new SelfExecutingCommandMiddleware($container);
     $bus = new CommandBus(
       new CorrelationMiddleware($config, $events, new Redactor()),
+      new EffectMiddleware($effectJournal, $boundary),
       new TransactionalCommandMiddleware($boundary),
       new DomainEventsPublishMiddleware($events, new EventRouter($localListeners, $integrationBus)),
       $selfExecuting,
@@ -180,6 +205,15 @@ final class DurableRuntime {
       $logger,
     );
 
+    // ── D10 stores, on the same connection ───────────────────────────────
+    $workflows = new PdoBehaviourWorkflowRepository($events, $db, $tablePrefix, $clock);
+    $workItems = new PdoWorkItemRepository($db, $tablePrefix, $clock);
+    $workflowIgnitions = new PdoWorkflowIgnitionLedger($db, $tablePrefix, $clock);
+
+    // ── the core operator repairs (WP8-10), dispatchable on the bus ──────
+    $container->setDefaultHandler(ResumeStrandedProcess::class, new ResumeStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
+    $container->setDefaultHandler(FailStrandedProcess::class, new FailStrandedProcessHandler($store, $jobs, $lock, $clock, $boundary));
+
     foreach ([
       CommandBus::class => $bus,
       self::QUERY_BUS_ID => $queryBus,
@@ -193,6 +227,14 @@ final class DurableRuntime {
       IClock::class => $clock,
       IConsumerIdentity::class => $consumer,
       OrderedListenerDispatcher::class => $localListeners,
+      IEffectJournal::class => $effectJournal,
+      PdoEffectJournal::class => $effectJournal,
+      IBehaviourWorkflowRepository::class => $workflows,
+      PdoBehaviourWorkflowRepository::class => $workflows,
+      IWorkItemRepository::class => $workItems,
+      PdoWorkItemRepository::class => $workItems,
+      IWorkflowIgnitionLedger::class => $workflowIgnitions,
+      PdoWorkflowIgnitionLedger::class => $workflowIgnitions,
     ] as $id => $service) {
       $container->set($id, $service);
     }
@@ -221,6 +263,7 @@ final class DurableRuntime {
     $runtime = new self(
       $bus, $queryBus, $drain, new PdoOperatorView($db, $prefix, $tablePrefix, $clock),
       $runner, $jobs, $store, $outbox, $boundary, $localListeners, $container, $consumer,
+      $effectJournal, $workflows, $workItems, $workflowIgnitions,
     );
     $container->set(self::class, $runtime);
     return $runtime;
@@ -286,6 +329,25 @@ final class DurableRuntime {
 
   public function consumer(): IConsumerIdentity {
     return $this->consumer;
+  }
+
+  /** The D1 journal EffectMiddleware uses (wave 4); repairs call invalidate() in their own transaction. */
+  public function effectJournal(): PdoEffectJournal {
+    return $this->effectJournal;
+  }
+
+  /** D10 (O8, wave 4): the behaviour workflow store on the runtime's connection and events unit of work. */
+  public function workflows(): PdoBehaviourWorkflowRepository {
+    return $this->workflows;
+  }
+
+  public function workItems(): PdoWorkItemRepository {
+    return $this->workItems;
+  }
+
+  /** The workflow ignition ledger, for a core WorkflowIgniter (with boundary() and the runtime's clock). */
+  public function workflowIgnitions(): PdoWorkflowIgnitionLedger {
+    return $this->workflowIgnitions;
   }
 
   /** @return array<string, class-string<IIntegrationEvent>> event type → fact class, for jobs without a recorded class */

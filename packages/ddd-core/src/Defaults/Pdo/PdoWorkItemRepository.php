@@ -77,10 +77,10 @@ final class PdoWorkItemRepository implements IWorkItemRepository {
     $this->db->execute(
       "INSERT INTO `{$this->table}`
          (workflow_id, behaviour_idx, phase, item_key, status, attempts, last_error, payload, blog_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new
        ON DUPLICATE KEY UPDATE
-         id = LAST_INSERT_ID(id), status = VALUES(status), attempts = VALUES(attempts), last_error = VALUES(last_error),
-         payload = VALUES(payload), blog_id = VALUES(blog_id), updated_at = VALUES(updated_at)",
+         id = LAST_INSERT_ID(`{$this->table}`.id), status = new.status, attempts = new.attempts, last_error = new.last_error,
+         payload = new.payload, blog_id = new.blog_id, updated_at = new.updated_at",
       [$item->workflow_id, $item->behaviour_idx, $item->phase, $item->item_key, $item->status->value, $item->attempts,
        $item->last_error, $payload, $item->blog_id, $now, $now]
     );
