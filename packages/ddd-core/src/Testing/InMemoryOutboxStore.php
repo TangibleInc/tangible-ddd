@@ -211,6 +211,17 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
 
   // ── test inspection ───────────────────────────────────────────────────────
 
+  public function recordOf(string $event_id): ?OutboxRecord {
+    return $this->rows[$event_id]['record'] ?? null;
+  }
+
+  /** @return list<string> event ids in append order */
+  public function eventIds(): array {
+    $rows = $this->rows;
+    uasort($rows, static fn (array $a, array $b) => $a['seq'] <=> $b['seq']);
+    return array_keys($rows);
+  }
+
   public function statusOf(string $event_id): ?string {
     return $this->rows[$event_id]['status'] ?? null;
   }
