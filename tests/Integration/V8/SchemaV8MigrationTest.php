@@ -31,7 +31,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
       self::assertTrue($this->tableExists($this->table($t)), "$t created");
     }
     self::assertTrue($this->columnExists($this->table('integration_outbox'), 'claim_token'));
-    foreach (['version', 'ignition_key', 'quarantine_reason'] as $c) {
+    foreach (['version', 'ignition_key', 'quarantine_reason', 'start_path'] as $c) {
       self::assertTrue($this->columnExists($this->table('long_processes'), $c), "long_processes.$c");
     }
     self::assertSame(['process_class', 'ignition_key'], $this->uniqueIgnitionColumns());
@@ -69,8 +69,9 @@ final class SchemaV8MigrationTest extends V8TestCase {
       [['status' => 'pending', 'claim_token' => null], ['status' => 'completed', 'claim_token' => null]],
       $this->rows("SELECT status, claim_token FROM `{$this->table('integration_outbox')}` ORDER BY id")
     );
-    $processes = $this->rows("SELECT id, status, version, ignition_key, quarantine_reason FROM `{$this->table('long_processes')}` ORDER BY id");
+    $processes = $this->rows("SELECT id, status, version, ignition_key, quarantine_reason, start_path FROM `{$this->table('long_processes')}` ORDER BY id");
     self::assertCount(5, $processes);
+    self::assertSame([null], array_values(array_unique(array_column($processes, 'start_path'))), '0.6 rows keep start_path NULL');
     self::assertSame(['1'], array_values(array_unique(array_column($processes, 'version'))), 'every row starts at version 1');
 
     $keys = array_column($processes, 'ignition_key', 'id');

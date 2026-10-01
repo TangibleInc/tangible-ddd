@@ -33,6 +33,52 @@ final class WpNamedLock {
     }
   }
 
+  /**
+   * Acquire $first, then $second, in ONE statement; all or nothing. When
+   * $second is not acquired the statement releases $first itself, so a
+   * lock never held by the caller is never left behind and no RELEASE is
+   * issued from PHP. Each GET_LOCK is evaluated exactly once (each sits in
+   * a derived table that LIMIT 1 materializes); no user variables.
+   *
+   * $second is bound FIRST in the statement text: the 0.6 per-process name
+   * is what tooling, diagnostics and the wave-1 test doubles read off a
+   * GET_LOCK query's first argument. The acquisition ORDER is still
+   * $first then $second.
+   *
+   * @throws LockNotAcquired with the same reason texts as acquire()
+   */
+  public static function acquireBoth(string $first, string $second, int $timeoutSeconds = 5): void {
+    $db = self::db();
+    $acquired = $db->get_var($db->prepare(
+      'SELECT IF(b.first = 1, IF(b.second = 1, 1, IF(RELEASE_LOCK(b.name) IS NULL, b.second, b.second)), b.first) AS acquired
+       FROM (SELECT a.name, a.first, IF(a.first = 1, GET_LOCK(a.legacy, a.t), NULL) AS second
+             FROM (SELECT %s AS legacy, %s AS name, %d AS t, GET_LOCK(%s, %d) AS first LIMIT 1) a LIMIT 1) b',
+      $second,
+      $first,
+      $timeoutSeconds,
+      $first,
+      $timeoutSeconds
+    ));
+
+    if ($acquired === null || (string) $acquired !== '1') {
+      $name = "$first + $second";
+      $reason = $acquired === null
+        ? 'GET_LOCK returned NULL' . (!empty($db->last_error) ? " ({$db->last_error})" : ' (lock query error)')
+        : "GET_LOCK timed out after {$timeoutSeconds}s (lock held elsewhere)";
+      throw new LockNotAcquired("Could not acquire lock $name: $reason. Nothing ran; the action fails and can be retried.");
+    }
+  }
+
+  /** Release both names (the reverse of acquireBoth()); never throws, a failure is logged as a bug. */
+  public static function releaseBoth(string $first, string $second): void {
+    try {
+      $db = self::db();
+      $db->get_var($db->prepare('SELECT COALESCE(RELEASE_LOCK(%s), 0) + COALESCE(RELEASE_LOCK(%s), 0)', $second, $first));
+    } catch (\Throwable $e) {
+      Log::write(null, "[ddd lock] RELEASE_LOCK($second, $first) failed (bug): " . $e->getMessage(), 'error');
+    }
+  }
+
   /** Never throws; a failed release is logged as a bug. */
   public static function release(string $name): void {
     try {

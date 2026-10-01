@@ -77,10 +77,13 @@ final class WpdbOutboxStore implements IOutboxStore {
 
     if ($r->is_unique) {
       $signature = json_encode($r->payload_signature ?? $r->payload, JSON_UNESCAPED_SLASHES);
+      // Before the v8 migration ran there is no claim_token column; the
+      // 0.6 lock column alone marks a leased row then.
+      $unclaimed = WpSchema::isV8($this->config) ? 'claim_token IS NULL AND ' : '';
       $cancelled = $db->query($db->prepare(
         "UPDATE `{$this->outbox()}` SET status = 'cancelled'
          WHERE event_type = %s AND status = 'pending' AND is_unique = 1
-           AND claim_token IS NULL AND (locked_until IS NULL OR locked_until <= %s)
+           AND {$unclaimed}(locked_until IS NULL OR locked_until <= %s)
            AND payload = CAST(%s AS JSON)",
         $r->event_type,
         $now,

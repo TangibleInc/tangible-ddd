@@ -213,6 +213,11 @@ function install_delivery_ledger_table(IDDDConfig $config): void {
  *   #[StartsOn] ignition path; UNIQUE (process_class, ignition_key) is the
  *   ignition gate (X7). NULL for manual starts (never deduped).
  * - quarantine_reason (v8): set with status `failed` for an undecodable row
+ * - start_path (v8): `ignition` | `manual` on rows the v8 store inserts,
+ *   NULL on rows a 0.6 copy wrote; the wp ignition check on
+ *   ignited_by_event_id counts only the NULL ones, so a manual start inside
+ *   a drain never blocks a later #[StartsOn] ignition of its class
+ *   (change request WP8-1)
  */
 function install_process_tables(IDDDConfig $config): void {
   global $wpdb;
@@ -238,6 +243,7 @@ function install_process_tables(IDDDConfig $config): void {
     ignited_by_event_id VARCHAR(64) NULL,
     ignition_key CHAR(36) NULL,
     source VARCHAR(16) NULL,
+    start_path VARCHAR(16) NULL,
     last_error TEXT NULL,
     quarantine_reason TEXT NULL,
     created_at DATETIME NOT NULL,

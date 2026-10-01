@@ -177,7 +177,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
       'locked_by' => null,
       'last_error' => null,
     ];
-    if (WpSchemaProbe::hasColumn($this->outbox(), 'claim_token')) {
+    if (WpSchema::isV8($this->prefix)) {
       $reset['claim_token'] = null; // schema v8: a stale token must fence nothing
     }
     $this->checked($db->update($this->outbox(), $reset, ['event_id' => $event_id]), "reset outbox row $event_id");

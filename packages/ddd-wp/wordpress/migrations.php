@@ -185,7 +185,8 @@ function ddd_explicit_migrations(): array {
  *
  * 1. Tables ddd_wakeups, ddd_delivery_ledger, ddd_relay_pauses (dbDelta).
  * 2. Columns: outbox claim_token; long_processes version (default 1),
- *    ignition_key, quarantine_reason; UNIQUE (process_class, ignition_key).
+ *    ignition_key, quarantine_reason, start_path (change request WP8-1);
+ *    UNIQUE (process_class, ignition_key).
  * 3. ignition_key backfill (ddd_backfill_ignition_keys): ignition-path rows
  *    only, in id order; the first row per (class, event) keeps the key,
  *    later ones are REPORTED and left NULL, never deleted.
@@ -214,6 +215,7 @@ function ddd_migrate_v8(IDDDConfig $config): array {
   ddd_add_column_if_missing($processes, 'version', 'INT UNSIGNED NOT NULL DEFAULT 1', 'status');
   ddd_add_column_if_missing($processes, 'ignition_key', 'CHAR(36) NULL', 'ignited_by_event_id');
   ddd_add_column_if_missing($processes, 'quarantine_reason', 'TEXT NULL', 'last_error');
+  ddd_add_column_if_missing($processes, 'start_path', 'VARCHAR(16) NULL', 'source');
   ddd_add_unique_index_if_missing($processes, 'uniq_ignition_key', '`process_class`, `ignition_key`');
 
   $ignition = ddd_backfill_ignition_keys($config);

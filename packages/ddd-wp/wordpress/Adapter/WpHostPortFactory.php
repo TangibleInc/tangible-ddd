@@ -8,6 +8,7 @@ use TangibleDDD\Infra\IConsumerIdentity;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use TangibleDDD\Infra\Persistence\OutboxRepository;
+use TangibleDDD\Infra\Persistence\ProcessRepository;
 use TangibleDDD\Runtime\Outbox\IOutboxAdministration;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Audit\IAuditSink;
@@ -27,8 +28,11 @@ use function TangibleDDD\WordPress\command_audit_enabled;
  *   exists (0.6 command_audit_enabled(), cached per prefix), else
  *   NullAuditSink (0.6 "audit off": the guard still runs, nothing is written).
  * - IFactObserver: the touches indexer for the consumer.
- * - IProcessStore: WpdbProcessStore over the IProcessRepository the runner
- *   was constructed with ($legacy), whoever implemented it.
+ * - IProcessStore: the schema v8 WpdbProcessStore (ignition_key, version
+ *   fencing, quarantine, stranded scan) for the framework ProcessRepository
+ *   of a migrated consumer; otherwise WpRepositoryProcessStore over the
+ *   IProcessRepository the runner was constructed with ($legacy), whoever
+ *   implemented it (0.6 schema semantics).
  * - IWakeupScheduler: Action Scheduler on the consumer's legacy hooks.
  * - IOutboxStore: WpdbOutboxStore over the framework's own wpdb
  *   OutboxRepository ($legacy); a consumer-authored IOutboxRepository (LMS
@@ -43,7 +47,14 @@ final class WpHostPortFactory implements IHostPortFactory {
 
   public function create(string $port, IConsumerIdentity $consumer, ?object $legacy = null): ?object {
     if ($port === IProcessStore::class) {
-      return $legacy instanceof IProcessRepository ? new WpdbProcessStore($legacy, $consumer) : null;
+      // The v8 store owns the SQL, so only for the framework's own
+      // repository (exact class: a consumer subclass may override save()),
+      // and only once the consumer's v8 migration has run.
+      if ($legacy instanceof ProcessRepository && get_class($legacy) === ProcessRepository::class
+        && $consumer instanceof IDDDConfig && WpSchema::isV8($consumer)) {
+        return new WpdbProcessStore($legacy, $consumer);
+      }
+      return $legacy instanceof IProcessRepository ? new WpRepositoryProcessStore($legacy, $consumer) : null;
     }
 
     if ($port === IOutboxAdministration::class) {

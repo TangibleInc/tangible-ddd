@@ -77,15 +77,16 @@ class MigrationsTest extends TestCase {
       ['wp_test_long_processes', 'version', 'INT UNSIGNED NOT NULL DEFAULT 1'],
       ['wp_test_long_processes', 'ignition_key', 'CHAR(36) NULL'],
       ['wp_test_long_processes', 'quarantine_reason', 'TEXT NULL'],
+      ['wp_test_long_processes', 'start_path', 'VARCHAR(16) NULL'],
     ] as [$table, $column, $definition]) {
       \TangibleDDD\WordPress\ddd_add_column_if_missing($table, $column, $definition);
     }
     \TangibleDDD\WordPress\ddd_add_unique_index_if_missing('wp_test_long_processes', 'uniq_ignition_key', '`process_class`, `ignition_key`');
 
-    foreach (array_slice($spy->queries, 0, 4) as $sql) {
+    foreach (array_slice($spy->queries, 0, 5) as $sql) {
       $this->assertMatchesRegularExpression('/ADD COLUMN `\w+` [A-Z0-9() ]+ (NULL|NOT NULL DEFAULT \d+)$/', $sql);
     }
-    $this->assertSame('ALTER TABLE `wp_test_long_processes` ADD UNIQUE KEY `uniq_ignition_key` (`process_class`, `ignition_key`)', $spy->queries[4]);
+    $this->assertSame('ALTER TABLE `wp_test_long_processes` ADD UNIQUE KEY `uniq_ignition_key` (`process_class`, `ignition_key`)', $spy->queries[5]);
   }
 
   public function test_v6_migration_installs_the_touches_table(): void {
