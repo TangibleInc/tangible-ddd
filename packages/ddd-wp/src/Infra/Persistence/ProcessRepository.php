@@ -27,11 +27,38 @@ class ProcessRepository implements IProcessRepository {
   public function save(LongProcess $process): int {
     global $wpdb;
 
+    $row = $this->row_for($process);
+
+    if ($process->get_id() === null) {
+      $row['created_at'] = $row['updated_at'];
+      $wpdb->insert($this->table_name(), $row);
+      $id = (int) $wpdb->insert_id;
+      $process->set_id($id);
+      return $id;
+    }
+
+    $wpdb->update(
+      $this->table_name(),
+      $row,
+      ['id' => $process->get_id()]
+    );
+
+    return $process->get_id();
+  }
+
+  /**
+   * The 0.6 column values for $process (every column save() writes except
+   * created_at), for the schema v8 store (WpdbProcessStore), which adds
+   * version / ignition_key and writes them in its own fenced statements.
+   *
+   * @return array<string, mixed>
+   */
+  public function row_for(LongProcess $process): array {
     $now = gmdate('Y-m-d H:i:s');
     $steps = $process->steps();
     $payload = $process->payload();
 
-    $row = [
+    return [
       'process_class' => get_class($process),
       'business_data' => wp_json_encode($this->extract_business_data($process)),
       'steps' => $steps ? wp_json_encode($steps->to_array()) : null,
@@ -54,22 +81,15 @@ class ProcessRepository implements IProcessRepository {
       'updated_at' => $now,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,
     ];
+  }
 
-    if ($process->get_id() === null) {
-      $row['created_at'] = $now;
-      $wpdb->insert($this->table_name(), $row);
-      $id = (int) $wpdb->insert_id;
-      $process->set_id($id);
-      return $id;
-    }
-
-    $wpdb->update(
-      $this->table_name(),
-      $row,
-      ['id' => $process->get_id()]
-    );
-
-    return $process->get_id();
+  /**
+   * Rebuild a process from one `long_processes` row (the 0.6 hydration),
+   * for the schema v8 store. Throws when the row cannot be decoded (the
+   * class no longer exists, a constructor parameter is missing, …).
+   */
+  public function hydrate_row(object $row): LongProcess {
+    return $this->hydrate_from_row($row);
   }
 
   public function find(int $id): ?LongProcess {

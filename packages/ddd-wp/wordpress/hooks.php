@@ -2,7 +2,6 @@
 
 namespace TangibleDDD\WordPress;
 
-use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerHandle;
@@ -137,7 +136,26 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
   }
 
   register_outbox_hooks($config, $di_getter);
+  register_delivery_hooks($config);
   register_migration_hooks($config);
+}
+
+/**
+ * Register the handler-retry hook `{prefix}_ddd_redeliver` (register 3.6,
+ * 5.1; schema v8): Action Scheduler runs it with ['hook', 'event_class',
+ * 'payload'] to re-run the DDD subscribers of one fact that failed, through
+ * the delivery ledger (WpLedgeredDelivery). It has no callback under 0.6,
+ * so pending redeliveries are lost on a rollback unless
+ * `wp ddd drain --before-rollback` ran first. Once per prefix.
+ */
+function register_delivery_hooks(IDDDConfig $config): void {
+  // Named parameters $hook, $event_class, $payload match the action's args keys.
+  $callback = [\TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class, 'redeliver'];
+  // Redeliveries are scheduled on this config's hook() and as_group('outbox').
+  \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::registerConsumer($config);
+  if (has_action($config->hook('ddd_redeliver'), $callback) === false) {
+    add_action($config->hook('ddd_redeliver'), $callback, 10, 3);
+  }
 }
 
 /**
@@ -195,11 +213,16 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
     return;
   }
 
+  // Schema v8: each wake brackets its intent rows (firing → done, or back
+  // to pending with the error so a relay tick re-projects it). On the 0.6
+  // schema WpWakeBracket just runs the wake.
   add_action($config->hook('process_continue'), function(int $process_id) use ($config, $di_getter) {
     try {
-      $container = $di_getter();
-      $runner = $container->get(ProcessRunner::class);
-      $runner->continue_scheduled($process_id);
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($config, \TangibleDDD\Runtime\Scheduling\WakeKind::Continue, $process_id, null, static function () use ($di_getter, $process_id): void {
+        $container = $di_getter();
+        $runner = $container->get(ProcessRunner::class);
+        $runner->continue_scheduled($process_id);
+      });
     } catch (\Throwable $e) {
       error_log(sprintf(
         '[%s-process] Failed to continue process %d: %s',
@@ -218,13 +241,27 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
   // args keys exactly, same convention as process_continue above.
   add_action($config->hook('await_timeout'), function(int $process_id, int $step_index) use ($config, $di_getter) {
     try {
-      $runner = ($di_getter())->get(ProcessRunner::class);
-      $runner->handle_timeout($process_id, $step_index);
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($config, \TangibleDDD\Runtime\Scheduling\WakeKind::Timeout, $process_id, $step_index, static function () use ($di_getter, $process_id, $step_index): void {
+        $runner = ($di_getter())->get(ProcessRunner::class);
+        $runner->handle_timeout($process_id, $step_index);
+      });
     } catch (\Throwable $e) {
       error_log(sprintf('[%s-process] Await-timeout handling failed for process %d: %s', $config->prefix(), $process_id, $e->getMessage()));
       throw $e;
     }
   }, 10, 2);
+
+  // Schema v8 only: ResumeRetry intents ({prefix}_ddd_wakeup, ['key' => …]).
+  // No 0.6 callback exists for this hook, so these are lost on a rollback,
+  // like {prefix}_ddd_redeliver (register 3.6).
+  add_action($config->hook('ddd_wakeup'), function(string $key) use ($config, $di_getter) {
+    try {
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::resumeRetry($config, $key, static fn () => ($di_getter())->get(ProcessRunner::class));
+    } catch (\Throwable $e) {
+      error_log(sprintf('[%s-process] Wakeup %s failed: %s', $config->prefix(), $key, $e->getMessage()));
+      throw $e;
+    }
+  }, 10, 1);
 }
 
 /**
@@ -253,14 +290,20 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
     }
   });
 
-  // Process outbox batch
+  // Process outbox batch: one relay tick (WpRelayTick). On a schema v8
+  // consumer with the framework outbox, the fenced port-form relay over
+  // Action Scheduler, then wakeup re-projection and the stranded scan;
+  // otherwise the container's 0.6-form OutboxProcessor, as before.
   add_action($config->hook('outbox_process'), function() use ($config, $di_getter) {
     try {
       $container = $di_getter();
-      $processor = $container->get(OutboxProcessor::class);
-      $result = $processor->process_batch();
+      $tick = \TangibleDDD\WordPress\Adapter\WpRelayTick::for($config, $container)->run();
+      foreach ($tick->errors as $step => $message) {
+        error_log(sprintf('[%s-outbox] relay tick %s error: %s', $config->prefix(), $step, $message));
+      }
+      $result = $tick->relay;
 
-      if ($result->total > 0) {
+      if ($result !== null && $result->total > 0) {
         error_log(sprintf(
           '[%s-outbox] Processed %d events: %d completed, %d failed, %d moved to DLQ',
           $config->prefix(),

@@ -119,6 +119,208 @@ class DDD_Command {
     ) );
   }
 
+  /**
+   * Run one relay tick now: the outbox relay batch, wakeup re-projection
+   * and the stranded scan (WpRelayTick), for each consumer or one.
+   *
+   * There is no daemon: `--once` is required. A host that wants a loop
+   * runs this from cron or its own supervisor.
+   *
+   * ## OPTIONS
+   *
+   * --once
+   * : Run exactly one tick and exit.
+   *
+   * [--consumer=<prefix>]
+   * : Only this consumer.
+   *
+   * ## EXAMPLES
+   *
+   *     wp ddd relay --once
+   *     wp ddd relay --once --consumer=tgbl_cred
+   */
+  public function relay( $args, $assoc_args ) {
+    if ( ! Utils\get_flag_value( $assoc_args, 'once', false ) ) {
+      \WP_CLI::error( 'wp ddd relay runs one tick per call: pass --once (there is no daemon mode).' );
+    }
+
+    $failed = false;
+    foreach ( $this->selected_consumers( $assoc_args ) as $handle ) {
+      $report = \TangibleDDD\WordPress\Adapter\WpRelayTick::for( $handle->config(), $handle->container() )->run();
+      \WP_CLI::log( $report->summary() );
+      $failed = $failed || ! $report->ok();
+    }
+
+    $failed ? \WP_CLI::error( 'relay tick finished with errors (see above).' ) : \WP_CLI::success( 'relay tick done.' );
+  }
+
+  /**
+   * The operator view: every retry layer (relay, delivery, wakeup,
+   * process) with attempts against budget and the applicable repairs.
+   *
+   * ## OPTIONS
+   *
+   * [--consumer=<prefix>]
+   * : Only this consumer.
+   *
+   * [--layer=<layer>]
+   * : One layer.
+   * ---
+   * options:
+   *   - relay
+   *   - delivery
+   *   - wakeup
+   *   - process
+   * ---
+   *
+   * [--limit=<n>]
+   * : Rows per consumer.
+   * ---
+   * default: 100
+   * ---
+   *
+   * [--format=<format>]
+   * : Output format.
+   * ---
+   * default: table
+   * options:
+   *   - table
+   *   - json
+   *   - csv
+   * ---
+   *
+   * [--rearm=<key>]
+   * : Repair: re-arm the exhausted wakeup intent with this idempotency key
+   *   (fresh budget, due now). Needs --consumer.
+   *
+   * [--abandon=<subscriber@event>]
+   * : Repair: end the failed delivery pair with this key (as `wp ddd ops`
+   *   lists it, `<subscriber id> @ <event id>`) without a compensation; its
+   *   pending redelivery then skips it. Needs --consumer.
+   *
+   * ## EXAMPLES
+   *
+   *     wp ddd ops
+   *     wp ddd ops --layer=delivery --format=json
+   *     wp ddd ops --consumer=tgbl_cred --rearm=timeout:42:3
+   *     wp ddd ops --consumer=tgbl_cred --abandon='action:Closure@wp-content/plugins/x/x.php:12 @ 0b6f…'
+   */
+  public function ops( $args, $assoc_args ) {
+    if ( isset( $assoc_args['abandon'] ) ) {
+      if ( ! isset( $assoc_args['consumer'] ) ) {
+        \WP_CLI::error( '--abandon needs --consumer=<prefix>.' );
+      }
+      [ $handle ] = $this->selected_consumers( $assoc_args );
+      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::isV8( $handle->config() ) ) {
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no delivery ledger (schema v8 not installed)." );
+      }
+      $key = (string) $assoc_args['abandon'];
+      $at = strrpos( $key, '@' ); // subscriber ids may contain '@', event ids never do
+      if ( $at === false ) {
+        \WP_CLI::error( '--abandon takes <subscriber id>@<event id>.' );
+      }
+      $subscriber = trim( substr( $key, 0, $at ) );
+      $event = trim( substr( $key, $at + 1 ) );
+      ( new \TangibleDDD\WordPress\Adapter\WpDeliveryLedger( $handle->prefix() ) )->abandon( $subscriber, $event, 'abandoned by an operator (wp ddd ops --abandon)' )
+        ? \WP_CLI::success( "Abandoned delivery $subscriber @ $event." )
+        : \WP_CLI::error( "No failed delivery $subscriber @ $event for '{$handle->prefix()}'." );
+      return;
+    }
+
+    if ( isset( $assoc_args['rearm'] ) ) {
+      if ( ! isset( $assoc_args['consumer'] ) ) {
+        \WP_CLI::error( '--rearm needs --consumer=<prefix>.' );
+      }
+      [ $handle ] = $this->selected_consumers( $assoc_args );
+      $scheduler = \TangibleDDD\Runtime\HostDefaults::for( \TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $handle->config() );
+      if ( ! $scheduler instanceof \TangibleDDD\WordPress\Adapter\WpdbWakeupScheduler ) {
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no wakeup intents (schema v8 not installed)." );
+      }
+      $scheduler->rearm( (string) $assoc_args['rearm'] )
+        ? \WP_CLI::success( "Re-armed wakeup {$assoc_args['rearm']}." )
+        : \WP_CLI::error( "No exhausted wakeup {$assoc_args['rearm']} for '{$handle->prefix()}'." );
+      return;
+    }
+
+    $layer = $assoc_args['layer'] ?? null;
+    $limit = (int) ( $assoc_args['limit'] ?? 100 );
+    $rows = [];
+    foreach ( $this->selected_consumers( $assoc_args ) as $handle ) {
+      foreach ( ( new \TangibleDDD\WordPress\Adapter\WpOperatorView( $handle->config() ) )->list( $layer, $limit ) as $row ) {
+        $row['repair_actions'] = implode( ',', $row['repair_actions'] );
+        $rows[] = $row;
+      }
+    }
+
+    if ( $rows === [] ) {
+      \WP_CLI::success( 'Nothing needs attention.' );
+      return;
+    }
+    Utils\format_items(
+      $assoc_args['format'] ?? 'table',
+      $rows,
+      [ 'layer', 'consumer', 'key', 'attempts', 'budget', 'last_error', 'first_seen', 'repair_actions' ]
+    );
+  }
+
+  /**
+   * Drain the work a 0.6 winner cannot run, before a rollback: pending
+   * `{prefix}_ddd_redeliver` handler retries and `{prefix}_ddd_wakeup`
+   * intents run now, round after round, until none is left (each retry
+   * ends delivered or exhausted). The rollback runbook requires this; the
+   * command fails while anything remains.
+   *
+   * ## OPTIONS
+   *
+   * --before-rollback
+   * : Confirms the purpose (the only mode).
+   *
+   * [--consumer=<prefix>]
+   * : Only this consumer.
+   *
+   * [--max-rounds=<n>]
+   * : Give up after this many rounds.
+   * ---
+   * default: 10
+   * ---
+   *
+   * ## EXAMPLES
+   *
+   *     wp ddd drain --before-rollback
+   */
+  public function drain( $args, $assoc_args ) {
+    if ( ! Utils\get_flag_value( $assoc_args, 'before-rollback', false ) ) {
+      \WP_CLI::error( 'wp ddd drain only runs with --before-rollback.' );
+    }
+
+    $remaining = 0;
+    foreach ( $this->selected_consumers( $assoc_args ) as $handle ) {
+      $result = ( new \TangibleDDD\WordPress\Adapter\WpRollbackDrain( $handle->config() ) )->run( (int) ( $assoc_args['max-rounds'] ?? 10 ) );
+      \WP_CLI::log( sprintf( '[%s] ran %d actions in %d rounds; %d remain', $handle->prefix(), $result['ran'], $result['rounds'], $result['remaining'] ) );
+      $remaining += $result['remaining'];
+    }
+
+    $remaining > 0
+      ? \WP_CLI::error( "$remaining N-only actions remain; they would be lost on rollback. Re-run or inspect with `wp ddd ops`." )
+      : \WP_CLI::success( 'Nothing a 0.6 winner cannot run is pending. Safe to roll back.' );
+  }
+
+  /** @return list<\TangibleDDD\Infra\Consumers\ConsumerHandle> */
+  private function selected_consumers( array $assoc_args ): array {
+    $all = \TangibleDDD\WordPress\consumers();
+    $only = $assoc_args['consumer'] ?? null;
+    if ( $only !== null ) {
+      if ( ! isset( $all[ $only ] ) ) {
+        \WP_CLI::error( "No registered consumer '$only'." );
+      }
+      return [ $all[ $only ] ];
+    }
+    return array_values( array_filter(
+      $all,
+      static fn ( $handle ) => $handle->identity() instanceof \TangibleDDD\Infra\IDDDConfig
+    ) );
+  }
+
   private function run_init( $args, $assoc_args ) {
     $prefix = $assoc_args['prefix'] ?? null;
     $path = $assoc_args['plugin-path'] ?? getcwd();

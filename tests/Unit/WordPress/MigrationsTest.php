@@ -44,13 +44,22 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_7(): void {
+  public function test_current_schema_version_is_8(): void {
     // Regression guard for the v3-fast-path bug lineage: bumping the schema
-    // (v7 = the workflow meta side table) must move this constant, or
+    // (v8 = the wave-3 durable contracts) must move this constant, or
     // consumers' fast-paths treat themselves as current and never create
-    // the table.
-    $this->assertSame(7, DDD_SCHEMA_VERSION);
+    // the tables.
+    $this->assertSame(8, DDD_SCHEMA_VERSION);
   }
+
+  public function test_v8_migration_has_an_explicit_entry(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(8, $migrations, 'consumers already at v7 skip dbDelta on the fast path — the explicit entry creates the v8 tables, columns and backfills for them.');
+  }
+
+  // R5 for v8 (every added column nullable or defaulted) is checked on the
+  // migrated MySQL schema itself: tests/Integration/V8/SchemaV8MigrationTest
+  // test_every_column_v8_adds_to_a_0_6_table_is_nullable_or_defaulted.
 
   public function test_v6_migration_installs_the_touches_table(): void {
     $migrations = ddd_explicit_migrations();

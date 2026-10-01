@@ -34,7 +34,9 @@ function integration_action(
     return;
   }
 
-  add_action($action, function(...$params) use ($callback, $event_class) {
+  // Schema v8: the callback is a ledgered DDD subscriber (isolated, retried
+  // via {prefix}_ddd_redeliver, budgeted); see WpLedgeredDelivery.
+  $invoke = function(...$params) use ($callback, $event_class) {
     // The drain bracket: unwrap once, open a facade scope with the fact as
     // ambient cause for the WHOLE body.
     $envelope = null;
@@ -61,7 +63,15 @@ function integration_action(
       ));
       throw $e;
     }
-  }, $priority, $arg_count);
+  };
+
+  $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
+  add_action(
+    $action,
+    $ledgered::bind($action, $event_class, $ledgered::subscriberId($action, 'action', $callback), $priority, $invoke),
+    $priority,
+    $arg_count
+  );
 }
 
 /**
@@ -85,7 +95,7 @@ function integration_listener(string $event_class, callable $translate): void {
     return;
   }
 
-  add_action($action, function (array $wrapped) use ($event_class, $translate) {
+  $invoke = function (array $wrapped) use ($event_class, $translate) {
     $envelope = IntegrationEnvelope::unwrap($wrapped);
 
     $ctx = $envelope->trace_context();
@@ -101,5 +111,16 @@ function integration_listener(string $event_class, callable $translate): void {
     };
 
     $ctx !== null ? Correlation::within($ctx, $run) : $run();
-  }, 10, 1);
+  };
+
+  // The listener's identity is its class (IntegrationListener passes a
+  // closure bound to itself), stable across requests and releases.
+  $this_ = $translate instanceof \Closure ? (new \ReflectionFunction($translate))->getClosureThis() : null;
+  $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
+  add_action(
+    $action,
+    $ledgered::bind($action, $event_class, $ledgered::subscriberId($action, 'listener', $translate, $this_ !== null ? get_class($this_) : null), 10, $invoke),
+    10,
+    1
+  );
 }

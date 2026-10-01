@@ -27,7 +27,7 @@ use TangibleDDD\Tests\Fakes\FakeResolvedEvent;
 use TangibleDDD\Tests\Fakes\FakeStartsOnProcess;
 use TangibleDDD\WordPress\Adapter\ActionSchedulerWakeupScheduler;
 use TangibleDDD\WordPress\Adapter\GetLockProcessLock;
-use TangibleDDD\WordPress\Adapter\WpdbProcessStore;
+use TangibleDDD\WordPress\Adapter\WpRepositoryProcessStore;
 use TangibleDDD\WordPress\Adapter\WpHookSubscriptionRegistry;
 
 /**
@@ -50,29 +50,43 @@ final class WpProcessAdaptersTest extends TestCase {
     Correlation::reset();
   }
 
+  /** wpdb answering every GET_LOCK statement with $answer; records [kind, bound args] per lock statement. */
   private function lockDb(?string $answer): \wpdb {
     return new class($answer) extends \wpdb {
       public array $calls = [];
+      private array $args = [];
       public function __construct(private ?string $answer) {}
       public function prepare(string $query, ...$args): string {
-        return str_replace(['%s', '%d'], array_map(static fn ($a) => (string) $a, $args), $query);
+        $this->args = $args;
+        return $query;
       }
       public function get_var(?string $query = null, int $x = 0, int $y = 0) {
-        $this->calls[] = $query;
-        return str_contains((string) $query, 'RELEASE_LOCK') ? '1' : $this->answer;
+        if (str_contains((string) $query, 'GET_LOCK')) {
+          $this->calls[] = ['GET', $this->args];
+          return $this->answer;
+        }
+        $this->calls[] = ['RELEASE', $this->args];
+        return '2';
       }
     };
   }
 
-  public function test_the_lock_takes_the_legacy_name_and_releases_it(): void {
+  public function test_the_lock_takes_the_new_then_the_legacy_name_in_one_statement_and_releases_both(): void {
     $GLOBALS['wpdb'] = $db = $this->lockDb('1');
     $lock = new GetLockProcessLock();
+    $key = new LockKey('acme', '3', 42);
 
-    $handle = $lock->acquire(new LockKey('acme', '3', 42), 5.0);
+    $handle = $lock->acquire($key, 5.0);
     self::assertSame(1, $lock->heldCount());
     $lock->release($handle);
 
-    self::assertSame(['SELECT GET_LOCK(ddd_process_42, 5)', 'SELECT RELEASE_LOCK(ddd_process_42)'], $db->calls);
+    $new = substr('ddd:' . sha1('acme|3|42'), 0, 64);
+    self::assertSame($new, $key->mysqlName());
+    self::assertSame([
+      // legacy bound first; GET_LOCK(new) is the inner (first evaluated) acquisition
+      ['GET', ['ddd_process_42', $new, 5, $new, 5]],
+      ['RELEASE', ['ddd_process_42', $new]],
+    ], $db->calls);
     self::assertSame(0, $lock->heldCount());
   }
 
@@ -166,7 +180,7 @@ final class WpProcessAdaptersTest extends TestCase {
   public function test_the_store_ignites_once_under_the_named_lock(): void {
     $repo = new FakeProcessRepository();
     $config = new FakeDDDConfig();
-    $store = new WpdbProcessStore($repo, $config);
+    $store = new WpRepositoryProcessStore($repo, $config);
 
     $first = new FakeStartsOnProcess(1);
     $first->mark_ignited_by('evt-1');
@@ -190,7 +204,7 @@ final class WpProcessAdaptersTest extends TestCase {
     self::assertInstanceOf(IHostPortFactory::class, HostDefaults::get(IHostPortFactory::class));
 
     $config = new FakeDDDConfig();
-    self::assertInstanceOf(WpdbProcessStore::class, HostDefaults::for(IProcessStore::class, $config, new FakeProcessRepository()));
+    self::assertInstanceOf(WpRepositoryProcessStore::class, HostDefaults::for(IProcessStore::class, $config, new FakeProcessRepository()));
     self::assertInstanceOf(ActionSchedulerWakeupScheduler::class, HostDefaults::for(IWakeupScheduler::class, $config));
     self::assertInstanceOf(\TangibleDDD\WordPress\Adapter\TouchesFactObserver::class, HostDefaults::for(\TangibleDDD\Runtime\IFactObserver::class, $config));
     self::assertInstanceOf(\TangibleDDD\WordPress\Adapter\WpdbOutboxAdministration::class, HostDefaults::for(\TangibleDDD\Runtime\Outbox\IOutboxAdministration::class, new \TangibleDDD\Runtime\ConsumerPrefix('ghost')));

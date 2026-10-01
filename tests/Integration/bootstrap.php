@@ -83,6 +83,19 @@ require_once $_datastream_ref . '/includes/di/index.php';
 
 unset($_datastream_ref);
 
+// ── Action Scheduler ─────────────────────────────────────────────────────────
+// The real AS from the distribution's vendor/, initialized through its own
+// "loaded after plugins_loaded" branch (as the conformance host does). The
+// schema v8 tests (tests/Integration/V8) need the real store: wakeup intents
+// are projected to AS actions, redeliveries are AS actions, and the v8
+// migration backfills intents from pending actions.
+if (!function_exists('as_schedule_single_action')) {
+    require_once dirname(__DIR__, 2) . '/vendor/woocommerce/action-scheduler/action-scheduler.php';
+}
+if (!class_exists('ActionScheduler', false) || !ActionScheduler::is_initialized()) {
+    throw new RuntimeException('tangible-ddd integration bootstrap: Action Scheduler did not initialize.');
+}
+
 // ── Autoload integration test base classes ───────────────────────────────────
 // The vendor autoload maps TangibleDDD\Tests\ → the parent plugin's tests/ dir.
 // Integration base classes live in this worktree's tests/Integration/, so we
