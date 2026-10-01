@@ -2,24 +2,19 @@
 
 namespace TangibleDDD\Infra\Shared;
 
-final class IntList extends TypedList {
+/*
+ * IntList moved to TangibleDDD\Domain\Shared in 0.6.7; the old name stays
+ * an alias. See TypedList.php in this directory.
+ */
 
-  public function __construct(array $list = []) {
-    $list = filter_var_array($list, FILTER_VALIDATE_INT);
-    parent::__construct($list);
-  }
+class_exists(\TangibleDDD\Domain\Shared\IntList::class);
 
-  public function offsetGet($index): int {
-    return $this->protected_get($index);
-  }
-
-  public function current(): int {
-    return $this->protected_get($this->_position);
-  }
-
-  public function get_type(): string {
-    return 'int';
+if (\false) {
+  /**
+   * Declared only for static analysis and IDEs; never executed.
+   *
+   * @deprecated 0.6.7 Use \TangibleDDD\Domain\Shared\IntList.
+   */
+  final class IntList extends \TangibleDDD\Domain\Shared\TypedList {
   }
 }
-
-
