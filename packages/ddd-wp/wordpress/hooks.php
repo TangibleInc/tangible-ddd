@@ -2,7 +2,6 @@
 
 namespace TangibleDDD\WordPress;
 
-use TangibleDDD\Infra\Services\OutboxProcessor;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Infra\Consumers\ConsumerHandle;
@@ -289,14 +288,20 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
     }
   });
 
-  // Process outbox batch
+  // Process outbox batch: one relay tick (WpRelayTick). On a schema v8
+  // consumer with the framework outbox, the fenced port-form relay over
+  // Action Scheduler, then wakeup re-projection and the stranded scan;
+  // otherwise the container's 0.6-form OutboxProcessor, as before.
   add_action($config->hook('outbox_process'), function() use ($config, $di_getter) {
     try {
       $container = $di_getter();
-      $processor = $container->get(OutboxProcessor::class);
-      $result = $processor->process_batch();
+      $tick = \TangibleDDD\WordPress\Adapter\WpRelayTick::for($config, $container)->run();
+      foreach ($tick->errors as $step => $message) {
+        error_log(sprintf('[%s-outbox] relay tick %s error: %s', $config->prefix(), $step, $message));
+      }
+      $result = $tick->relay;
 
-      if ($result->total > 0) {
+      if ($result !== null && $result->total > 0) {
         error_log(sprintf(
           '[%s-outbox] Processed %d events: %d completed, %d failed, %d moved to DLQ',
           $config->prefix(),

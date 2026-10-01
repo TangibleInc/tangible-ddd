@@ -340,7 +340,7 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
 function ddd_backfill_wakeup_intents(IDDDConfig $config): int {
   global $wpdb;
 
-  if (!function_exists('as_get_scheduled_actions') || !class_exists('ActionScheduler_Store')) {
+  if (!function_exists('as_get_scheduled_actions')) {
     return 0;
   }
 
@@ -351,14 +351,14 @@ function ddd_backfill_wakeup_intents(IDDDConfig $config): int {
 
   foreach (['await_timeout' => 'timeout', 'process_continue' => 'continue'] as $hook_name => $kind) {
     $hook = $config->hook($hook_name);
-    $ids = as_get_scheduled_actions([
+    // OBJECT: ActionScheduler_Action instances keyed by action id.
+    $actions = as_get_scheduled_actions([
       'hook' => $hook,
-      'status' => \ActionScheduler_Store::STATUS_PENDING,
+      'status' => 'pending', // ActionScheduler_Store::STATUS_PENDING
       'per_page' => -1,
-    ], 'ids');
+    ], OBJECT);
 
-    foreach ((array) $ids as $action_id) {
-      $action = \ActionScheduler::store()->fetch_action((string) $action_id);
+    foreach ((array) $actions as $action_id => $action) {
       $args = $action->get_args();
       $process_id = (int) ($args['process_id'] ?? ($args[0] ?? 0));
       if ($process_id <= 0) {
