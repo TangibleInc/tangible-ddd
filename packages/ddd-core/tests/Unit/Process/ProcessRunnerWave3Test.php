@@ -389,7 +389,11 @@ final class ProcessRunnerWave3Test extends TestCase {
     self::assertSame([], $this->pendingOf(WakeKind::ResumeRetry), 'the drain re-queues the claimed intent itself');
   }
 
-  public function test_a_contended_fact_resume_fails_the_subscriber_so_the_delivery_retries_it(): void {
+  public function test_a_contended_fact_resume_is_parked_as_a_resume_retry_carrying_the_fact(): void {
+    // Wave 5 (AW2) inverted the wave-3 rule on a scheduler that carries
+    // facts: the subscriber no longer fails, the fact rides a ResumeRetry.
+    // A scheduler without ICarriesFacts keeps the delivery retry
+    // (ProcessRunnerWave5Test).
     $this->runner->register_event(UserJoined::class);
     $p = new AwaitingProcess(5);
     $this->runner->start($p);
@@ -397,11 +401,13 @@ final class ProcessRunnerWave3Test extends TestCase {
     $this->lock->hold_elsewhere(new LockKey('acme', '', $p->get_id()));
 
     $first = $this->deliver(UserJoined::class, ['user_id' => 5], $ledger);
-    self::assertNotEmpty($first->failed, 'the resume subscriber failed; the fact is retried for it');
+    self::assertSame([], $first->failed, 'no delivery attempt spent');
     self::assertSame('suspended', $this->store->status_of($p->get_id()));
+    [$retry] = $this->pendingOf(WakeKind::ResumeRetry);
+    self::assertSame(self::EVENT_ID, $retry->fact['event_id'] ?? null);
 
     $this->lock->release_elsewhere(new LockKey('acme', '', $p->get_id()));
-    $this->deliver(UserJoined::class, ['user_id' => 5], $ledger);
+    $this->runner->wake($retry);
     self::assertSame('completed', $this->store->status_of($p->get_id()));
   }
 

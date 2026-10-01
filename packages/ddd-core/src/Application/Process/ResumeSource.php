@@ -22,12 +22,16 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  *   ['kind' => 'value', 'value' => serialize_polymorphic()]  → a JsonLifecycleValue
  *   ['kind' => 'raw', 'value' => null|scalar|array of scalars]
  *
+ * Wave 5 (AW1, AW2): an encoded event also keeps the resuming fact's
+ * 'event_id' when the runner knows it; fact() / event() are the same
+ * encoding for the fact a parked resume carries (WakeupIntent::$fact).
+ *
  * @internal runner machinery
  */
 final class ResumeSource {
 
-  public static function of_mechanism(IAwaitMechanism $mechanism, ?IIntegrationEvent $event): ?array {
-    $encoded = $event === null ? null : self::encodeEvent($event);
+  public static function of_mechanism(IAwaitMechanism $mechanism, ?IIntegrationEvent $event, ?string $event_id = null): ?array {
+    $encoded = $event === null ? null : self::encodeEvent($event, $event_id);
     if ($event !== null && $encoded === null) {
       return null;
     }
@@ -68,12 +72,31 @@ final class ResumeSource {
     return $class::from_array((array) ($source['data'] ?? []));
   }
 
-  private static function encodeEvent(IIntegrationEvent $event): ?array {
+  /**
+   * The persistable form of a fact with its event id; null when it cannot
+   * cross a wake (a NonReversibleValue in its payload).
+   *
+   * @return array{class: string, payload: array<string, mixed>, event_id: string}|null
+   */
+  public static function fact(IIntegrationEvent $event, string $event_id): ?array {
+    return self::encodeEvent($event, $event_id);
+  }
+
+  /** The fact fact() encoded. @throws \UnexpectedValueException for a class that is no integration event */
+  public static function event(array $fact): IIntegrationEvent {
+    return self::decodeEvent($fact);
+  }
+
+  private static function encodeEvent(IIntegrationEvent $event, ?string $event_id = null): ?array {
     try {
-      return ['class' => get_class($event), 'payload' => $event->integration_payload()];
+      $encoded = ['class' => get_class($event), 'payload' => $event->integration_payload()];
     } catch (\Throwable) {
       return null; // NonReversibleValue: cannot cross a wake
     }
+    if ($event_id !== null && $event_id !== '') {
+      $encoded['event_id'] = $event_id;
+    }
+    return $encoded;
   }
 
   private static function decodeEvent(array $encoded): IIntegrationEvent {

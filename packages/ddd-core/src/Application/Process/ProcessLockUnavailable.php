@@ -17,6 +17,8 @@ use TangibleDDD\Infra\Exceptions\LockingException;
  * wake entry (start, ignition's first step, continue_scheduled,
  * handle_timeout) the runner re-queues the wake as a ResumeRetry intent
  * (wave 3); inside ProcessRunner::wake() the caller re-queues its claimed
- * intent; a fact resume is re-delivered by the delivery invoker.
+ * intent; a fact resume is parked as a fact-carrying ResumeRetry when the
+ * scheduler carries facts (wave 5, AW2; nothing is thrown then), else it is
+ * re-delivered by the delivery invoker.
  */
 final class ProcessLockUnavailable extends LockingException {}

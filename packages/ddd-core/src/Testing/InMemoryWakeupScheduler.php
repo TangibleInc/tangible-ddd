@@ -10,7 +10,7 @@ use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
 use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
 use TangibleDDD\Runtime\Scheduling\ClaimedWakeup;
-use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
 
@@ -20,9 +20,10 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * transaction" rule against the required boundary (WakeupOutsideTransaction
  * otherwise); enlist it in that boundary so an intent rolls back with the
  * process save. Tests that deliberately skip the rule must say so with
- * lenient().
+ * lenient(). It keeps the WakeupIntent objects themselves, so a parked
+ * fact (WakeupIntent::$fact) comes back from claim_due() (ICarriesFacts).
  */
-final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
+final class InMemoryWakeupScheduler implements ICarriesFacts, InMemoryTransactional, IOperatorItemSource {
 
   /** @var array<string, array{intent: WakeupIntent, seq: int, attempts: int, next_at: ?\DateTimeImmutable, token: ?string, lease_until: ?\DateTimeImmutable, error: ?string}> */
   private array $intents = [];

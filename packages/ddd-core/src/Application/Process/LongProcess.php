@@ -207,6 +207,34 @@ abstract class LongProcess extends Aggregate {
     }
   }
 
+  /**
+   * The event id of the fact that resumed the current step (D13, TXP demand
+   * AW1; wave 5): the cause a post-await step derives deterministic ids
+   * from, as a listener reads Correlation::current_fact() and an ignited
+   * process ignited_by_event_id(). Persisted with the resuming save, so a
+   * #[RetryStep] re-run, an #[Async] continuation and a parked resume (AW2)
+   * read the same id. Null in a step no fact resumed (the first step, an
+   * alarm, a precheck, an id-less fact). For an AwaitAll it is the fact that
+   * completed the gather.
+   */
+  public function resumed_by_event_id(): ?string {
+    $by = $this->steps?->resumed_by;
+    if ($by === null || ($by['step_index'] ?? null) !== $this->current_step_index()) {
+      return null; // none, or one left behind by an earlier step
+    }
+    $id = $by['event_id'] ?? null;
+    return is_string($id) && $id !== '' ? $id : null;
+  }
+
+  /** @internal runner machinery: the fact that resumed the current step */
+  public function mark_resumed_by(?string $event_id): void {
+    if ($this->steps !== null) {
+      $this->steps->resumed_by = $event_id === null || $event_id === ''
+        ? null
+        : ['step_index' => $this->current_step_index(), 'event_id' => $event_id];
+    }
+  }
+
   /** The current await's alarm instant (UTC), fixed when the step suspended (D7). */
   public function await_deadline(): ?DateTimeImmutable {
     $at = $this->steps?->await_due_at;
