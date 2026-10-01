@@ -27,7 +27,7 @@ class ReleaseArtifactTest extends TestCase
             'packages/ddd-symfony', 'packages/ddd-conformance',
             'packages/ddd-core/tests', 'packages/ddd-wp/tests',
             '.github', 'phpunit.xml', 'phpunit.integration.xml', 'phpstan.neon',
-            'phpstan-deadcode.neon', 'phpstan-baseline.neon', 'deptrac.yaml',
+            'phpstan-deadcode.neon', 'phpstan-baseline.neon', 'phpstan-core.neon', 'deptrac.yaml',
             '.gitattributes', '.gitignore',
         ];
 
@@ -38,10 +38,12 @@ class ReleaseArtifactTest extends TestCase
     public static function shipped(): array
     {
         $paths = [
-            'tangible-ddd.php', 'composer.json', 'ddd-src', 'ddd-wordpress',
+            'tangible-ddd.php', 'composer.json', 'ddd-wordpress/self/index.php',
             'packages/ddd-core', 'packages/ddd-core/src', 'packages/ddd-core/composer.json',
             'packages/ddd-wp', 'packages/ddd-wp/src', 'packages/ddd-wp/wordpress',
-            'loader', 'compat',
+            'packages/ddd-wp/composer.json',
+            'loader', 'loader/tangible-ddd-0_7_0.php', 'loader/winner-autoloader.php',
+            'loader/load-diagnostics.php', 'compat', 'compat/aliases.php',
         ];
 
         return array_combine($paths, array_map(static fn(string $p): array => [$p], $paths));

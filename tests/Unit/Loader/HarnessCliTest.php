@@ -42,7 +42,6 @@ class HarnessCliTest extends TestCase
     public static function later_waves(): array
     {
         return [
-            'loader' => ['loader'],
             'core-pdo' => ['core-pdo'],
             'compat' => ['compat'],
             'conformance-wp' => ['conformance-wp'],
@@ -56,6 +55,20 @@ class HarnessCliTest extends TestCase
 
         $this->assertSame(2, $code, $out);
         $this->assertStringContainsString("{$sub}: not yet implemented", $out);
+    }
+
+    public function test_the_loader_subcommand_is_wired_to_the_fixture_driver(): void
+    {
+        // Running it needs Docker and MySQL 8.0 (CI and by hand); here only
+        // the dispatch and the driver's syntax.
+        $source = (string) file_get_contents(self::script());
+        $this->assertMatchesRegularExpression('/^\s*loader\) loader ;;$/m', $source);
+        $this->assertStringContainsString('lib/loader.sh', $source);
+
+        $driver = dirname(__DIR__, 3) . '/tests/harness/lib/loader.sh';
+        $this->assertFileExists($driver);
+        exec('bash -n ' . escapeshellarg($driver) . ' 2>&1', $out, $code);
+        $this->assertSame(0, $code, implode("\n", $out));
     }
 
     public function test_an_unknown_or_missing_subcommand_prints_usage_and_exits_64(): void

@@ -1,0 +1,32 @@
+# WordPress-free check of portable core (register 1.2; complements deptrac.yaml).
+#
+#   vendor/bin/phpstan analyse -c phpstan-core.neon --memory-limit=1G
+#
+# deptrac cannot see an unqualified function call inside a namespace
+# (add_action() in namespace TangibleDDD\Foo is unresolvable without
+# reflection, so deptrac drops it). PHPStan resolves it. This config analyses
+# packages/ddd-core/src with NO WordPress, WP-CLI or Action Scheduler symbols
+# available, so any WordPress function, class or constant core uses is
+# reported as not found. The vendor tree still provides tactician, the PSR
+# interfaces and symfony/dependency-injection (for the X4 bridge).
+
+parameters:
+  level: 0
+  phpVersion: 80200
+
+  paths:
+    - packages/ddd-core/src
+
+  # Split-deferred classes (wave-2 move table, round 2) still live in ddd-wp;
+  # until their core halves land, core may name them. Remove each line when
+  # its class moves (the run reports an unmatched path otherwise).
+  scanDirectories:
+    - packages/ddd-wp/src
+
+  # Level-0 findings unrelated to symbol discovery are phpstan.neon's job
+  # (and baselined there); this config only judges what core can see.
+  ignoreErrors:
+    - identifier: new.static
+    - identifier: property.uninitializedReadonly
+
+  reportUnmatchedIgnoredErrors: false

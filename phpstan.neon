@@ -16,13 +16,19 @@ parameters:
   level: 0
   phpVersion: 80200
 
+  # The root artifact (register 1.1): both shipped packages, the loader,
+  # the version-unique entry, the compat map and the legacy-path shim.
   paths:
-    - ddd-src
-    - ddd-wordpress
+    - packages/ddd-core/src
+    - packages/ddd-wp/src
+    - packages/ddd-wp/wordpress
     - tangible-ddd.php
+    - loader
+    - compat
+    - ddd-wordpress/self/index.php
 
   # Symbol discovery only: WordPress and WP-CLI stubs, and Action Scheduler's
-  # procedural API, which ddd-wordpress calls but does not bundle.
+  # procedural API, which packages/ddd-wp calls but does not bundle.
   scanFiles:
     - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
     - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php

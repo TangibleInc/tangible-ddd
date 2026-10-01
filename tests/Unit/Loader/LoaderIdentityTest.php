@@ -149,6 +149,61 @@ class LoaderIdentityTest extends TestCase
         }
     }
 
+    /**
+     * The version-unique Composer files entry (register 1.1 and 1.5, B1, D-2).
+     *
+     * Composer dedups `files` entries across vendor trees by package name plus
+     * relative path (`vendor/composer/autoload_real.php`), so a copy whose
+     * entry is `tangible-ddd.php` is never included once any legacy copy's
+     * `tangible-ddd.php` has run: the baseline load.legacy-first shows the
+     * newer copy silently absent. The entry therefore carries the release
+     * slug, and a stale entry from an earlier release must not survive.
+     */
+    public function test_the_composer_files_entry_is_the_version_unique_loader_of_this_release(): void
+    {
+        $slug = str_replace(['.', '-'], '_', $this->header_version());
+        $root = dirname(__DIR__, 3);
+        $entry = "loader/tangible-ddd-{$slug}.php";
+
+        $manifest = json_decode((string) file_get_contents($root . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(
+            [$entry, 'packages/ddd-core/src/Domain/Shared/assert.php'],
+            $manifest['autoload']['files'] ?? null,
+            'The root files entry is the version-unique loader, then the guarded assert helper (register 1.1).'
+        );
+
+        $this->assertFileExists($root . '/' . $entry);
+        $this->assertSame(
+            [$root . '/' . $entry],
+            glob($root . '/loader/tangible-ddd-*.php'),
+            'Exactly one version-unique entry ships; an entry of an earlier release would register twice.'
+        );
+
+        $source = (string) file_get_contents($root . '/' . $entry);
+        $this->assertStringContainsString("require_once __DIR__ . '/../tangible-ddd.php';", $source);
+        $this->assertDoesNotMatchRegularExpression(
+            '/\bfunction\s+\w+\s*\(|\bclass\s+\w+|\bdefine\s*\(/',
+            $source,
+            'The entry only forwards; every symbol stays in tangible-ddd.php, guarded.'
+        );
+    }
+
+    public function test_the_procedural_files_load_from_the_ddd_wp_package(): void
+    {
+        preg_match('/\$procedural\s*=\s*\[(.*?)\];/s', $this->source, $m);
+        preg_match_all("/'([^']+\\.php)'/", $m[1] ?? '', $entries);
+
+        $this->assertNotEmpty($entries[1]);
+        foreach ($entries[1] as $rel) {
+            $this->assertMatchesRegularExpression(
+                '#^packages/ddd-(core/src|wp/wordpress)/#',
+                $rel,
+                "{$rel}: the winner loads the moved files directly, not through the legacy forwarding paths."
+            );
+            $this->assertFileExists(dirname(__DIR__, 3) . '/' . $rel, "the winner would skip {$rel} silently");
+        }
+    }
+
     private const PHP_FLOOR = '8.2';
 
     /** @return array<string, array<string, mixed>> repo-relative path => decoded manifest */
@@ -172,10 +227,10 @@ class LoaderIdentityTest extends TestCase
         // only tree-visible tie between the git tag and the loader identity;
         // v0.6.3 shipped registering as 0.6.2 because the tag ritual skipped
         // the loader bump and nothing in CI could see the tag.
-        $this->assertSame('0.6.6', $this->header_version());
+        $this->assertSame('0.7.0', $this->header_version());
 
-        $hooks = strpos($this->source, "'ddd-wordpress/hooks.php'");
-        $modules = strpos($this->source, "'ddd-wordpress/modules.php'");
+        $hooks = strpos($this->source, "'packages/ddd-wp/wordpress/hooks.php'");
+        $modules = strpos($this->source, "'packages/ddd-wp/wordpress/modules.php'");
 
         $this->assertNotFalse($hooks, 'The winner must load the host hook facade.');
         $this->assertNotFalse($modules, 'The winner must load the consumer-module facade.');
