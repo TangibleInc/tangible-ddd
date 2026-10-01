@@ -16,6 +16,13 @@
             "options": {
                 "symlink": false
             }
+        },
+        {
+            "type": "path",
+            "url": "../ddd-conformance",
+            "options": {
+                "symlink": false
+            }
         }
     ],
     "require": {
@@ -31,7 +38,8 @@
         "doctrine/doctrine-bundle": "^2.13",
         "phpunit/phpunit": "^11.0",
         "symfony/console": "^7.4",
-        "symfony/security-core": "^7.4"
+        "symfony/security-core": "^7.4",
+        "tangible/ddd-conformance": "self.version"
     },
     "suggest": {
         "symfony/console": "Enables ddd:relay, ddd:schema:dump and the console-operator actor (D5); every Symfony app with bin/console has it.",
@@ -47,6 +55,12 @@
         "psr-4": {
             "TangibleDDD\\Symfony\\Tests\\": "tests/"
         }
+    },
+    "scripts": {
+        "refresh-siblings": "@composer update tangible/ddd-core tangible/ddd-conformance"
+    },
+    "scripts-descriptions": {
+        "refresh-siblings": "Re-copy ../ddd-core and ../ddd-conformance into vendor/ (the path repositories use symlink: false, so edits there are not seen until this runs)"
     },
     "config": {
         "sort-packages": true

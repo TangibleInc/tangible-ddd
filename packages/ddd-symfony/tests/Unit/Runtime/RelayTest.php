@@ -6,8 +6,14 @@ namespace TangibleDDD\Symfony\Tests\Unit\Runtime;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use TangibleDDD\Application\Infrastructure\OutboxAttemptFailed;
+use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Runtime\FrozenClock;
+use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
+use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
+use TangibleDDD\Testing\RecordingSignalDispatcher;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
@@ -35,7 +41,8 @@ final class RelayTest extends TestCase {
   }
 
   private function relay(InMemoryTransport $transport, ?IOutboxStore $store = null): Relay {
-    return new Relay($store ?? $this->outbox, $transport, $this->boundary, $this->clock, new OutboxConfig(), new NullLogger());
+    return new Relay($store ?? $this->outbox, $transport, $this->boundary, $this->clock, new OutboxConfig(), new NullLogger(),
+      new SymfonyConsumerConfig('sfr', 'TangibleDDD\\Symfony\\Tests'));
   }
 
   public function test_accepts_due_rows_and_submits_at_their_absolute_due_time(): void {
@@ -123,6 +130,93 @@ final class RelayTest extends TestCase {
 
     self::assertSame(['a'], $report->lost);
     self::assertSame([], $report->accepted);
+  }
+
+  public function test_the_step_is_the_core_relay_step_and_emits_its_signals(): void {
+    $signals = new RecordingSignalDispatcher();
+    HostDefaults::provide(IInfrastructureSignalDispatcher::class, $signals);
+    try {
+      $this->append('a', maxAttempts: 2);
+      $transport = new InMemoryTransport();
+      $relay = $this->relay($transport);
+
+      $transport->rejectNext();
+      $relay->runOnce(10);
+      $this->clock->advance('+60 seconds');
+      $transport->rejectNext();
+      $relay->runOnce(10);
+
+      $kinds = array_map(static fn (array $s) => get_class($s['event']), $signals->emitted);
+      self::assertSame([OutboxAttemptFailed::class, OutboxDeadLettered::class], $kinds, 'the core OutboxProcessor signals, not a private loop');
+      self::assertSame('sfr', $signals->emitted[0]['consumer']->prefix());
+    } finally {
+      HostDefaults::resetForTests();
+    }
+  }
+
+  public function test_the_limit_overrides_the_configured_batch_size(): void {
+    $this->append('a');
+    $this->append('b');
+    $this->append('c');
+
+    $report = $this->relay(new InMemoryTransport())->runOnce(2);
+
+    self::assertSame(['a', 'b'], $report->claimed);
+    self::assertSame(['a', 'b'], $report->accepted);
+  }
+
+  public function test_the_seam_between_submit_and_accept_aborts_the_step_without_counting_an_attempt(): void {
+    $this->append('a');
+    $transport = new InMemoryTransport();
+    $relay = $this->relay($transport);
+    $crash = new \RuntimeException('process died');
+    $relay->betweenSubmitAndAccept(static function () use ($crash): void { throw $crash; });
+
+    $thrown = null;
+    try {
+      $relay->runOnce(10);
+    } catch (\Throwable $e) {
+      $thrown = $e;
+    }
+
+    self::assertSame($crash, $thrown, 'the seam\'s throwable propagates unchanged');
+    self::assertCount(1, $transport->submissions, 'the transport took it');
+    self::assertSame('pending', $this->outbox->statusOf('a'), 'never accepted');
+    self::assertSame(0, $this->outbox->attemptsOf('a'), 'a simulated crash is not an attempt');
+
+    $relay->betweenSubmitAndAccept(null);
+    $this->clock->advance('+301 seconds');
+    self::assertSame(['a'], $relay->runOnce(10)->accepted, 'the lease expired; the next step relays it');
+  }
+
+  public function test_a_lost_lease_on_a_shared_connection_rolls_the_submission_back(): void {
+    $this->append('a');
+    $transport = new InMemoryTransport(sharesConnection: true);
+    $this->boundary->enlist($transport);
+    $store = new class ($this->outbox) implements IOutboxStore {
+      public function __construct(private readonly InMemoryOutboxStore $inner) {}
+      public function append(OutboxRecord $r): void {
+        $this->inner->append($r);
+      }
+      public function claim(int $limit, \DateTimeImmutable $now, int $leaseSeconds): array {
+        return $this->inner->claim($limit, $now, $leaseSeconds);
+      }
+      public function accept(Claim $c, ?string $transportRef): bool {
+        return false;
+      }
+      public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+        return false;
+      }
+      public function deadLetter(Claim $c, string $error): bool {
+        return false;
+      }
+    };
+
+    $report = $this->relay($transport, $store)->runOnce(10);
+
+    self::assertSame(['a'], $report->lost);
+    self::assertSame([], $report->retried, 'a lost lease is not a failed attempt');
+    self::assertSame([], $transport->submissions, 'the submission rolled back with the failed accept (CR sf-3)');
   }
 
   public function test_backoff_is_60s_doubling_capped_at_an_hour(): void {

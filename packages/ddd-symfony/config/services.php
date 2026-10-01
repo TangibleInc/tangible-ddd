@@ -140,7 +140,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ]);
   $s->alias(ITransport::class, 'tangible_ddd.fact_transport');
 
-  // TRANSITIONAL: round 3 runs the core relay step (CONF-3) behind this id.
+  // The core relay step (OutboxProcessor port form, CONF-3) behind the stable id.
   $s->set('tangible_ddd.relay', Relay::class)
     ->args([
       service('tangible_ddd.outbox_store'),
@@ -149,6 +149,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.clock'),
       service('tangible_ddd.outbox_config'),
       $logger,
+      service('tangible_ddd.consumer_config'),
     ]);
 
   // ── actors (D5) ──────────────────────────────────────────────────────────
