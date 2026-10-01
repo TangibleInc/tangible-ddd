@@ -25,8 +25,11 @@ final class ProcessJournal {
   /** @var list<string> step method names (with a `:{widget}` suffix where the step adds one), in run order */
   public static array $steps = [];
 
-  /** @var list<array{label: string, commandId: ?string}> */
+  /** @var list<array{label: string, commandId: ?string, widget: string}> `widget` is StepCommand::$widget_id (a minted ref for the D3 processes) */
   public static array $sent = [];
+
+  /** @var array<string, true> rows marked while no ScenarioRows is bound (markRow) */
+  private static array $unboundRows = [];
 
   /**
    * Runs inside each StepCommand::send(), after it is recorded and its row
@@ -47,6 +50,40 @@ final class ProcessJournal {
     self::$onSend = null;
     self::$rows = null;
     self::$boundary = null;
+    self::$unboundRows = [];
+  }
+
+  /**
+   * Commit scenario row $id on the host connection (its own transaction, or
+   * the open one), idempotently. A process step or precheck reads it back
+   * with hasRow(): it stands for state another context published (D3
+   * precheck). Without a bound ScenarioRows it is kept in this php process.
+   */
+  public static function markRow(string $id, string $value = '1'): void {
+    if (self::$rows === null) {
+      self::$unboundRows[$id] = true;
+      return;
+    }
+    $rows = self::$rows;
+    $write = static function () use ($rows, $id, $value): void {
+      if (!$rows->has($id)) {
+        $rows->insert($id, $value);
+      }
+    };
+    $boundary = self::$boundary;
+    $boundary === null || $boundary->isActive() ? $write() : $boundary->run($write);
+  }
+
+  public static function hasRow(string $id): bool {
+    return self::$rows !== null ? self::$rows->has($id) : isset(self::$unboundRows[$id]);
+  }
+
+  /** @return list<string> the widget ids (minted refs) $label was sent with, in order */
+  public static function widgets(string $label): array {
+    return array_values(array_map(
+      static fn (array $s) => $s['widget'],
+      array_filter(self::$sent, static fn (array $s) => $s['label'] === $label),
+    ));
   }
 
   /** Commit each step command's effect row on the host connection (see the class doc). */
@@ -60,7 +97,7 @@ final class ProcessJournal {
   }
 
   public static function sent(StepCommand $command, ?string $commandId): void {
-    self::$sent[] = ['label' => $command->label, 'commandId' => $commandId];
+    self::$sent[] = ['label' => $command->label, 'commandId' => $commandId, 'widget' => $command->widget_id];
 
     if (self::$rows !== null && $commandId !== null) {
       $rows = self::$rows;

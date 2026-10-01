@@ -121,6 +121,9 @@ final class ScenarioCatalogue {
     'process.start-from-web'                  => self::S . 'WebStartScenarios',
     // wave 4: new cases only, so a wave-3 host class runs unchanged
     'process.alarm-long'                      => self::S . 'AlarmScenarios',
+    'process.await-keyed-precheck'            => self::S . 'AwaitScenarios',
+    'process.await-any-cancellation'          => self::S . 'AwaitScenarios',
+    'process.await-all-dynamic'               => self::S . 'AwaitScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
