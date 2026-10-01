@@ -217,21 +217,37 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $other->acquire($key, 0.2);
   }
 
-  public function test_a_pooled_dsn_is_warned_about_by_default(): void {
+  public function test_constructing_on_a_pooled_dsn_is_silent_because_web_requests_build_but_never_lock(): void {
     $log = new RecordingLogger();
-    new PostgresAdvisoryProcessLock($this->pooledConnection(), $log);
+    new PostgresAdvisoryProcessLock($this->pooledConnection(), $log, PoolerPolicy::Refuse);
+
+    self::assertSame('', $log->text());
+  }
+
+  public function test_the_first_acquire_on_a_pooled_dsn_warns_by_default(): void {
+    $log = new RecordingLogger();
+    $lock = new PostgresAdvisoryProcessLock($this->pooledConnection(), $log);
+
+    try {
+      $lock->acquire(new LockKey('acme', '', 1), 0.1);
+    } catch (LockNotAcquired) {
+      // the fake pooler host does not resolve
+    }
 
     self::assertStringContainsString('pooled', $log->text());
   }
 
-  public function test_a_pooled_dsn_is_refused_when_the_policy_says_so(): void {
+  public function test_the_first_acquire_on_a_pooled_dsn_is_refused_when_the_policy_says_so(): void {
+    $lock = new PostgresAdvisoryProcessLock($this->pooledConnection(), null, PoolerPolicy::Refuse);
+
     $this->expectException(PooledConnectionRefused::class);
-    new PostgresAdvisoryProcessLock($this->pooledConnection(), null, PoolerPolicy::Refuse);
+    $lock->acquire(new LockKey('acme', '', 1), 0.1);
   }
 
   public function test_a_direct_dsn_is_not_warned_about(): void {
     $log = new RecordingLogger();
-    new PostgresAdvisoryProcessLock($this->db, $log, PoolerPolicy::Refuse);
+    $lock = new PostgresAdvisoryProcessLock($this->db, $log, PoolerPolicy::Refuse);
+    $lock->acquire(new LockKey('acme', '', 1), 0.1);
 
     self::assertSame('', $log->text());
   }

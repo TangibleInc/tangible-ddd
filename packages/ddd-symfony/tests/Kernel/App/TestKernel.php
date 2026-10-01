@@ -73,7 +73,8 @@ final class TestKernel extends Kernel {
       'dbal' => [
         'driver' => 'pdo_pgsql',
         'host' => $params['host'],
-        'port' => $params['port'],
+        // inband_pooled: a PgBouncer-style port; the boot check reads params and never connects.
+        'port' => $this->variant === 'inband_pooled' ? 6432 : $params['port'],
         'user' => $params['user'],
         'password' => $params['password'],
         'dbname' => $params['dbname'],
@@ -89,6 +90,7 @@ final class TestKernel extends Kernel {
       ],
       'connection' => 'default',
       'transaction' => $this->variant === 'flush' ? ['entity_manager' => 'test.flusher'] : [],
+      'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
     ]);
 
     $services = $container->services();

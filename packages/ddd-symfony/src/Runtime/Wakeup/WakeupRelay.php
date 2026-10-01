@@ -7,6 +7,7 @@ namespace TangibleDDD\Symfony\Runtime\Wakeup;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
@@ -51,6 +52,7 @@ final class WakeupRelay implements IWakeupRelayStep {
     private readonly int $leaseSeconds = 300,
     private readonly int $strandedScanSeconds = 60,
     ?LoggerInterface $logger = null,
+    private readonly ?string $busName = null,
   ) {
     $this->logger = $logger ?? new NullLogger();
   }
@@ -64,7 +66,10 @@ final class WakeupRelay implements IWakeupRelayStep {
     foreach ($this->scheduler->claimDue($now, $limit, $this->leaseSeconds) as $claim) {
       $key = $claim->intent->idempotencyKey;
       try {
-        $this->sender->send(new Envelope(ProcessWakeupMessage::fromClaim($claim)));
+        $this->sender->send(new Envelope(
+          ProcessWakeupMessage::fromClaim($claim),
+          $this->busName === null ? [] : [new BusNameStamp($this->busName)],
+        ));
         $projected[] = $key;
       } catch (\Throwable $e) {
         $failed[] = $key;

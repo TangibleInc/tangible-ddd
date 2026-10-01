@@ -9,6 +9,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use TangibleDDD\Runtime\Delivery\IRelayWakeup;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
@@ -42,7 +43,11 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * sf addition (not on the port): the fact's PHP class. appendFact() stores
  * it; eventClassOf() returns it to the Messenger transport, which needs it to
  * hydrate the fact and match marker subscriptions (D2). See CR sf-1 in
- * docs/extraction/wave2-symfony-adapters-change-requests.md.
+ * docs/extraction/wave2-symfony-adapters-change-requests.md. withFactClass()
+ * scopes a class for append() calls that come from the core bus.
+ *
+ * D14: with an IRelayWakeup, every append pokes it for $wakeupConsumer on
+ * the same connection (a transactional NOTIFY, delivered at COMMIT).
  */
 final class DbalPostgresOutboxStore implements IOutboxStore {
 
@@ -58,11 +63,15 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
   /** @var list<array{0: Claim, 1: string}> dead-lettered by claim() and not yet taken */
   private array $deadLetteredAtClaim = [];
 
+  private ?string $scopedClass = null;
+
   public function __construct(
     private readonly Connection $connection,
     private readonly ?IRelayPauseStore $pauses = null,
     string $tablePrefix = '',
     ?LoggerInterface $logger = null,
+    private readonly ?IRelayWakeup $wakeup = null,
+    private readonly string $wakeupConsumer = '',
   ) {
     $tables = new PrefixedTableNames($tablePrefix);
     $this->outbox = $tables->table('ddd_outbox');
@@ -75,9 +84,29 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
   }
 
   public function append(OutboxRecord $r): void {
-    // Forward compatible with an OutboxRecord that carries the class (CR sf-1).
+    // Forward compatible with an OutboxRecord that carries the class (CR sf-1);
+    // until then the bus decorator scopes the class with withFactClass().
     $class = property_exists($r, 'event_class') ? $r->event_class : null;
-    $this->appendFact($r, is_string($class) ? $class : null);
+    $this->appendFact($r, is_string($class) ? $class : $this->scopedClass);
+  }
+
+  /**
+   * Run $work with $eventClass as the class of every record append()ed
+   * inside it that does not carry its own (CR sf-1 bridge for the core
+   * OutboxIntegrationEventBus, whose OutboxRecord has no class yet).
+   *
+   * @template T
+   * @param callable():T $work
+   * @return T
+   */
+  public function withFactClass(string $eventClass, callable $work): mixed {
+    $previous = $this->scopedClass;
+    $this->scopedClass = $eventClass;
+    try {
+      return $work();
+    } finally {
+      $this->scopedClass = $previous;
+    }
   }
 
   /** append() plus the fact's PHP class. @throws OutboxWriteFailed */
@@ -123,6 +152,8 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
     } catch (\Throwable $e) {
       throw new OutboxWriteFailed("Outbox append of {$r->event_id} failed: " . $e->getMessage(), 0, $e);
     }
+    // D14: in the command's transaction a NOTIFY is delivered at COMMIT only.
+    $this->wakeup?->poke($this->wakeupConsumer);
   }
 
   public function claim(int $limit, \DateTimeImmutable $now, int $leaseSeconds): array {

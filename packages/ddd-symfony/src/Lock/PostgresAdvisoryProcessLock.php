@@ -39,7 +39,7 @@ use TangibleDDD\Symfony\Persistence\PoolerPolicy;
  * Connection: a direct, non-pooled session. A transaction pooler hands the
  * next statement to another backend, so the lock would be taken and
  * released on different sessions or leak. On a connection that looks
- * pooled (ConnectionTopology) the constructor logs a warning (Warn, the
+ * pooled (ConnectionTopology) the first acquire() logs a warning (Warn, the
  * default) or throws PooledConnectionRefused (Refuse). A reconnect also
  * drops the lock silently; process saves are version-fenced for that.
  */
@@ -55,6 +55,10 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
   /** @var \Closure(int): void */
   private readonly \Closure $sleeper;
 
+  private readonly PoolerPolicy $pooler;
+
+  private bool $topologyChecked = false;
+
   /**
    * @param ?\Closure(int): void $sleeper sleeps the given microseconds (tests)
    */
@@ -68,19 +72,11 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
   ) {
     $this->logger = $logger ?? new NullLogger();
     $this->sleeper = $sleeper ?? static function (int $micros): void { usleep($micros); };
-
-    $why = ConnectionTopology::describePooler($connection->getParams());
-    if ($why !== null) {
-      $message = "[ddd lock] the process-lock connection looks pooled ($why); "
-        . 'session advisory locks need a direct (non-pooled) connection (register 5.2)';
-      if ($pooler === PoolerPolicy::Refuse) {
-        throw new PooledConnectionRefused($message);
-      }
-      $this->logger->warning($message);
-    }
+    $this->pooler = $pooler;
   }
 
   public function acquire(LockKey $k, float $timeoutSeconds): LockHandle {
+    $this->checkTopologyOnce();
     $key = $k->postgresKey();
     $deadline = microtime(true) + max(0.0, $timeoutSeconds);
 
@@ -127,6 +123,29 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
       $this->unlock($key, 'force release');
     }
     return count($held);
+  }
+
+  /**
+   * The pooler check runs at the first acquire(), not at construction: web
+   * requests build the runner (and so this lock) on a pooled connection
+   * legitimately, but never take a process lock on sf (5.2).
+   */
+  private function checkTopologyOnce(): void {
+    if ($this->topologyChecked) {
+      return;
+    }
+    $why = ConnectionTopology::describePooler($this->connection->getParams());
+    if ($why === null) {
+      $this->topologyChecked = true;
+      return;
+    }
+    $message = "[ddd lock] the process-lock connection looks pooled ($why); "
+      . 'session advisory locks need a direct (non-pooled) connection (register 5.2)';
+    if ($this->pooler === PoolerPolicy::Refuse) {
+      throw new PooledConnectionRefused($message);
+    }
+    $this->topologyChecked = true;
+    $this->logger->warning($message);
   }
 
   private function unlock(LockKey $k, string $why): void {

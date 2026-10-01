@@ -7,11 +7,14 @@ namespace TangibleDDD\Symfony\Tests\Unit\Runtime;
 use League\Tactician\CommandBus;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Correlation\Correlation;
+use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
+use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\Services\FactPublishedInsideProcess;
+use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Runtime\Audit\Actor;
 use TangibleDDD\Runtime\Audit\ActorKind;
 use TangibleDDD\Runtime\Audit\AuditClose;
@@ -21,29 +24,43 @@ use TangibleDDD\Runtime\Audit\IAuditPolicy;
 use TangibleDDD\Runtime\Audit\IAuditSink;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\FrozenClock;
-use TangibleDDD\Symfony\Runtime\Transitional\ActBracketMiddleware;
-use TangibleDDD\Symfony\Runtime\Transitional\PortOutboxEventBus;
+use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
+use TangibleDDD\Symfony\Runtime\FactClassRecordingEventBus;
+use TangibleDDD\Symfony\Runtime\Factory;
+use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact;
 use TangibleDDD\Testing\FixedActorProvider;
 use TangibleDDD\Testing\InMemoryAuditSink;
 use TangibleDDD\Testing\InMemoryOutboxStore;
+use TangibleDDD\Testing\RecordingSignalDispatcher;
 
-final class TransitionalPipelineTest extends TestCase {
+/**
+ * The act bracket and the integration bus the bundle wires are the CORE
+ * classes (wave-2 carry-over, CR sf-6 rows 1 and 2): CorrelationMiddleware
+ * with the audit ports, and OutboxIntegrationEventBus in its port form
+ * behind the sf class-recording decorator.
+ */
+final class CorePipelineTest extends TestCase {
 
   private FrozenClock $clock;
+  private SymfonyConsumerConfig $consumer;
 
   protected function setUp(): void {
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01T12:00:00Z'));
+    $this->consumer = new SymfonyConsumerConfig('sft', 'App');
+    HostDefaults::provide(\Psr\Log\LoggerInterface::class, new \Psr\Log\NullLogger());
   }
 
   protected function tearDown(): void {
     Correlation::reset();
+    HostDefaults::resetForTests();
   }
 
-  private function bracket(IAuditSink $sink, ?IAuditPolicy $policy = null): ActBracketMiddleware {
-    return new ActBracketMiddleware(
-      new EventsUnitOfWork(), $sink, $policy ?? new AuditEverything(),
-      new FixedActorProvider(new Actor(ActorKind::User, 'u-1')), new PhpEnvironmentProvider(), $this->clock,
+  private function bracket(IAuditSink $sink, ?IAuditPolicy $policy = null): CorrelationMiddleware {
+    return new CorrelationMiddleware(
+      $this->consumer, new EventsUnitOfWork(), new Redactor(), $sink,
+      new FixedActorProvider(new Actor(ActorKind::User, 'u-1')), $policy ?? new AuditEverything(), new PhpEnvironmentProvider(),
     );
   }
 
@@ -83,7 +100,9 @@ final class TransitionalPipelineTest extends TestCase {
     Correlation::within(TraceContext::root()->for_act('outer', 'Outer'), fn () => $bracket->execute(new \stdClass(), fn () => null));
   }
 
-  public function test_an_audit_close_failure_never_replaces_the_outcome(): void {
+  public function test_an_audit_close_failure_never_replaces_the_outcome_and_is_signalled(): void {
+    $signals = new RecordingSignalDispatcher();
+    HostDefaults::provide(IInfrastructureSignalDispatcher::class, $signals);
     $sink = new class implements IAuditSink {
       public function open(AuditOpen $r): void {}
       public function close(AuditClose $r): void {
@@ -92,11 +111,13 @@ final class TransitionalPipelineTest extends TestCase {
     };
 
     self::assertSame('ok', $this->bracket($sink)->execute(new \stdClass(), fn () => 'ok'));
+    self::assertCount(1, $signals->emitted);
+    self::assertInstanceOf(\TangibleDDD\Application\Infrastructure\AuditSinkFailed::class, $signals->emitted[0]['event']);
   }
 
   public function test_the_outbox_bus_stamps_the_record_with_an_absolute_due_time(): void {
     $store = new InMemoryOutboxStore($this->clock);
-    $bus = new PortOutboxEventBus($store, $this->clock);
+    $bus = Factory::integrationBus($store, $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
 
     Correlation::within(TraceContext::root()->for_act('cmd-9', 'Cmd'), fn () => $bus->publish(new PingFact(3)));
 
@@ -108,8 +129,15 @@ final class TransitionalPipelineTest extends TestCase {
     self::assertEquals($this->clock->now(), $claim->record->due_at);
   }
 
+  public function test_the_bus_is_the_core_bus_behind_the_class_recording_decorator(): void {
+    $bus = Factory::integrationBus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
+
+    self::assertInstanceOf(FactClassRecordingEventBus::class, $bus);
+    self::assertInstanceOf(OutboxIntegrationEventBus::class, $bus->inner());
+  }
+
   public function test_the_outbox_bus_refuses_a_fact_published_from_a_process_step(): void {
-    $bus = new PortOutboxEventBus(new InMemoryOutboxStore($this->clock), $this->clock);
+    $bus = Factory::integrationBus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
 
     $this->expectException(FactPublishedInsideProcess::class);
     Correlation::within(TraceContext::root()->for_trajectory('7', 'P'), fn () => $bus->publish(new PingFact()));

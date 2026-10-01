@@ -54,14 +54,31 @@ use TangibleDDD\Symfony\Runtime\DddRuntimeReset;
 use TangibleDDD\Symfony\Runtime\Factory;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
-use TangibleDDD\Symfony\Runtime\Transitional\ActBracketMiddleware;
-use TangibleDDD\Symfony\Runtime\Transitional\PortOutboxEventBus;
+use TangibleDDD\Symfony\Runtime\SymfonySignalDispatcher;
+use TangibleDDD\Symfony\Runtime\HostDefaultsInstaller;
+use TangibleDDD\Symfony\Runtime\LazyProcessEntry;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresListenWaiter;
+use TangibleDDD\Symfony\Runtime\Wakeup\PostgresNotifyRelayWakeup;
+use TangibleDDD\Symfony\Runtime\Wakeup\ProcessRunnerWakeTarget;
+use TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelay;
+use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
+use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
+use TangibleDDD\Symfony\Persistence\DbalProcessStore;
+use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
+use TangibleDDD\Symfony\Persistence\PoolerPolicy;
+use TangibleDDD\Application\Correlation\CorrelationMiddleware;
+use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Runtime\Delivery\IRelayWakeup;
+use TangibleDDD\Runtime\Lock\IProcessLock;
+use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
+use TangibleDDD\Runtime\Process\IProcessStore;
+use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 
 /**
  * tangible/ddd-symfony services. Every ddd port is bound to ONE DBAL
  * connection (`tangible_ddd.connection`). Service ids are the stable wiring
- * surface; the TRANSITIONAL ids (act bracket, integration bus, relay) switch
- * to the core classes in wave-2 round 3 without changing the ids.
+ * surface; since wave 3 the act bracket, integration bus and relay ids point
+ * at the core classes (CR sf-6).
  */
 return static function (ContainerConfigurator $container, ContainerBuilder $builder): void {
   /** @var array<string, mixed> $config */
@@ -97,8 +114,14 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.connection'), $prefix]);
   $s->alias(IRelayPauseStore::class, 'tangible_ddd.relay_pauses');
 
+  // D14: a transactional NOTIFY per outbox append / wakeup intent; ddd:relay LISTENs.
+  $s->set('tangible_ddd.relay_wakeup', PostgresNotifyRelayWakeup::class)
+    ->args([service('tangible_ddd.connection'), $logger]);
+  $s->alias(IRelayWakeup::class, 'tangible_ddd.relay_wakeup');
+
   $s->set('tangible_ddd.outbox_store', DbalPostgresOutboxStore::class)
-    ->args([service('tangible_ddd.connection'), service('tangible_ddd.relay_pauses'), $prefix, $logger]);
+    ->args([service('tangible_ddd.connection'), service('tangible_ddd.relay_pauses'), $prefix, $logger,
+      $config['relay']['listen'] ? service('tangible_ddd.relay_wakeup') : null, $consumer['prefix']]);
   $s->alias(IOutboxStore::class, 'tangible_ddd.outbox_store');
 
   $s->set('tangible_ddd.outbox_administration', DbalOutboxAdministration::class)
@@ -113,10 +136,65 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->factory([Factory::class, 'outboxConfig'])
     ->args([$config['relay']]);
 
+  // ── processes (register 3.6-3.8, 5.2, 5.3) ───────────────────────────────
+  $process = $config['process'];
+  $s->set('tangible_ddd.process_store', DbalProcessStore::class)
+    ->args([service('tangible_ddd.connection'), service('tangible_ddd.clock'), $prefix, $process['stranded_after_seconds']]);
+  $s->alias(IProcessStore::class, 'tangible_ddd.process_store');
+
+  $s->set('tangible_ddd.wakeup_scheduler', DbalWakeupScheduler::class)
+    ->args([service('tangible_ddd.connection'), $prefix, $config['relay']['listen'] ? service('tangible_ddd.relay_wakeup') : null]);
+  $s->alias(IWakeupScheduler::class, 'tangible_ddd.wakeup_scheduler');
+
+  $s->set('tangible_ddd.process_lock', ReentrantProcessLock::class)
+    ->factory([Factory::class, 'processLock'])
+    ->args([service('tangible_ddd.connection'), $process['pooled_connection'], $logger]);
+  $s->alias(IProcessLock::class, 'tangible_ddd.process_lock');
+
+  // start(): persist + Continue intent in the caller's transaction (X3); the
+  // first step runs in a worker unless tangible_ddd.process.inband_start.
+  $s->set('tangible_ddd.process_runner', ProcessRunner::class)
+    ->factory([Factory::class, 'processRunner'])
+    ->args([
+      service('tangible_ddd.consumer_config'),
+      service('tangible_ddd.process_lock'),
+      service('tangible_ddd.process_store'),
+      service('tangible_ddd.wakeup_scheduler'),
+      service('tangible_ddd.subscriptions'),
+      service('tangible_ddd.transaction_boundary'),
+      service('tangible_ddd.clock'),
+      $process['inband_start'],
+      $logger,
+    ])
+    ->public();
+  $s->alias(ProcessRunner::class, 'tangible_ddd.process_runner')->public();
+
+  $s->set('tangible_ddd.process_entry', LazyProcessEntry::class)
+    ->args([service_closure($config['process_entry'] ?? 'tangible_ddd.process_runner')]);
+
+  $s->set('tangible_ddd.wake_target', ProcessRunnerWakeTarget::class)
+    ->args([service('tangible_ddd.process_runner')]);
+  $s->set('tangible_ddd.wakeup_handler', ProcessWakeupHandler::class)
+    ->args([service('tangible_ddd.wake_target'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.clock'), $logger])
+    ->tag('messenger.message_handler', ['bus' => $config['messenger']['bus'], 'handles' => ProcessWakeupMessage::class]);
+
+  $s->set('tangible_ddd.wakeup_relay', WakeupRelay::class)
+    ->args([
+      service('tangible_ddd.wakeup_scheduler'),
+      service('tangible_ddd.process_store'),
+      service('tangible_ddd.transaction_boundary'),
+      service('messenger.transport.' . $config['messenger']['wakeup_transport']),
+      service('tangible_ddd.clock'),
+      $consumer['prefix'],
+      $process['wakeup_lease_seconds'],
+      $process['stranded_scan_seconds'],
+      $logger,
+      $config['messenger']['bus'],
+    ]);
+
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
   $s->set('tangible_ddd.subscriptions', CompiledSubscriptionRegistry::class)
-    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'),
-      $config['process_entry'] === null ? null : service($config['process_entry'])]);
+    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry')]);
   $s->alias(ISubscriptionRegistry::class, 'tangible_ddd.subscriptions');
 
   $s->set('tangible_ddd.delivery', IntegrationDelivery::class)
@@ -173,9 +251,11 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->factory([Factory::class, 'domainDispatcher'])
     ->args([[], abstract_arg('domain listener locator, set by DomainListenerPass')]);
 
-  // TRANSITIONAL (CONF-2): round 3 points this id at the core OutboxIntegrationEventBus.
-  $s->set('tangible_ddd.integration_bus', PortOutboxEventBus::class)
-    ->args([service('tangible_ddd.outbox_store'), service('tangible_ddd.clock'), service('tangible_ddd.outbox_config')]);
+  // The core OutboxIntegrationEventBus (port form, CONF-2) behind the sf
+  // decorator that records the fact class on the outbox row (CR sf-1).
+  $s->set('tangible_ddd.integration_bus', IIntegrationEventBus::class)
+    ->factory([Factory::class, 'integrationBus'])
+    ->args([service('tangible_ddd.outbox_store'), service('tangible_ddd.clock'), service('tangible_ddd.consumer_config'), service('tangible_ddd.outbox_config')]);
   $s->alias(IIntegrationEventBus::class, 'tangible_ddd.integration_bus');
 
   $s->set('tangible_ddd.event_router', EventRouter::class)
@@ -186,18 +266,30 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.audit.environment', PhpEnvironmentProvider::class)
     ->args([['env' => param('kernel.environment'), 'app' => $consumer['version']]]);
 
-  // TRANSITIONAL (CONF-1): round 3 points this id at the core CorrelationMiddleware.
-  $s->set('tangible_ddd.middleware.act_bracket', ActBracketMiddleware::class)
+  // The act bracket: core CorrelationMiddleware with the audit ports (CONF-1).
+  $s->set('tangible_ddd.middleware.act_bracket', CorrelationMiddleware::class)
     ->args([
+      service('tangible_ddd.consumer_config'),
       service(EventsUnitOfWork::class),
-      service($config['audit']['sink'] ?? 'tangible_ddd.audit.sink'),
-      service($config['audit']['policy'] ?? 'tangible_ddd.audit.policy'),
-      service('tangible_ddd.actor_provider'),
-      service('tangible_ddd.audit.environment'),
-      service('tangible_ddd.clock'),
       inline_service(Redactor::class),
-      $logger,
+      service($config['audit']['sink'] ?? 'tangible_ddd.audit.sink'),
+      service('tangible_ddd.actor_provider'),
+      service($config['audit']['policy'] ?? 'tangible_ddd.audit.policy'),
+      service('tangible_ddd.audit.environment'),
     ]);
+
+  // Signals reach the PSR logger and the event dispatcher (HostDefaults at boot).
+  $s->set('tangible_ddd.signal_dispatcher', SymfonySignalDispatcher::class)
+    ->args([$logger, service('event_dispatcher')->nullOnInvalid()]);
+  $s->set('tangible_ddd.host_defaults', HostDefaultsInstaller::class)
+    ->args([
+      service('tangible_ddd.signal_dispatcher'),
+      service('tangible_ddd.clock'),
+      service('tangible_ddd.connection'),
+      $config['process']['inband_start'],
+      $logger,
+    ])
+    ->public();
   $s->set('tangible_ddd.middleware.transaction', TransactionalCommandMiddleware::class)
     ->args([service('tangible_ddd.transaction_boundary')]);
   $s->set('tangible_ddd.middleware.domain_events', DomainEventsPublishMiddleware::class)
@@ -250,8 +342,16 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   if (!$console) {
     return;
   }
+  if ($config['relay']['listen']) {
+    $s->set('tangible_ddd.relay_waiter', PostgresListenWaiter::class)
+      ->args([service('tangible_ddd.connection'), $consumer['prefix'], $logger, PoolerPolicy::from($process['pooled_connection'])]);
+  }
   $s->set('tangible_ddd.command.relay', RelayCommand::class)
-    ->args([service('tangible_ddd.relay'), $config['relay']['batch_size'], $config['relay']['idle_sleep_seconds'], $logger])
+    ->args([
+      service('tangible_ddd.relay'), $config['relay']['batch_size'], $config['relay']['idle_sleep_seconds'], $logger, null, 10,
+      service('tangible_ddd.wakeup_relay'),
+      $config['relay']['listen'] ? service('tangible_ddd.relay_waiter') : null,
+    ])
     ->tag('console.command', ['command' => 'ddd:relay']);
   $s->set('tangible_ddd.command.schema_dump', SchemaDumpCommand::class)
     ->args([$prefix])
