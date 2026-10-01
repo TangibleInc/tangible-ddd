@@ -10,6 +10,7 @@ use TangibleDDD\Application\Events\PublishedFacts;
 use TangibleDDD\Conformance\Fixtures\CreateWidget;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Runtime\Ids\NameBasedUuid;
 
 /**
  * Base of every abstract scenario case. A host plugs in by extending a
@@ -41,9 +42,22 @@ abstract class ConformanceTestCase extends TestCase {
     parent::tearDown();
   }
 
-  /** The wire form a relay would hand the delivery runner for $fact under $eventId. */
+  /** uuid5 namespace of the default correlation ids of wrap() (fixed). */
+  public const CORRELATION_NAMESPACE = '3f6b1c2e-8d4a-5e7f-9a0b-c1d2e3f4a5b6';
+
+  /**
+   * The wire form a relay would hand the delivery runner for $fact under
+   * $eventId. The default correlation id is a UUID,
+   * uuid5(CORRELATION_NAMESPACE, 'corr-' . event id), as a relayed envelope
+   * carries (W3-WPC3-2: wp stores it in a CHAR(36) column).
+   */
   protected static function wrap(IIntegrationEvent $fact, string $eventId, ?string $correlationId = null, int $sequence = 1): array {
-    return IntegrationEnvelope::wrap($fact->integration_payload(), $correlationId ?? 'corr-' . $eventId, $sequence, $eventId);
+    return IntegrationEnvelope::wrap(
+      $fact->integration_payload(),
+      $correlationId ?? NameBasedUuid::v5(self::CORRELATION_NAMESPACE, 'corr-' . $eventId),
+      $sequence,
+      $eventId,
+    );
   }
 
   /**
