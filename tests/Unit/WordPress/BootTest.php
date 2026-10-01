@@ -45,6 +45,10 @@ class BootTest extends TestCase {
     ConsumerRegistry::reset();
   }
 
+  protected function tearDown(): void {
+    ConsumerRegistry::reset();
+  }
+
   public function test_boot_registers_the_consumer_immediately(): void {
     $config = new FakeDDDConfig();
 

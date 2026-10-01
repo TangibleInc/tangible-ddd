@@ -22,6 +22,14 @@ use TangibleDDD\Infra\IDDDConfig;
  */
 class DDDConfigTest extends TestCase {
 
+  protected function setUp(): void {
+    ConsumerRegistry::reset();
+  }
+
+  protected function tearDown(): void {
+    ConsumerRegistry::reset();
+  }
+
   private function make(): DDDConfig {
     return new DDDConfig(prefix: 'tgbl_x', namespace_root: 'Acme\\X', version: '1.2.3');
   }
@@ -48,14 +56,10 @@ class DDDConfigTest extends TestCase {
   }
 
   public function test_namespace_root_is_explicit_not_derived(): void {
-    ConsumerRegistry::reset();
-
     $handle = ConsumerRegistry::add($this->make(), static fn () => new \stdClass());
 
     // Derivation would say "TangibleDDD\Infra" (this class's own namespace) — wrong
     // for a framework-shipped concrete. The ctor arg is authoritative.
     $this->assertSame('Acme\\X', $handle->namespace_root());
-
-    ConsumerRegistry::reset();
   }
 }

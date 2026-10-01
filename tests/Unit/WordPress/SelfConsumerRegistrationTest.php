@@ -19,6 +19,10 @@ use function TangibleDDD\WordPress\register_self_consumer;
  */
 final class SelfConsumerRegistrationTest extends TestCase {
 
+  protected function setUp(): void {
+    ConsumerRegistry::reset();
+  }
+
   protected function tearDown(): void {
     ConsumerRegistry::reset();
   }

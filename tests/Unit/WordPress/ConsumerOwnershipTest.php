@@ -44,6 +44,10 @@ class ConsumerOwnershipTest extends TestCase {
     ConsumerRegistry::reset();
   }
 
+  protected function tearDown(): void {
+    ConsumerRegistry::reset();
+  }
+
   private static function getter(): callable {
     return static fn () => new \stdClass();
   }
