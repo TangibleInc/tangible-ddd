@@ -92,7 +92,7 @@ final class ProcessRunnerCoreTest extends TestCase {
   }
 
   private function deliver(string $class, array $payload, ?string $eventId = self::EVENT_ID, ?InMemoryDeliveryLedger $ledger = null): void {
-    (new IntegrationDelivery($this->registry, $ledger ?? new InMemoryDeliveryLedger(), 5, static fn () => null))
+    (new IntegrationDelivery($this->registry, $ledger ?? new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger()))
       ->deliver($class, IntegrationEnvelope::wrap($payload, 'corr-1', 1, $eventId));
   }
 
@@ -291,9 +291,12 @@ final class ProcessRunnerCoreTest extends TestCase {
     self::assertSame('completed', $this->store->statusOf($p->get_id()));
   }
 
-  public function test_a_fenced_write_aborts_a_wake_whose_row_changed_after_it_was_read(): void {
-    // Another holder (e.g. after this connection silently lost its session
-    // lock) saves the row between this runner's read and its write.
+  public function test_a_row_changed_before_the_lock_is_re_read_under_it(): void {
+    // Wave 3 (C6, C7): another holder bumps the row between this runner's
+    // unlocked pre-read and its lock. The wake re-reads under the lock, so
+    // it works on the newer version instead of aborting on a stale one. (A
+    // change AFTER the re-read is caught by the fenced touch before the
+    // step's commands dispatch: ProcessRunnerWave3Test.)
     $store = $this->store;
     $interloper = null;
     $lock = new class($this->lock) implements \TangibleDDD\Runtime\Lock\IProcessLock {
@@ -320,15 +323,10 @@ final class ProcessRunnerCoreTest extends TestCase {
       $store->touch($id, (int) $store->versionOf($id));
     };
 
-    try {
-      $runner->resume(new UserJoined(5));
-      self::fail('expected the fence to abort the wake');
-    } catch (ConcurrentProcessModification) {
-    }
+    $runner->resume(new UserJoined(5));
 
-    self::assertSame(['invite'], Journal::$steps, 'the wake aborted before the next step ran');
-    self::assertSame(['invite'], RecordingCommand::labels(), 'no step command was dispatched');
-    self::assertSame('suspended', $store->statusOf($id), 'the aborted wake did not mark the process failed');
+    self::assertSame(['invite', 'greet'], Journal::$steps);
+    self::assertSame('completed', $store->statusOf($id));
     self::assertSame(0, $this->lock->heldCount());
   }
 

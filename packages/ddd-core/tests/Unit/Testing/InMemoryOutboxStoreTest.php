@@ -251,6 +251,20 @@ final class InMemoryOutboxStoreTest extends TestCase {
     self::assertSame('pending', $this->store->statusOf('dead'));
   }
 
+  public function test_sfc5_retry_of_a_dead_lettered_row_removes_its_dlq_entry(): void {
+    $this->store->append($this->record('dead'));
+    $this->store->append($this->record('other'));
+    foreach ($this->store->claim(2, $this->clock->now(), 60) as $c) {
+      $this->store->deadLetter($c, 'poison');
+    }
+    self::assertSame(2, $this->store->stats()['dead_letters']);
+
+    $this->store->retry('dead');
+
+    self::assertSame(1, $this->store->stats()['dead_letters'], 'the retried row left the DLQ');
+    self::assertSame(['other'], array_map(static fn ($d) => $d->event_id, $this->store->deadLetters(10)));
+  }
+
   public function test_retry_always_refuses_a_leased_row_even_forced(): void {
     $this->store->append($this->record('e1'));
     $this->store->claim(1, $this->clock->now(), 60);

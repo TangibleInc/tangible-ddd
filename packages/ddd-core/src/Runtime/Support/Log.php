@@ -18,10 +18,8 @@ use TangibleDDD\Runtime\HostDefaults;
  *   3. PHP's error_log() for notice and above, so no problem is ever
  *      silent; debug/info records are dropped when there is no logger.
  *
- * Transitional: the wave-1 form `\Closure(string $message): void` is still
- * accepted for one round, so callers built against wave 1 (the conformance
- * mem host) keep working. It is deprecated; pass a LoggerInterface
- * (CR-SP-1 in docs/extraction/wave2-split-ports-change-requests.md).
+ * The wave-1 `\Closure(string $message): void` form was accepted for one
+ * round (CR-SP-1) and is removed in wave 3: pass a LoggerInterface.
  *
  * Never throws for a well-formed sink; a throwing logger propagates, as a
  * logger bug is the host's to see.
@@ -30,16 +28,8 @@ use TangibleDDD\Runtime\HostDefaults;
  */
 final class Log {
 
-  /**
-   * @param LoggerInterface|(\Closure(string):void)|null $sink
-   * @param string $level a PSR-3 level; used for LoggerInterface sinks only
-   */
-  public static function write(LoggerInterface|\Closure|null $sink, string $message, string $level = 'warning'): void {
-    if ($sink instanceof \Closure) {
-      $sink($message);
-      return;
-    }
-
+  /** @param string $level a PSR-3 level */
+  public static function write(?LoggerInterface $sink, string $message, string $level = 'warning'): void {
     $sink ??= self::hostLogger();
     if ($sink !== null) {
       $sink->log($level, $message);

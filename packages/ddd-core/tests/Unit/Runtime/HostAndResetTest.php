@@ -157,7 +157,7 @@ final class HostAndResetTest extends TestCase {
 
   public function test_a_lock_leak_is_force_released_so_the_next_reset_is_clean(): void {
     $backend = new InMemoryProcessLock();
-    $lock = new ReentrantProcessLock($backend, static fn () => null);
+    $lock = new ReentrantProcessLock($backend, new \Psr\Log\NullLogger());
     RuntimeReset::guardLock($lock);
     $key = new LockKey('acme', '', 7);
     $lock->acquire($key, 0.0);

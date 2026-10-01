@@ -67,12 +67,12 @@ final class IntegrationDelivery {
 
   public const DEFAULT_BUDGET = 5;
 
-  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
+  /** @param LoggerInterface|null $log PSR-3 logger; null: host logger, else error_log() */
   public function __construct(
     private readonly ISubscriptionRegistry $registry,
     private readonly IDeliveryLedger $ledger,
     private readonly int $budget = self::DEFAULT_BUDGET,
-    private readonly LoggerInterface|\Closure|null $log = null,
+    private readonly ?LoggerInterface $log = null,
   ) {
     if ($budget < 1) {
       throw new \InvalidArgumentException('Delivery budget must be at least 1');
