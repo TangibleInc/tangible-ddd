@@ -1155,8 +1155,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     return $this->resolved_clock ??= $this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock();
   }
 
+  /** The constructor's mode, else a host-wide HostDefaults::provide(StartMode::class, StartMode::X), else InBand. */
   private function start_mode(): StartMode {
-    return $this->start_mode ?? StartMode::InBand;
+    if ($this->start_mode !== null) {
+      return $this->start_mode;
+    }
+    $host = HostDefaults::get(StartMode::class);
+    return $host instanceof StartMode ? $host : StartMode::InBand;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -465,6 +465,15 @@ final class ProcessRunnerWave3Test extends TestCase {
     self::assertSame(['reserve', 'ship'], Journal::$steps);
   }
 
+  public function test_the_host_can_choose_the_start_mode_for_every_runner(): void {
+    HostDefaults::provide(StartMode::class, StartMode::Deferred);
+
+    $this->runner->start(new TwoStepProcess(2));
+
+    self::assertSame([], Journal::$steps);
+    self::assertSame('scheduled', $this->store->statusOf(1));
+  }
+
   public function test_a_deferred_start_commits_with_the_callers_transaction(): void {
     $runner = $this->runner(mode: StartMode::Deferred);
 
