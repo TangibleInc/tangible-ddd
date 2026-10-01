@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Runtime\Delivery;
 
+use Psr\Log\LoggerInterface;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
@@ -61,12 +62,12 @@ final class IntegrationDelivery {
 
   public const DEFAULT_BUDGET = 5;
 
-  /** @param (\Closure(string):void)|null $log */
+  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
   public function __construct(
     private readonly ISubscriptionRegistry $registry,
     private readonly IDeliveryLedger $ledger,
     private readonly int $budget = self::DEFAULT_BUDGET,
-    private readonly ?\Closure $log = null,
+    private readonly LoggerInterface|\Closure|null $log = null,
   ) {
     if ($budget < 1) {
       throw new \InvalidArgumentException('Delivery budget must be at least 1');
