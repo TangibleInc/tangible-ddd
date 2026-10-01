@@ -185,6 +185,25 @@ $check($first !== null && $first->due_at == $clock->now(), 'with an absolute due
 $check($first !== null && $first->command_id !== null, 'raised by its command (the raiser edge)');
 $check(Correlation::peek() === null, 'no correlation scope leaks out of the bus');
 
+// ── One bounded drain pass (register 3.6) ──────────────────────────────────
+// A cron line would call this; here the relay hands the facts to an
+// in-memory transport (a real host passes its queue's ITransport).
+
+$transport = new \TangibleDDD\Testing\InMemoryTransport();
+$drain = new \TangibleDDD\Runtime\Drain(
+  relay: new \TangibleDDD\Infra\Services\OutboxProcessor(
+    $config, null, new \TangibleDDD\Application\Outbox\OutboxConfig(), null,
+    null, new \Psr\Log\NullLogger(), $clock, $outbox, $transport, $boundary,
+  ),
+  clock: $clock,
+);
+$report = $drain->runOnce(maxItems: 2, maxSeconds: 5);
+$rest = $drain->runOnce();
+
+$check(count($report->relay?->accepted ?? []) === 2 && $report->stoppedBy === 'max_items', 'runOnce is bounded by its item budget');
+$check(count($rest->relay?->accepted ?? []) === 1 && $rest->stoppedBy === 'idle', 'the next pass drains the rest');
+$check(count($transport->submissions) === 3 && $outbox->statusOf($ids[0]) === 'accepted', 'every fact reached the transport once');
+
 if ($failures !== []) {
   fwrite(STDERR, count($failures) . " check(s) failed\n");
   exit(1);

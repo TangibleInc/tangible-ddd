@@ -127,6 +127,10 @@ final class Drain {
       $stopped = DrainReport::STOPPED_MAX_SECONDS;
     }
 
+    if ($stopped === DrainReport::STOPPED_IDLE && $budgetLeft() === 0) {
+      $stopped = DrainReport::STOPPED_MAX_ITEMS; // the budget ran out in the last stage that ran
+    }
+
     return new DrainReport(
       $relay, $delivered,
       $wakes['completed'], $wakes['retried'], $wakes['exhausted'], $wakes['lost'],

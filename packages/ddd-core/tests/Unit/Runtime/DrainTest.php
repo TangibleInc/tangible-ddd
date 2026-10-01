@@ -142,6 +142,18 @@ final class DrainTest extends TestCase {
     self::assertCount(1, $this->wakeups->pending());
   }
 
+  public function test_a_budget_used_up_by_the_last_stage_reports_max_items(): void {
+    $this->append('a');
+    $this->append('b');
+    $relayOnly = new Drain(
+      relay: new OutboxProcessor(new AcmeConfig(), null, new OutboxConfig(), null, null, $this->logger, $this->clock, $this->outbox, $this->transport, $this->boundary),
+      clock: $this->clock,
+    );
+
+    self::assertSame('max_items', $relayOnly->runOnce(2)->stoppedBy);
+    self::assertSame('idle', $relayOnly->runOnce(2)->stoppedBy);
+  }
+
   public function test_the_time_budget_stops_before_any_work(): void {
     $this->append('a');
 
