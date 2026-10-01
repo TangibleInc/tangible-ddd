@@ -89,6 +89,53 @@ final class HostDefaultsWiring {
   }
 
   /**
+   * WordPress that never boots (wave 5): the loader saw add_action, so it
+   * deferred the winner's initializer to plugins_loaded, which a consumer
+   * test bootstrap never fires; hooks.php never runs. Installed through
+   * wire_unbooted() (wordpress/unbooted.php) at the loader's include time,
+   * this one-shot miss resolver fills every unprovided WordPress default on
+   * the first HostDefaults miss, like register_lazily(), guarded to the
+   * winner's classes:
+   *
+   * - once a winner has initialized, its own hooks.php owns the wiring:
+   *   the resolver removes itself and provides nothing;
+   * - it wires only when $root is the distribution whose classes are
+   *   loaded (HostDefaults itself is under $root) and, when copies have
+   *   registered, the latest of them; otherwise it stays in place for the
+   *   copy that is.
+   *
+   * @param string $root the distribution root of the loader that installs it
+   */
+  public static function register_unbooted(string $root): void {
+    $root = rtrim($root, '/') . '/';
+    HostDefaults::on_miss(static function () use ($root): void {
+      if (class_exists('Tangible_DDD_Versions', false) && \Tangible_DDD_Versions::instance()->is_initialized()) {
+        HostDefaults::on_miss(null);
+        return;
+      }
+      if (!self::wordpress_is_present() || !self::serves_from($root)) {
+        return;
+      }
+      HostDefaults::on_miss(null);
+      self::fill_missing();
+    });
+  }
+
+  /** Whether $root is the copy whose classes this process loads, and the latest registered one. */
+  private static function serves_from(string $root): bool {
+    $file = (string) (new \ReflectionClass(HostDefaults::class))->getFileName();
+    if (!str_starts_with($file, $root)) {
+      return false;
+    }
+    if (!class_exists('Tangible_DDD_Versions', false)) {
+      return true;
+    }
+    $copies = \Tangible_DDD_Versions::instance()->all_registered();
+    $latest = \Tangible_DDD_Versions::instance()->latest();
+    return $latest === null || rtrim($copies[$latest], '/') . '/' === $root;
+  }
+
+  /**
    * The WordPress surfaces the 0.6.5 constructors and factories touched:
    * the hook API (add_action, has_action, do_action) or the options API
    * (OutboxConfig::from_options read get_option directly).

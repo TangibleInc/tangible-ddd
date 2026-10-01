@@ -112,6 +112,54 @@ final class LateWordPressBootTest extends TestCase {
     );
   }
 
+  /**
+   * Wave 5 cleanup of the LMS fix: a bootstrap that defines its add_action
+   * stub BEFORE vendor/autoload.php and never fires plugins_loaded. The
+   * loader defers the winner's initializer to plugins_loaded, so hooks.php
+   * (and register_lazily) never runs; the unbooted wiring installed at the
+   * loader's include time fills the ports on the first miss.
+   */
+  public function test_a_bootstrap_that_stubs_wordpress_first_and_never_fires_plugins_loaded_gets_the_wordpress_ports(): void {
+    $r = self::boot('stubs-first');
+
+    self::assertTrue($r['wp_at_autoload'], 'the fixture models the early-stub case: add_action exists at autoload');
+    self::assertFalse($r['winner_initialized'], 'the loader waits for a plugins_loaded that never fires');
+
+    self::assertSame([], $r['failures'], 'every public service of the 0.6 scaffold resolves');
+    self::assertSame(7, $r['batch_size'], 'OutboxConfig::from_options reads the option through get_option');
+    self::assertSame('handled', $r['portable_tx'], 'a transactional command runs inside the wpdb boundary');
+    self::assertSame(['START TRANSACTION', 'COMMIT'], $r['tx_queries']);
+    self::assertSame(WpHookSubscriptionRegistry::class, $r['ports'][ISubscriptionRegistry::class]);
+    self::assertSame(WpOptionsOutboxConfigReader::class, $r['ports'][IOutboxOptionsReader::class]);
+    self::assertSame(WpHostPortFactory::class, $r['ports'][IHostPortFactory::class]);
+    self::assertSame(
+      \TangibleDDD\WordPress\Adapter\ActionSchedulerWakeupScheduler::class,
+      $r['per_consumer'][\TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class]
+    );
+  }
+
+  public function test_the_unbooted_wiring_only_wires_the_classes_of_its_own_distribution(): void {
+    $r = self::boot('stubs-first-foreign');
+
+    self::assertFalse($r['winner_initialized']);
+    self::assertNull($r['ports'][IOutboxOptionsReader::class], 'installed for another root, it provides nothing');
+    self::assertNull($r['ports'][ISubscriptionRegistry::class]);
+  }
+
+  public function test_the_unbooted_wiring_steps_aside_once_the_winner_booted(): void {
+    // This process initialized the winner at autoload (no add_action then),
+    // so its hooks.php owns the wiring.
+    self::assertTrue(\Tangible_DDD_Versions::instance()->is_initialized());
+    HostDefaults::reset_for_tests();
+
+    HostDefaultsWiring::register_unbooted(dirname(__DIR__, 3));
+
+    self::assertNull(HostDefaults::get(IOutboxOptionsReader::class), 'nothing is provided by the unbooted resolver');
+    $reader = new WpOptionsOutboxConfigReader();
+    HostDefaults::provide(IOutboxOptionsReader::class, $reader);
+    self::assertNull(HostDefaults::get(IClock::class), 'and it removed itself');
+  }
+
   public function test_from_options_works_with_only_get_option_defined(): void {
     $r = self::boot('options-only');
 
