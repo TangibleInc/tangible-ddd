@@ -302,14 +302,14 @@ final class WpLedgeredDelivery {
     if (preg_match(self::KERNEL_ID, $subscriberId) === 1) {
       return self::BUDGET;
     }
-    $attempts = self::$declared[$subscriberId] ?? self::consumerAttempts($prefix);
+    $attempts = self::$declared[$subscriberId] ?? self::consumer_attempts($prefix);
     if (function_exists('apply_filters')) {
       $attempts = apply_filters(self::ATTEMPTS_FILTER, $attempts, $subscriberId, $prefix);
     }
     return max(1, self::positive($attempts) ?? 1);
   }
 
-  private static function consumerAttempts(string $prefix): int {
+  private static function consumer_attempts(string $prefix): int {
     if (!function_exists('get_option')) {
       return self::LISTENER_ATTEMPTS;
     }

@@ -113,7 +113,7 @@ final class HostDefaultsWiring {
         HostDefaults::on_miss(null);
         return;
       }
-      if (!self::wordpress_is_present() || !self::serves_from($root)) {
+      if (!self::wordpress_is_present() || !self::is_winner($root)) {
         return;
       }
       HostDefaults::on_miss(null);
@@ -122,7 +122,7 @@ final class HostDefaultsWiring {
   }
 
   /** Whether $root is the copy whose classes this process loads, and the latest registered one. */
-  private static function serves_from(string $root): bool {
+  private static function is_winner(string $root): bool {
     $file = (string) (new \ReflectionClass(HostDefaults::class))->getFileName();
     if (!str_starts_with($file, $root)) {
       return false;
