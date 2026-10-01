@@ -5,7 +5,7 @@
  * must have PASSED in the JUnit log in both prepare modes (Native and
  * Emulated host classes). Skipped, failed or missing copies fail the gate.
  *
- *   php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php <junit.xml> [wave=3]
+ *   php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php <junit.xml> [wave=4]
  */
 
 declare(strict_types=1);
@@ -19,7 +19,7 @@ $loader = require $root . '/vendor/autoload.php';
 $loader->addPsr4('TangibleDDD\\Conformance\\', $root . '/packages/ddd-conformance/src/');
 $loader->addPsr4('TangibleDDD\\Core\\Tests\\Pdo\\Conformance\\', dirname(__DIR__) . '/');
 
-[$junit, $wave] = [$argv[1] ?? '', (int) ($argv[2] ?? 3)];
+[$junit, $wave] = [$argv[1] ?? '', (int) ($argv[2] ?? 4)];
 if (!is_file($junit)) {
   fwrite(STDERR, "check-due: no JUnit log at '$junit'\n");
   exit(1);

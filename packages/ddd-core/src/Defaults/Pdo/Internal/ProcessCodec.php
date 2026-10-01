@@ -71,7 +71,7 @@ final class ProcessCodec {
     try {
       $process = self::instantiate($class, (array) (self::decodeJson($row['business_data']) ?? []));
 
-      $steps = $row['steps'] === null ? null : ProcessSteps::from_json(json_decode((string) $row['steps'], false, 512, JSON_THROW_ON_ERROR));
+      $steps = $row['steps'] === null ? null : self::decodeSteps((string) $row['steps']);
       $payload = $row['payload'] === null ? null : JsonLifecycleValue::deserialize_polymorphic((array) self::decodeJson($row['payload']));
       $match = $row['match_criteria'] === null ? null : (array) self::decodeJson($row['match_criteria']);
 
@@ -155,6 +155,27 @@ final class ProcessCodec {
       return LargeString::fromPayload($value);
     }
     return $value;
+  }
+
+  /**
+   * The steps column, decoded as the runner wrote it. JSON gives every
+   * checkpoint back as an object, but ProcessSteps::checkpoint_for() takes
+   * the polymorphic envelope as an array (`{_class, _data}`, as
+   * serialize_polymorphic() builds it); the envelope is made an array
+   * again, its `_data` is left as decoded (JsonLifecycleValue::from_json()
+   * takes either). Without this a stored checkpoint (D3: the checkpoint of
+   * a suspending step, W4P behaviour change 2) cannot be read back.
+   */
+  private static function decodeSteps(string $json): ProcessSteps {
+    $data = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+    if ($data instanceof \stdClass && isset($data->checkpoints) && (is_object($data->checkpoints) || is_array($data->checkpoints))) {
+      $checkpoints = [];
+      foreach ((array) $data->checkpoints as $step => $checkpoint) {
+        $checkpoints[$step] = $checkpoint instanceof \stdClass ? (array) $checkpoint : $checkpoint;
+      }
+      $data->checkpoints = $checkpoints;
+    }
+    return ProcessSteps::from_json($data);
   }
 
   private static function decodeJson(mixed $value): mixed {

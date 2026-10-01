@@ -7,17 +7,20 @@ namespace TangibleDDD\Core\Tests\Pdo\Conformance;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Conformance\EffectHost;
 use TangibleDDD\Conformance\FreshProcesses;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ScenarioCatalogue;
 use TangibleDDD\Conformance\ScenarioId;
 
 /**
- * Pins the 37 pdo ids of register section 8 (wave 3) and proves each runs
- * the shared scenario unchanged in BOTH prepare modes: for every abstract
- * case that declares a due id there is a Native and an Emulated host class,
- * and no host class redeclares a due id (a redeclaration is how a host
- * skips one).
+ * Pins the pdo ids of register section 8 (37 in wave 3, 7 more in wave 4:
+ * the four wave-4 cells plus the three D3 ids of CR-W4C4-1) and proves each
+ * runs the shared scenario unchanged in BOTH prepare modes: for every
+ * abstract case that declares a due id there is a Native and an Emulated
+ * host class, and no host class redeclares a due id (a redeclaration is how
+ * a host skips one).
  */
 #[Group('pdo')]
 final class PdoCatalogueTest extends TestCase {
@@ -38,12 +41,29 @@ final class PdoCatalogueTest extends TestCase {
     'worker.no-leak', 'audit.sink-fails',
   ];
 
+  /** Register section 8, wave 4, pdo: the ids pdo ADDS (D7, D6, R5, D1, and the D3 ids of CR-W4C4-1). */
+  private const PDO_WAVE_4 = [
+    'process.alarm-long', 'codec.large-payload', 'decode.unknown-class', 'effect.journal-reuse',
+    'process.await-keyed-precheck', 'process.await-any-cancellation', 'process.await-all-dynamic',
+  ];
+
+  /** The latest wave whose pdo ids this suite runs; run.sh core-pdo gates the same wave. */
+  public const WAVE = 4;
+
   public const MODES = ['Native', 'Emulated'];
 
   public function test_pdo_wave_3_matches_register_section_8(): void {
     self::assertCount(37, self::PDO_WAVE_3);
     self::assertSame([], ScenarioCatalogue::dueBy('pdo', 2), 'nothing is due on pdo before wave 3');
     self::assertEqualsCanonicalizing(self::PDO_WAVE_3, ScenarioCatalogue::dueBy('pdo', 3));
+  }
+
+  public function test_pdo_wave_4_matches_register_section_8(): void {
+    self::assertCount(7, self::PDO_WAVE_4);
+    self::assertEqualsCanonicalizing(self::PDO_WAVE_4, ScenarioCatalogue::firstDueAt('pdo', 4));
+    self::assertEqualsCanonicalizing([...self::PDO_WAVE_3, ...self::PDO_WAVE_4], ScenarioCatalogue::dueBy('pdo', self::WAVE));
+    self::assertNotContains('workflow.fact-ignition-once', ScenarioCatalogue::dueBy('pdo', self::WAVE), 'pdo: -');
+    self::assertNotContains('wakeup.post-commit', ScenarioCatalogue::dueBy('pdo', self::WAVE), 'sf only');
   }
 
   /** @return array<string, array{string}> */
@@ -53,10 +73,11 @@ final class PdoCatalogueTest extends TestCase {
 
   #[DataProvider('modes')]
   public function test_every_id_due_on_pdo_runs_the_shared_scenario_in_this_prepare_mode(string $mode): void {
+    $due = ScenarioCatalogue::dueBy('pdo', self::WAVE);
     $classes = self::hostClasses($mode);
     $implemented = ScenarioId::implementedBy($classes);
 
-    self::assertSame([], array_values(array_diff(self::PDO_WAVE_3, array_keys($implemented))), "due on pdo but no $mode scenario method");
+    self::assertSame([], array_values(array_diff($due, array_keys($implemented))), "due on pdo but no $mode scenario method");
 
     foreach ($classes as $class) {
       $ref = new \ReflectionClass($class);
@@ -66,8 +87,8 @@ final class PdoCatalogueTest extends TestCase {
 
       foreach ($ref->getMethods(\ReflectionMethod::IS_PUBLIC) as $m) {
         $id = ScenarioId::of($m);
-        if ($id !== null && in_array($id, self::PDO_WAVE_3, true)) {
-          self::assertNotSame($class, $m->getDeclaringClass()->getName(), "$id is due on pdo in wave 3 and must not be overridden by $class");
+        if ($id !== null && in_array($id, $due, true)) {
+          self::assertNotSame($class, $m->getDeclaringClass()->getName(), "$id is due on pdo by wave " . self::WAVE . " and must not be overridden by $class");
         }
       }
     }
@@ -77,17 +98,19 @@ final class PdoCatalogueTest extends TestCase {
     $interfaces = class_implements(PdoHostFixture::class);
     self::assertContains(ProcessHost::class, $interfaces);
     self::assertContains(FreshProcesses::class, $interfaces);
+    self::assertContains(EffectHost::class, $interfaces, 'effect.journal-reuse (CR-W4C4-2)');
+    self::assertContains(ProcessDecodeFaults::class, $interfaces, 'decode.unknown-class (CR-W4C4-3)');
   }
 
   /**
    * The host classes of one prepare mode, one per abstract case due on pdo
-   * by wave 3: `{Mode}\Pdo{Mode}{Case}Test`.
+   * by self::WAVE: `{Mode}\Pdo{Mode}{Case}Test`.
    *
    * @return list<class-string>
    */
   public static function hostClasses(string $mode): array {
     $classes = [];
-    foreach (ScenarioCatalogue::casesFor('pdo', 3) as $case) {
+    foreach (ScenarioCatalogue::casesFor('pdo', self::WAVE) as $case) {
       $short = (new \ReflectionClass($case))->getShortName();
       $class = __NAMESPACE__ . "\\$mode\\Pdo{$mode}{$short}Test";
       self::assertTrue(class_exists($class), "missing $class");

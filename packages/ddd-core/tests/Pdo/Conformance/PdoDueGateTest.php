@@ -47,7 +47,7 @@ final class PdoDueGateTest extends TestCase {
 
     self::assertSame(1, $code, implode("\n", $out));
     self::assertStringContainsString('missing (emulated)', implode("\n", $out));
-    self::assertStringContainsString('of 37 scenario ids due on pdo by wave 3 passed', implode("\n", $out));
+    self::assertStringContainsString('of 44 scenario ids due on pdo by wave 4 passed', implode("\n", $out));
   }
 
   /** @param list<array{string, string, string, string}> $cases mode, class, method, child xml */
