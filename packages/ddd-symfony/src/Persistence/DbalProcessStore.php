@@ -46,8 +46,8 @@ use TangibleDDD\Runtime\SystemClock;
  *   class, one of its parents or one of its interfaces (marker awaits, D2);
  *   a non-null $awaitKey narrows to that key (D3, wave 4).
  * - findStranded(): `running`/`scheduled` rows whose updated_at is at or
- *   before now - threshold (default 900 s) and that have no row in
- *   ddd_wakeups (no live intent).
+ *   before now - threshold (default 900 s) and that have no live row in
+ *   ddd_wakeups (an exhausted intent is not live).
  *
  * updated_at comes from the IClock on every write, so the stranded
  * threshold follows the same clock as the wakeups. Every storage failure
@@ -179,7 +179,7 @@ final class DbalProcessStore implements IProcessStore {
       "SELECT p.id, p.process_class, p.status, p.step_index, p.updated_at FROM {$this->processes} p
         WHERE p.status IN ('running', 'scheduled')
           AND p.updated_at <= ?
-          AND NOT EXISTS (SELECT 1 FROM {$this->wakeups} w WHERE w.process_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM {$this->wakeups} w WHERE w.process_id = p.id AND w.exhausted_at IS NULL)
         ORDER BY p.updated_at, p.id",
       [Time::toDb($cutoff)]
     ), 'scan for stranded processes');

@@ -6,6 +6,10 @@
 -- row fenced on the claim token, or retries it later (attempts, next_attempt_at).
 -- A lost message or a crash between save and send leaves the row due, and the next
 -- relay tick re-projects it once the lease expires.
+-- exhausted_at marks an intent whose wake budget (5.1: 10 attempts) ran out or whose
+-- wake failed for a non-retryable reason: it is never claimed again, it no longer
+-- counts as a live intent for the stranded scan, and it stays for the operator
+-- (ddd:ops:stranded) until repaired or cancelled.
 
 CREATE TABLE IF NOT EXISTS {{prefix}}ddd_wakeups (
     id               BIGSERIAL    PRIMARY KEY,
@@ -21,6 +25,7 @@ CREATE TABLE IF NOT EXISTS {{prefix}}ddd_wakeups (
     claim_token      VARCHAR(64)  NULL,
     lease_until      TIMESTAMPTZ  NULL,
     last_error       TEXT         NULL,
+    exhausted_at     TIMESTAMPTZ  NULL,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT {{prefix}}ddd_wakeups_key UNIQUE (idempotency_key),
     CONSTRAINT {{prefix}}ddd_wakeups_kind_check CHECK (kind IN ('continue', 'timeout', 'resume_retry', 'deliver'))

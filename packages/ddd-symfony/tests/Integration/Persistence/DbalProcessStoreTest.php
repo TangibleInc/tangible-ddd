@@ -300,6 +300,15 @@ final class DbalProcessStoreTest extends PostgresTestCase {
       ['continue:' . $covered->get_id() . ':0', $covered->get_id()]
     );
 
+    $exhausted = OrderProcess::started(6);
+    $exhausted->advance(status: 'scheduled');
+    $this->store()->insert($exhausted);
+    $this->db->executeStatement(
+      "INSERT INTO ddd_wakeups (idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at, exhausted_at)
+       VALUES (?, 'continue', 'acme', ?, 0, 'scheduled', now(), now())",
+      ['continue:' . $exhausted->get_id() . ':0', $exhausted->get_id()]
+    );
+
     $this->clock->advance('+16 minutes');
     $fresh = OrderProcess::started(5);
     $this->store()->insert($fresh);
@@ -311,7 +320,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
       $byId[$s->processId] = $s;
     }
     ksort($byId);
-    self::assertSame([$running->get_id(), $scheduled->get_id()], array_keys($byId));
+    self::assertSame([$running->get_id(), $scheduled->get_id(), $exhausted->get_id()], array_keys($byId), 'an exhausted intent is not a live one');
     self::assertSame('running', $byId[$running->get_id()]->status);
     self::assertSame('scheduled', $byId[$scheduled->get_id()]->status);
     self::assertSame(OrderProcess::class, $byId[$scheduled->get_id()]->processClass);

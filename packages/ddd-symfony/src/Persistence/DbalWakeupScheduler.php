@@ -87,6 +87,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       "WITH picked AS (
          SELECT id FROM {$this->table}
          WHERE due_at <= :now
+           AND exhausted_at IS NULL
            AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
            AND (claim_token IS NULL OR lease_until <= :now)
          ORDER BY due_at, id
@@ -119,6 +120,55 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
           SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?, claim_token = NULL, lease_until = NULL
         WHERE idempotency_key = ? AND claim_token = ?",
       [$error, Time::toDb($nextAt), $w->intent->idempotencyKey, $w->claimToken]
+    ) > 0;
+  }
+
+  // ── sf additions (operator layer `wakeup`, 5.1; not on the port) ─────────
+
+  /**
+   * The wake budget ran out, or the wake failed for a non-retryable reason:
+   * count the attempt, keep the row for the operator and never claim it
+   * again (it no longer counts as a live intent for the stranded scan).
+   * Fenced on the claim token like complete().
+   */
+  public function exhaust(ClaimedWakeup $w, string $error, ?\DateTimeImmutable $at = null): bool {
+    return $this->connection->executeStatement(
+      "UPDATE {$this->table}
+          SET attempts = attempts + 1, last_error = ?, exhausted_at = ?, claim_token = NULL, lease_until = NULL
+        WHERE idempotency_key = ? AND claim_token = ?",
+      [$error, Time::toDb($at ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))), $w->intent->idempotencyKey, $w->claimToken]
+    ) > 0;
+  }
+
+  /**
+   * Exhausted intents, oldest first, for `ddd:ops:stranded`.
+   *
+   * @return list<array{intent: WakeupIntent, attempts: int, last_error: ?string, exhausted_at: \DateTimeImmutable}>
+   */
+  public function exhausted(int $limit = 100): array {
+    $rows = $this->connection->fetchAllAssociative(
+      "SELECT * FROM {$this->table} WHERE exhausted_at IS NOT NULL ORDER BY exhausted_at, id LIMIT ?",
+      [max(0, $limit)],
+      [ParameterType::INTEGER]
+    );
+    return array_map(static fn (array $r) => [
+      'intent' => self::intentOf($r),
+      'attempts' => (int) $r['attempts'],
+      'last_error' => $r['last_error'] === null ? null : (string) $r['last_error'],
+      'exhausted_at' => Time::fromDb((string) $r['exhausted_at']),
+    ], $rows);
+  }
+
+  /**
+   * Operator repair: put an exhausted (or stuck) intent back in line, due
+   * at $dueAt with a fresh budget. Returns false for an unknown key.
+   */
+  public function rearm(string $idempotencyKey, \DateTimeImmutable $dueAt): bool {
+    return $this->connection->executeStatement(
+      "UPDATE {$this->table}
+          SET exhausted_at = NULL, attempts = 0, next_attempt_at = NULL, claim_token = NULL, lease_until = NULL, due_at = ?
+        WHERE idempotency_key = ?",
+      [Time::toDb($dueAt), $idempotencyKey]
     ) > 0;
   }
 

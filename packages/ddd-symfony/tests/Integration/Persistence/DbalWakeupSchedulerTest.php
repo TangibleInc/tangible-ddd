@@ -146,6 +146,37 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     self::assertSame('lock busy', $this->db->fetchOne('SELECT last_error FROM ddd_wakeups'));
   }
 
+  public function test_an_exhausted_intent_is_kept_for_the_operator_and_never_claimed_again(): void {
+    $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
+    [$w] = $this->scheduler()->claimDue($this->t0, 10, 60);
+
+    self::assertTrue($this->scheduler()->exhaust($w, 'budget spent: lock busy'));
+    self::assertFalse($this->scheduler()->exhaust($w, 'again'), 'fenced like complete()');
+
+    self::assertSame([], $this->scheduler()->claimDue($this->t0->modify('+1 day'), 10, 60));
+    $row = $this->db->fetchAssociative('SELECT attempts, last_error, exhausted_at, claim_token FROM ddd_wakeups');
+    self::assertSame(1, (int) $row['attempts']);
+    self::assertSame('budget spent: lock busy', $row['last_error']);
+    self::assertNotNull($row['exhausted_at']);
+    self::assertNull($row['claim_token']);
+
+    [$listed] = $this->scheduler()->exhausted(10);
+    self::assertSame('timeout:1:0', $listed['intent']->idempotencyKey);
+    self::assertSame('budget spent: lock busy', $listed['last_error']);
+  }
+
+  public function test_rearm_puts_an_exhausted_intent_back_in_line(): void {
+    $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
+    [$w] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    $this->scheduler()->exhaust($w, 'boom');
+
+    self::assertTrue($this->scheduler()->rearm('timeout:1:0', $this->t0));
+    self::assertFalse($this->scheduler()->rearm('timeout:nope', $this->t0));
+
+    [$again] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    self::assertSame(0, $again->attempts);
+  }
+
   public function test_cancel_removes_the_intent_inside_the_transaction(): void {
     $this->inTx(function (): void {
       $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0));
