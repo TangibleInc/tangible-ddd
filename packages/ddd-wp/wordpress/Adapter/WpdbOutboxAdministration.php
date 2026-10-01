@@ -13,10 +13,14 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxRowNotFound;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\NestedPolicy;
+use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Runtime\IClock;
+use TangibleDDD\Runtime\SystemClock;
 
 /**
  * The wp IOutboxAdministration (register 3.4, 1.4 "4 repair handlers"),
- * transitional wave-2 form on the 0.6 schema, for one consumer prefix
+ * on the 0.6 schema and on v8 (a reset also clears `claim_token`; time is
+ * the host IClock, WPC-3), for one consumer prefix
  * (`{wp_prefix}{prefix}_integration_outbox` / `_integration_dlq`, the
  * tables ConsumerTables names; the consumer need not be registered).
  *
@@ -42,7 +46,15 @@ use TangibleDDD\Runtime\NestedPolicy;
  */
 final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRowIds {
 
-  public function __construct(private readonly string $prefix) {}
+  /** @param IClock|null $clock the host clock (else HostDefaults, else SystemClock); WPC-3 */
+  public function __construct(
+    private readonly string $prefix,
+    private readonly ?IClock $clock = null,
+  ) {}
+
+  private function now(): \DateTimeImmutable {
+    return ($this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock())->now()->setTimezone(new \DateTimeZone('UTC'));
+  }
 
   public function deadLetters(int $limit, ?string $after = null): array {
     $db = self::db();
@@ -69,7 +81,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
       throw new OutboxRowNotFound("Outbox row $event_id not found in {$this->outbox()}");
     }
 
-    if (!empty($row->locked_until) && self::utc((string) $row->locked_until) > self::utc('now')) {
+    if (!empty($row->locked_until) && self::utc((string) $row->locked_until) > $this->now()) {
       throw new OutboxAdministrationRefused("Outbox row $event_id is leased until {$row->locked_until}; retry refused");
     }
     if (!$force && !in_array($row->status, ['pending', 'dlq'], true)) {
@@ -91,7 +103,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
       if ($exists) {
         $this->reset_row((string) $letter->event_id);
       } else {
-        $now = gmdate('Y-m-d H:i:s');
+        $now = $this->now()->format('Y-m-d H:i:s');
         $this->checked($db->insert($this->outbox(), [
           'event_id' => $letter->event_id,
           'event_type' => $letter->event_type,
@@ -157,14 +169,18 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
 
   private function reset_row(string $event_id): void {
     $db = self::db();
-    $this->checked($db->update($this->outbox(), [
+    $reset = [
       'status' => 'pending',
       'attempts' => 0,
-      'next_attempt_at' => gmdate('Y-m-d H:i:s'),
+      'next_attempt_at' => $this->now()->format('Y-m-d H:i:s'),
       'locked_until' => null,
       'locked_by' => null,
       'last_error' => null,
-    ], ['event_id' => $event_id]), "reset outbox row $event_id");
+    ];
+    if (WpSchemaProbe::hasColumn($this->outbox(), 'claim_token')) {
+      $reset['claim_token'] = null; // schema v8: a stale token must fence nothing
+    }
+    $this->checked($db->update($this->outbox(), $reset, ['event_id' => $event_id]), "reset outbox row $event_id");
   }
 
   private function record_from_dlq(object $row): OutboxRecord {
