@@ -3,8 +3,8 @@
  * Gate of `tests/harness/run.sh conformance-wp`: every scenario id due on
  * the wp host by wave N (ScenarioCatalogue, a copy of register sections 4
  * and 8) must appear in the JUnit log of the conformance-wp run as a PASSED
- * test (no failure, error or skip). A green PHPUnit run with a due scenario
- * skipped, renamed or missing is a failure here.
+ * test on a Wp*Conformance class, and fail on none. A green PHPUnit run with
+ * a due scenario only skipped, renamed or missing is a failure here.
  *
  *   php tests/Integration/Conformance/bin/check-due.php <junit.xml> [wave=2]
  */
@@ -31,8 +31,11 @@ if ($xml === false) {
   exit(1);
 }
 
-/** @var array<string, 'passed'|'failed'|'skipped'> method name => worst outcome on a wp class */
-$outcomes = [];
+// One id may be carried by more than one wp class (e.g. a shared scenario
+// a host cannot run yet is skipped there and run by a wp-specific class).
+// An id passes when at least one wp test carrying it passed and none failed.
+/** @var array<string, array{passed: int, failed: int, skipped: int}> method name => counts on wp classes */
+$seen = [];
 foreach ($xml->xpath('//testcase') ?: [] as $case) {
   $class = (string) $case['class'];
   if (!str_contains($class, '\\Integration\\Conformance\\Wp')) {
@@ -44,9 +47,14 @@ foreach ($xml->xpath('//testcase') ?: [] as $case) {
     isset($case->skipped) => 'skipped',
     default => 'passed',
   };
-  $previous = $outcomes[$method] ?? 'passed';
-  $outcomes[$method] = $previous !== 'passed' ? $previous : $outcome;
+  $seen[$method] ??= ['passed' => 0, 'failed' => 0, 'skipped' => 0];
+  $seen[$method][$outcome]++;
 }
+$outcomes = array_map(static fn (array $n) => match (true) {
+  $n['failed'] > 0 => 'failed',
+  $n['passed'] > 0 => 'passed',
+  default => 'skipped',
+}, $seen);
 
 $due = ScenarioCatalogue::dueBy('wp', $wave);
 sort($due);

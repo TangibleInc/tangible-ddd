@@ -219,7 +219,7 @@ final class WpHostFixture implements HostFixture {
     );
     $this->faults = new WpdbFaults();
     $this->faults->install();
-    $this->watchSignal('audit_sink_failed');
+    $this->watchSignals();
 
     RuntimeReset::register('conformance.events', fn () => $this->events->reset());
     RuntimeReset::guardLock($this->lock);
@@ -249,6 +249,7 @@ final class WpHostFixture implements HostFixture {
       foreach ($this->signalHooks as [$hook, $callback]) {
         remove_action($hook, $callback, 10);
       }
+      $this->signalHooks = [];
     });
     $this->quietly(fn () => $this->lock->forceReleaseAll());
     $this->quietly(fn () => $this->deleteActions());
@@ -477,7 +478,19 @@ final class WpHostFixture implements HostFixture {
     return null; // no ProcessRunner on the conformance wp host until wave 3
   }
 
-  // ── wp-only seams (audit.sink-fails; change request WPC-4) ───────────────
+  // ── audit.sink-fails seams ───────────────────────────────────────────────
+  //
+  // failNextAuditClose() and signals() have exactly the shapes of the
+  // optional seams TangibleDDD\Conformance\AuditSinkFaults and
+  // RecordsSignals that wave2/conformance-cleanup adds (CR-CC-1). Once both
+  // branches are merged, add those two interfaces to this class's
+  // `implements` list and the shared CommandScenarios::test_audit_sink_fails
+  // runs on wp too (change request WPC-4).
+
+  /** The next WpdbAuditSink::close() fails inside wpdb (its 0.6 finalise UPDATE throws). */
+  public function failNextAuditClose(string $reason): void {
+    $this->failNextAuditWrite('close', new \RuntimeException($reason));
+  }
 
   /** The audit sink's next write fails inside wpdb: 'open' = the preflight INSERT, 'close' = the finalise UPDATE. */
   public function failNextAuditWrite(string $phase, ?\Throwable $e = null): void {
@@ -488,7 +501,7 @@ final class WpHostFixture implements HostFixture {
     );
   }
 
-  /** @return list<IInfrastructureEvent> infrastructure signals emitted on the consumer's hooks */
+  /** @return list<IInfrastructureEvent> infrastructure signals emitted on this consumer's hooks since setUp(), oldest first */
   public function signals(): array {
     return $this->signals;
   }
@@ -522,13 +535,22 @@ final class WpHostFixture implements HostFixture {
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  private function watchSignal(string $action): void {
-    $hook = $this->config->hook($action);
-    $callback = function (IInfrastructureEvent $e): void {
-      $this->signals[] = $e;
+  /**
+   * Record every infrastructure signal WpHookSignalDispatcher fires on this
+   * consumer's `{prefix}_{action}` hooks, through WordPress' `all` hook
+   * (it sees every do_action before the hook's own callbacks run).
+   */
+  private function watchSignals(): void {
+    $prefix = $this->config->hook('');
+    $callback = function (...$args) use ($prefix): void {
+      $hook = $args[0] ?? null;
+      $event = $args[1] ?? null;
+      if (is_string($hook) && str_starts_with($hook, $prefix) && $event instanceof IInfrastructureEvent && $hook === $this->config->hook($event::action())) {
+        $this->signals[] = $event;
+      }
     };
-    add_action($hook, $callback, 10, 1);
-    $this->signalHooks[] = [$hook, $callback];
+    add_action('all', $callback, 10, 99);
+    $this->signalHooks[] = ['all', $callback];
   }
 
   /** @return list<array{action_id: int, event_id: string, due_at: \DateTimeImmutable}> this consumer's Action Scheduler actions, oldest first */
