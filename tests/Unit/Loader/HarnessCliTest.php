@@ -42,9 +42,24 @@ class HarnessCliTest extends TestCase
     public static function later_waves(): array
     {
         return [
-            'core-pdo' => ['core-pdo'],
             'compat' => ['compat'],
         ];
+    }
+
+    public function test_the_core_pdo_subcommand_is_wired(): void
+    {
+        // Running it needs MySQL 8.0 (an existing server or the pinned
+        // image) and the host PHP with pdo_mysql; here only the dispatch
+        // and what it runs: the adapter suite, the conformance suite with
+        // its per-id gate, and the two-process example.
+        $source = (string) file_get_contents(self::script());
+        $this->assertMatchesRegularExpression('/^\s*core-pdo\) core_pdo ;;$/m', $source);
+        $this->assertStringContainsString('packages/ddd-core/phpunit.pdo.xml', $source);
+        $this->assertStringContainsString('packages/ddd-core/tests/Pdo/Conformance/phpunit.xml', $source);
+        $this->assertStringContainsString('packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php', $source);
+        $this->assertStringContainsString('examples/plain-php-durable/produce.php', $source);
+        $this->assertStringContainsString('examples/plain-php-durable/drain.php', $source);
+        $this->assertStringNotContainsString('core-pdo         ddd-core Defaults/Pdo suite (not yet implemented)', $source);
     }
 
     public function test_the_conformance_wp_subcommand_is_wired(): void

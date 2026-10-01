@@ -18,7 +18,7 @@ usage() {
 usage: tests/harness/run.sh <subcommand>
   wp-integration   WordPress integration suite on MySQL 8.0, fresh database
   loader           loader fixtures of register 7.2 on WordPress + MySQL 8.0 (all but jetpack-mixed)
-  core-pdo         ddd-core Defaults/Pdo suite (not yet implemented)
+  core-pdo         ddd-core Defaults/Pdo: adapter suite, pdo conformance (both prepare modes, gated per id), two-process example
   compat           compatibility fixtures (not yet implemented)
   conformance-wp   conformance scenarios on WordPress + MySQL 8.0, fresh database (wave-2 wp ids gated)
 EOF
@@ -102,10 +102,99 @@ conformance_wp() {
   log "conformance-wp green on $DB_NAME"
 }
 
+# core-pdo: ddd-core's Defaults/Pdo on MySQL 8.0, run by the HOST php
+# (pdo_mysql and posix required; the WordPress runner image has no
+# pdo_mysql), on an export of the ref under test:
+#   1. the adapter suite (phpunit.pdo.xml, both prepare modes);
+#   2. the shared conformance scenarios on the pdo host, both prepare modes,
+#      a fresh database per test, then the per-id gate: every id due on pdo
+#      by DDD_CONFORMANCE_WAVE (default 3) must have PASSED in both modes;
+#   3. the two-process example: produce.php, then two drain.php runs with
+#      the clock past the 60 s timeout (DDD_CLOCK_OFFSET=120); the scripts
+#      assert the process completed and the stale timeout was a no-op.
+# MySQL: DDD_MYSQL_HOST / DDD_MYSQL_PORT / DDD_MYSQL_USER / DDD_MYSQL_PASSWORD
+# (an existing server, reached directly), else the pinned MYSQL_IMAGE on a
+# loopback port. Every database the run creates is unique to it and dropped.
+core_pdo() {
+  # shellcheck source=lib/common.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
+  h_init
+  need php
+  php -r 'exit(extension_loaded("pdo_mysql") && extension_loaded("posix") ? 0 : 1);' \
+    || die "core-pdo runs on the host php, which needs pdo_mysql and posix"
+
+  H_EXPORT="$H_WORK/tangible-ddd"
+  h_export "$H_EXPORT"
+  log "composer install in the export"
+  composer install -d "$H_EXPORT" --no-scripts --no-interaction --no-progress --quiet
+
+  local host port user password
+  if [ -n "${DDD_MYSQL_HOST:-}" ]; then
+    host="$DDD_MYSQL_HOST" port="${DDD_MYSQL_PORT:-3306}"
+    user="${DDD_MYSQL_USER:-root}" password="${DDD_MYSQL_PASSWORD:-ddd}"
+    log "using existing MySQL at $host:$port"
+  else
+    H_MYSQL_CONTAINER="ddd-harness-mysql-$RUN_ID"
+    user=root password="harness-$RUN_ID" host=127.0.0.1
+    log "starting $MYSQL_IMAGE as $H_MYSQL_CONTAINER"
+    docker run -d --name "$H_MYSQL_CONTAINER" -p 127.0.0.1::3306 \
+      -e MYSQL_ROOT_PASSWORD="$password" "$MYSQL_IMAGE" >/dev/null
+    port="$(docker port "$H_MYSQL_CONTAINER" 3306/tcp | head -n 1 | sed 's/.*://')"
+  fi
+  export DDD_PDO_HOST="$host" DDD_PDO_PORT="$port" DDD_PDO_USER="$user" DDD_PDO_PASSWORD="$password"
+  export DDD_PDO_DATABASE="ddd_harness_pdo_${RUN_ID}"
+  local example_db="ddd_harness_example_${RUN_ID}"
+
+  # Wait for the server, and pin the version under test.
+  local version="" tries=0
+  until version="$(php -r '$p = new PDO("mysql:host=" . getenv("DDD_PDO_HOST") . ";port=" . getenv("DDD_PDO_PORT"), getenv("DDD_PDO_USER"), getenv("DDD_PDO_PASSWORD")); echo $p->query("SELECT VERSION()")->fetchColumn();' 2>/dev/null)"; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 90 ] || die "MySQL at $host:$port did not answer"
+    sleep 2
+  done
+  case "$version" in
+    "${DDD_EXPECT_MYSQL:-8.0}"*) log "MySQL $version" ;;
+    *) die "expected MySQL ${DDD_EXPECT_MYSQL:-8.0}.x, the server is $version" ;;
+  esac
+
+  local adapters_rc=0 conformance_rc=0 gate_rc=0 example_rc=0
+  local junit="$H_WORK/core-pdo-conformance.xml"
+  log "phpunit -c packages/ddd-core/phpunit.pdo.xml --testsuite pdo"
+  (cd "$H_EXPORT" && php vendor/bin/phpunit -c packages/ddd-core/phpunit.pdo.xml --testsuite pdo --do-not-cache-result) || adapters_rc=$?
+
+  log "phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml"
+  (cd "$H_EXPORT" && php vendor/bin/phpunit -c packages/ddd-core/tests/Pdo/Conformance/phpunit.xml --do-not-cache-result --log-junit "$junit") || conformance_rc=$?
+  (cd "$H_EXPORT" && php packages/ddd-core/tests/Pdo/Conformance/bin/check-due.php "$junit" "${DDD_CONFORMANCE_WAVE:-3}") || gate_rc=$?
+
+  log "two-process example: produce.php, then two drain.php runs with DDD_CLOCK_OFFSET=120"
+  (
+    cd "$H_EXPORT"
+    export DDD_EXAMPLE_DB_HOST="$host" DDD_EXAMPLE_DB_PORT="$port" DDD_EXAMPLE_DB_USER="$user" \
+      DDD_EXAMPLE_DB_PASSWORD="$password" DDD_EXAMPLE_DB_NAME="$example_db" DDD_EXAMPLE_DRIVER=pdo
+    unset DDD_CLOCK_OFFSET
+    php examples/plain-php-durable/produce.php --reset \
+      && DDD_CLOCK_OFFSET=120 php examples/plain-php-durable/drain.php \
+      && DDD_CLOCK_OFFSET=120 php examples/plain-php-durable/drain.php
+  ) || example_rc=$?
+
+  if [ "${DDD_KEEP_DB:-0}" != 1 ]; then
+    DDD_DROP="$DDD_PDO_DATABASE $example_db" php -r '
+      $p = new PDO("mysql:host=" . getenv("DDD_PDO_HOST") . ";port=" . getenv("DDD_PDO_PORT"), getenv("DDD_PDO_USER"), getenv("DDD_PDO_PASSWORD"));
+      foreach (explode(" ", getenv("DDD_DROP")) as $db) { $p->exec("DROP DATABASE IF EXISTS `$db`"); }' || true
+  fi
+
+  if [ "$adapters_rc" -ne 0 ] || [ "$conformance_rc" -ne 0 ] || [ "$gate_rc" -ne 0 ] || [ "$example_rc" -ne 0 ]; then
+    log "core-pdo red on MySQL $version (adapters $adapters_rc, conformance $conformance_rc, check-due $gate_rc, example $example_rc)"
+    exit 1
+  fi
+  log "core-pdo green on MySQL $version"
+}
+
 case "${1:-}" in
   wp-integration) wp_integration ;;
   loader) loader ;;
   conformance-wp) conformance_wp ;;
-  core-pdo|compat) not_yet "$1" ;;
+  core-pdo) core_pdo ;;
+  compat) not_yet "$1" ;;
   *) usage ;;
 esac
