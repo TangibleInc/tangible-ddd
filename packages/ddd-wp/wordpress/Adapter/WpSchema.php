@@ -25,6 +25,13 @@ final class WpSchema {
 
   public const V8 = 8;
 
+  /**
+   * After a failed explicit migration, ddd_maybe_migrate() retries at most
+   * this often (option `{prefix}_ddd_migration_retry_at`; delete it to
+   * retry on the next request).
+   */
+  public const MIGRATION_RETRY_SECONDS = 600;
+
   public static function installed(IConsumerIdentity|string $consumer): int {
     $prefix = is_string($consumer) ? $consumer : $consumer->prefix();
     if (!function_exists('get_option')) {

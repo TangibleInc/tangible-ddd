@@ -507,6 +507,15 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
     return;
   }
 
+  // A failed explicit migration is retried at most every
+  // MIGRATION_RETRY_SECONDS, not on every request (dbDelta over every
+  // table plus the failing migration, and an error log line, each time).
+  $retryKey = $config->option('ddd_migration_retry_at');
+  $retryAt = (int) get_option($retryKey, 0);
+  if ($retryAt > time()) {
+    return;
+  }
+
   if (!function_exists('dbDelta')) {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
   }
@@ -529,12 +538,16 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
       $message = sprintf('schema v%d migration failed (installed stays v%d): %s', $version, $installed, $e->getMessage());
       error_log(sprintf('[%s-ddd] %s', $config->prefix(), $message));
       update_option($config->option('ddd_migration_error'), $message, false);
+      update_option($retryKey, time() + \TangibleDDD\WordPress\Adapter\WpSchema::MIGRATION_RETRY_SECONDS, false);
       return;
     }
   }
 
   update_option($key, DDD_SCHEMA_VERSION, false);
   delete_option($config->option('ddd_migration_error'));
+  if ($retryAt !== 0) {
+    delete_option($retryKey);
+  }
 }
 
 /**

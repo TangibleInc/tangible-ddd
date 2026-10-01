@@ -180,6 +180,21 @@ final class SchemaV8MigrationTest extends V8TestCase {
     self::assertSame(7, ddd_schema_installed($this->config), 'the v8 adapters stay off without their ignition gate');
     self::assertStringContainsString('uniq_ignition_key', (string) get_option($this->config->option('ddd_migration_error')));
     self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::isV8($this->config));
+
+    // Throttled: the next requests do not re-run dbDelta and the failing
+    // migration until the retry time passes.
+    $retryAt = (int) get_option($this->config->option('ddd_migration_retry_at'));
+    self::assertEqualsWithDelta(time() + \TangibleDDD\WordPress\Adapter\WpSchema::MIGRATION_RETRY_SECONDS, $retryAt, 5);
+    delete_option($this->config->option('ddd_migration_error'));
+    ddd_maybe_migrate($this->config);
+    self::assertFalse(get_option($this->config->option('ddd_migration_error')), 'no retry inside the throttle window');
+
+    // Once the data is fixed and the window has passed, it migrates.
+    $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET ignition_key = NULL");
+    update_option($this->config->option('ddd_migration_retry_at'), time() - 1, false);
+    ddd_maybe_migrate($this->config);
+    self::assertSame(8, ddd_schema_installed($this->config));
+    self::assertFalse(get_option($this->config->option('ddd_migration_retry_at')));
   }
 
   public function test_a_0_6_winner_still_writes_after_the_upgrade(): void {
