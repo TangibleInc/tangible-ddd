@@ -26,8 +26,11 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
  *
  * WorkflowIgniter also keeps one start marker per ignited key in the same
  * ledger (key WorkflowIgnitionKey::startMarker($dedupKey), a 36-character
- * uuid5, same kind, no workflow attached), claimed right before the start
- * and released when the start throws. Stores need nothing extra for it.
+ * uuid5, same kind), claimed right before the start, released when the
+ * start throws, and attach()ed to the workflow id when the start returns
+ * (fix round 2: an unattached marker is a start in flight or a dead
+ * starter; the igniter reclaims one older than its stale_start_seconds).
+ * Stores need nothing extra for it: attach() and createdAt work on any key.
  *
  * Error behaviour: storage failures throw; claim() never returns false for
  * a failure.

@@ -42,7 +42,10 @@ interface IStartsFromFact {
 
   /**
    * Run (or durably hand off) the committed workflow. Runs after the
-   * ignition committed, outside its transaction. An exception is logged and
+   * ignition committed, outside its transaction, except when ignite() was
+   * called inside an already-open transaction: then it runs inside that
+   * transaction, after the ignition writes, and a rollback of the caller's
+   * transaction undoes the ignition (see WorkflowIgniter). An exception is logged and
    * reported in WorkflowIgnitionResult::$startError; the ignition stays,
    * and the registered subscriber rethrows it, so the delivery ledger
    * retries the fact. The retry (or any later fact with the same key) finds

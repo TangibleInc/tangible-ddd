@@ -219,6 +219,81 @@ final class WorkflowIgnitionTest extends TestCase {
     self::assertSame(1, $this->ledger->find($key)->workflowId);
   }
 
+  public function test_a_completed_start_attaches_the_workflow_to_its_start_marker(): void {
+    $result = $this->igniter->ignite($this->nightly(), new CronEntryDue('nightly'), self::E1);
+
+    $marker = $this->ledger->find(WorkflowIgnitionKey::startMarker($result->dedupKey));
+    self::assertNotNull($marker);
+    self::assertSame(1, $marker->workflowId, 'an attached marker = the start completed');
+  }
+
+  public function test_a_worker_that_died_inside_the_start_keeps_redelivering_and_a_stale_marker_is_reclaimed(): void {
+    $wf = $this->nightly();
+    $igniter = new WorkflowIgniter($this->ledger, $this->boundary, $this->log, $this->clock);
+    $igniter->register($wf, $this->registry, 'acme');
+    $fact = ['entry' => 'nightly', 'due_at' => '2026-10-01T12:00:05+00:00'];
+    $key = $wf->ignition_key(new CronEntryDue('nightly', $fact['due_at']), self::E1);
+
+    // The dead worker's state: ignition committed, start marker claimed, no start completed.
+    $wf->failStart = new \RuntimeException('x');
+    $igniter->ignite($wf, new CronEntryDue('nightly', $fact['due_at']), self::E1);
+    $wf->failStart = null;
+    $this->ledger->claim(WorkflowIgnitionKey::startMarker($key), $wf->workflow_kind(), self::E1);
+
+    $delivery = new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, new \Psr\Log\NullLogger());
+    $pending = $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1));
+    self::assertNotSame([], $pending->failed, 'a start in flight is not reported as done: the delivery retries');
+    self::assertSame([], $wf->started);
+    $direct = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
+    self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $direct->outcome);
+    self::assertTrue($direct->startPending);
+
+    $this->clock->advance('PT16M');
+    $retry = $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1));
+    self::assertSame([], $retry->failed);
+    self::assertSame([1], $wf->started, 'the stale marker was reclaimed and the workflow started');
+    self::assertSame(1, $this->ledger->find(WorkflowIgnitionKey::startMarker($key))->workflowId);
+    self::assertNotSame([], array_filter($this->log->records, static fn (array $r) => $r['level'] === 'warning'));
+
+    $after = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
+    self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $after->outcome);
+    self::assertFalse($after->startPending);
+    self::assertSame([1], $wf->started);
+  }
+
+  public function test_a_stale_marker_of_a_finished_workflow_is_not_restarted(): void {
+    $wf = $this->nightly();
+    $igniter = new WorkflowIgniter($this->ledger, $this->boundary, $this->log, $this->clock);
+    $wf->failStart = new \RuntimeException('x');
+    $first = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00'), self::E1);
+    $wf->failStart = null;
+    $this->ledger->claim(WorkflowIgnitionKey::startMarker($first->dedupKey), $wf->workflow_kind(), self::E1);
+    $this->repo->rows[1]->fail();
+    $this->clock->advance('PT16M');
+
+    $again = $igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
+
+    self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $again->outcome);
+    self::assertFalse($again->startPending);
+    self::assertSame([], $wf->started);
+  }
+
+  public function test_inside_an_open_transaction_the_ignition_and_its_start_marker_roll_back_with_it(): void {
+    // Documented: ignite() joins an open transaction, and start_ignited() then runs inside it.
+    $wf = $this->nightly();
+    try {
+      $this->boundary->run(function () use ($wf): void {
+        $this->igniter->ignite($wf, new CronEntryDue('nightly'), self::E1);
+        throw new \RuntimeException('outer rollback');
+      });
+    } catch (\RuntimeException) {
+    }
+    self::assertSame([], $this->ledger->rows, 'claim, attach and start marker rolled back together');
+    self::assertSame([], $this->repo->rows);
+
+    self::assertSame(WorkflowIgnitionOutcome::Ignited, $this->igniter->ignite($wf, new CronEntryDue('nightly'), self::E1)->outcome);
+  }
+
   public function test_the_default_key_is_uuid5_of_the_event_id_and_kind(): void {
     $wf = new PerFactWorkflow($this->repo, new NoItems());
     $this->igniter->register($wf, $this->registry, 'acme');

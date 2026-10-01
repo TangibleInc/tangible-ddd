@@ -44,10 +44,31 @@ use TangibleDDD\Runtime\SystemClock;
  * no start marker: it claims the marker, loads the workflow
  * (ILoadsIgnitedWorkflow::load_ignited, which StartsFromFacts provides) and,
  * if it is still active, starts it (outcome Restarted). The marker claim is
- * the gate, so the workflow is started by exactly one caller. Residual: a
- * worker that dies inside start_ignited() keeps the marker; an operator
- * releases WorkflowIgnitionKey::startMarker($key) to let the next fact
- * restart it.
+ * the gate, so the workflow is started by exactly one caller.
+ *
+ * Completed starts and dead starters (fix round 2). A start that returns
+ * attaches the workflow id to its marker: an attached marker means
+ * "started". A marker with no workflow is a start in flight, or a worker
+ * that died inside start_ignited(). While it is younger than
+ * $stale_start_seconds (default 900), ignite() returns AlreadyIgnited with
+ * startPending, and the registered subscriber throws WorkflowStartPending,
+ * so the delivery ledger keeps the fact failed and retries it (a start that
+ * never completes dead-letters the fact: that is where an operator sees
+ * it). Once older, the next ignition with the key releases and re-claims the
+ * marker in one transaction and, if the loaded workflow is still active,
+ * starts it again (outcome Restarted, logged as a warning). A start that
+ * outlives $stale_start_seconds can therefore run twice, which
+ * start_ignited()'s re-run tolerance (IStartsFromFact) covers.
+ *
+ * Inside an open transaction. ignite() joins a transaction that is already
+ * open (a delivery that runs its subscribers in one): the claim, the save,
+ * the attach, the start marker and start_ignited() then all run in the
+ * caller's transaction, so the start is not "after commit". If the caller
+ * rolls back, the ignition and the marker roll back with it and the
+ * redelivery ignites again; side effects of the start that are not
+ * transactional are not undone. A host that cannot accept that calls
+ * ignite() outside a transaction, or hands the start off from
+ * start_ignited() to a durable queue enlisted in the same transaction.
  *
  * Stale claims (no boundary). Without a transaction boundary, a crash
  * between claim() and attach() leaves the key claimed with no workflow.
@@ -68,6 +89,7 @@ final class WorkflowIgniter {
     private readonly ?LoggerInterface $logger = null,
     private readonly ?IClock $clock = null,
     private readonly int $stale_claim_seconds = 900,
+    private readonly int $stale_start_seconds = 900,
   ) {}
 
   /**
@@ -96,6 +118,10 @@ final class WorkflowIgniter {
           $result = $this->ignite($workflow, $event, $event_id);
           if ($result->startError !== null) {
             throw $result->startError; // the delivery retries; the retry restarts the workflow
+          }
+          if ($result->startPending) {
+            // Not done until the start completes: the delivery retries (and dead-letters, visibly, if it never does).
+            throw new WorkflowStartPending((string) $result->dedupKey, (int) $result->workflowId);
           }
         },
       ));
@@ -171,8 +197,9 @@ final class WorkflowIgniter {
   private function restart(IStartsFromFact $workflow, string $key, int $workflowId, ?string $eventId): WorkflowIgnitionResult {
     $already = new WorkflowIgnitionResult(WorkflowIgnitionOutcome::AlreadyIgnited, $key, $workflowId);
     $marker = WorkflowIgnitionKey::startMarker($key);
-    if ($this->ledger->find($marker) !== null) {
-      return $already; // started (or being started) by someone else
+    $held = $this->ledger->find($marker);
+    if ($held !== null && $held->workflowId !== null) {
+      return $already; // the start completed
     }
     if (!$workflow instanceof ILoadsIgnitedWorkflow && !method_exists($workflow, 'load_ignited')) {
       Log::write($this->logger, sprintf(
@@ -180,6 +207,32 @@ final class WorkflowIgniter {
         $workflow->workflow_kind(), $workflowId, $key, get_class($workflow)
       ), 'error');
       return $already;
+    }
+    if ($held !== null) {
+      // A start in flight, or a worker that died inside start_ignited().
+      if ($this->age_of($held) < $this->stale_start_seconds) {
+        return new WorkflowIgnitionResult(WorkflowIgnitionOutcome::AlreadyIgnited, $key, $workflowId, null, true);
+      }
+      try {
+        $stuck = $workflow->load_ignited($workflowId);
+      } catch (\Throwable $e) {
+        return $this->failed_start($workflow, $workflowId, $key, $e, WorkflowIgnitionOutcome::AlreadyIgnited);
+      }
+      if ($stuck === null || !$stuck->is_active()) {
+        return $already; // gone, or it ran to an end: nothing to restart
+      }
+      Log::write($this->logger, sprintf(
+        '[ddd-workflow] %s workflow #%d (key %s): start marker claimed at %s never completed (the worker died inside start_ignited?); reclaiming it',
+        $workflow->workflow_kind(), $workflowId, $key, $held->createdAt->format(\DateTimeInterface::ATOM)
+      ), 'warning');
+      $reclaimed = $this->atomically(function () use ($marker, $workflow, $eventId): bool {
+        $this->ledger->release($marker);
+        return $this->ledger->claim($marker, $workflow->workflow_kind(), $eventId);
+      });
+      if (!$reclaimed) {
+        return new WorkflowIgnitionResult(WorkflowIgnitionOutcome::AlreadyIgnited, $key, $workflowId, null, true);
+      }
+      return $this->run_start($workflow, $stuck, $key, $marker, WorkflowIgnitionOutcome::Restarted);
     }
     if (!$this->atomically(fn () => $this->ledger->claim($marker, $workflow->workflow_kind(), $eventId))) {
       return $already;
@@ -222,7 +275,22 @@ final class WorkflowIgniter {
       }
       return $this->failed_start($workflow, (int) $run->get_id(), $key, $e, $outcome);
     }
+    if ($marker !== null && $run->get_id() !== null) {
+      $this->complete_marker($marker, (int) $run->get_id());
+    }
     return new WorkflowIgnitionResult($outcome, $key, $run->get_id());
+  }
+
+  /** Attach the workflow to its start marker: the start completed. */
+  private function complete_marker(string $marker, int $workflowId): void {
+    try {
+      $this->atomically(fn () => $this->ledger->attach($marker, $workflowId));
+    } catch (\Throwable $e) {
+      Log::write($this->logger, sprintf(
+        '[ddd-workflow] workflow #%d started, but its start marker %s could not record it (after %d s a later fact with the key may start it again): %s',
+        $workflowId, $marker, $this->stale_start_seconds, $e->getMessage()
+      ), 'error');
+    }
   }
 
   private function failed_start(IStartsFromFact $workflow, int $workflowId, ?string $key, \Throwable $e, WorkflowIgnitionOutcome $outcome): WorkflowIgnitionResult {
@@ -249,8 +317,12 @@ final class WorkflowIgniter {
     if ($this->boundary() !== null) {
       return false;
     }
+    return $this->age_of($entry) >= $this->stale_claim_seconds;
+  }
+
+  private function age_of(WorkflowIgnition $entry): int {
     $clock = $this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock();
-    return $clock->now()->getTimestamp() - $entry->createdAt->getTimestamp() >= $this->stale_claim_seconds;
+    return $clock->now()->getTimestamp() - $entry->createdAt->getTimestamp();
   }
 
   /**

@@ -15,5 +15,12 @@ final class WorkflowIgnitionResult {
     public readonly ?int $workflowId = null,
     /** start_ignited() threw after the ignition committed */
     public readonly ?\Throwable $startError = null,
+    /**
+     * AlreadyIgnited only: the winner's start marker is claimed but the
+     * start has not completed (in flight, or its worker died; reclaimed once
+     * older than the igniter's stale_start_seconds). The registered
+     * subscriber throws WorkflowStartPending for it, so the delivery retries.
+     */
+    public readonly bool $startPending = false,
   ) {}
 }
