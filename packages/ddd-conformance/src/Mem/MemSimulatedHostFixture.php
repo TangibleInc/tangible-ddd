@@ -52,8 +52,23 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
   /** @var array<int, true> transport submission indexes a fresh delivery stage consumed */
   private array $consumed = [];
 
-  public function __construct(StartMode $startMode = StartMode::InBand) {
+  /**
+   * @param bool $abortOnStatementError model an engine that aborts the
+   *   transaction on a statement error (Postgres 25P02): its COMMIT then
+   *   fails and nothing persists (the CR sf-7 branch of cmd.commit-failure)
+   */
+  public function __construct(
+    StartMode $startMode = StartMode::InBand,
+    private readonly bool $abortOnStatementError = false,
+  ) {
     parent::__construct(false, $startMode);
+  }
+
+  public function runFailingStatement(): void {
+    if ($this->abortOnStatementError) {
+      $this->boundary->failNextCommit('current transaction is aborted (25P02, simulated)');
+    }
+    parent::runFailingStatement();
   }
 
   public function hostName(): string {
