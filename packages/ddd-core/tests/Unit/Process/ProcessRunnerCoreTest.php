@@ -37,7 +37,7 @@ use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\InMemoryProcessStore;
 use TangibleDDD\Testing\InMemoryTransactionBoundary;
 use TangibleDDD\Testing\InMemoryWakeupScheduler;
-use TangibleDDD\Testing\StaticConsumerIdentity;
+use TangibleDDD\Core\Tests\Unit\Fixtures\AcmeConfig;
 
 require_once dirname(__DIR__) . '/Fixtures/Process/CoreProcesses.php';
 
@@ -76,7 +76,7 @@ final class ProcessRunnerCoreTest extends TestCase {
     $this->registry = new SubscriptionRegistry();
 
     $this->runner = new ProcessRunner(
-      new StaticConsumerIdentity('acme'),
+      new AcmeConfig(),
       null,
       $this->lock,
       $this->store,
@@ -101,7 +101,7 @@ final class ProcessRunnerCoreTest extends TestCase {
   }
 
   public function test_the_0_6_5_two_argument_constructor_stays_callable(): void {
-    $runner = new ProcessRunner(new StaticConsumerIdentity('acme'), $this->createStub(\TangibleDDD\Infra\IProcessRepository::class));
+    $runner = new ProcessRunner(new AcmeConfig(), $this->createStub(\TangibleDDD\Infra\IProcessRepository::class));
     self::assertInstanceOf(ProcessRunner::class, $runner);
   }
 
@@ -184,7 +184,7 @@ final class ProcessRunnerCoreTest extends TestCase {
       public function complete(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $w): bool { return $this->inner->complete($w); }
       public function retryLater(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $w, string $e, \DateTimeImmutable $n): bool { return $this->inner->retryLater($w, $e, $n); }
     };
-    $runner = new ProcessRunner(new StaticConsumerIdentity('acme'), null, $this->lock, $this->store, $failing, $this->registry, $this->boundary, $this->clock);
+    $runner = new ProcessRunner(new AcmeConfig(), null, $this->lock, $this->store, $failing, $this->registry, $this->boundary, $this->clock);
     $runner->register_event(UserJoined::class);
     $p = new TimedGatherProcess();
 
@@ -310,7 +310,7 @@ final class ProcessRunnerCoreTest extends TestCase {
       public function heldCount(): int { return $this->inner->heldCount(); }
       public function forceReleaseAll(): int { return $this->inner->forceReleaseAll(); }
     };
-    $runner = new ProcessRunner(new StaticConsumerIdentity('acme'), null, $lock, $store, $this->wakeups, $this->registry, $this->boundary, $this->clock);
+    $runner = new ProcessRunner(new AcmeConfig(), null, $lock, $store, $this->wakeups, $this->registry, $this->boundary, $this->clock);
     $runner->register_event(UserJoined::class);
     $p = new AwaitingProcess(5);
     $runner->start($p);
@@ -395,7 +395,7 @@ final class ProcessRunnerCoreTest extends TestCase {
   }
 
   public function test_without_ports_the_runner_fails_loudly_on_first_use(): void {
-    $bare = new ProcessRunner(new StaticConsumerIdentity('acme'));
+    $bare = new ProcessRunner(new AcmeConfig());
 
     $this->expectException(\LogicException::class);
     $this->expectExceptionMessage('IProcessStore');

@@ -10,7 +10,7 @@ use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Infrastructure\ProcessFailed;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
-use TangibleDDD\Infra\IConsumerIdentity;
+use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\IProcessRepository;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
@@ -58,8 +58,11 @@ use Throwable;
  *   IClock               absolute UTC due times
  *
  * Constructor (R2): the 0.6.5 `(IDDDConfig, IProcessRepository)` call stays
- * valid; the identity is widened to IConsumerIdentity, the repository became
- * optional, and the six ports are optional trailing parameters. A null port
+ * valid; the repository became optional and the six ports are optional
+ * trailing parameters. The config stays typed IDDDConfig: consumers'
+ * runtime-compiled containers AUTOWIRE this class, and they alias
+ * IDDDConfig, not IConsumerIdentity (widening it broke autowiring on the
+ * WordPress integration suite). Only prefix() is read. A null port
  * resolves from HostDefaults on first use (per-consumer ones through
  * HostDefaults::for(), the store adapting the given repository). ddd-wp
  * fills HostDefaults at init, so 0.6 compiled containers get WordPress
@@ -102,7 +105,7 @@ final class ProcessRunner implements IProcessEntry {
   private ?ITransactionBoundary $resolved_boundary = null;
 
   public function __construct(
-    private readonly IConsumerIdentity $config,
+    private readonly IDDDConfig $config,
     private readonly ?IProcessRepository $repository = null,
     private readonly ?IProcessLock $lock = null,
     private readonly ?IProcessStore $store = null,
