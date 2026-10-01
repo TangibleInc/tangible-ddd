@@ -53,6 +53,9 @@ final class PdoOutboxStore implements IOutboxStore {
   private readonly IClock $clock;
   private readonly LoggerInterface $logger;
 
+  /** The fact class withFactClass() scopes onto plain append() calls. */
+  private ?string $scopedClass = null;
+
   public function __construct(
     private readonly IHostConnection $db,
     private readonly ?IRelayPauseStore $pauses = null,
@@ -72,7 +75,27 @@ final class PdoOutboxStore implements IOutboxStore {
   }
 
   public function append(OutboxRecord $r): void {
-    $this->appendFact($r, null);
+    $this->appendFact($r, $this->scopedClass);
+  }
+
+  /**
+   * Run $work with $eventClass recorded on every plain append() it makes
+   * (wave3-pdo-compose CR-PC-2): how FactClassRecordingEventBus gets the
+   * fact's PHP class past the core bus, whose OutboxRecord carries none.
+   * The scope is restored when $work returns or throws.
+   *
+   * @template T
+   * @param callable():T $work
+   * @return T
+   */
+  public function withFactClass(string $eventClass, callable $work): mixed {
+    $previous = $this->scopedClass;
+    $this->scopedClass = $eventClass;
+    try {
+      return $work();
+    } finally {
+      $this->scopedClass = $previous;
+    }
   }
 
   /** append() plus the fact's PHP class. @throws OutboxWriteFailed */

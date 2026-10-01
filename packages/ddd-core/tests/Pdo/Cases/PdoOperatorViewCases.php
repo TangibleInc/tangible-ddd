@@ -9,11 +9,22 @@ use TangibleDDD\Core\Tests\Pdo\OutboxTestCase;
 use TangibleDDD\Core\Tests\Unit\Fixtures\FulfilmentProcess;
 use TangibleDDD\Defaults\Pdo\PdoDeliveryLedger;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
+use TangibleDDD\Defaults\Pdo\PdoJobsOperatorSource;
+use TangibleDDD\Defaults\Pdo\PdoLedgerOperatorSource;
 use TangibleDDD\Defaults\Pdo\PdoOperatorView;
 use TangibleDDD\Defaults\Pdo\PdoProcessStore;
 use TangibleDDD\Defaults\Pdo\PdoTransactionBoundary;
+use TangibleDDD\Runtime\Ops\IOperatorItemSource;
+use TangibleDDD\Runtime\Ops\IOperatorView;
+use TangibleDDD\Runtime\Ops\Layer;
+use TangibleDDD\Runtime\Ops\OperatorItem;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 
+/**
+ * PdoOperatorView = core PortOperatorView over the pdo administration and
+ * process store, plus IOperatorItemSource adapters for the jobs and ledger
+ * tables (W3C-R5, CR-PDO-4).
+ */
 abstract class PdoOperatorViewCases extends OutboxTestCase {
 
   private const EVENT = '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d11';
@@ -37,7 +48,8 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $store->append(self::record('dead'));
     $store->append(self::record('retrying'));
     $store->append(self::record('healthy'));
-    [$dead, $retrying] = $store->claim(2, $this->clock->now(), 60);
+    $store->append(self::record('fact'));
+    [$dead, $retrying, , $fact] = $store->claim(4, $this->clock->now(), 60);
     $store->deadLetter($dead, 'transport rejected');
     $store->retryLater($retrying, 'transport down', $this->clock->now()->modify('+1 minute'));
 
@@ -48,13 +60,15 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $ledger->markDelivered('listener:ok', self::EVENT);
 
     $jobs = new PdoJobStore($this->db, 'acme', self::PREFIX, $this->clock);
-    (new PdoTransactionBoundary($this->db))->run(function () use ($jobs) {
+    (new PdoTransactionBoundary($this->db))->run(function () use ($jobs, $store, $fact) {
       // Process ids far above anything the tests insert, so no stranded row matches them.
       $jobs->schedule(WakeupIntent::timeout('acme', 900077, 0, $this->clock->now()));
       $jobs->schedule(WakeupIntent::continuation('acme', 900078, 0, $this->clock->now()->modify('+1 day')));
+      $store->accept($fact, $jobs->submit($fact, ['__event_id' => 'fact'], $this->clock->now()));
     });
-    [$wake] = $jobs->claimDue($this->clock->now(), 1, 60);
-    $jobs->retryLater($wake, 'LockNotAcquired', $this->clock->now()->modify('+2 seconds'));
+    foreach ($jobs->claimDue($this->clock->now(), 2, 60) as $claim) {
+      $jobs->retryLater($claim, $claim->intent->idempotencyKey === 'deliver:fact' ? 'subscribers to retry: listener:x' : 'LockNotAcquired', $this->clock->now()->modify('+2 seconds'));
+    }
 
     $processes = new PdoProcessStore($this->db, self::PREFIX, $this->clock);
     $stranded = $processes->insert($this->process('running'));
@@ -70,60 +84,91 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     return ['stranded' => $stranded, 'quarantined' => $quarantined];
   }
 
-  public function test_it_lists_every_layer_with_attempts_against_budget(): void {
+  /** @param list<OperatorItem> $items @return array<string, OperatorItem> */
+  private static function byKey(array $items): array {
+    $out = [];
+    foreach ($items as $item) {
+      $out[$item->layer->value . ':' . $item->key] = $item;
+    }
+    return $out;
+  }
+
+  public function test_it_lists_every_layer_as_operator_items_with_attempts_against_budget(): void {
     $ids = $this->seed();
 
-    $items = $this->view()->list();
+    $view = $this->view();
+    self::assertInstanceOf(IOperatorView::class, $view);
+    $items = $view->list();
 
-    $byKey = [];
     foreach ($items as $item) {
-      $byKey[$item['layer'] . ':' . $item['key']] = $item;
-      self::assertSame('acme', $item['consumer']);
-      self::assertSame(['layer', 'consumer', 'key', 'attempts', 'budget', 'last_error', 'first_seen', 'repair_actions', 'detail'], array_keys($item));
+      self::assertInstanceOf(OperatorItem::class, $item);
+      self::assertSame('acme', $item->consumer);
     }
-    self::assertEqualsCanonicalizing([
+    $byKey = self::byKey($items);
+    self::assertSame([
       'relay:dead', 'relay:retrying',
-      'delivery:listener:a', 'delivery:listener:b',
+      'delivery:listener:a@' . self::EVENT, 'delivery:listener:b@' . self::EVENT, 'delivery:deliver:fact',
       'wakeup:timeout:900077:0',
       "process:{$ids['stranded']}", "process:{$ids['quarantined']}",
-    ], array_keys($byKey));
+    ], array_keys($byKey), 'ordered by layer, then first seen');
 
     $dead = $byKey['relay:dead'];
-    self::assertSame(1, $dead['attempts']);
-    self::assertSame(5, $dead['budget']);
-    self::assertSame('transport rejected', $dead['last_error']);
-    self::assertEquals(self::utc('2026-10-01 12:00:00'), $dead['first_seen']);
-    self::assertSame(['retry', 'replay', 'discard'], $dead['repair_actions']);
-    self::assertSame(['retry'], $byKey['relay:retrying']['repair_actions']);
+    self::assertSame([1, 5, 'transport rejected'], [$dead->attempts, $dead->budget, $dead->lastError]);
+    self::assertSame(['retry', 'replay', 'discard'], $dead->repairActions);
+    self::assertSame(['retry'], $byKey['relay:retrying']->repairActions);
+    self::assertSame('transport down', $byKey['relay:retrying']->lastError);
 
-    self::assertSame(2, $byKey['delivery:listener:a']['attempts']);
-    self::assertSame(self::EVENT, $byKey['delivery:listener:a']['detail']['event_id']);
-    self::assertSame('exhausted', $byKey['delivery:listener:b']['detail']['state']);
-    self::assertSame('retrying', $byKey['delivery:listener:a']['detail']['state']);
+    $a = $byKey['delivery:listener:a@' . self::EVENT];
+    self::assertSame([2, 5, 'listener threw', ['redeliver']], [$a->attempts, $a->budget, $a->lastError, $a->repairActions]);
+    self::assertSame([], $byKey['delivery:listener:b@' . self::EVENT]->repairActions, 'exhausted: compensated, nothing to repair');
+    self::assertSame([1, 5], [$byKey['delivery:deliver:fact']->attempts, $byKey['delivery:deliver:fact']->budget]);
+    self::assertStringContainsString('listener:x', (string) $byKey['delivery:deliver:fact']->lastError);
 
-    self::assertSame(1, $byKey['wakeup:timeout:900077:0']['attempts']);
-    self::assertSame(10, $byKey['wakeup:timeout:900077:0']['budget']);
-    self::assertSame('LockNotAcquired', $byKey['wakeup:timeout:900077:0']['last_error']);
+    $wake = $byKey['wakeup:timeout:900077:0'];
+    self::assertSame([1, 10, 'LockNotAcquired', ['retry_wake']], [$wake->attempts, $wake->budget, $wake->lastError, $wake->repairActions]);
 
-    self::assertSame(['resume_stranded', 'fail_stranded'], $byKey["process:{$ids['stranded']}"]['repair_actions']);
-    self::assertSame('stranded', $byKey["process:{$ids['stranded']}"]['detail']['state']);
-    self::assertSame('quarantined', $byKey["process:{$ids['quarantined']}"]['detail']['state']);
-    self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]['last_error']);
+    self::assertSame(['resume_stranded', 'fail_stranded'], $byKey["process:{$ids['stranded']}"]->repairActions);
+    self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]->lastError);
   }
 
   public function test_it_filters_by_layer_and_honours_the_limit(): void {
     $this->seed();
     $view = $this->view();
 
-    self::assertSame(['relay', 'relay'], array_column($view->list('relay'), 'layer'));
-    self::assertSame(['delivery', 'delivery'], array_column($view->list('delivery'), 'layer'));
-    self::assertCount(1, $view->list('wakeup'));
-    self::assertCount(2, $view->list('process'));
+    $layers = static fn (array $items) => array_map(static fn (OperatorItem $i) => $i->layer, $items);
+    self::assertSame([Layer::Relay, Layer::Relay], $layers($view->list(Layer::Relay)));
+    self::assertSame([Layer::Delivery, Layer::Delivery, Layer::Delivery], $layers($view->list(Layer::Delivery)));
+    self::assertCount(1, $view->list(Layer::Wakeup));
+    self::assertCount(2, $view->list(Layer::Process));
     self::assertCount(3, $view->list(null, 3));
-    self::assertSame([], $view->list('workflow'));
+    self::assertSame([], $view->list(Layer::Workflow));
+  }
 
-    $this->expectException(\InvalidArgumentException::class);
-    $view->list('nonsense');
+  public function test_the_array_form_is_what_a_host_renders(): void {
+    $this->seed();
+
+    $rows = $this->view()->toArrays(Layer::Relay);
+
+    self::assertCount(2, $rows);
+    self::assertSame(['layer', 'layer_label', 'consumer', 'key', 'attempts', 'budget', 'last_error', 'first_seen', 'repair_actions'], array_keys($rows[0]));
+    self::assertSame('relay', $rows[0]['layer']);
+    self::assertSame('2026-10-01T12:00:00+00:00', $rows[0]['first_seen']);
+  }
+
+  public function test_the_jobs_and_ledger_sources_stand_alone(): void {
+    $this->seed();
+    $jobs = new PdoJobsOperatorSource($this->db, 'acme', self::PREFIX);
+    $ledger = new PdoLedgerOperatorSource($this->db, 'acme', self::PREFIX);
+    self::assertInstanceOf(IOperatorItemSource::class, $jobs);
+    self::assertInstanceOf(IOperatorItemSource::class, $ledger);
+
+    self::assertSame(['timeout:900077:0'], array_map(static fn (OperatorItem $i) => $i->key, $jobs->items(Layer::Wakeup, 10)));
+    self::assertSame(['deliver:fact'], array_map(static fn (OperatorItem $i) => $i->key, $jobs->items(Layer::Delivery, 10)));
+    self::assertCount(2, $jobs->items(null, 10));
+    self::assertCount(1, $jobs->items(null, 1));
+    self::assertSame([], $jobs->items(Layer::Relay, 10));
+    self::assertCount(2, $ledger->items(Layer::Delivery, 10));
+    self::assertSame([], $ledger->items(Layer::Wakeup, 10));
   }
 
   public function test_a_healthy_system_lists_nothing(): void {

@@ -6,7 +6,12 @@ namespace TangibleDDD\Core\Tests\Pdo\Cases;
 
 use TangibleDDD\Core\Tests\Pdo\OutboxTestCase;
 use TangibleDDD\Core\Tests\Pdo\Support\FaultyConnection;
+use TangibleDDD\Core\Tests\Unit\Fixtures\AcmeConfig;
+use TangibleDDD\Core\Tests\Unit\Fixtures\OrderPlaced;
+use TangibleDDD\Defaults\Pdo\FactClassRecordingEventBus;
 use TangibleDDD\Defaults\Pdo\PdoConnection;
+use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
+use TangibleDDD\Testing\RecordingFactObserver;
 use TangibleDDD\Defaults\Pdo\PdoPauseStore;
 use TangibleDDD\Defaults\Pdo\PdoTransactionBoundary;
 use TangibleDDD\Runtime\NestedTransactionRejected;
@@ -297,6 +302,41 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     self::assertSame('App\\OrderPlaced', $store->eventClassOf('e1'));
     self::assertNull($store->eventClassOf('e2'));
     self::assertNull($store->eventClassOf('missing'));
+  }
+
+  public function test_a_scoped_fact_class_is_written_by_plain_appends_inside_the_scope_only(): void {
+    $store = $this->store();
+
+    $result = $store->withFactClass('App\\OrderPlaced', function () use ($store): string {
+      $store->append(self::record('inside'));
+      return 'done';
+    });
+    $store->append(self::record('after'));
+    try {
+      $store->withFactClass('App\\Other', static fn () => throw new \RuntimeException('publish failed'));
+    } catch (\RuntimeException) {
+    }
+    $store->append(self::record('after-throw'));
+
+    self::assertSame('done', $result);
+    self::assertSame('App\\OrderPlaced', $store->eventClassOf('inside'));
+    self::assertNull($store->eventClassOf('after'));
+    self::assertNull($store->eventClassOf('after-throw'), 'the scope is cleared when the work throws');
+  }
+
+  public function test_the_fact_class_recording_bus_records_the_published_class(): void {
+    $store = $this->store();
+    $bus = new FactClassRecordingEventBus(
+      new OutboxIntegrationEventBus(null, new AcmeConfig(), new RecordingFactObserver(), $this->clock, $store),
+      $store,
+    );
+
+    $bus->publish(new OrderPlaced(7, 'tea'));
+
+    $row = $this->db->fetchOne('SELECT event_id, event_class, event_type FROM tp_ddd_outbox');
+    self::assertSame(OrderPlaced::class, $row['event_class']);
+    self::assertSame(OrderPlaced::name(), $row['event_type']);
+    self::assertSame(OrderPlaced::class, $store->eventClassOf((string) $row['event_id']));
   }
 
   public function test_the_store_exposes_its_connection_for_shared_connection_checks(): void {
