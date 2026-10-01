@@ -17,4 +17,9 @@ final class BehaviourTypes implements IBehaviourTypes {
   public function find(string $type): ?string {
     return $this->map[$type] ?? null;
   }
+
+  /** @return array<string, class-string<BaseBehaviourConfig>> */
+  public function all(): array {
+    return $this->map;
+  }
 }

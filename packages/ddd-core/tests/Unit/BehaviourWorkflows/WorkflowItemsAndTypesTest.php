@@ -129,11 +129,13 @@ final class WorkflowItemsAndTypesTest extends TestCase {
 
   protected function setUp(): void {
     HostDefaults::reset_for_tests();
+    BaseBehaviourConfig::reset_types_for_tests();
     DeterministicCommandId::take();
   }
 
   protected function tearDown(): void {
     HostDefaults::reset_for_tests();
+    BaseBehaviourConfig::reset_types_for_tests();
   }
 
   // ── W4 ────────────────────────────────────────────────────────────────────
@@ -221,6 +223,37 @@ final class WorkflowItemsAndTypesTest extends TestCase {
     HostDefaults::provide(IBehaviourTypes::class, $types);
 
     self::assertSame(OtherGrantConfig::class, BaseBehaviourConfig::class_for_type('w5_both'));
+  }
+
+  public function test_early_types_are_handed_over_to_the_host_registry(): void {
+    BaseBehaviourConfig::register_type('w5_early', GrantConfig::class);
+    BaseBehaviourConfig::register_type('w5_both', GrantConfig::class);
+    $types = new BehaviourTypes();
+    $types->register('w5_both', OtherGrantConfig::class);
+    HostDefaults::provide(IBehaviourTypes::class, $types);
+
+    BaseBehaviourConfig::hand_over_types($types);
+
+    self::assertSame(GrantConfig::class, $types->find('w5_early'), 'a host reading its own registry sees include-time types');
+    self::assertSame(OtherGrantConfig::class, $types->find('w5_both'), 'the host registration wins');
+  }
+
+  public function test_the_facade_hands_early_types_over_on_first_use_after_boot(): void {
+    BaseBehaviourConfig::register_type('w5_early', GrantConfig::class);
+    $types = new BehaviourTypes();
+    HostDefaults::provide(IBehaviourTypes::class, $types);
+
+    BaseBehaviourConfig::class_for_type('w5_early');
+
+    self::assertSame(GrantConfig::class, $types->find('w5_early'));
+  }
+
+  public function test_the_reset_hook_clears_early_registrations(): void {
+    BaseBehaviourConfig::register_type('w5_leak', GrantConfig::class);
+    BaseBehaviourConfig::reset_types_for_tests();
+
+    $this->expectException(\InvalidArgumentException::class);
+    BaseBehaviourConfig::class_for_type('w5_leak');
   }
 
   public function test_an_unknown_type_still_throws_invalid_argument(): void {

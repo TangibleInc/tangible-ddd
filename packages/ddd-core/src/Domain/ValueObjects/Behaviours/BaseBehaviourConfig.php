@@ -22,6 +22,17 @@ use TangibleDDD\Runtime\HostDefaults;
  * registry, or, before the host provided one, to a process-wide fallback;
  * class_for_type() asks the host's registry first, then the fallback, so a
  * type registered at include time stays resolvable after the host boots.
+ *
+ * Hosts resolve stored types through class_for_type() (or from_json()).
+ * A host that reads its own IBehaviourTypes service directly calls
+ * hand_over_types() once at boot, after providing it, so include-time
+ * registrations land in that registry too; the facade also hands them over
+ * on its first call that sees a host registry. A host registration always
+ * wins over an early one. Tests clear the fallback with
+ * reset_types_for_tests() (HostDefaults::reset_for_tests() does not).
+ *
+ * The HostDefaults lookup is the one Domain-to-Runtime reach in this class,
+ * kept for the 0.6 static facade; new code should take an IBehaviourTypes.
  */
 abstract class BaseBehaviourConfig extends DirectJsonLifecycleValue {
 
@@ -52,9 +63,33 @@ abstract class BaseBehaviourConfig extends DirectJsonLifecycleValue {
     return $class;
   }
 
+  /**
+   * Copy the include-time registrations into the host's registry (the host
+   * entry wins on a clash) and drop the fallback. Idempotent.
+   */
+  public static function hand_over_types(IBehaviourTypes $to): void {
+    foreach (self::$early?->all() ?? [] as $type => $class) {
+      if ($to->find($type) === null) {
+        $to->register($type, $class);
+      }
+    }
+    self::$early = null;
+  }
+
+  /** @internal test seam: forget the include-time fallback. */
+  public static function reset_types_for_tests(): void {
+    self::$early = null;
+  }
+
   private static function host_types(): ?IBehaviourTypes {
     $types = HostDefaults::get(IBehaviourTypes::class);
-    return $types instanceof IBehaviourTypes ? $types : null;
+    if (!$types instanceof IBehaviourTypes) {
+      return null;
+    }
+    if (self::$early !== null) {
+      self::hand_over_types($types);
+    }
+    return $types;
   }
 
   /**
