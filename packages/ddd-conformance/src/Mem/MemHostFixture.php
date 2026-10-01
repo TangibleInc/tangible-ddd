@@ -15,20 +15,31 @@ use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
+use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
-use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\BusOptions;
+use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessHost;
+use TangibleDDD\Conformance\ProcessRow;
+use TangibleDDD\Conformance\ProcessWorker;
+use TangibleDDD\Conformance\RecordsSignals;
+use TangibleDDD\Conformance\RelayRace;
 use TangibleDDD\Conformance\RelayReport;
 use TangibleDDD\Conformance\ScenarioContext;
 use TangibleDDD\Conformance\ScenarioRows;
 use TangibleDDD\Conformance\SimulatedCrash;
+use TangibleDDD\Conformance\StatementErrors;
 use TangibleDDD\Conformance\Support\ConformanceConfig;
+use TangibleDDD\Conformance\Support\ConnectionView;
 use TangibleDDD\Conformance\Support\FaultInjectingAuditSink;
 use TangibleDDD\Conformance\Support\HandlerMapMiddleware;
+use TangibleDDD\Conformance\Support\InterleavingProcessLock;
 use TangibleDDD\Conformance\Support\RecordingLogger;
 use TangibleDDD\Conformance\Support\RecordingOutboxStore;
+use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
@@ -40,81 +51,114 @@ use TangibleDDD\Runtime\Audit\IAuditPolicy;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\Delivery\DeliveryOutcome;
 use TangibleDDD\Runtime\Delivery\IDeliveryLedger;
+use TangibleDDD\Runtime\Delivery\IDeliveryWorker;
 use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistry;
+use TangibleDDD\Runtime\Drain;
+use TangibleDDD\Runtime\DrainReport;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Lock\IProcessLock;
+use TangibleDDD\Runtime\Lock\LockKey;
 use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
 use TangibleDDD\Runtime\NestedPolicy;
+use TangibleDDD\Runtime\Ops\IOperatorView;
+use TangibleDDD\Runtime\Ops\PortOperatorView;
 use TangibleDDD\Runtime\OrderedListenerDispatcher;
 use TangibleDDD\Runtime\Outbox\IOutboxAdministration;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
+use TangibleDDD\Runtime\Process\IProcessStore;
+use TangibleDDD\Runtime\Process\QuarantinedProcess;
 use TangibleDDD\Runtime\RuntimeLeakDetected;
 use TangibleDDD\Runtime\RuntimeReset;
+use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Testing\FixedActorProvider;
 use TangibleDDD\Testing\InMemoryAuditSink;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
 use TangibleDDD\Testing\InMemoryOutboxStore;
 use TangibleDDD\Testing\InMemoryProcessLock;
+use TangibleDDD\Testing\InMemoryProcessStore;
 use TangibleDDD\Testing\InMemoryRelayPauseStore;
+use TangibleDDD\Testing\InMemoryTransactional;
 use TangibleDDD\Testing\InMemoryTransactionBoundary;
 use TangibleDDD\Testing\InMemoryTransport;
+use TangibleDDD\Testing\InMemoryWakeupScheduler;
 use TangibleDDD\Testing\RecordingFactObserver;
 use TangibleDDD\Testing\RecordingSignalDispatcher;
 
 /**
  * The mem host: every port is its ddd-core in-memory double
  * (packages/ddd-core/src/Testing), sharing one simulated connection through
- * InMemoryTransactionBoundary (outbox, ledger, the scenario rows and a
- * shared-connection transport are enlisted, so a rollback restores them
- * together).
+ * InMemoryTransactionBoundary (outbox, ledger, the scenario rows, the
+ * process store, the intents and a shared-connection transport are
+ * enlisted, so a rollback restores them together).
  *
  * The pipeline is the real ddd-core one (CONF-1..3): CorrelationMiddleware
  * (act bracket + audit through the ports), TransactionalCommandMiddleware,
  * DomainEventsPublishMiddleware over OutboxIntegrationEventBus (port form),
  * the OutboxProcessor relay step (port form), IntegrationDelivery and
- * RuntimeReset. Only the handler map is conformance-owned.
+ * RuntimeReset; since wave 3 also the core ProcessRunner and Drain (W3C-R6).
+ * Only the handler map is conformance-owned.
  *
  * HostDefaults gets the logger, the signal dispatcher and the clock (the
  * act bracket reads its clock there), never a transaction boundary:
  * cmd.no-boundary needs a bus without one.
  *
+ * Workers (ProcessHost): worker 1 is this connection; worker n > 1 is a
+ * second ProcessRunner + ReentrantProcessLock + subscription registry over
+ * the SAME stores and the same raw InMemoryProcessLock, which then sees
+ * worker 1's held keys as held (another session). The interleaving point
+ * (beforeNextProcessLockAcquire) sits under worker 1's re-entrant lock.
+ *
  * "Fresh schema" on mem is a fresh object graph built in setUp().
  */
-final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
   public const CONSUMER_VERSION = '0.0.0-conformance';
 
-  private ConformanceConfig $config;
-  private FrozenClock $clock;
-  private RecordingLogger $logger;
-  private RecordingSignalDispatcher $signals;
-  private InMemoryTransactionBoundary $boundary;
-  private InMemoryRelayPauseStore $pauses;
-  private InMemoryOutboxStore $outbox;
-  private RecordingOutboxStore $relayStore;
-  private InMemoryTransport $transport;
-  private InMemoryDeliveryLedger $ledger;
-  private SubscriptionRegistry $subscriptions;
-  private InMemoryProcessLock $rawLock;
-  private ReentrantProcessLock $lock;
-  private EventsUnitOfWork $events;
-  private InMemoryScenarioRows $rows;
-  private OrderedListenerDispatcher $dispatcher;
-  private InMemoryAuditSink $audit;
-  private FaultInjectingAuditSink $auditPort;
-  private RecordingFactObserver $facts;
-  private OutboxConfig $outboxConfig;
+  protected ConformanceConfig $config;
+  protected FrozenClock $clock;
+  protected RecordingLogger $logger;
+  protected RecordingSignalDispatcher $signals;
+  protected InMemoryTransactionBoundary $boundary;
+  protected ConnectionView $outboxConnection;
+  protected InMemoryRelayPauseStore $pauses;
+  protected InMemoryOutboxStore $outbox;
+  protected RecordingOutboxStore $relayStore;
+  protected InMemoryTransport $transport;
+  protected InMemoryDeliveryLedger $ledger;
+  protected SubscriptionRegistry $subscriptions;
+  protected InMemoryProcessLock $rawLock;
+  protected InterleavingProcessLock $interleaving;
+  protected ReentrantProcessLock $lock;
+  protected EventsUnitOfWork $events;
+  protected InMemoryScenarioRows $rows;
+  protected OrderedListenerDispatcher $dispatcher;
+  protected InMemoryAuditSink $audit;
+  protected FaultInjectingAuditSink $auditPort;
+  protected RecordingFactObserver $facts;
+  protected OutboxConfig $outboxConfig;
+  protected InMemoryProcessStore $processStore;
+  protected InMemoryWakeupScheduler $wakeups;
+  protected WakeHandoffFaults $wakeFaults;
+
+  /** @var array<int, MemProcessWorker> */
+  protected array $workers = [];
+
+  /** @var list<array{0: class-string, 1: class-string}> */
+  protected array $starts = [];
+
+  /** @var list<class-string> */
+  protected array $awaits = [];
 
   /** @var list<string> diagnostics the runtime classes logged, oldest first */
   public array $logs = [];
@@ -123,7 +167,12 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   private bool $crashAfterSubmit = false;
 
-  public function __construct(private readonly bool $transportSharesConnection = false) {}
+  private ?\Closure $race = null;
+
+  public function __construct(
+    protected readonly bool $transportSharesConnection = false,
+    protected readonly StartMode $startMode = StartMode::InBand,
+  ) {}
 
   public function hostName(): string {
     return 'mem';
@@ -139,25 +188,36 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     $this->clock = new FrozenClock(new \DateTimeImmutable(self::START));
     $this->boundary = new InMemoryTransactionBoundary(NestedPolicy::Reject, $this->logger);
     $this->pauses = new InMemoryRelayPauseStore();
-    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->boundary);
+    $this->outboxConnection = new ConnectionView($this->boundary);
+    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->outboxConnection);
     $this->relayStore = new RecordingOutboxStore($this->outbox);
     // CONF-5: a shared-connection transport enlists in the boundary, so a
     // rolled-back relay transaction takes its submission with it.
     $this->transport = new InMemoryTransport($this->transportSharesConnection, $this->boundary);
-    $this->ledger = new InMemoryDeliveryLedger();
+    $this->ledger = new InMemoryDeliveryLedger(self::CONSUMER_PREFIX);
     $this->subscriptions = new SubscriptionRegistry();
     $this->rawLock = new InMemoryProcessLock();
-    $this->lock = new ReentrantProcessLock($this->rawLock, $this->logger);
+    $this->interleaving = new InterleavingProcessLock($this->rawLock);
+    $this->lock = new ReentrantProcessLock($this->interleaving, $this->logger);
     $this->events = new EventsUnitOfWork();
     $this->rows = new InMemoryScenarioRows();
     $this->dispatcher = new OrderedListenerDispatcher();
     $this->audit = new InMemoryAuditSink();
     $this->auditPort = new FaultInjectingAuditSink($this->audit);
     $this->facts = new RecordingFactObserver();
+    $this->processStore = new InMemoryProcessStore($this->clock);
+    $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
+    $this->processStore->attachIntents($this->wakeups);
+    $this->wakeFaults = new WakeHandoffFaults();
+    $this->workers = [];
+    $this->starts = [];
+    $this->awaits = [];
 
     $this->boundary->enlist($this->outbox);
     $this->boundary->enlist($this->ledger);
     $this->boundary->enlist($this->rows);
+    $this->boundary->enlist($this->processStore);
+    $this->boundary->enlist($this->wakeups);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -165,10 +225,14 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
     RuntimeReset::register('conformance.events', fn () => $this->events->reset());
     RuntimeReset::guardLock($this->lock);
+
+    // Step commands commit their effect row on this connection.
+    ProcessJournal::bind($this->rows, $this->boundary);
   }
 
   public function tearDown(): void {
     $this->resetStatics();
+    ProcessJournal::bind(null);
   }
 
   // ── time ─────────────────────────────────────────────────────────────────
@@ -288,28 +352,32 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
    * over a RecordingOutboxStore so the report names event ids.
    */
   public function relayOnce(int $limit = 50): RelayReport {
-    $processor = new OutboxProcessor(
-      $this->config,
-      null,
-      OutboxConfig::from_array(['batch_size' => $limit] + get_object_vars($this->outboxConfig)),
-      null,
-      null,
-      $this->logger,
-      $this->clock,
-      $this->relayStore,
-      $this->transport,
-      $this->boundary,
-    );
+    $processor = $this->relayProcessor($this->relayStore, $limit);
 
+    $kept = null;
     if ($this->crashAfterSubmit) {
       $this->crashAfterSubmit = false;
       $processor->between_submit_and_accept(static function ($claim): void {
         throw new SimulatedCrash("relay died after submitting {$claim->event_id}, before accept");
       });
+    } elseif ($this->race !== null) {
+      $competitor = $this->race;
+      $this->race = null;
+      $processor->between_submit_and_accept(function () use ($competitor, &$kept): void {
+        $this->outboxConnection->asAnotherConnection($competitor);
+        // What the competitor committed on its own connection survives the
+        // relay transaction's rollback: keep every participant but the
+        // transport (the relay's own write) as the competitor left it.
+        $kept = array_map(static fn (InMemoryTransactional $p) => [$p, $p->snapshotState()], $this->competitorParticipants());
+      });
     }
 
     $this->relayStore->reset();
     $processor->process_batch();
+
+    foreach ($kept ?? [] as [$participant, $state]) {
+      $participant->restoreState($state);
+    }
     return $this->relayStore->report();
   }
 
@@ -349,13 +417,7 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── delivery ─────────────────────────────────────────────────────────────
 
   public function deliver(string $eventClass, array $wrapped): DeliveryOutcome {
-    $delivery = new IntegrationDelivery(
-      $this->subscriptions,
-      $this->ledger,
-      IntegrationDelivery::DEFAULT_BUDGET,
-      $this->logger,
-    );
-    return $delivery->deliver($eventClass, $wrapped);
+    return $this->deliverWith($this->subscriptions, $eventClass, $wrapped);
   }
 
   public function deliverTransported(string $eventClass): array {
@@ -391,7 +453,10 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   }
 
   public function runnerTransients(): ?array {
-    return null; // no process runner on mem until wave 3 (ProcessRunner on the ports)
+    $runner = $this->worker(1)->processRunner();
+    // The runner's one per-message transient (register 3.9), read without
+    // widening its API.
+    return ['resume_argument' => (fn () => $this->resume_argument)->call($runner)];
   }
 
   // ── optional seams (CR-CC-1) ─────────────────────────────────────────────
@@ -402,6 +467,126 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   public function signals(): array {
     return array_map(static fn (array $s) => $s['event'], $this->signals->emitted);
+  }
+
+  // ── RelayRace (CR-W3CP-2), StatementErrors (CR-W3CP-3) ──────────────────
+
+  public function raceNextRelayAfterSubmit(callable $competitor): void {
+    $this->race = \Closure::fromCallable($competitor);
+  }
+
+  public function runFailingStatement(): void {
+    if (!$this->boundary->isActive()) {
+      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+    }
+    // mem has no aborted-transaction state, like MySQL: the statement fails
+    // and the transaction stays usable.
+    throw new \RuntimeException('duplicate key: scenario row (simulated statement error)');
+  }
+
+  // ── ProcessHost (CR-W3CP-1) ──────────────────────────────────────────────
+
+  public function wireProcesses(array $starts, array $awaits): void {
+    foreach ($starts as $pair) {
+      $this->starts[] = $pair;
+    }
+    foreach ($awaits as $class) {
+      $this->awaits[] = $class;
+    }
+    foreach ($this->workers as $worker) {
+      $this->wire($worker->processRunner(), $starts, $awaits);
+    }
+  }
+
+  public function worker(int $n = 1): ProcessWorker {
+    if ($n < 1) {
+      throw new \InvalidArgumentException("No worker $n");
+    }
+    return $this->workers[$n] ??= $n === 1
+      ? $this->buildWorker($this->subscriptions, $this->lock)
+      : $this->buildWorker(new SubscriptionRegistry(), new ReentrantProcessLock($this->rawLock, $this->logger));
+  }
+
+  public function processStore(): IProcessStore {
+    return $this->processStore;
+  }
+
+  public function wakeups(): IWakeupScheduler {
+    return $this->wakeups;
+  }
+
+  public function operatorView(): IOperatorView {
+    return new PortOperatorView($this->config, $this->outbox, $this->processStore, $this->clock, [$this->ledger, $this->wakeups]);
+  }
+
+  public function processConsumer(): string {
+    return $this->config->prefix();
+  }
+
+  public function processLockKey(int $processId): LockKey {
+    return new LockKey($this->config->prefix(), '', $processId);
+  }
+
+  public function processRow(int $id): ?ProcessRow {
+    try {
+      $p = $this->processStore->find($id);
+    } catch (QuarantinedProcess) {
+      return null;
+    }
+    if ($p === null) {
+      return null;
+    }
+    return new ProcessRow(
+      $id,
+      get_class($p),
+      (string) $this->processStore->statusOf($id),
+      $p->current_step_index(),
+      (int) $this->processStore->versionOf($id),
+      $this->processStore->ignitionKeyOf($id),
+      $p->ignited_by_event_id(),
+    );
+  }
+
+  public function processIds(?string $processClass = null): array {
+    $ids = [];
+    // mem ids are sequential from 1 and rows are never deleted
+    for ($id = 1; $id <= $this->processStore->count(); $id++) {
+      $row = $this->processRow($id);
+      if ($row !== null && ($processClass === null || $row->processClass === $processClass)) {
+        $ids[] = $id;
+      }
+    }
+    return $ids;
+  }
+
+  public function pendingWakeups(): array {
+    return $this->wakeups->pending();
+  }
+
+  public function holdProcessLockElsewhere(int $processId): void {
+    $this->rawLock->holdElsewhere($this->processLockKey($processId));
+  }
+
+  public function releaseProcessLockElsewhere(int $processId): void {
+    $this->rawLock->releaseElsewhere($this->processLockKey($processId));
+  }
+
+  public function failNextProcessLockAcquire(string $reason): void {
+    $this->rawLock->failNextAcquire($reason);
+  }
+
+  public function processLockAcquisitions(): int {
+    return $this->rawLock->acquireCount();
+  }
+
+  public function beforeNextProcessLockAcquire(callable $fn): void {
+    $this->interleaving->beforeNextAcquire(static function () use ($fn): void {
+      $fn();
+    });
+  }
+
+  public function failNextWakeHandoff(string $reason): void {
+    $this->wakeFaults->failNext($reason);
   }
 
   // ── mem-only read-back (not HostFixture) ─────────────────────────────────
@@ -416,8 +601,69 @@ final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   // ── internals ────────────────────────────────────────────────────────────
 
+  protected function buildWorker(ISubscriptionRegistry $registry, IProcessLock $lock, ?IDeliveryWorker $delivery = null): MemProcessWorker {
+    $runner = new ProcessRunner(
+      $this->config, null, $lock, $this->processStore, $this->wakeups, $registry,
+      $this->boundary, $this->clock, $this->startMode, $this->logger,
+    );
+    $this->wire($runner, $this->starts, $this->awaits);
+
+    return new MemProcessWorker(
+      $runner,
+      $lock,
+      fn (string $eventClass, array $wrapped): DeliveryOutcome => $this->deliverWith($registry, $eventClass, $wrapped),
+      fn (int $maxItems): DrainReport => (new Drain(
+        $this->relayProcessor($this->outbox, $this->outboxConfig->batch_size),
+        $this->wakeups,
+        $this->wakeFaults->wrap($runner),
+        $delivery,
+        $runner,
+        $this->clock,
+        $this->logger,
+      ))->runOnce($maxItems),
+    );
+  }
+
+  /**
+   * @param list<array{0: class-string, 1: class-string}> $starts
+   * @param list<class-string> $awaits
+   */
+  protected function wire(ProcessRunner $runner, array $starts, array $awaits): void {
+    foreach ($starts as [$process, $event]) {
+      $runner->register_start($process, $event);
+    }
+    foreach ($awaits as $event) {
+      $runner->register_event($event);
+    }
+  }
+
+  protected function deliverWith(ISubscriptionRegistry $registry, string $eventClass, array $wrapped): DeliveryOutcome {
+    return (new IntegrationDelivery($registry, $this->ledger, IntegrationDelivery::DEFAULT_BUDGET, $this->logger))
+      ->deliver($eventClass, $wrapped);
+  }
+
+  protected function relayProcessor(IOutboxStore $store, int $limit): OutboxProcessor {
+    return new OutboxProcessor(
+      $this->config,
+      null,
+      OutboxConfig::from_array(['batch_size' => $limit] + get_object_vars($this->outboxConfig)),
+      null,
+      null,
+      $this->logger,
+      $this->clock,
+      $store,
+      $this->transport,
+      $this->boundary,
+    );
+  }
+
+  /** @return list<InMemoryTransactional> every enlisted participant except the transport */
+  protected function competitorParticipants(): array {
+    return [$this->outbox, $this->ledger, $this->rows, $this->processStore, $this->wakeups];
+  }
+
   /** @return list<array{event_id: string, envelope: array, due_at: \DateTimeImmutable, ref: ?string}> submissions the transport accepted with a reference */
-  private function held(): array {
+  protected function held(): array {
     return array_values(array_filter($this->transport->submissions, static fn (array $s) => $s['ref'] !== null));
   }
 

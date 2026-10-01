@@ -95,7 +95,10 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
   #[Group('delivery.delayed-once')]
   #[TestDox('delivery.delayed-once: due at t0 + D, delivered once, a retry adds no delay; a legacy delayed row past its time goes out at once')]
   public function test_delivery_delayed_once(): void {
-    $delay = 120;
+    // D (7200) exceeds the 3600 s retry gap below, so under the sfc-2 (b)
+    // window a delay applied a second time (from the first attempt or from
+    // the retry) lands after max(requested, submit time) and fails.
+    $delay = 7200;
     $this->subscribe('conformance.listener', Subscriber::LISTENER, WidgetRegistered::class);
     $t0 = $this->host->clock()->now();
     $id = $this->publishFact(new WidgetRegistered('w-1', $delay));
@@ -110,12 +113,14 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
     self::assertSame([$id], $this->host->relayOnce()->retried, 'due at t0 + D; first submission rejected');
 
     $this->host->advanceClock(3600);
+    $submittedAt = $this->host->clock()->now();
     self::assertSame([$id], $this->host->relayOnce()->accepted);
 
     $held = $this->host->transported();
     self::assertCount(1, $held);
-    self::assertSame($dueAt->getTimestamp(), $held[0]->dueAt->getTimestamp(), 'the retry kept the absolute due time (no second delay)');
-    self::assertLessThanOrEqual($this->host->clock()->now()->getTimestamp(), $held[0]->dueAt->getTimestamp(), 'already due: immediate');
+    // CR sfc-2 option (b): a transport that schedules on its own clock may
+    // report any due time in [requested, max(requested, submit time)].
+    self::assertDueWithin($dueAt, $submittedAt, $held[0], 'the retry kept the absolute due time (no second delay)');
 
     $outcomes = $this->host->deliverTransported(WidgetRegistered::class);
     self::assertCount(1, $outcomes);
@@ -127,10 +132,23 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
     $scheduledAt = $this->host->clock()->now()->modify('-60 seconds');
     $legacy = $this->host->seedLegacyDelayedFact(new WidgetRegistered('legacy', 300), 300, $scheduledAt);
 
+    $submittedAt = $this->host->clock()->now();
     self::assertSame([$legacy], $this->host->relayOnce()->accepted, 'claimed on the first tick');
     $last = $this->last($this->host->transported());
     self::assertSame($legacy, $last->eventId);
-    self::assertLessThanOrEqual($this->host->clock()->now()->getTimestamp(), $last->dueAt->getTimestamp(), 'enqueued immediately, the delay is not re-applied');
+    self::assertDueWithin($scheduledAt, $submittedAt, $last, 'enqueued immediately, the delay is not re-applied');
+  }
+
+  /**
+   * CR sfc-2 option (b) (wave-2 notes): due no earlier than requested and
+   * no later than max(requested, submit time). A transport that stores the
+   * requested time reports it exactly; one that schedules on its own clock
+   * (Messenger's DelayStamp) reports the submit time for an overdue fact.
+   */
+  protected static function assertDueWithin(\DateTimeImmutable $requested, \DateTimeImmutable $submittedAt, TransportedFact $held, string $message): void {
+    $latest = max($requested->getTimestamp(), $submittedAt->getTimestamp());
+    self::assertGreaterThanOrEqual($requested->getTimestamp(), $held->dueAt->getTimestamp(), "$message: not before the requested due time");
+    self::assertLessThanOrEqual($latest, $held->dueAt->getTimestamp(), "$message: not later than max(requested, submit time)");
   }
 
   /**

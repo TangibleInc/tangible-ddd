@@ -10,6 +10,7 @@ use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
 use TangibleDDD\Application\Infrastructure\AuditSinkFailed;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\RecordsSignals;
+use TangibleDDD\Conformance\StatementErrors;
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\ConformanceTestCase;
@@ -77,6 +78,46 @@ abstract class CommandScenarios extends ConformanceTestCase {
     self::assertCount(1, $audit);
     self::assertSame('error', $audit[0]->status);
     self::assertSame(TransactionFailed::class, $audit[0]->errorType);
+
+    if ($this->host instanceof StatementErrors) {
+      $this->workSwallowsAStatementError($this->host);
+    }
+  }
+
+  /**
+   * CR sf-7 (wave-2 notes): the handler catches a statement error and
+   * returns normally. Engines that abort the transaction (Postgres, 25P02)
+   * answer the COMMIT with ROLLBACK and no error; the boundary must not
+   * report that as success. Either the work committed in full, or the
+   * caller gets TransactionFailed and nothing persisted. Never "success"
+   * with the rows gone.
+   */
+  private function workSwallowsAStatementError(StatementErrors $statements): void {
+    $swallowed = null;
+    $bus = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use ($statements, &$swallowed): void {
+      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+      $this->host->events()->record(new WidgetCreated($c->widget_id));
+      try {
+        $statements->runFailingStatement();
+      } catch (\Throwable $e) {
+        $swallowed = $e;
+      }
+    }]);
+
+    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-swallowed')));
+
+    self::assertNotNull($swallowed, 'the statement failed inside the handler');
+    $audit = $this->host->auditTrail();
+    if ($thrown === null) {
+      self::assertTrue($this->host->scenarioRows()->has('w-swallowed'), 'reported success: the domain row committed');
+      self::assertSame(1, $this->outboxRowCount(), 'reported success: the outbox row committed');
+      self::assertSame('success', end($audit)->status);
+    } else {
+      self::assertInstanceOf(TransactionFailed::class, $thrown, 'an aborted transaction surfaces as TransactionFailed');
+      self::assertFalse($this->host->scenarioRows()->has('w-swallowed'), 'no domain row');
+      self::assertSame(0, $this->outboxRowCount(), 'no outbox row');
+      self::assertSame('error', end($audit)->status);
+    }
   }
 
   #[Group('cmd.reaction-throws')]
