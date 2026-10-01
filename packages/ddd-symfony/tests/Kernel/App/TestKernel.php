@@ -119,7 +119,10 @@ final class TestKernel extends Kernel {
     ]])->public();
     $services->alias('test.effect_journal', \TangibleDDD\Runtime\Effects\IEffectJournal::class)->public();
     $services->alias('test.operator_view', \TangibleDDD\Runtime\Ops\IOperatorView::class)->public();
-    $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
+    $services->alias('test.workflow_ledger', \TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger::class)->public();
+    $services->alias('test.workflow_igniter', 'tangible_ddd.workflow_igniter')->public();
+    $services->alias('test.subscriptions', 'tangible_ddd.subscriptions')->public();
+    $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions,Workflows}/')
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.
       ->exclude(__DIR__ . '/Events/');

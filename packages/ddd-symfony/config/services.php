@@ -84,6 +84,8 @@ use TangibleDDD\Symfony\Persistence\DbalProcessStore;
 use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
@@ -228,7 +230,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $config['messenger']['bus'],
     ]);
 
-  // ── D10 workflow stores (ruling #78; core contract wiring is wave 4) ─────
+  // ── D10 workflow stores and ignition (ruling #78; core WorkflowIgniter) ──
   $s->set('tangible_ddd.workflow_repository', DbalBehaviourWorkflowRepository::class)
     ->args([service(EventsUnitOfWork::class), service('tangible_ddd.connection'), $prefix]);
   $s->alias(IBehaviourWorkflowRepository::class, 'tangible_ddd.workflow_repository');
@@ -236,12 +238,18 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.connection'), $prefix]);
   $s->alias(IWorkItemRepository::class, 'tangible_ddd.work_item_repository');
   $s->set('tangible_ddd.workflow_ignitions', DbalWorkflowIgnitionLedger::class)
-    ->args([service('tangible_ddd.connection'), $prefix]);
+    ->args([service('tangible_ddd.connection'), $prefix, service('tangible_ddd.clock')]);
   $s->alias(DbalWorkflowIgnitionLedger::class, 'tangible_ddd.workflow_ignitions');
+  $s->alias(IWorkflowIgnitionLedger::class, 'tangible_ddd.workflow_ignitions');
+  // Claim + save + attach in one boundary run; IStartsFromFact services
+  // (tag tangible_ddd.workflow) get one ignition subscriber per #[StartsOn] fact.
+  $s->set('tangible_ddd.workflow_igniter', WorkflowIgniter::class)
+    ->args([service('tangible_ddd.workflow_ignitions'), service('tangible_ddd.transaction_boundary'), $logger, service('tangible_ddd.clock')]);
+  $s->alias(WorkflowIgniter::class, 'tangible_ddd.workflow_igniter');
 
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
   $s->set('tangible_ddd.subscriptions', CompiledSubscriptionRegistry::class)
-    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry')]);
+    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry'), service('tangible_ddd.workflow_igniter')]);
   $s->alias(ISubscriptionRegistry::class, 'tangible_ddd.subscriptions');
 
   $s->set('tangible_ddd.delivery', IntegrationDelivery::class)

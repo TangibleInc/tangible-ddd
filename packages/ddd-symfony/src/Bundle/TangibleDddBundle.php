@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
+use TangibleDDD\Application\BehaviourWorkflows\IStartsFromFact;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
 use TangibleDDD\Application\Queries\SelfHandlingQuery;
@@ -223,6 +224,7 @@ final class TangibleDddBundle extends AbstractBundle {
     $container->import($this->getPath() . '/config/services.php');
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
+    $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
     $builder->registerForAutoconfiguration(IQueryHandler::class)->addTag(DddTags::QUERY_HANDLER);
     $builder->setParameter('tangible_ddd.self_handling', self::withCoreRepairCommands($config['self_handling'], $builder));
     $builder->registerForAutoconfiguration(SelfHandlingCommand::class)->addTag(DddTags::SELF_HANDLING);

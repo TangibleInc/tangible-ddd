@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgnition;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
@@ -170,10 +172,26 @@ final class DbalWorkflowStoresTest extends PostgresTestCase {
 
     $ledger->attach($key, 42);
     $entry = $other->find($key);
-    self::assertSame('nightly-report', $entry['kind']);
-    self::assertSame(42, $entry['workflow_id']);
-    self::assertSame('evt-1', $entry['event_id']);
+    self::assertInstanceOf(WorkflowIgnition::class, $entry);
+    self::assertSame($key, $entry->dedupKey);
+    self::assertSame('nightly-report', $entry->kind);
+    self::assertSame(42, $entry->workflowId);
+    self::assertSame('evt-1', $entry->eventId);
+    self::assertInstanceOf(\DateTimeImmutable::class, $entry->createdAt);
     self::assertNull($other->find('CronEntryDue:nightly-report:2026-10-01T03:01'));
+  }
+
+  public function test_the_ledger_is_the_core_d10_port(): void {
+    self::assertInstanceOf(IWorkflowIgnitionLedger::class, new DbalWorkflowIgnitionLedger($this->db));
+  }
+
+  public function test_an_unattached_claim_reads_back_without_a_workflow(): void {
+    $ledger = new DbalWorkflowIgnitionLedger($this->db);
+    $ledger->claim('k-marker', 'kind');
+
+    $entry = $ledger->find('k-marker');
+    self::assertNull($entry->workflowId);
+    self::assertNull($entry->eventId);
   }
 
   public function test_a_rolled_back_claim_does_not_hold_the_key(): void {
