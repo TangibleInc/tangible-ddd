@@ -44,6 +44,11 @@ use TangibleDDD\Symfony\Console\Ops\OpsListCommand;
 use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
 use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
 use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
+use TangibleDDD\Symfony\Ops\DbalUnheardFactSource;
+use TangibleDDD\Symfony\Runtime\DddSignal;
+use TangibleDDD\Symfony\Runtime\DeliveryNotes;
+use TangibleDDD\Symfony\Runtime\SubscriptionProbe;
+use TangibleDDD\Symfony\Runtime\UnheardFactNotes;
 use TangibleDDD\Symfony\Ops\MessengerFailureTransportSource;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
@@ -250,8 +255,12 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->alias(WorkflowIgniter::class, 'tangible_ddd.workflow_igniter');
 
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
+  // AW3, E3: unheard resumes and sent failure commands, noted on the ledger.
+  $s->set('tangible_ddd.delivery_notes', DeliveryNotes::class)
+    ->args([service('tangible_ddd.delivery_ledger'), $logger]);
   $s->set('tangible_ddd.subscriptions', CompiledSubscriptionRegistry::class)
-    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry'), service('tangible_ddd.workflow_igniter')]);
+    ->args([[], abstract_arg('listener locator, set by SubscriptionMapPass'), service('tangible_ddd.process_entry'), service('tangible_ddd.workflow_igniter'),
+      service('tangible_ddd.delivery_notes')]);
   $s->alias(ISubscriptionRegistry::class, 'tangible_ddd.subscriptions');
 
   $s->set('tangible_ddd.delivery', IntegrationDelivery::class)
@@ -285,7 +294,19 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.outbox_config'),
       $logger,
       service('tangible_ddd.consumer_config'),
+      service('tangible_ddd.subscriber_probe'),
     ]);
+
+  // AW3: FactDeliveredUnheard for a fact no subscription map takes; the
+  // signal is noted on the outbox row for the operator view.
+  $s->set('tangible_ddd.subscriber_probe', SubscriptionProbe::class)
+    ->args([
+      [service('tangible_ddd.subscriptions')],
+      inline_service(\Closure::class)->factory([\Closure::class, 'fromCallable'])->args([[service('tangible_ddd.fact_class_resolver'), 'class_for_action']]),
+    ]);
+  $s->set('tangible_ddd.unheard_notes', UnheardFactNotes::class)
+    ->args([service_locator([$consumer['prefix'] => service('tangible_ddd.outbox_store')]), $logger])
+    ->tag('kernel.event_listener', ['event' => DddSignal::class, 'method' => '__invoke']);
 
   // ── D9 operator view (register 3.10, 5.1): core PortOperatorView over the
   // outbox DLQ and stranded processes, plus the sf sources ───────────────
@@ -300,6 +321,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
         inline_service(DbalLedgerOperatorSource::class)
           ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix, $config['delivery']['budget']]),
         inline_service(DbalWakeupOperatorSource::class)
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
+        inline_service(DbalUnheardFactSource::class)
           ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
         inline_service(MessengerFailureTransportSource::class)
           ->args([
