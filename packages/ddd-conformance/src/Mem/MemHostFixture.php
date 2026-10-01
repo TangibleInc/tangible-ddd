@@ -7,6 +7,8 @@ namespace TangibleDDD\Conformance\Mem;
 use League\Tactician\CommandBus;
 use League\Tactician\Middleware;
 use Psr\Log\LoggerInterface;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Events\DomainEventsPublishMiddleware;
@@ -45,7 +47,9 @@ use TangibleDDD\Conformance\Support\RecordingOutboxStore;
 use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
+use TangibleDDD\Conformance\WorkflowHost;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
@@ -127,7 +131,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in setUp().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -159,6 +163,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected InMemoryWakeupScheduler $wakeups;
   protected WakeHandoffFaults $wakeFaults;
   protected InMemoryEffectJournal $effectJournal;
+  protected InMemoryWorkflowIgnitionLedger $ignitions;
+  protected InMemoryWorkflowRepository $workflowRows;
 
   /** @var array<int, MemProcessWorker> */
   protected array $workers = [];
@@ -219,6 +225,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->processStore->attachIntents($this->wakeups);
     $this->wakeFaults = new WakeHandoffFaults();
     $this->effectJournal = new InMemoryEffectJournal();
+    $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
+    $this->workflowRows = new InMemoryWorkflowRepository();
     $this->workers = [];
     $this->starts = [];
     $this->awaits = [];
@@ -231,6 +239,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     // EffectMiddleware stores outside any transaction; invalidate() inside a
     // repair command's transaction rolls back with it.
     $this->boundary->enlist($this->effectJournal);
+    $this->boundary->enlist($this->ignitions);
+    $this->boundary->enlist($this->workflowRows);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -623,6 +633,20 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       new BusOptions(),
       new EffectMiddleware($this->effectJournal, $this->boundary),
     );
+  }
+
+  // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
+
+  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+    return $this->ignitions;
+  }
+
+  public function workflowRepository(): IBehaviourWorkflowRepository {
+    return $this->workflowRows;
+  }
+
+  public function workflowIgniter(): WorkflowIgniter {
+    return new WorkflowIgniter($this->ignitions, $this->boundary, $this->logger, $this->clock);
   }
 
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
