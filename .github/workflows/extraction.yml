@@ -74,7 +74,7 @@ jobs:
         run: tests/harness/run.sh wp-integration
 
   static:
-    name: static (phpstan level 0, manifests)
+    name: static (phpstan, deptrac, manifests, core clean install)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,3 +92,9 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction --no-scripts
       - name: PHPStan
         run: vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=1G --no-progress
+      - name: PHPStan, core without WordPress symbols
+        run: vendor/bin/phpstan analyse -c phpstan-core.neon --memory-limit=1G --no-progress
+      - name: Deptrac layer rules
+        run: vendor/bin/deptrac analyse --no-progress
+      - name: ddd-core clean install
+        run: tests/Compat/core-clean-install.sh

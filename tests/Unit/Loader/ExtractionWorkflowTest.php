@@ -61,4 +61,15 @@ class ExtractionWorkflowTest extends TestCase
         $this->assertStringContainsString('composer validate --strict', $lines);
         $this->assertStringContainsString('packages/*/composer.json', $lines);
     }
+
+    public function test_static_enforces_the_layer_rules_and_the_core_clean_install(): void
+    {
+        // Register section 8, wave-2 acceptance: deptrac 0 violations and the
+        // ddd-core clean install, both on every push to extraction/**.
+        $lines = self::run_lines(self::workflow()['jobs']['static'] ?? []);
+
+        $this->assertStringContainsString('vendor/bin/deptrac analyse', $lines);
+        $this->assertStringContainsString('phpstan analyse -c phpstan-core.neon', $lines);
+        $this->assertStringContainsString('tests/Compat/core-clean-install.sh', $lines);
+    }
 }
