@@ -24,8 +24,9 @@ use TangibleDDD\Symfony\Runtime\Relay;
  *   ddd:relay --sleep=1           idle poll interval when a step claimed nothing
  *
  * Run it on a DIRECT (non-pooled) Postgres connection. SIGTERM / SIGINT stop
- * the loop after the current step. Round 3 swaps the step for the core relay
- * (CONF-3) and adds the LISTEN wakeup (D14); the options stay.
+ * the loop after the current step. Each step is Relay::runOnce(), i.e. the
+ * core relay step (OutboxProcessor port form, CONF-3); this command owns
+ * only the loop. The LISTEN wakeup (D14) comes in wave 3; the options stay.
  *
  * Storage errors: a DBAL exception from a step (connection lost, failover,
  * lock timeout) is logged and the loop backs off 1, 2, 4 ... 30 s and tries

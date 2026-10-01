@@ -4,13 +4,22 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Symfony\Tests\Integration\Persistence;
 
+use Psr\Log\NullLogger;
+use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
+use TangibleDDD\Application\Outbox\OutboxConfig;
+use TangibleDDD\Runtime\FrozenClock;
+use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
+use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
+use TangibleDDD\Testing\InMemoryTransport;
+use TangibleDDD\Testing\RecordingSignalDispatcher;
 use TangibleDDD\Testing\InMemoryRelayPauseStore;
 
 final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
@@ -22,7 +31,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     $this->t0 = new \DateTimeImmutable('2026-10-01T12:00:00Z');
   }
 
-  private function record(string $id, string $type = 'widget_registered', ?\DateTimeImmutable $due = null, bool $unique = false, array $payload = ['widget_id' => 'w1']): OutboxRecord {
+  private function record(string $id, string $type = 'widget_registered', ?\DateTimeImmutable $due = null, bool $unique = false, array $payload = ['widget_id' => 'w1'], int $max = 5): OutboxRecord {
     return new OutboxRecord(
       event_id: $id,
       event_type: $type,
@@ -34,7 +43,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
       due_at: $due ?? $this->t0,
       is_unique: $unique,
       payload_signature: $unique ? $payload : null,
-      max_attempts: 5,
+      max_attempts: $max,
     );
   }
 
@@ -195,6 +204,35 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertStringContainsString('lease expired', $dlq['error']);
     self::assertSame(5, $dlq['attempts']);
     self::assertSame('App\\WidgetRegistered', $dlq['event_class']);
+
+    $taken = $store->takeDeadLetteredAtClaim();
+    self::assertCount(1, $taken, 'the claim-time dead letter is visible to the relay');
+    self::assertSame('crashy', $taken[0][0]->event_id);
+    self::assertSame(5, $taken[0][0]->attempts);
+    self::assertStringContainsString('lease expired', $taken[0][1]);
+    self::assertSame([], $store->takeDeadLetteredAtClaim(), 'taken once');
+  }
+
+  public function test_the_relay_reports_and_signals_a_claim_time_dead_letter(): void {
+    $store = new DbalPostgresOutboxStore($this->db);
+    $store->append($this->record('crashy', max: 2));
+    $store->claim(1, $this->t0, 60);
+    $store->claim(1, $this->t0->modify('+61 seconds'), 60); // attempt 1 counted
+    $signals = new RecordingSignalDispatcher();
+    HostDefaults::provide(IInfrastructureSignalDispatcher::class, $signals);
+    try {
+      $relay = new Relay($store, new InMemoryTransport(), new DbalTransactionBoundary($this->db),
+        new FrozenClock($this->t0->modify('+122 seconds')), new OutboxConfig(), new NullLogger());
+
+      $report = $relay->runOnce(10);
+
+      self::assertSame([], $report->claimed, 'not handed out');
+      self::assertSame(['crashy'], $report->deadLettered);
+      self::assertCount(1, $signals->emitted);
+      self::assertInstanceOf(OutboxDeadLettered::class, $signals->emitted[0]['event']);
+    } finally {
+      HostDefaults::resetForTests();
+    }
   }
 
   public function test_an_expired_lease_nobody_reclaimed_still_matches(): void {

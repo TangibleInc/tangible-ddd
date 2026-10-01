@@ -18,7 +18,9 @@ use TangibleDDD\Runtime\SystemClock;
  * IOutboxAdministration over the sf outbox and DLQ tables (register 3.4).
  *
  * - retry(): refuses a leased row always and a non-`pending`/`dlq` row
- *   unless forced (O5); resets status, attempts, next attempt, lease, error.
+ *   unless forced (O5); resets status, attempts, next attempt, lease, error,
+ *   and deletes the row's DLQ entries in the same transaction (a retried
+ *   dead letter leaves the DLQ, as a replayed one does).
  * - replay(): keeps event_id (C22). In one transaction it resets the
  *   original outbox row, or re-inserts it from the DLQ row when it was
  *   purged, and deletes the DLQ row.
@@ -67,6 +69,9 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
         throw new OutboxAdministrationRefused("Outbox row $event_id is {$row['status']}; retry needs force");
       }
       $this->reset($conn, $event_id);
+      // The row is back in the relay: its dead letter is no longer a dead
+      // letter, and a later replay of it must not reset the row again.
+      $conn->executeStatement("DELETE FROM {$this->dlq} WHERE event_id = ?", [$event_id]);
     });
   }
 

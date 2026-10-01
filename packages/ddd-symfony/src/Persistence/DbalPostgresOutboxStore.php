@@ -55,6 +55,9 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
   /** @var array<string, ?string> event_id → class, from the latest claims */
   private array $claimedClasses = [];
 
+  /** @var list<array{0: Claim, 1: string}> dead-lettered by claim() and not yet taken */
+  private array $deadLetteredAtClaim = [];
+
   public function __construct(
     private readonly Connection $connection,
     private readonly ?IRelayPauseStore $pauses = null,
@@ -182,7 +185,10 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
       $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, $this->recordOf($row), (int) $row['attempts']);
       if ($claim->attempts >= $claim->record->max_attempts) {
         // Its lease expired max_attempts times: stop re-claiming it forever.
-        $this->moveToDlq($claim, sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts), 0);
+        $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
+        if ($this->moveToDlq($claim, $error, 0)) {
+          $this->deadLetteredAtClaim[] = [$claim, $error];
+        }
         $this->logger->error("[ddd outbox] {$claim->event_id} dead-lettered at claim: its lease expired {$claim->attempts} times without an outcome");
         continue;
       }
@@ -254,6 +260,21 @@ final class DbalPostgresOutboxStore implements IOutboxStore {
       );
       return true;
     });
+  }
+
+  /**
+   * The rows claim() dead-lettered because their lease expired max_attempts
+   * times, with the error stored in the DLQ, since the last call; the list
+   * is emptied. The relay reports them and emits OutboxDeadLettered, so a
+   * claim-time dead letter is as visible as a relay-side one (sf-only, not
+   * on the port).
+   *
+   * @return list<array{0: Claim, 1: string}>
+   */
+  public function takeDeadLetteredAtClaim(): array {
+    $taken = $this->deadLetteredAtClaim;
+    $this->deadLetteredAtClaim = [];
+    return $taken;
   }
 
   /** The fact class of a claimed (or any) row; null when the writer did not know it. */
