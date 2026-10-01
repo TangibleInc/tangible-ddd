@@ -64,6 +64,11 @@ use TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelay;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupHandler;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
+use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
+use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
+use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
 use TangibleDDD\Symfony\Persistence\PoolerPolicy;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
@@ -191,6 +196,17 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $logger,
       $config['messenger']['bus'],
     ]);
+
+  // ── D10 workflow stores (ruling #78; core contract wiring is wave 4) ─────
+  $s->set('tangible_ddd.workflow_repository', DbalBehaviourWorkflowRepository::class)
+    ->args([service(EventsUnitOfWork::class), service('tangible_ddd.connection'), $prefix]);
+  $s->alias(IBehaviourWorkflowRepository::class, 'tangible_ddd.workflow_repository');
+  $s->set('tangible_ddd.work_item_repository', DbalWorkItemRepository::class)
+    ->args([service('tangible_ddd.connection'), $prefix]);
+  $s->alias(IWorkItemRepository::class, 'tangible_ddd.work_item_repository');
+  $s->set('tangible_ddd.workflow_ignitions', DbalWorkflowIgnitionLedger::class)
+    ->args([service('tangible_ddd.connection'), $prefix]);
+  $s->alias(DbalWorkflowIgnitionLedger::class, 'tangible_ddd.workflow_ignitions');
 
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
   $s->set('tangible_ddd.subscriptions', CompiledSubscriptionRegistry::class)

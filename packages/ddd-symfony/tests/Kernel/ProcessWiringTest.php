@@ -19,6 +19,11 @@ use TangibleDDD\Symfony\Lock\PooledConnectionRefused;
 use TangibleDDD\Symfony\Lock\PostgresAdvisoryProcessLock;
 use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
+use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
+use TangibleDDD\Symfony\Persistence\DbalWorkItemRepository;
+use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
+use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
 use TangibleDDD\Symfony\Runtime\FactClassRecordingEventBus;
 use TangibleDDD\Symfony\Runtime\SymfonySignalDispatcher;
@@ -40,6 +45,14 @@ final class ProcessWiringTest extends KernelTestBase {
     self::assertInstanceOf(ReentrantProcessLock::class, $lock);
     self::assertInstanceOf(PostgresAdvisoryProcessLock::class, $lock->inner());
     self::assertInstanceOf(ProcessRunner::class, $c->get(ProcessRunner::class));
+  }
+
+  public function test_the_d10_workflow_stores_are_wired(): void {
+    $c = self::getContainer();
+
+    self::assertInstanceOf(DbalBehaviourWorkflowRepository::class, $c->get(IBehaviourWorkflowRepository::class));
+    self::assertInstanceOf(DbalWorkItemRepository::class, $c->get(IWorkItemRepository::class));
+    self::assertInstanceOf(DbalWorkflowIgnitionLedger::class, $c->get(DbalWorkflowIgnitionLedger::class));
   }
 
   public function test_the_act_bracket_and_integration_bus_are_the_core_classes(): void {
