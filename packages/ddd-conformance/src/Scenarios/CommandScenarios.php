@@ -7,6 +7,9 @@ namespace TangibleDDD\Conformance\Scenarios;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestDox;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
+use TangibleDDD\Application\Infrastructure\AuditSinkFailed;
+use TangibleDDD\Conformance\AuditSinkFaults;
+use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Application\Exceptions\DomainEventAfterSealException;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\ConformanceTestCase;
@@ -24,7 +27,9 @@ use TangibleDDD\Runtime\TransactionFailed;
 /**
  * The cmd.* scenarios (register section 4): the command bus, the
  * transaction boundary, the in-transaction reaction and the outbox append,
- * all on the host's one connection.
+ * all on the host's one connection; plus audit.sink-fails, which is about
+ * the same bus's act bracket (it needs the optional AuditSinkFaults and
+ * RecordsSignals seams, CR-CC-1).
  */
 abstract class CommandScenarios extends ConformanceTestCase {
 
@@ -203,7 +208,60 @@ abstract class CommandScenarios extends ConformanceTestCase {
     self::assertTrue($this->host->scenarioRows()->has('w-1'));
   }
 
+  #[Group('audit.sink-fails')]
+  #[TestDox('audit.sink-fails: the audit sink throws after the domain commit; the business result stands and AuditSinkFailed is emitted')]
+  public function test_audit_sink_fails(): void {
+    if (!$this->host instanceof AuditSinkFaults || !$this->host instanceof RecordsSignals) {
+      $this->skipForChangeRequest('CR-CC-1', 'the host fixture implements neither AuditSinkFaults nor RecordsSignals yet');
+    }
+    $this->reactWithFact();
+    $receipt = new Receipt('w-1', 'R-0001');
+    $bus = $this->host->commandBus([
+      IssueReceipt::class => function (IssueReceipt $c) use ($receipt): Receipt {
+        $this->host->scenarioRows()->insert($c->widget_id, 'receipted');
+        $this->host->events()->record(new WidgetCreated($c->widget_id));
+        return $receipt;
+      },
+      CreateWidget::class => static function (): void {
+        throw new \DomainException('business failure');
+      },
+    ]);
+
+    // 1. Success: the close fails after commit; nothing the caller sees changes.
+    $this->host->failNextAuditClose('audit store down');
+    $result = $bus->handle(new IssueReceipt('w-1'));
+
+    self::assertSame($receipt, $result, 'the command result passes through');
+    self::assertTrue($this->host->scenarioRows()->has('w-1'), 'domain row committed');
+    $claims = $this->host->outbox()->claim(10, $this->host->clock()->now(), 60);
+    self::assertCount(1, $claims, 'outbox row committed');
+    $commandId = $claims[0]->record->command_id;
+    self::assertNotNull($commandId);
+    self::assertSame([], $this->host->auditTrail(), 'the row was never closed');
+
+    $failed = $this->auditSinkFailures();
+    self::assertCount(1, $failed, 'one AuditSinkFailed signal');
+    self::assertSame('close', $failed[0]->phase);
+    self::assertSame($commandId, $failed[0]->subject(), 'subject: the command whose row failed');
+    self::assertSame($claims[0]->record->correlation_id, $failed[0]->correlation_id(), 'in the command\'s story');
+    self::assertStringContainsString('audit store down', $failed[0]->error);
+
+    // 2. Failure: the business exception, not the sink's, reaches the caller.
+    $this->host->failNextAuditClose('audit store still down');
+    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-2')));
+
+    self::assertInstanceOf(\DomainException::class, $thrown);
+    self::assertSame('business failure', $thrown->getMessage());
+    self::assertCount(2, $this->auditSinkFailures());
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────
+
+  /** @return list<AuditSinkFailed> */
+  private function auditSinkFailures(): array {
+    \assert($this->host instanceof RecordsSignals);
+    return array_values(array_filter($this->host->signals(), static fn ($s) => $s instanceof AuditSinkFailed));
+  }
 
   /** The standard handler: write the domain row, record the domain event. */
   protected function createWidget(): \Closure {
