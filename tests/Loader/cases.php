@@ -1,8 +1,7 @@
 <?php
 /**
  * The register 7.2 load-order cases run by `tests/harness/run.sh loader`
- * (wave 2: every case except load.jetpack-mixed, which is wave 4). Prints one
- * tab-separated line per case:
+ * (all of them from wave 4). Prints one tab-separated line per case:
  *
  *   <case id> TAB <active_plugins json> TAB <WP_DEBUG 0|1> TAB <late 0|1> TAB <expectations json>
  *
@@ -13,6 +12,10 @@
  *   DDD_LEGACY         space-separated label=version of the in-window legacy fixtures
  *   DDD_NEGATIVE       label=version of the pre-window fixture (0.2.5)
  *   DDD_PRELOAD        label=version of the legacy fixture that touches a class at include time
+ *   DDD_N_NEXT_VERSION version of `next`, the new copy re-versioned (fixtures `next`, `jp-next`)
+ *   DDD_JETPACK_LEGACY label=version of a Jetpack-autoloaded legacy fixture (LMS 0.12.0's shape)
+ *   DDD_COMPILED       cc-<fixture>=jetpack|composer: the compiled-container fixture plugins
+ *   DDD_COMPILED_VERSION  the tangible/ddd version those plugins bundle (default 0.6.5)
  */
 
 declare(strict_types=1);
@@ -139,6 +142,68 @@ foreach ($negative as $label => $version) {
         $add("load.v0-2-negative[{$order},no-debug]", $plugins, $n_wins($base + [
             'raised' => [],
             'log_contains' => ['TANGIBLE_DDD_UNSUPPORTED_VERSION'],
+        ]));
+    }
+}
+
+// LMS (Jetpack Autoloader) + cred (plain Composer) with different builds
+// of the new distribution (report D F13): N and `next`, N re-versioned to
+// DDD_N_NEXT_VERSION by the driver. Whichever side carries the newer
+// build, every TangibleDDD\ class comes from that one copy. Then the
+// shipped shape: a Jetpack plugin bundling 0.6.5 (LMS 0.12.0) beside N.
+$next = (string) getenv('DDD_N_NEXT_VERSION');
+if ($next !== '') {
+    $pairs_jp = [
+        'jetpack-older' => ['jp-new', $n, 'next', $next, 'next'],
+        'jetpack-newer' => ['jp-next', $next, 'new', $n, 'jp-next'],
+    ];
+    foreach ($pairs_jp as $variant => [$jp, $jp_version, $plain, $plain_version, $winner]) {
+        foreach (['jetpack-first' => [$fx($jp), $fx($plain)], 'plain-first' => [$fx($plain), $fx($jp)]] as $order => $plugins) {
+            $add("load.jetpack-mixed[{$variant},{$order}]", $plugins, [
+                'winner_version' => $next,
+                'winner_copy' => $winner,
+                'registered' => [$jp_version => $jp, $plain_version => $plain],
+                'losers' => [$winner === $jp ? $plain : $jp],
+                'single_origin' => true,
+                'jetpack' => true,
+            ]);
+        }
+    }
+}
+foreach ($pairs('DDD_JETPACK_LEGACY') as $label => $version) {
+    foreach (['jetpack-first' => [$fx($label), $fx('new')], 'plain-first' => [$fx('new'), $fx($label)]] as $order => $plugins) {
+        $add("load.jetpack-mixed[{$label},{$order}]", $plugins, $n_wins([
+            'registered' => [$version => $label, $n => 'new'],
+            'losers' => [$label],
+            'single_origin' => true,
+            'jetpack' => true,
+        ]));
+    }
+}
+
+// The compiled containers of the three shipped 0.6.5 consumers (register
+// 7.1 L-0.6.5-compiled, report D F5), each as a fixture plugin bundling
+// 0.6.5 the way its zip does (Jetpack Autoloader or plain Composer), with N
+// winning: every service each container declares resolves. Several copies
+// of 0.6.5 are vendored, so only the versions registered are judged.
+$compiled = $pairs('DDD_COMPILED');
+if ($compiled !== []) {
+    $labels = [];
+    foreach ($compiled as $plugin => $kind) {
+        if (!str_starts_with($plugin, 'cc-') || !in_array($kind, ['jetpack', 'composer'], true)) {
+            fwrite(STDERR, "cases.php: DDD_COMPILED entries are cc-<fixture label>=jetpack|composer (cc- prefix), got {$plugin}={$kind}\n");
+            exit(1);
+        }
+        $labels[] = substr($plugin, 3);
+    }
+    $cc = array_map($fx, array_keys($compiled));
+    foreach (['legacy-first' => [...$cc, $fx('new')], 'new-first' => [$fx('new'), ...$cc]] as $order => $plugins) {
+        $add("load.compiled-containers[{$order}]", $plugins, $n_wins([
+            'registered_versions' => [(string) (getenv('DDD_COMPILED_VERSION') ?: '0.6.5'), $n],
+            'losers' => array_keys($compiled),
+            'compiled' => $labels,
+            'single_origin' => true,
+            'jetpack' => in_array('jetpack', $compiled, true),
         ]));
     }
 }

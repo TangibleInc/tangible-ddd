@@ -88,6 +88,38 @@ try {
     $round_trip['error'] = get_class($e) . ': ' . $normalize_text($e->getMessage());
 }
 
+// ── Compiled containers of the shipped 0.6.5 consumers ───────────────────
+// Registered at include time by the load.compiled-containers fixture plugins
+// (tests/Loader/fixtures/compiled/fixture.php). Each container is built the
+// way its plugin builds it at boot, then every service in its manifest is
+// resolved on whatever runtime won.
+$compiled = [];
+foreach ($GLOBALS['fx_compiled_containers'] ?? [] as $label => $manifest) {
+    $entry = ['container' => $manifest['container_class'], 'expected' => count($manifest['services']), 'resolved' => [], 'errors' => [], 'mismatches' => []];
+    try {
+        $container_class = $manifest['container_class'];
+        $container = new $container_class();
+        foreach ($manifest['services'] as $id => $expected_class) {
+            try {
+                $service = $container->get($id);
+                $service_class = get_class($service);
+                if (!$service instanceof $expected_class) {
+                    $entry['mismatches'][] = "{$id}: got {$service_class}, expected {$expected_class}";
+                }
+                $entry['resolved'][$id] = [
+                    'class' => $service_class,
+                    'origin' => $copy_of($normalize((new ReflectionClass($service))->getFileName() ?: null)),
+                ];
+            } catch (\Throwable $e) {
+                $entry['errors'][$id] = get_class($e) . ': ' . $normalize_text($e->getMessage());
+            }
+        }
+    } catch (\Throwable $e) {
+        $entry['errors']['(container)'] = get_class($e) . ': ' . $normalize_text($e->getMessage());
+    }
+    $compiled[$label] = $entry;
+}
+
 $versions = class_exists('Tangible_DDD_Versions', false) ? Tangible_DDD_Versions::instance() : null;
 
 $class_origin = [];
@@ -212,6 +244,37 @@ if ($log_file !== '' && is_file($log_file)) {
     }
 }
 
+// Census: the copy every declared TangibleDDD\ class, interface, trait and
+// enum came from, at the end of the request (load.jetpack-mixed).
+$ddd_class_copies = [];
+$ddd_class_samples = [];
+foreach (array_merge(get_declared_classes(), get_declared_interfaces(), get_declared_traits()) as $declared) {
+    if (!str_starts_with($declared, 'TangibleDDD\\')) {
+        continue;
+    }
+    $file = (new ReflectionClass($declared))->getFileName();
+    $copy = $file === false ? 'internal' : (string) $copy_of($normalize($file));
+    $ddd_class_copies[$copy] = ($ddd_class_copies[$copy] ?? 0) + 1;
+    if (count($ddd_class_samples[$copy] ?? []) < 10) {
+        $ddd_class_samples[$copy][] = $declared;
+    }
+}
+ksort($ddd_class_copies);
+ksort($ddd_class_samples);
+
+// The registered autoloaders, in call order (class::method, or the file of
+// a closure), so a Jetpack case can show the Jetpack Autoloader is live.
+$autoloaders = [];
+foreach (spl_autoload_functions() ?: [] as $fn) {
+    if (is_array($fn)) {
+        $autoloaders[] = (is_object($fn[0]) ? get_class($fn[0]) : (string) $fn[0]) . '::' . $fn[1];
+    } elseif ($fn instanceof \Closure) {
+        $autoloaders[] = 'Closure@' . $normalize((new ReflectionFunction($fn))->getFileName() ?: null);
+    } else {
+        $autoloaders[] = is_string($fn) ? $fn : get_debug_type($fn);
+    }
+}
+
 $framework_version = null;
 if (class_exists('TangibleDDD\\Infra\\Config')) {
     try {
@@ -238,6 +301,10 @@ echo json_encode([
     'copy_file_counts' => $copy_file_counts,
     'copy_non_loader_files' => $non_loader_files,
     'round_trip' => $round_trip,
+    'compiled' => $compiled,
+    'ddd_class_copies' => $ddd_class_copies,
+    'ddd_class_samples' => $ddd_class_samples,
+    'autoloaders' => $autoloaders,
     'diagnostics' => $diagnostics,
     'error_log' => $error_log,
     'trace' => $GLOBALS['fx_loader_trace'] ?? [],

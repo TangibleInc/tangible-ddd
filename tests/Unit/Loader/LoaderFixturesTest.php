@@ -23,7 +23,10 @@ final class LoaderFixturesTest extends TestCase
     private static function cases(): array
     {
         $env = 'DDD_N_VERSION=0.7.0 DDD_LEGACY=' . escapeshellarg('legacy-0_6_2=0.6.2 legacy-0_6_5=0.6.5')
-            . ' DDD_NEGATIVE=legacy-0_2_5=0.2.5 DDD_PRELOAD=preload-0_6_5=0.6.5';
+            . ' DDD_NEGATIVE=legacy-0_2_5=0.2.5 DDD_PRELOAD=preload-0_6_5=0.6.5'
+            . ' DDD_N_NEXT_VERSION=0.7.1 DDD_JETPACK_LEGACY=jp-legacy-0_6_5=0.6.5'
+            . ' DDD_COMPILED=' . escapeshellarg('cc-lms-0_12_0=jetpack cc-quiz-0_7_0=jetpack cc-certificates-0_3_1=composer')
+            . ' DDD_COMPILED_VERSION=0.6.5';
         exec($env . ' ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(self::loader_dir() . '/cases.php') . ' 2>&1', $lines, $code);
         self::assertSame(0, $code, implode("\n", $lines));
 
@@ -35,17 +38,17 @@ final class LoaderFixturesTest extends TestCase
         }, $lines);
     }
 
-    public function test_every_wave_2_case_of_register_7_2_is_listed(): void
+    public function test_every_case_of_register_7_2_is_listed(): void
     {
         $ids = array_column(self::cases(), 0);
         $kinds = array_values(array_unique(array_map(static fn(string $id): string => (string) preg_replace('/\[.*$/', '', $id), $ids)));
         sort($kinds);
 
-        // 7.2 minus load.jetpack-mixed (wave 4) and load.compiled-containers
-        // (needs the shipped zips; the driver reports it SKIP, wave 4 resolves).
+        // All of 7.2 (wave 4 adds load.compiled-containers and load.jetpack-mixed).
         $this->assertSame([
-            'load.late', 'load.legacy-first', 'load.min-unmet', 'load.new-alone', 'load.new-first',
-            'load.new-twice', 'load.plugin-active', 'load.preloaded-class', 'load.v0-2-negative',
+            'load.compiled-containers', 'load.jetpack-mixed', 'load.late', 'load.legacy-first', 'load.min-unmet',
+            'load.new-alone', 'load.new-first', 'load.new-twice', 'load.plugin-active', 'load.preloaded-class',
+            'load.v0-2-negative',
         ], $kinds);
 
         foreach (['legacy-0_6_2', 'legacy-0_6_5'] as $legacy) {
@@ -55,6 +58,65 @@ final class LoaderFixturesTest extends TestCase
         foreach (['legacy-first,debug', 'legacy-first,no-debug', 'new-first,debug', 'new-first,no-debug'] as $variant) {
             $this->assertContains("load.v0-2-negative[{$variant}]", $ids);
         }
+    }
+
+    public function test_jetpack_mixed_pairs_a_jetpack_plugin_with_a_plain_composer_plugin_of_another_build(): void
+    {
+        // Register 7.2 load.jetpack-mixed / report D F13: LMS (Jetpack
+        // Autoloader) + cred (plain Composer), different builds; every
+        // TangibleDDD\ class from one distribution path.
+        $by_id = array_column(self::cases(), null, 0);
+        $expect = [
+            'load.jetpack-mixed[jetpack-older,jetpack-first]' => [['fx-jp-new/fx-jp-new.php', 'fx-next/fx-next.php'], '0.7.1', 'next'],
+            'load.jetpack-mixed[jetpack-older,plain-first]' => [['fx-next/fx-next.php', 'fx-jp-new/fx-jp-new.php'], '0.7.1', 'next'],
+            'load.jetpack-mixed[jetpack-newer,jetpack-first]' => [['fx-jp-next/fx-jp-next.php', 'fx-new/fx-new.php'], '0.7.1', 'jp-next'],
+            'load.jetpack-mixed[jetpack-newer,plain-first]' => [['fx-new/fx-new.php', 'fx-jp-next/fx-jp-next.php'], '0.7.1', 'jp-next'],
+            'load.jetpack-mixed[jp-legacy-0_6_5,jetpack-first]' => [['fx-jp-legacy-0_6_5/fx-jp-legacy-0_6_5.php', 'fx-new/fx-new.php'], '0.7.0', 'new'],
+            'load.jetpack-mixed[jp-legacy-0_6_5,plain-first]' => [['fx-new/fx-new.php', 'fx-jp-legacy-0_6_5/fx-jp-legacy-0_6_5.php'], '0.7.0', 'new'],
+        ];
+        foreach ($expect as $id => [$plugins, $version, $copy]) {
+            $this->assertArrayHasKey($id, $by_id);
+            [, $active, , , $spec] = $by_id[$id];
+            $this->assertSame($plugins, $active, $id);
+            $this->assertSame($version, $spec['winner_version'], $id);
+            $this->assertSame($copy, $spec['winner_copy'], $id);
+            $this->assertTrue($spec['single_origin'], "{$id}: every TangibleDDD\\ class from the winner");
+            $this->assertTrue($spec['jetpack'], "{$id}: the Jetpack Autoloader is really in play");
+        }
+    }
+
+    public function test_compiled_containers_resolve_all_three_shipped_fixtures_under_n_in_both_orders(): void
+    {
+        $by_id = array_column(self::cases(), null, 0);
+        $cc = ['fx-cc-lms-0_12_0/fx-cc-lms-0_12_0.php', 'fx-cc-quiz-0_7_0/fx-cc-quiz-0_7_0.php', 'fx-cc-certificates-0_3_1/fx-cc-certificates-0_3_1.php'];
+
+        foreach (['legacy-first' => [...$cc, 'fx-new/fx-new.php'], 'new-first' => ['fx-new/fx-new.php', ...$cc]] as $order => $plugins) {
+            $id = "load.compiled-containers[{$order}]";
+            $this->assertArrayHasKey($id, $by_id);
+            [, $active, , , $spec] = $by_id[$id];
+            $this->assertSame($plugins, $active);
+            $this->assertSame('new', $spec['winner_copy']);
+            $this->assertSame(['lms-0_12_0', 'quiz-0_7_0', 'certificates-0_3_1'], $spec['compiled']);
+            $this->assertSame(['0.6.5', '0.7.0'], $spec['registered_versions']);
+            $this->assertSame(['cc-lms-0_12_0', 'cc-quiz-0_7_0', 'cc-certificates-0_3_1'], $spec['losers']);
+            $this->assertTrue($spec['single_origin']);
+            $this->assertTrue($spec['jetpack'], 'LMS and quiz load through the Jetpack Autoloader');
+        }
+    }
+
+    public function test_the_case_list_reads_the_fixture_kinds_from_the_environment(): void
+    {
+        // The driver builds what cases.php is told: the compiled fixtures
+        // as Jetpack or plain Composer plugins (LMS and quiz ship the Jetpack
+        // Autoloader, certificates does not).
+        exec(
+            'DDD_N_VERSION=0.7.0 DDD_COMPILED=bogus=jetpack ' . escapeshellarg(PHP_BINARY) . ' '
+            . escapeshellarg(self::loader_dir() . '/cases.php') . ' 2>&1',
+            $out,
+            $code
+        );
+        $this->assertSame(1, $code, implode("\n", $out));
+        $this->assertStringContainsString('cc- prefix', implode("\n", $out));
     }
 
     public function test_both_orders_are_really_both_orders(): void
@@ -189,6 +251,114 @@ final class LoaderFixturesTest extends TestCase
         $this->assertSame(1, $code, $out);
         $this->assertStringContainsString('FAIL load.test', $out);
         $this->assertStringContainsString($reason, $out);
+    }
+
+    /** @return array<string, mixed> clean_probe() plus a resolved compiled container and the class census */
+    private static function compiled_probe(): array
+    {
+        return [
+            'compiled' => [
+                'lms-0_12_0' => [
+                    'container' => 'FxCompiled\\Lms\\CompiledContainer',
+                    'expected' => 2,
+                    'resolved' => [
+                        'TangibleDDD\\Application\\Process\\ProcessRunner' => ['class' => 'TangibleDDD\\Application\\Process\\ProcessRunner', 'origin' => 'new'],
+                        'League\\Tactician\\CommandBus' => ['class' => 'League\\Tactician\\CommandBus', 'origin' => 'plugin:cc-lms-0_12_0'],
+                    ],
+                    'errors' => [],
+                    'mismatches' => [],
+                ],
+            ],
+            'ddd_class_copies' => ['new' => 120],
+            'ddd_class_samples' => ['new' => ['TangibleDDD\\Application\\Process\\ProcessRunner']],
+        ] + self::clean_probe();
+    }
+
+    private const COMPILED_SPEC = self::SPEC + ['compiled' => ['lms-0_12_0'], 'single_origin' => true];
+
+    public function test_the_judge_passes_resolved_compiled_containers_from_one_origin(): void
+    {
+        [$code, $out] = self::judge(self::compiled_probe(), self::COMPILED_SPEC);
+
+        $this->assertSame(0, $code, $out);
+    }
+
+    /** @return array<string, array{\Closure(array): array, string}> */
+    public static function broken_compiled(): array
+    {
+        return [
+            'container missing' => [static function (array $p): array {
+                unset($p['compiled']['lms-0_12_0']);
+
+                return $p;
+            }, 'compiled container lms-0_12_0 was not registered'],
+            'service throws' => [static function (array $p): array {
+                $p['compiled']['lms-0_12_0']['errors']['TangibleDDD\\Infra\\Services\\OutboxProcessor'] = 'ArgumentCountError: Too few arguments';
+
+                return $p;
+            }, 'lms-0_12_0: TangibleDDD\\Infra\\Services\\OutboxProcessor: ArgumentCountError'],
+            'service unresolved' => [static function (array $p): array {
+                $p['compiled']['lms-0_12_0']['expected'] = 3;
+
+                return $p;
+            }, 'lms-0_12_0: resolved 2 of 3 services'],
+            'wrong class' => [static function (array $p): array {
+                $p['compiled']['lms-0_12_0']['mismatches'] = ['TangibleDDD\\Infra\\IOutboxRepository: got X, expected Y'];
+
+                return $p;
+            }, 'lms-0_12_0: TangibleDDD\\Infra\\IOutboxRepository: got X'],
+            'ddd class from a loser' => [static function (array $p): array {
+                $p['compiled']['lms-0_12_0']['resolved']['TangibleDDD\\Application\\Process\\ProcessRunner']['origin'] = 'cc-lms-0_12_0';
+
+                return $p;
+            }, 'lms-0_12_0: TangibleDDD\\Application\\Process\\ProcessRunner resolved from cc-lms-0_12_0'],
+            'mixed census' => [static function (array $p): array {
+                $p['ddd_class_copies']['legacy-0_6_5'] = 3;
+                $p['ddd_class_samples']['legacy-0_6_5'] = ['TangibleDDD\\Infra\\IDDDConfig'];
+
+                return $p;
+            }, '3 TangibleDDD classes from legacy-0_6_5, not the winner new (TangibleDDD\\Infra\\IDDDConfig)'],
+            'no census' => [static function (array $p): array {
+                unset($p['ddd_class_copies']);
+
+                return $p;
+            }, 'no TangibleDDD class census'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('broken_compiled')]
+    public function test_the_judge_fails_unresolved_or_mixed_compiled_containers(\Closure $break, string $reason): void
+    {
+        [$code, $out] = self::judge($break(self::compiled_probe()), self::COMPILED_SPEC);
+
+        $this->assertSame(1, $code, $out);
+        $this->assertStringContainsString($reason, $out);
+    }
+
+    public function test_the_judge_requires_a_live_jetpack_autoloader_where_the_case_has_one(): void
+    {
+        $spec = self::SPEC + ['jetpack' => true];
+        $probe = self::clean_probe();
+
+        $probe['autoloaders'] = ['Tangible_DDD_Winner_Autoloader::load', 'Composer\\Autoload\\ClassLoader::loadClass'];
+        [$code, $out] = self::judge($probe, $spec);
+        $this->assertSame(1, $code, $out);
+        $this->assertStringContainsString('no Jetpack autoloader is registered', $out);
+
+        $probe['autoloaders'][] = 'Automattic\\Jetpack\\Autoloader\\jp380ae\\al5_0_23\\PHP_Autoloader::load_class';
+        [$code, $out] = self::judge($probe, $spec);
+        $this->assertSame(0, $code, $out);
+    }
+
+    public function test_the_judge_checks_registered_versions_without_naming_copies(): void
+    {
+        $spec = ['winner_version' => '0.7.0', 'winner_copy' => 'new', 'registered_versions' => ['0.6.5', '0.7.0']];
+        [$code, $out] = self::judge(self::clean_probe(), $spec);
+        $this->assertSame(0, $code, $out);
+
+        [$code, $out] = self::judge(self::clean_probe(), ['registered_versions' => ['0.7.0']] + $spec);
+        $this->assertSame(1, $code, $out);
+        $this->assertStringContainsString('registered versions ["0.6.5","0.7.0"], expected ["0.7.0"]', $out);
     }
 
     public function test_the_judge_fails_when_the_probe_printed_nothing(): void
