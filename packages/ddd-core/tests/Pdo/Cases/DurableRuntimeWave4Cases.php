@@ -138,7 +138,9 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
     $rt->bus()->handle(new CreateCustomer(7));
 
     self::assertSame(2, CreateCustomer::$performed);
-    self::assertSame(['cus_1', 'cus_1', 'cus_2'], CreateCustomer::$recorded);
+    // E2 (wave 5): the journal tracks entry states, so the second dispatch of
+    // a Recorded entry returns its result without recording it again.
+    self::assertSame(['cus_1', 'cus_2'], CreateCustomer::$recorded);
   }
 
   public function test_the_journal_is_a_runtime_service_for_repair_commands(): void {

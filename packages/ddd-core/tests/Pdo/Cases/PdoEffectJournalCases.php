@@ -7,9 +7,14 @@ namespace TangibleDDD\Core\Tests\Pdo\Cases;
 use TangibleDDD\Core\Tests\Pdo\PdoTestCase;
 use TangibleDDD\Defaults\Pdo\PdoEffectJournal;
 use TangibleDDD\Defaults\Pdo\PdoTransactionBoundary;
+use TangibleDDD\Runtime\Effects\EffectEntry;
 use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\EffectState;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\ITracksEffectState;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\FrozenClock;
+use TangibleDDD\Runtime\Ops\Layer;
 
 /** D1: IEffectJournal on `{prefix}ddd_effect_journal`, MySQL 8. */
 abstract class PdoEffectJournalCases extends PdoTestCase {
@@ -126,5 +131,129 @@ abstract class PdoEffectJournalCases extends PdoTestCase {
 
     $this->expectException(\RuntimeException::class);
     $this->journal->find('k');
+  }
+
+  // ── E2 (wave 5): entry states, ITracksEffectState (schema 010) ─────────────
+
+  public function test_it_tracks_entry_states(): void {
+    self::assertInstanceOf(ITracksEffectState::class, $this->journal);
+  }
+
+  public function test_a_stored_entry_is_performed_and_not_recorded(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1], 'r1'));
+
+    $entry = $this->journal->find_entry('k');
+    self::assertNotNull($entry);
+    self::assertSame('k', $entry->key);
+    self::assertSame(EffectState::Performed, $entry->state);
+    self::assertSame(['v' => 1], $entry->result->data);
+    self::assertSame('r1', $entry->result->external_ref);
+    self::assertEquals(self::utc('2026-10-01 12:00:00'), $entry->performed_at);
+    self::assertNull($entry->recorded_at);
+    self::assertNull($this->journal->find_entry('unknown'));
+  }
+
+  public function test_mark_recorded_sets_the_state_and_the_time(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $this->clock->advance('PT5S');
+
+    $this->journal->mark_recorded('k');
+    $this->journal->mark_recorded('k');
+
+    $entry = (new PdoEffectJournal($this->otherConnection(), self::PREFIX, $this->clock))->find_entry('k');
+    self::assertSame(EffectState::Recorded, $entry?->state);
+    self::assertEquals(self::utc('2026-10-01 12:00:05'), $entry->recorded_at);
+    self::assertSame(['v' => 1], $this->journal->find('k')?->data, 'find() answers the result whatever the state');
+  }
+
+  public function test_mark_recorded_of_an_unknown_or_invalidated_key_is_a_no_op(): void {
+    $this->journal->mark_recorded('never-performed');
+    $this->journal->store('gone', new EffectResult());
+    $this->journal->invalidate('gone', 'repair');
+    $this->journal->mark_recorded('gone');
+
+    self::assertNull($this->journal->find_entry('never-performed'));
+    self::assertNull($this->journal->find_entry('gone'));
+    self::assertSame(0, $this->countRows('ddd_effect_recorded'));
+  }
+
+  public function test_mark_recorded_commits_or_rolls_back_with_record(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $boundary = new PdoTransactionBoundary($this->db);
+
+    try {
+      $boundary->run(function (): void {
+        $this->journal->mark_recorded('k');
+        throw new \DomainException('record() failed after the mark');
+      });
+    } catch (\DomainException) {
+    }
+    self::assertSame(EffectState::Performed, $this->journal->find_entry('k')?->state, 'a rolled-back record() leaves the entry performed');
+
+    $boundary->run(fn () => $this->journal->mark_recorded('k'));
+    self::assertSame(EffectState::Recorded, $this->journal->find_entry('k')?->state);
+  }
+
+  public function test_storing_again_resets_the_entry_to_performed(): void {
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $this->journal->mark_recorded('k');
+    $this->journal->invalidate('k', 'repair');
+
+    $this->journal->store('k', new EffectResult(['v' => 2]));
+
+    $entry = $this->journal->find_entry('k');
+    self::assertSame(EffectState::Performed, $entry?->state);
+    self::assertNull($entry->recorded_at);
+    self::assertSame(['v' => 2], $entry->result->data);
+  }
+
+  public function test_store_inside_an_open_transaction_joins_it(): void {
+    $boundary = new PdoTransactionBoundary($this->db);
+    $this->journal->store('k', new EffectResult(['v' => 1]));
+    $this->journal->mark_recorded('k');
+
+    try {
+      $boundary->run(function (): void {
+        $this->journal->store('k', new EffectResult(['v' => 2]));
+        throw new \DomainException('rolled back');
+      });
+    } catch (\DomainException) {
+    }
+
+    self::assertSame(EffectState::Recorded, $this->journal->find_entry('k')?->state);
+    self::assertSame(['v' => 1], $this->journal->find('k')?->data);
+  }
+
+  public function test_find_unrecorded_lists_old_performed_entries_oldest_first(): void {
+    $this->journal->store('b', new EffectResult(['n' => 'b']));
+    $this->clock->advance('PT10S');
+    $this->journal->store('a', new EffectResult(['n' => 'a']));
+    $this->clock->advance('PT10S');
+    $this->journal->store('recorded', new EffectResult());
+    $this->journal->mark_recorded('recorded');
+    $this->journal->store('invalidated', new EffectResult());
+    $this->journal->invalidate('invalidated', 'repair');
+    $this->clock->advance('PT10S');
+    $this->journal->store('young', new EffectResult());
+
+    $due = $this->journal->find_unrecorded(self::utc('2026-10-01 12:00:25'), 10);
+
+    self::assertSame(['b', 'a'], array_map(static fn (EffectEntry $e) => $e->key, $due));
+    self::assertSame(EffectState::Performed, $due[0]->state);
+    self::assertSame(['n' => 'b'], $due[0]->result->data);
+    self::assertCount(1, $this->journal->find_unrecorded(self::utc('2026-10-01 12:00:25'), 1), 'the limit caps the list');
+    self::assertSame([], $this->journal->find_unrecorded(self::utc('2026-10-01 12:00:25'), 0));
+  }
+
+  public function test_unrecorded_entries_are_the_operator_layer_effect(): void {
+    $this->journal->store('stripe:charge:1', new EffectResult(['charge' => 'ch_1']));
+    $this->journal->store('stripe:charge:2', new EffectResult(['charge' => 'ch_2']));
+    $this->journal->mark_recorded('stripe:charge:2');
+    $this->clock->advance('PT' . (UnrecordedEffects::DEFAULT_AFTER_SECONDS + 1) . 'S');
+
+    $items = (new UnrecordedEffects($this->journal, 'tp', $this->clock))->items(Layer::Effect, 10);
+
+    self::assertSame(['stripe:charge:1'], array_map(static fn ($i) => $i->key, $items));
+    self::assertSame(['invalidate'], $items[0]->repairs);
   }
 }

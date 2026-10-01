@@ -19,7 +19,7 @@ final class SchemaSql {
   /** The logical tables, in file order. */
   public const TABLES = ['ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger', 'ddd_processes', 'ddd_jobs', 'ddd_process_waits',
     'ddd_behaviour_workflows', 'ddd_behaviour_workflow_meta', 'ddd_behaviour_workflow_items', 'ddd_workflow_ignitions',
-    'ddd_effect_journal'];
+    'ddd_effect_journal', 'ddd_effect_recorded', 'ddd_job_facts'];
 
   public static function directory(): string {
     return dirname(__DIR__, 3) . '/schema/mysql8';
