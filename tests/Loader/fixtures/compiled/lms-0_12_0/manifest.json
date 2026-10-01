@@ -1,0 +1,52 @@
+{
+    "label": "lms-0_12_0",
+    "source": "tangible-lms-0.12.0.zip:var/container/CompiledContainer.php",
+    "source_sha256": "d3af5e51c7a18ced6e413fa3e7b7ce505e36170799bdb5a4248b3c57b1a0ff01",
+    "container_class": "FxCompiled\\Lms\\CompiledContainer",
+    "consumer_namespace": [
+        "Tangible\\LMS",
+        "FxCompiled\\Lms\\Consumer"
+    ],
+    "services": {
+        "League\\Tactician\\CommandBus": "League\\Tactician\\CommandBus",
+        "TangibleDDD\\Application\\Correlation\\CorrelationMiddleware": "TangibleDDD\\Application\\Correlation\\CorrelationMiddleware",
+        "TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware": "TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware",
+        "TangibleDDD\\Application\\Events\\EventRouter": "TangibleDDD\\Application\\Events\\EventRouter",
+        "TangibleDDD\\Application\\Events\\EventsUnitOfWork": "TangibleDDD\\Application\\Events\\EventsUnitOfWork",
+        "TangibleDDD\\Application\\Events\\IDomainEventDispatcher": "TangibleDDD\\Infra\\Services\\WordPressEventDispatcher",
+        "TangibleDDD\\Application\\Events\\IIntegrationEventBus": "TangibleDDD\\Infra\\Services\\OutboxIntegrationEventBus",
+        "TangibleDDD\\Application\\Logging\\Redactor": "TangibleDDD\\Application\\Logging\\Redactor",
+        "TangibleDDD\\Application\\Outbox\\IOutboxPublisher": "TangibleDDD\\Infra\\Services\\RoutingOutboxPublisher",
+        "TangibleDDD\\Application\\Outbox\\OutboxConfig": "TangibleDDD\\Application\\Outbox\\OutboxConfig",
+        "TangibleDDD\\Application\\Persistence\\TransactionMiddleware": "TangibleDDD\\Application\\Persistence\\TransactionMiddleware",
+        "TangibleDDD\\Application\\Process\\ProcessRunner": "TangibleDDD\\Application\\Process\\ProcessRunner",
+        "TangibleDDD\\Infra\\IOutboxRepository": "FxCompiled\\Lms\\Consumer\\Infrastructure\\Persistence\\Doctrine\\OutboxRepository",
+        "TangibleDDD\\Infra\\IProcessRepository": "TangibleDDD\\Infra\\Persistence\\ProcessRepository",
+        "TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher": "TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher",
+        "TangibleDDD\\Infra\\Services\\OutboxProcessor": "TangibleDDD\\Infra\\Services\\OutboxProcessor",
+        "tactician.query_bus": "League\\Tactician\\CommandBus"
+    },
+    "ddd_fqcns": [
+        "TangibleDDD\\Application\\CQRS\\HandlerClassNameInflector",
+        "TangibleDDD\\Application\\Correlation\\CorrelationMiddleware",
+        "TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware",
+        "TangibleDDD\\Application\\Events\\EventRouter",
+        "TangibleDDD\\Application\\Events\\EventsUnitOfWork",
+        "TangibleDDD\\Application\\Logging\\Redactor",
+        "TangibleDDD\\Application\\Outbox\\OutboxConfig",
+        "TangibleDDD\\Application\\Persistence\\TransactionMiddleware",
+        "TangibleDDD\\Application\\Process\\ProcessRunner",
+        "TangibleDDD\\Infra\\IDDDConfig",
+        "TangibleDDD\\Infra\\Persistence\\ProcessRepository",
+        "TangibleDDD\\Infra\\Services\\ActionSchedulerOutboxPublisher",
+        "TangibleDDD\\Infra\\Services\\OutboxIntegrationEventBus",
+        "TangibleDDD\\Infra\\Services\\OutboxProcessor",
+        "TangibleDDD\\Infra\\Services\\RoutingOutboxPublisher",
+        "TangibleDDD\\Infra\\Services\\WordPressEventDispatcher"
+    ],
+    "stubs": {
+        "FxCompiled\\Lms\\Consumer\\Application\\Middleware\\DoctrineTransactionMiddleware": "middleware",
+        "FxCompiled\\Lms\\Consumer\\Infra\\Config": "config",
+        "FxCompiled\\Lms\\Consumer\\Infrastructure\\Persistence\\Doctrine\\OutboxRepository": "outbox-repository"
+    }
+}
