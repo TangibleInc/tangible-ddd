@@ -48,11 +48,13 @@ final class ProcessWiringTest extends KernelTestBase {
   }
 
   public function test_the_d10_workflow_stores_are_wired(): void {
-    $c = self::getContainer();
+    [$workflows, $items, $ignitions] = self::getContainer()->get('test.d10_stores')->getArrayCopy();
 
-    self::assertInstanceOf(DbalBehaviourWorkflowRepository::class, $c->get(IBehaviourWorkflowRepository::class));
-    self::assertInstanceOf(DbalWorkItemRepository::class, $c->get(IWorkItemRepository::class));
-    self::assertInstanceOf(DbalWorkflowIgnitionLedger::class, $c->get(DbalWorkflowIgnitionLedger::class));
+    self::assertInstanceOf(DbalBehaviourWorkflowRepository::class, $workflows);
+    self::assertInstanceOf(IBehaviourWorkflowRepository::class, $workflows);
+    self::assertInstanceOf(DbalWorkItemRepository::class, $items);
+    self::assertInstanceOf(IWorkItemRepository::class, $items);
+    self::assertInstanceOf(DbalWorkflowIgnitionLedger::class, $ignitions);
   }
 
   public function test_the_act_bracket_and_integration_bus_are_the_core_classes(): void {
