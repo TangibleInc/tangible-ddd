@@ -3,6 +3,7 @@
 namespace TangibleDDD\Tests\Unit\Process;
 
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Tests\Fakes\FakeDDDConfig;
 use TangibleDDD\Tests\Fakes\FakeFailingProcess;
@@ -17,14 +18,29 @@ class ProcessRunnerTest extends TestCase {
   private FakeDDDConfig $config;
   private FakeProcessRepository $repo;
   private ProcessRunner $runner;
+  private mixed $previous_wpdb = null;
 
   protected function setUp(): void {
+    // start()/continue_scheduled() run inside the WordPress defaults: a wpdb
+    // transaction boundary and a GET_LOCK process lock, both through global
+    // $wpdb. Establish it here instead of inheriting one from an earlier test
+    // (the plain wp-stubs wpdb answers '1' to GET_LOCK/RELEASE_LOCK).
+    $this->previous_wpdb = $GLOBALS['wpdb'] ?? null;
+    $GLOBALS['wpdb'] = new \wpdb();
+    Correlation::reset();
+
     $this->config = new FakeDDDConfig();
     $this->repo = new FakeProcessRepository();
     $this->runner = new ProcessRunner($this->config, $this->repo);
   }
 
   protected function tearDown(): void {
+    Correlation::reset();
+    if ($this->previous_wpdb === null) {
+      unset($GLOBALS['wpdb']);
+    } else {
+      $GLOBALS['wpdb'] = $this->previous_wpdb;
+    }
   }
 
   public function test_three_step_process_runs_to_completion(): void {

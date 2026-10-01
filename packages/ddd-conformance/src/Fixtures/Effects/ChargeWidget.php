@@ -39,6 +39,7 @@ final class ChargeWidget implements IExternalEffectCommand {
       EffectLedger::$record_failures[$this->widget_id]--;
       throw new \RuntimeException("record of {$this->widget_id} failed");
     }
+    EffectLedger::$records[$this->widget_id] = (EffectLedger::$records[$this->widget_id] ?? 0) + 1;
     $row = "charged:{$this->widget_id}:{$r->external_ref}";
     if (!EffectLedger::rows()->has($row)) {
       EffectLedger::rows()->insert($row, (string) $r->external_ref);

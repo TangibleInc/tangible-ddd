@@ -68,12 +68,14 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
    * @param bool $abortOnStatementError model an engine that aborts the
    *   transaction on a statement error (Postgres 25P02): its COMMIT then
    *   fails and nothing persists (the CR sf-7 branch of cmd.commit-failure)
+   * @param bool $parks_facts the scheduler carries facts (CR-W5CC-7), as MemHostFixture
    */
   public function __construct(
     StartMode $startMode = StartMode::InBand,
     private readonly bool $abortOnStatementError = false,
+    bool $parks_facts = false,
   ) {
-    parent::__construct(false, $startMode);
+    parent::__construct(false, $startMode, $parks_facts);
   }
 
   public function fail_statement(): void {

@@ -12,8 +12,10 @@ namespace TangibleDDD\Conformance;
  * change to either is a register edit, and CatalogueTest pins the per-host
  * wave lists of register section 8 against it. The three D3 ids
  * `process.await-*` are change request CR-W4C4-1
- * (docs/extraction/wave4-conformance-4-change-requests.md), pending their
- * register row.
+ * (docs/extraction/wave4-conformance-4-change-requests.md), in the register
+ * since wave 5. The six wave-5 ids are CR-W5C5-1
+ * (docs/extraction/wave5-conformance-5-change-requests.md), pending their
+ * register rows.
  */
 final class ScenarioCatalogue {
 
@@ -69,6 +71,13 @@ final class ScenarioCatalogue {
     'decode.unknown-class'                    => [4, 4, 4, 4],
     'effect.journal-reuse'                    => [4, 4, null, 4],
     'wakeup.post-commit'                      => [null, null, null, 4],
+    // wave 5 (CR-W5C5-1): TXP process-kernel demands AW1, AW2, E2, W4 and sf multi-consumer
+    'lock.parked-answer'                      => [5, 5, null, 5],
+    'process.resume-contention-keeps-answer'  => [5, 5, null, 5],
+    'process.resume-cause'                    => [5, 5, 5, 5],
+    'effect.performed-not-recorded'           => [5, 5, null, 5],
+    'workflow.item-deterministic-id'          => [5, 5, 5, 5],
+    'delivery.cross-consumer-once'            => [null, null, null, 5],
   ];
 
   private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
@@ -130,6 +139,13 @@ final class ScenarioCatalogue {
     'effect.journal-reuse'                    => self::S . 'EffectScenarios',
     'workflow.fact-ignition-once'             => self::S . 'WorkflowScenarios',
     'wakeup.post-commit'                      => self::S . 'PostCommitWakeupScenarios',
+    // wave 5: new cases only, so a wave-4 host class runs unchanged
+    'lock.parked-answer'                      => self::S . 'ParkedAnswerScenarios',
+    'process.resume-contention-keeps-answer'  => self::S . 'ParkedAnswerScenarios',
+    'process.resume-cause'                    => self::S . 'ResumeCauseScenarios',
+    'effect.performed-not-recorded'           => self::S . 'EffectStateScenarios',
+    'workflow.item-deterministic-id'          => self::S . 'WorkItemScenarios',
+    'delivery.cross-consumer-once'            => self::S . 'CrossConsumerScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null for an unknown id. */
