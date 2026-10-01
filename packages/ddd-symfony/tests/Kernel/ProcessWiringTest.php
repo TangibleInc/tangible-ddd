@@ -91,6 +91,17 @@ final class ProcessWiringTest extends KernelTestBase {
     self::assertTrue(class_exists(ProcessWakeupMessage::class));
   }
 
+  public function test_the_ops_commands_are_registered_and_run(): void {
+    self::assertStringContainsString('No dead letters.', $this->console('ddd:ops:dlq:list')->getDisplay());
+    self::assertStringContainsString('No stranded processes.', $this->console('ddd:ops:stranded')->getDisplay());
+    self::assertStringContainsString('Relay paused for sfk_*', $this->console('ddd:ops:pause', ['selector' => 'sfk_*'])->getDisplay());
+    self::assertSame(1, $this->countRows('SELECT count(*) FROM ddd_relay_pauses'));
+    $this->console('ddd:ops:resume', ['selector' => 'sfk_*']);
+    self::assertSame(0, $this->countRows('SELECT count(*) FROM ddd_relay_pauses'));
+    self::assertSame(1, $this->console('ddd:ops:dlq:replay', ['dlq-id' => ['404']])->getStatusCode());
+    self::assertSame(1, $this->console('ddd:ops:dlq:retry', ['event-id' => ['nope']])->getStatusCode());
+  }
+
   public function test_inband_start_on_a_pooled_dsn_is_refused_at_boot(): void {
     $kernel = new TestKernel('test', true, 'inband_pooled');
     try {

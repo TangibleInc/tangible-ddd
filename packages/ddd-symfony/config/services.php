@@ -36,6 +36,12 @@ use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\SystemClock;
 use TangibleDDD\Symfony\Console\RelayCommand;
 use TangibleDDD\Symfony\Console\SchemaDumpCommand;
+use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
+use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
+use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
+use TangibleDDD\Symfony\Console\Ops\PauseCommand;
+use TangibleDDD\Symfony\Console\Ops\ResumeCommand;
+use TangibleDDD\Symfony\Console\Ops\StrandedCommand;
 use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
 use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
@@ -369,6 +375,29 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $config['relay']['listen'] ? service('tangible_ddd.relay_waiter') : null,
     ])
     ->tag('console.command', ['command' => 'ddd:relay']);
+  // ── ddd:ops:* (register 3.10, 5.1) ───────────────────────────────────────
+  $s->set('tangible_ddd.command.ops.dlq_list', DlqListCommand::class)
+    ->args([service('tangible_ddd.outbox_administration')])
+    ->tag('console.command', ['command' => 'ddd:ops:dlq:list']);
+  $s->set('tangible_ddd.command.ops.dlq_replay', DlqReplayCommand::class)
+    ->args([service('tangible_ddd.outbox_administration')])
+    ->tag('console.command', ['command' => 'ddd:ops:dlq:replay']);
+  $s->set('tangible_ddd.command.ops.dlq_retry', DlqRetryCommand::class)
+    ->args([service('tangible_ddd.outbox_administration')])
+    ->tag('console.command', ['command' => 'ddd:ops:dlq:retry']);
+  $s->set('tangible_ddd.command.ops.stranded', StrandedCommand::class)
+    ->args([
+      service('tangible_ddd.process_store'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'),
+      service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'],
+    ])
+    ->tag('console.command', ['command' => 'ddd:ops:stranded']);
+  $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)
+    ->args([service('tangible_ddd.relay_pauses'), service('tangible_ddd.clock')])
+    ->tag('console.command', ['command' => 'ddd:ops:pause']);
+  $s->set('tangible_ddd.command.ops.resume', ResumeCommand::class)
+    ->args([service('tangible_ddd.relay_pauses')])
+    ->tag('console.command', ['command' => 'ddd:ops:resume']);
+
   $s->set('tangible_ddd.command.schema_dump', SchemaDumpCommand::class)
     ->args([$prefix])
     ->tag('console.command', ['command' => 'ddd:schema:dump']);
