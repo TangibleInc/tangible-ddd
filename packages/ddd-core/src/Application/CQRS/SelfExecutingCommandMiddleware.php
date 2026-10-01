@@ -107,7 +107,8 @@ final class SelfExecutingCommandMiddleware implements Middleware {
         // ICommandHandler is wrapping the two-class shape inside the
         // self-handling one. Fires before the container is consulted — a
         // resolvable handler is no less a chimera.
-        if (is_a($type->getName(), ICommandHandler::class, true)) {
+        if (is_a($type->getName(), ICommandHandler::class, true)
+          || is_a($type->getName(), \TangibleDDD\Application\CommandHandlers\IReturningCommandHandler::class, true)) {
           throw new SelfHandlingCommandWrapsHandler($command::class, $type->getName());
         }
 

@@ -3,12 +3,14 @@
 namespace TangibleDDD\Domain\Shared;
 
 /**
- * Base class for aggregate roots.
+ * Base class for aggregate roots with a 0.6 integer identity.
  *
  * Aggregates are entities that serve as consistency boundaries
- * and can record domain events.
+ * and can record domain events. For a root whose identity is not an int
+ * (a uuid string, a named legacy id), extend AggregateRoot instead; both
+ * implement IAggregateRoot.
  */
-abstract class Aggregate extends Entity implements IRecordsDomainEvents {
+abstract class Aggregate extends Entity implements IAggregateRoot {
   use RecordsDomainEvents;
 
   /**

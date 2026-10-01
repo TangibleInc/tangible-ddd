@@ -3,6 +3,7 @@
 namespace TangibleDDD\Domain\Events;
 
 use TangibleDDD\Domain\Shared\Aggregate;
+use TangibleDDD\Domain\Shared\IAggregateRoot;
 
 /**
  * Marks a fact as declaring a state write — the DECLARED write-set
@@ -26,13 +27,16 @@ use TangibleDDD\Domain\Shared\Aggregate;
 #[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 final class Touches {
 
-  /** @param class-string<Aggregate> $aggregate */
+  /**
+   * @param class-string<IAggregateRoot> $aggregate an Aggregate (0.6 int id)
+   *   or an identity-agnostic AggregateRoot (L2)
+   */
   public function __construct(
     public readonly Op $op,
     public readonly string $aggregate,
     public readonly ?string $id = null,
   ) {
-    if (!is_subclass_of($this->aggregate, Aggregate::class)) {
+    if (!is_subclass_of($this->aggregate, Aggregate::class) && !is_subclass_of($this->aggregate, IAggregateRoot::class)) {
       throw new TouchesNonAggregate($this->aggregate);
     }
   }

@@ -9,9 +9,12 @@ use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionParameter;
 use TangibleDDD\Application\Events\PublishedFacts;
+use TangibleDDD\Runtime\Codec\LargeString;
 
 /**
- * The record capability: strict scalarise codec (ctor IS the schema),
+ * The record capability: strict scalarise codec (ctor IS the schema;
+ * scalars, backed enums, dates, arrays, and LargeString for big or binary
+ * strings, D6),
  * total hydration, identity announcement. (Journey slots died in 0.3 —
  * identity lives on the envelope and the outbox row; PublishedFacts
  * carries the re-raise guard.)
@@ -70,7 +73,8 @@ trait IntegrationBehaviour {
       $v === null || is_scalar($v)    => $v,
       $v instanceof BackedEnum         => $v->value,
       $v instanceof DateTimeInterface  => $v->format('c'),
-      is_array($v)                     => array_map(
+      $v instanceof LargeString        => $v->toPayload(),
+      is_array($v)                    => array_map(
         fn($e) => self::scalarise_value($e, $param), $v
       ),
       default => throw new NonReversibleValue(static::class, $param, get_debug_type($v)),
@@ -89,6 +93,7 @@ trait IntegrationBehaviour {
       $t === 'bool'   => (bool) $raw,
       is_a($t, BackedEnum::class, true)        => $t::from($raw),
       is_a($t, DateTimeInterface::class, true) => new DateTimeImmutable($raw),
+      $t === LargeString::class                => LargeString::fromPayload($raw),
       default => $raw,
     };
   }

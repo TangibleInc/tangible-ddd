@@ -47,6 +47,15 @@ use TangibleDDD\Application\CQRS\CommandBusAware;
  * objects, and nothing downstream may depend on the return — the middleware
  * merely propagates whatever it returns.
  *
+ * What a receipt CANNOT carry (D11 clarification): the value is computed
+ * when handle() returns, which is BEFORE DomainEventsPublishMiddleware
+ * drains the recorded domain events into their in-transaction reactions.
+ * Anything such a reaction creates (an id a reacting listener inserts, a
+ * row a projection writes, a fact a reaction stages) does not exist yet
+ * when the receipt is built, so it can never be in it. Return what handle()
+ * itself decided; read the rest back with a query after the command. The
+ * same holds for IReturningCommandHandler.
+ *
  * WHY handle() IS NOT DECLARED ABSTRACT HERE: each concrete command adds its
  * own required, typed dependency parameters to handle(). An abstract method
  * with a fixed signature would make those additions LSP violations (a

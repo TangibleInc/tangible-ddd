@@ -22,13 +22,21 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  */
 abstract class IntegrationTranslator {
 
-  /** @return class-string<IIntegrationEvent> */
+  /**
+   * What this translator subscribes to: a fact class (an IIntegrationEvent)
+   * or a D2 marker interface, which need not extend IIntegrationEvent
+   * (TXP demand L3). SubscriptionRegistrar accepts both.
+   *
+   * @return class-string the fact class or marker interface
+   */
   abstract protected function get_event_class(): string;
 
   /** Fact in, intention out. Null = no reaction. */
   abstract protected function get_command(IIntegrationEvent $event): ?ICommand;
 
-  /** @return class-string<IIntegrationEvent> the fact (or marker interface) this translator subscribes to */
+  /**
+   * @return class-string the fact class or marker interface this translator subscribes to
+   */
   final public function event_class(): string {
     return $this->get_event_class();
   }

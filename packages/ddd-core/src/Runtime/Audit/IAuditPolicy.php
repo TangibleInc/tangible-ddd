@@ -10,7 +10,8 @@ namespace TangibleDDD\Runtime\Audit;
  * runs BEFORE the policy; a policy can only skip the write.
  *
  * Error behaviour: never throws. Lifetime: stateless.
- * The #[Audit(false)] attribute read by the default policy lands in wave 4.
+ * Default (wave 4): AttributeAuditPolicy, which reads #[Audit(false)] /
+ * #[Audit(parameters: false)] and optional class lists.
  */
 interface IAuditPolicy {
 

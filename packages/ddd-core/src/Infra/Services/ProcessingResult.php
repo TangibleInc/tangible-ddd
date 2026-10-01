@@ -18,6 +18,9 @@ final class ProcessingResult {
    * @param list<string> $retried      rejected and rescheduled with backoff
    * @param list<string> $deadLettered rejected for the last time and moved to the DLQ
    * @param list<string> $leaseLost    a fenced write matched 0 rows; the result was discarded
+   * @param list<string> $deadLetteredAtClaim dead-lettered by claim() itself because re-claims of
+   *   expired leases reached max_attempts (CR-PDO-6, IReportsClaimDeadLetters); never in
+   *   `claimed`, not counted in `dlq`/`total`
    */
   public function __construct(
     public readonly int $completed,
@@ -29,5 +32,6 @@ final class ProcessingResult {
     public readonly array $retried = [],
     public readonly array $deadLettered = [],
     public readonly array $leaseLost = [],
+    public readonly array $deadLetteredAtClaim = [],
   ) {}
 }
