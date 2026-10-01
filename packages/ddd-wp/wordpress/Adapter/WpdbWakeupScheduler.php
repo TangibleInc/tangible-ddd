@@ -101,14 +101,17 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
 
     if ($row) {
       $keep = $row->status === 'firing';
+      // step_index / expected_status keep NULL when the intent has none (a
+      // ResumeRetry of a just-started process, key segment "-"), exactly as
+      // the INSERT below stores them (W3C-R1).
       $ok = $db->query($db->prepare(
         "UPDATE `{$this->table()}` SET status = 'pending', due_at = %s,
            attempts = IF(%d = 1, attempts, 0), last_error = IF(%d = 1, last_error, NULL), claim_token = NULL,
-           locked_until = NULL, hook = %s, args = %s, as_action_id = %d, kind = %s, process_id = %d, step_index = %d,
-           expected_status = %s, updated_at = %s
+           locked_until = NULL, hook = %s, args = %s, as_action_id = %d, kind = %s, process_id = %d,
+           step_index = IF(%d = 1, NULL, %d), expected_status = IF(%d = 1, NULL, %s), updated_at = %s
          WHERE id = %d",
         self::utc($i->dueAt), (int) $keep, (int) $keep, $hook, (string) wp_json_encode($args), $actionId, $i->kind->value, (int) $i->processId,
-        (int) $i->stepIndex, (string) $i->expectedStatus, $now, (int) $row->id
+        (int) ($i->stepIndex === null), (int) $i->stepIndex, (int) ($i->expectedStatus === null), (string) $i->expectedStatus, $now, (int) $row->id
       ));
     } else {
       $ok = $db->insert($this->table(), [
