@@ -35,6 +35,13 @@ Two wave-5 ids are wired and run unchanged but fail on one host each. Neither ca
 - **Cause.** The wp audit store is the 0.6 `{prefix}_command_audit` table with `UNIQUE KEY uniq_command_id (command_id)`. The re-run's `open` under the same command id inserts nothing (wpdb errors are not checked, as in 0.6), and its `close` updates the existing row. `HostFixture::audit_trail()` is documented as "audit rows closed so far", so the wp fixture reports the host truthfully. mem, pdo and sf keep one row per dispatch. Making the table non-unique is a schema change to a frozen 0.6 table, so that is not an option.
 - **Request.** In `packages/ddd-conformance/src/Scenarios/WorkItemScenarios.php`, record the command ids in the `GrantAccess` handler closure the scenario already installs (it computes `Correlation::current()->cause?->id` there) and assert `[$first, $second, $second]` on that list instead of `granted_ids()` from the audit trail. If the scenario must keep an audit check, assert that the audit trail names no `GrantAccess` id other than `$first` and `$second`. Either is portable to a host whose audit store is keyed by command id.
 
+### Fix round 1 status
+
+The review confirmed both diagnoses and assigned them as above: HC5-1 to the sf adapter owner, HC5-2 to the conformance owner. The conformance owner could also ratify the id as `-` or deferred on wp in the catalogue. When this round ran, `extraction/ddd-packages` had not moved past `f1882c5`, so neither fix is available to this branch. Nothing in the owned paths changes in this round. As soon as either fix merges, rebase this branch and re-run the suites. No fixture change is expected:
+
+- HC5-1 merged: `cd packages/ddd-symfony && composer install && rm -rf var/cache && vendor/bin/phpunit` (re-install because the conformance package is copied into vendor; see below).
+- HC5-2 merged: `tests/harness/run.sh conformance-wp` (wp reads the conformance package through the root autoloader).
+
 ## Other notes
 
 - The usage text and the header comment at the top of `tests/harness/run.sh` still say "wave 3" / "wave 2" for `core-pdo` / `conformance-wp`. Both are outside the two owned blocks, so they are not edited here; whoever owns the harness can bring them up to date.
