@@ -14,10 +14,11 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 use TangibleDDD\Runtime\Support\Log;
 
 /**
- * Handles ResumeStrandedProcess: after the guards (StrandedRepair), writes
- * the wake that re-runs the stranded step in a worker. `running`: a
- * ResumeRetry intent (expected status `running`, the row's step and
- * current version), due now; `scheduled`: a Continue intent at the row's
+ * Handles ResumeStrandedProcess: after the guards (StrandedRepair), fences
+ * the row (IProcessStore::touch at the guarded version) and writes the wake
+ * that re-runs the stranded step in a worker. `running`: a ResumeRetry
+ * intent (expected status `running`, the row's step and the fenced
+ * version), due now; `scheduled`: a Continue intent at the row's
  * step, due now. Keys carry a `repair-<UTC time>` nonce, so a second repair
  * later is a new intent. Error behaviour: ProcessNotStranded from a guard,
  * \LogicException without ports, storage failures propagate.
@@ -35,6 +36,10 @@ final class ResumeStrandedProcessHandler extends StrandedRepair implements IComm
       $command->process_id,
       $command->expected_version,
       static function (LongProcess $process, StrandedProcess $row, int $version, IProcessStore $store, IWakeupScheduler $wakeups, \DateTimeImmutable $now) use ($prefix): void {
+        // Fence the row first (see StrandedRepair: the lock may be released
+        // before the command's transaction commits); the wake expects the
+        // fenced version.
+        $version = $store->touch($row->processId, $version);
         $nonce = 'repair-' . $now->setTimezone(new \DateTimeZone('UTC'))->format('YmdHis.u');
         $intent = $row->status === 'scheduled'
           ? WakeupIntent::continuation($prefix, $row->processId, $row->stepIndex, $now, $nonce)

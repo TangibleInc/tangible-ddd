@@ -34,6 +34,19 @@ use TangibleDDD\Runtime\SystemClock;
  * command's transaction (TransactionalCommandMiddleware), or in the boundary
  * when the handler is called outside one.
  *
+ * Lock and commit. Outside a transaction the boundary's run() commits while
+ * the lock is still held. Inside the command's transaction the lock is
+ * released when the handler returns, BEFORE the outer transaction commits
+ * (ITransactionBoundary has no after-commit hook). Both repairs therefore
+ * write the row version-fenced first: Fail through its fenced save, Resume
+ * through a fenced touch() at the guarded version. A worker that takes the
+ * lock in that window and acts on the pre-repair row then loses its own
+ * fenced save or touch (on SQL hosts it waits for the repair's row lock and
+ * finds the version moved: ConcurrentProcessModification, its wake aborts).
+ * Residual: a host whose store does not fence (LegacyProcessStore) keeps
+ * the window; the repair's intent is stale-safe (status, step and version
+ * checked under the lock), so a duplicate wake is a no-op there too.
+ *
  * @internal
  */
 abstract class StrandedRepair {

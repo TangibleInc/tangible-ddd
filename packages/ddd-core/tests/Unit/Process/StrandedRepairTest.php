@@ -131,7 +131,7 @@ final class StrandedRepairTest extends TestCase {
     [$intent] = $this->wakeups->pending();
     self::assertSame(WakeKind::ResumeRetry, $intent->kind);
     self::assertSame('running', $intent->expectedStatus);
-    self::assertSame($version, $intent->retryVersion());
+    self::assertSame($version + 1, $intent->retryVersion(), 'the repair fences the row and the wake expects the fenced version');
     self::assertSame(0, $this->lock->heldCount(), 'the lease guard was released');
 
     $this->drainDue();
@@ -139,6 +139,22 @@ final class StrandedRepairTest extends TestCase {
     self::assertSame(['reserve', 'ship'], Journal::$steps);
     self::assertSame('completed', $this->store->statusOf($id));
     self::assertSame(DeterministicCommandId::forStep('acme', $id, '0', 0), RecordingCommand::$hints[0], 'the re-run step dispatches its deterministic id');
+  }
+
+  public function test_inside_the_command_transaction_a_worker_acting_on_the_pre_repair_row_is_fenced_off(): void {
+    // TransactionalCommandMiddleware: the repair joins the open transaction,
+    // and the process lock is released before that transaction commits.
+    $id = $this->stranded(new TwoStepProcess(4));
+    $before = (int) $this->store->versionOf($id);
+    $stale = $this->store->find($id);
+
+    $this->expectException(\TangibleDDD\Runtime\Process\ConcurrentProcessModification::class);
+    $this->boundary->run(function () use ($id, $before, $stale): void {
+      $this->resumeHandler()->handle(new ResumeStrandedProcess('acme', $id, $before));
+      self::assertSame(0, $this->lock->heldCount());
+      // A worker takes the free lock and saves from the row it read before the repair.
+      $this->store->save($stale, $before);
+    });
   }
 
   public function test_resume_refuses_a_process_that_is_not_stranded(): void {
