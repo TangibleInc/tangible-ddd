@@ -81,6 +81,21 @@ final class TxpApiDemandsTest extends TestCase {
     self::assertSame('void', (string) (new \ReflectionMethod(ICommandHandler::class, 'handle'))->getReturnType());
   }
 
+  public function test_l1_a_self_handling_command_may_not_inject_a_returning_handler_either(): void {
+    $command = new class extends \TangibleDDD\Application\Commands\SelfHandlingCommand {
+      protected function handle(IReturningCommandHandler $handler): mixed {
+        return $handler->handle($this);
+      }
+    };
+    $container = new class implements ContainerInterface {
+      public function get(string $id): mixed { throw new \LogicException('not consulted'); }
+      public function has(string $id): bool { return false; }
+    };
+
+    $this->expectException(\TangibleDDD\Application\Exceptions\SelfHandlingCommandWrapsHandler::class);
+    (new \TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware($container))->execute($command, static fn () => null);
+  }
+
   // ── L3 ────────────────────────────────────────────────────────────────────
 
   public function test_l3_the_translator_hooks_are_typed_class_string_fact_or_marker(): void {
