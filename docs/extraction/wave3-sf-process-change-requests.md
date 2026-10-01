@@ -42,7 +42,7 @@ The core `OutboxIntegrationEventBus` builds an `OutboxRecord` without the fact's
 
 ## Finding for core (no sf change): `#[Async]` re-schedules on its own continuation
 
-`execute_forward()` checks `has_async_attribute()` before every run of the current step, including the run that `continue_scheduled()` starts for that same step. An `#[Async]` step therefore schedules a new continuation on every wake and never executes. The ProcessRunner refactor should skip the check when the wake is the continuation of that step (for example, compare the Continue intent's step index).
+`execute_forward()` checks `has_async_attribute()` before every run of the current step, including the run that `continue_scheduled()` starts for that same step. An `#[Async]` step therefore schedules a new continuation on every wake and never executes. Reproduced on the mem doubles at `8c74686`: a process `one(); #[Async] two()` stays `scheduled` after `start()` and three `continue_scheduled()` calls, and `two()` never runs. The ProcessRunner refactor should skip the check when the wake is the continuation of that step (for example, compare the Continue intent's step index).
 
 ## Additive sf API and behaviour changes (no request, listed for review)
 
