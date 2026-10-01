@@ -123,6 +123,7 @@ final class OutboxIntegrationEventBus implements IIntegrationEventBus {
       is_unique: $event->is_unique(),
       payload_signature: $event->is_unique() ? $payload : null,
       max_attempts: ($this->outbox_config ?? new OutboxConfig())->max_attempts,
+      event_class: get_class($event),
     );
 
     $this->store->append($record);

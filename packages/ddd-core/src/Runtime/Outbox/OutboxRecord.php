@@ -19,6 +19,9 @@ final class OutboxRecord {
   /**
    * @param array<string, mixed> $payload           the integration payload (unwrapped)
    * @param array<string, mixed>|null $payload_signature is_unique dedup signature
+   * @param class-string|null $event_class the PHP fact class, filled by OutboxIntegrationEventBus
+   *   (CR-PC-2, wave 4); null for hand-built or legacy records. Stores may persist it so the
+   *   delivery side can hydrate the fact and match marker subscriptions (D2).
    */
   public function __construct(
     public readonly string $event_id,
@@ -33,6 +36,7 @@ final class OutboxRecord {
     public readonly ?array $payload_signature = null,
     public readonly int $max_attempts = 5,
     public readonly ?int $blog_id = null,
+    public readonly ?string $event_class = null,
   ) {
     $this->due_at = $due_at->setTimezone(new \DateTimeZone('UTC'));
   }

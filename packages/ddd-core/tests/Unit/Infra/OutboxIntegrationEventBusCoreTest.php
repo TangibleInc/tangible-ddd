@@ -83,6 +83,17 @@ final class OutboxIntegrationEventBusCoreTest extends TestCase {
     self::assertSame($id, PublishedFacts::id_of($event));
   }
 
+  public function test_the_record_carries_the_fact_class_cr_pc_2(): void {
+    $this->portBus()->publish(new OrderPlaced(3, 'sku-3'));
+
+    self::assertSame(OrderPlaced::class, $this->store->recordOf($this->store->eventIds()[0])->event_class);
+  }
+
+  public function test_a_hand_built_record_has_no_fact_class(): void {
+    $r = new OutboxRecord('e', 't', 'a', null, null, null, [], new \DateTimeImmutable());
+    self::assertNull($r->event_class);
+  }
+
   public function test_inside_an_act_the_story_sequence_and_raiser_are_stamped(): void {
     Correlation::within(new TraceContext('story-1', null, 4), function (): void {
       Correlation::within(Correlation::current()->for_act('cmd-1', 'X'), fn () => $this->portBus()->publish(new OrderPlaced()));
