@@ -33,7 +33,9 @@ use function TangibleDDD\WordPress\command_audit_enabled;
  *   of a migrated consumer; otherwise WpRepositoryProcessStore over the
  *   IProcessRepository the runner was constructed with ($legacy), whoever
  *   implemented it (0.6 schema semantics).
- * - IWakeupScheduler: Action Scheduler on the consumer's legacy hooks.
+ * - IWakeupScheduler: WpdbWakeupScheduler (intent rows + an AS projection
+ *   on the legacy hooks at schedule time) for a migrated consumer, else the
+ *   wave-2 ActionSchedulerWakeupScheduler (AS only).
  * - IOutboxStore: WpdbOutboxStore over the framework's own wpdb
  *   OutboxRepository ($legacy); a consumer-authored IOutboxRepository (LMS
  *   Doctrine) gets null, and its callers keep the 0.6 path (R3).
@@ -75,7 +77,9 @@ final class WpHostPortFactory implements IHostPortFactory {
         ? new WpdbAuditSink($consumer)
         : new NullAuditSink(),
       IFactObserver::class => new TouchesFactObserver($consumer),
-      IWakeupScheduler::class => new ActionSchedulerWakeupScheduler($consumer),
+      IWakeupScheduler::class => WpSchema::isV8($consumer)
+        ? new WpdbWakeupScheduler($consumer)
+        : new ActionSchedulerWakeupScheduler($consumer),
       default => null,
     };
   }

@@ -94,6 +94,13 @@ abstract class V8TestCase extends TestCase {
   }
 
   private function wipe(): void {
+    global $wp_filter;
+    foreach (array_keys((array) $wp_filter) as $hook) {
+      if (str_starts_with((string) $hook, static::PREFIX . '_')) {
+        remove_all_actions((string) $hook);
+      }
+    }
+
     $like = $this->wpdb->esc_like($this->wpdb->prefix . static::PREFIX . '_') . '%';
     foreach ((array) $this->wpdb->get_col($this->wpdb->prepare(
       'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE %s',

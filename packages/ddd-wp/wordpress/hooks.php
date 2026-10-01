@@ -195,11 +195,16 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
     return;
   }
 
+  // Schema v8: each wake brackets its intent rows (firing → done, or back
+  // to pending with the error so a relay tick re-projects it). On the 0.6
+  // schema WpWakeBracket just runs the wake.
   add_action($config->hook('process_continue'), function(int $process_id) use ($config, $di_getter) {
     try {
-      $container = $di_getter();
-      $runner = $container->get(ProcessRunner::class);
-      $runner->continue_scheduled($process_id);
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($config, \TangibleDDD\Runtime\Scheduling\WakeKind::Continue, $process_id, null, static function () use ($di_getter, $process_id): void {
+        $container = $di_getter();
+        $runner = $container->get(ProcessRunner::class);
+        $runner->continue_scheduled($process_id);
+      });
     } catch (\Throwable $e) {
       error_log(sprintf(
         '[%s-process] Failed to continue process %d: %s',
@@ -218,13 +223,27 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
   // args keys exactly, same convention as process_continue above.
   add_action($config->hook('await_timeout'), function(int $process_id, int $step_index) use ($config, $di_getter) {
     try {
-      $runner = ($di_getter())->get(ProcessRunner::class);
-      $runner->handle_timeout($process_id, $step_index);
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::run($config, \TangibleDDD\Runtime\Scheduling\WakeKind::Timeout, $process_id, $step_index, static function () use ($di_getter, $process_id, $step_index): void {
+        $runner = ($di_getter())->get(ProcessRunner::class);
+        $runner->handle_timeout($process_id, $step_index);
+      });
     } catch (\Throwable $e) {
       error_log(sprintf('[%s-process] Await-timeout handling failed for process %d: %s', $config->prefix(), $process_id, $e->getMessage()));
       throw $e;
     }
   }, 10, 2);
+
+  // Schema v8 only: ResumeRetry intents ({prefix}_ddd_wakeup, ['key' => …]).
+  // No 0.6 callback exists for this hook, so these are lost on a rollback,
+  // like {prefix}_ddd_redeliver (register 3.6).
+  add_action($config->hook('ddd_wakeup'), function(string $key) use ($config, $di_getter) {
+    try {
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::resumeRetry($config, $key, static fn () => ($di_getter())->get(ProcessRunner::class));
+    } catch (\Throwable $e) {
+      error_log(sprintf('[%s-process] Wakeup %s failed: %s', $config->prefix(), $key, $e->getMessage()));
+      throw $e;
+    }
+  }, 10, 1);
 }
 
 /**
