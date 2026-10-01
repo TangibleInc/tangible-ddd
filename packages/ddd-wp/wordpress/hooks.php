@@ -16,6 +16,43 @@ use TangibleDDD\Infra\IDDDConfig;
 // empty, as the register requires; test harnesses call register() themselves.
 if (function_exists('add_action')) {
   \TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register();
+  // After the winner's self-consume hook builds the container (pri 20).
+  add_action('plugins_loaded', __NAMESPACE__ . '\\register_self_consumer', 21, 0);
+}
+
+/**
+ * Register the framework's own consumer (prefix `tangible_ddd`, namespace
+ * root `TangibleDDD\Application\Commands`) in ConsumerRegistry, so the core
+ * Command base (replay/discard/retry/purge) resolves tangible_ddd's bus
+ * through owner_of() (register 1.4: Command no longer calls
+ * SelfConsumer\di() itself). Defensive like the self-consume hook: a
+ * failure here logs and never fatals the site.
+ *
+ * @param callable|null $di_getter the self-consumer container getter
+ *   (default: SelfConsumer\di(), defined by self/index.php)
+ */
+function register_self_consumer(?callable $di_getter = null): void {
+  $di_getter ??= function_exists(__NAMESPACE__ . '\\SelfConsumer\\di')
+    ? static fn () => \TangibleDDD\WordPress\SelfConsumer\di()
+    : null;
+  if ($di_getter === null) {
+    return;
+  }
+
+  try {
+    $container = $di_getter();
+    if ($container === null || !$container->has(IDDDConfig::class)) {
+      return;
+    }
+    ConsumerRegistry::add(
+      $container->get(IDDDConfig::class),
+      $di_getter,
+      'tangible_ddd',
+      'TangibleDDD\\Application\\Commands',
+    );
+  } catch (\Throwable $e) {
+    error_log('[ddd-self] self-consumer registration failed: ' . $e->getMessage());
+  }
 }
 
 /**
