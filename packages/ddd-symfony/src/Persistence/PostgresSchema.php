@@ -15,7 +15,8 @@ use Doctrine\DBAL\Connection;
  * COLUMN IF NOT EXISTS). `{{prefix}}` is the configured table prefix. Wave 2
  * shipped the outbox, DLQ, relay pauses and the delivery ledger; wave 3 adds
  * processes, process waits, wakeup intents and the D10 workflow tables
- * (workflows, meta, items, ignition ledger).
+ * (workflows, meta, items, ignition ledger); wave 4 adds the D1 effect
+ * journal.
  *
  * Evolution is append-only (L5). A file listed in `released.txt` has shipped:
  * its statements never change (the digest ignores comments and whitespace,
@@ -45,6 +46,7 @@ final class PostgresSchema {
       'ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger',
       'ddd_processes', 'ddd_process_waits', 'ddd_wakeups',
       'ddd_behaviour_workflows', 'ddd_behaviour_workflow_meta', 'ddd_behaviour_workflow_items', 'ddd_workflow_ignitions',
+      'ddd_effect_journal',
     ];
   }
 

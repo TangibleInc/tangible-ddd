@@ -7,7 +7,7 @@ Install and configure: [examples/symfony/README.md](../../examples/symfony/READM
 |---|---|
 | `Bundle` | `TangibleDddBundle` (configuration, service wiring, consumer registration and HostDefaults at boot) |
 | `DependencyInjection` | handler and `handle()` locators, compile-time subscription map, domain-listener map, Messenger health check, `#[AsIntegrationListener]`, `#[AsDomainEventListener]` |
-| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `DbalProcessStore`, `DbalWakeupScheduler`, D10 `DbalBehaviourWorkflowRepository` / `DbalWorkItemRepository` / `DbalWorkflowIgnitionLedger`, `ConnectionTopology`, `PostgresSchema` |
+| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `DbalProcessStore`, `DbalWakeupScheduler`, D10 `DbalBehaviourWorkflowRepository` / `DbalWorkItemRepository` / `DbalWorkflowIgnitionLedger`, D1 `DbalEffectJournal` (`IEffectJournal`, with `invalidate`), `EntityManagerSession`, `PersistenceConflict`, `ConnectionTopology`, `PostgresSchema` |
 | `Lock` | `PostgresAdvisoryProcessLock` (session `pg_try_advisory_lock`, register 5.2) |
 | `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler`, `ProcessWakeupMessage`, `ProcessWakeupHandler` |
 | `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step), `Wakeup\WakeupRelay` (due intents → `ddd_wakeups`, stranded scan), `Wakeup\PostgresNotifyRelayWakeup` / `PostgresListenWaiter` (D14), `SymfonySignalDispatcher`, D5 actor providers |

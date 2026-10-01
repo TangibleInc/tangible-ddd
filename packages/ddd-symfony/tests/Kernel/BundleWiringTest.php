@@ -100,6 +100,14 @@ final class BundleWiringTest extends KernelTestBase {
     self::assertLessThan(strpos($out, '002_dlq.sql'), strpos($out, '001_outbox.sql'), 'files in number order');
   }
 
+  public function test_the_effect_journal_is_the_dbal_journal_on_the_command_connection(): void {
+    $journal = self::getContainer()->get('test.effect_journal');
+    self::assertInstanceOf(\TangibleDDD\Symfony\Persistence\DbalEffectJournal::class, $journal);
+
+    $journal->store('k', new \TangibleDDD\Runtime\Effects\EffectResult(['v' => 1]));
+    self::assertSame(1, $this->countRows('SELECT count(*) FROM ddd_effect_journal'));
+  }
+
   public function test_schema_dump_since_prints_only_the_later_files(): void {
     $out = $this->console('ddd:schema:dump', ['--since' => '007'])->getDisplay();
 

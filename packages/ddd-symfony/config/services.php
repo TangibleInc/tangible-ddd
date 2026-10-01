@@ -46,7 +46,9 @@ use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
 use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
@@ -152,6 +154,11 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.delivery_ledger', DbalDeliveryLedger::class)
     ->args([service('tangible_ddd.connection'), $prefix]);
   $s->alias(IDeliveryLedger::class, 'tangible_ddd.delivery_ledger');
+
+  // D1: the effect journal on the domain connection (invalidate commits with the repair command).
+  $s->set('tangible_ddd.effect_journal', DbalEffectJournal::class)
+    ->args([service('tangible_ddd.connection'), service('tangible_ddd.clock'), $prefix]);
+  $s->alias(IEffectJournal::class, 'tangible_ddd.effect_journal');
 
   $s->set('tangible_ddd.outbox_config', OutboxConfig::class)
     ->factory([Factory::class, 'outboxConfig'])

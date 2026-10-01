@@ -15,11 +15,13 @@ final class PostgresSchemaTest extends TestCase {
     self::assertSame([
       '001_outbox.sql', '002_dlq.sql', '003_relay_pauses.sql', '004_delivery_ledger.sql',
       '005_processes.sql', '006_process_waits.sql', '007_wakeups.sql', '008_workflows.sql',
+      '009_effect_journal.sql',
     ], $names);
     self::assertSame([
       'ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger',
       'ddd_processes', 'ddd_process_waits', 'ddd_wakeups',
       'ddd_behaviour_workflows', 'ddd_behaviour_workflow_meta', 'ddd_behaviour_workflow_items', 'ddd_workflow_ignitions',
+      'ddd_effect_journal',
     ], PostgresSchema::tables());
   }
 
