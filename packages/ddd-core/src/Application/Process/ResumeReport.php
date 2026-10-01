@@ -10,7 +10,9 @@ namespace TangibleDDD\Application\Process;
  *
  * - resumed: the await was satisfied and the next step ran;
  * - accumulated: a partial arrival (AwaitAll) was recorded;
- * - cancelled: a cancellation branch (ICancellingAwait) compensated it.
+ * - cancelled: a cancellation branch (ICancellingAwait) compensated it;
+ * - deferred (wave 5, AW2): the process lock was taken, so the fact was
+ *   parked as a fact-carrying ResumeRetry wakeup that resumes it later.
  *
  * is_unheard(): no await took the fact: no process waits for it, or it is a
  * duplicate, or a register-then-check precheck already stood in for it. A
@@ -22,14 +24,16 @@ final class ResumeReport {
    * @param list<int> $resumed
    * @param list<int> $accumulated
    * @param list<int> $cancelled
+   * @param list<int> $deferred
    */
   public function __construct(
     public readonly array $resumed = [],
     public readonly array $accumulated = [],
     public readonly array $cancelled = [],
+    public readonly array $deferred = [],
   ) {}
 
   public function is_unheard(): bool {
-    return $this->resumed === [] && $this->accumulated === [] && $this->cancelled === [];
+    return $this->resumed === [] && $this->accumulated === [] && $this->cancelled === [] && $this->deferred === [];
   }
 }

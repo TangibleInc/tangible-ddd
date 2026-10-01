@@ -19,6 +19,7 @@ use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionStatus;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItem;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemList;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus;
+use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 
 /**
  * Base behaviour workflow runner.
@@ -279,7 +280,13 @@ abstract class WorkflowHandler implements ICommandHandler {
     ?BehaviourExecutionResult $previous
   ): ?string {
     foreach ($chunk as $work_item) {
-      $result = $this->execute_one($config, $work_item, $previous);
+      // W4: the item's first command gets for_item() as its id, so a re-run
+      // of the item (crash between its command's commit and the ledger save)
+      // dispatches the same id and the handler or the D1 journal absorbs it.
+      $result = DeterministicCommandId::within(
+        $this->item_command_id($work_item),
+        fn () => $this->execute_one($config, $work_item, $previous),
+      );
       $this->apply_result_to_item($work_item, $result);
       $this->item_repo->save($work_item);
 
@@ -290,6 +297,19 @@ abstract class WorkflowHandler implements ICommandHandler {
     }
 
     return null;
+  }
+
+  /**
+   * The deterministic id of the $ordinal-th command $item dispatches
+   * (DeterministicCommandId::for_item; consumer = the IDDDConfig prefix, ''
+   * without one). The handler hints ordinal 0 around execute_one(); an item
+   * that dispatches more commands sends the others inside
+   * DeterministicCommandId::within($this->item_command_id($item, $n), ...).
+   */
+  protected function item_command_id(WorkItem $item, int $ordinal = 0): string {
+    return DeterministicCommandId::for_item(
+      $this->infra_config?->prefix() ?? '', $item->workflow_id, $item->behaviour_idx, $item->phase, $item->item_key, $ordinal,
+    );
   }
 
   /**

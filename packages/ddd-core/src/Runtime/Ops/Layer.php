@@ -14,6 +14,7 @@ enum Layer: string {
   case Wakeup = 'wakeup';
   case Process = 'process';
   case Workflow = 'workflow';
+  case Effect = 'effect';
   case Transport = 'transport';
 
   public function label(): string {
@@ -23,6 +24,7 @@ enum Layer: string {
       self::Wakeup => 'Wakeup',
       self::Process => 'Process',
       self::Workflow => 'Workflow',
+      self::Effect => 'Effect',
       self::Transport => 'Transport',
     };
   }
@@ -35,6 +37,7 @@ enum Layer: string {
       self::Wakeup => 'a durable wakeup (continuation, timeout, retry) that keeps failing to run',
       self::Process => 'a process stranded mid-step (running, lock free, no live intent)',
       self::Workflow => 'a behaviour-workflow work item past its retries',
+      self::Effect => 'an external effect performed but never recorded (charged but not written down)',
       self::Transport => 'a message the host transport itself failed (e.g. the Messenger failure transport)',
     };
   }

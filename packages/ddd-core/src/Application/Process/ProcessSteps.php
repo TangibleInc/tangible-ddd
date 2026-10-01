@@ -49,6 +49,13 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
      * (RetryStep, #[Async]); null otherwise (wave 4 fix round 1)
      */
     public ?array $resume = null,
+
+    /**
+     * The fact that resumed the step at 'step_index': ['step_index' => int,
+     * 'event_id' => string], persisted with the resuming save, so a re-run
+     * of that step reads the same id (D13, AW1; wave 5); null otherwise
+     */
+    public ?array $resumed_by = null,
   ) {
     parent::__construct();
   }
@@ -82,6 +89,7 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
       await_due_at: isset($data['await_due_at']) ? (string) $data['await_due_at'] : null,
       // Nested objects arrive as stdClass when the row was decoded that way.
       resume: isset($data['resume']) ? json_decode((string) json_encode($data['resume']), true) : null,
+      resumed_by: isset($data['resumed_by']) ? (array) json_decode((string) json_encode($data['resumed_by']), true) : null,
     );
   }
 
@@ -151,6 +159,18 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
    */
   public function record_checkpoint(string $step, JLV $checkpoint): void {
     $this->checkpoints[$step] = JLV::serialize_polymorphic($checkpoint);
+  }
+
+  /**
+   * Record the fact that resumed the current step (D13, AW1); null or ''
+   * clears it. Written by the ProcessRunner only, through the
+   * persistence-only LongProcess::steps(); the aggregate exposes just the
+   * reader resumed_by_event_id().
+   */
+  public function mark_resumed_by(?string $event_id): void {
+    $this->resumed_by = $event_id === null || $event_id === ''
+      ? null
+      : ['step_index' => $this->step_index, 'event_id' => $event_id];
   }
 
   // ─────────────────────────────────────────────────────────────────────────

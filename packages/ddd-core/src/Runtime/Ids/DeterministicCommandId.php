@@ -58,6 +58,27 @@ final class DeterministicCommandId {
   }
 
   /**
+   * Namespace of the work-item ids (fixed; changing it changes every item
+   * command id).
+   */
+  public const WORKFLOW_NAMESPACE = '8d4a2f6b-1c3e-5a7d-9b0f-2e4c6a8d0b1f';
+
+  /**
+   * The 32-hex deterministic id of the $ordinal-th command a behaviour
+   * workflow's work item dispatches (TXP demand W4, the sibling of
+   * for_step): uuid5(uuid5(NS, "{consumer}:{workflow_id}"),
+   * "item:{behaviour_idx}:{phase}:{ordinal}:{item_key}"). The item key is
+   * last, so a key containing ':' cannot collide with another coordinate. A
+   * re-run of the item (a crash after its command committed and before the
+   * ledger saved it) dispatches the same id; a forked child workflow is a
+   * new attempt and gets new ids.
+   */
+  public static function for_item(string $consumer, int $workflow_id, int $behaviour_idx, int $phase, string $item_key, int $ordinal = 0): string {
+    $workflow = NameBasedUuid::v5(self::WORKFLOW_NAMESPACE, $consumer . ':' . $workflow_id);
+    return str_replace('-', '', NameBasedUuid::v5($workflow, "item:$behaviour_idx:$phase:$ordinal:$item_key"));
+  }
+
+  /**
    * Run $work with $id as the next command id; null runs it without a hint.
    *
    * @template T

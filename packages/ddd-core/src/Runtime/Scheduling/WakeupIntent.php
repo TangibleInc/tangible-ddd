@@ -11,11 +11,19 @@ namespace TangibleDDD\Runtime\Scheduling;
  *
  * `key` identifies the intent; scheduling a key that exists is a
  * no-op. The helpers below fix the key formats for the process kinds.
+ *
+ * `fact` (wave 5, AW2) is the fact a parked resume carries (resume_fact()):
+ * `['class' => IIntegrationEvent class, 'payload' => integration_payload(),
+ * 'event_id' => string]`, plain scalars. Null for every other intent. Only
+ * a scheduler that implements ICarriesFacts persists it.
  */
 final class WakeupIntent {
 
   public readonly \DateTimeImmutable $due_at;
 
+  /**
+   * @param array{class: string, payload: array<string, mixed>, event_id: string}|null $fact
+   */
   public function __construct(
     public readonly WakeKind $kind,
     public readonly string $consumer,
@@ -24,6 +32,7 @@ final class WakeupIntent {
     public readonly ?string $expected_status,
     \DateTimeImmutable $dueAt,
     public readonly string $key,
+    public readonly ?array $fact = null,
   ) {
     if ($key === '') {
       throw new \InvalidArgumentException('WakeupIntent needs an idempotency key');
@@ -65,6 +74,25 @@ final class WakeupIntent {
   public static function resume_retry(string $consumer, int $processId, ?int $stepIndex, string $expectedStatus, int $version, \DateTimeImmutable $dueAt, string $nonce): self {
     $key = sprintf('resume_retry:%d:%s:%s:%d:%s', $processId, $stepIndex ?? '-', $expectedStatus, $version, $nonce);
     return new self(WakeKind::ResumeRetry, $consumer, $processId, $stepIndex, $expectedStatus, $dueAt, $key);
+  }
+
+  /**
+   * A fact resume parked because the process lock was taken (AW2, wave 5):
+   * a ResumeRetry that repeats the resume of the process suspended at
+   * `step_index` with the fact it carries. Key
+   * `resume_retry:{process_id}:{step_index}:suspended:0:fact-{event_id}`
+   * (the resume_retry() format with a deterministic nonce), so parking the
+   * same fact for the same process twice writes one intent.
+   *
+   * @param array{class: string, payload: array<string, mixed>, event_id: string} $fact
+   */
+  public static function resume_fact(string $consumer, int $process_id, int $step_index, array $fact, \DateTimeImmutable $due_at): self {
+    $event_id = (string) ($fact['event_id'] ?? '');
+    if ($event_id === '') {
+      throw new \InvalidArgumentException('A parked fact needs its event id');
+    }
+    $key = sprintf('resume_retry:%d:%d:suspended:0:fact-%s', $process_id, $step_index, $event_id);
+    return new self(WakeKind::ResumeRetry, $consumer, $process_id, $step_index, 'suspended', $due_at, $key, $fact);
   }
 
   /** The row version a ResumeRetry key carries (0 when none or not a ResumeRetry key). */

@@ -32,6 +32,7 @@ use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\IStrandedScanner;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
 use TangibleDDD\Runtime\Process\StrandedScanReport;
+use TangibleDDD\Runtime\Scheduling\ICarriesFacts;
 use TangibleDDD\Runtime\Scheduling\IWakeHandler;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
@@ -89,10 +90,16 @@ use Throwable;
  *   ResumeRetry intent (due after the wake backoff, 2 s) and THEN throws
  *   ProcessLockUnavailable, so the wake is re-queued, never lost and never
  *   run unlocked. Inside wake() (a drain item) it only throws: the drain
- *   re-queues its claimed intent. A fact resume that cannot lock throws
- *   too: the delivery invoker records a failed attempt for the resume
- *   subscriber and re-delivers the fact to it with backoff (the fact is the
- *   payload a retry needs).
+ *   re-queues its claimed intent. A fact resume that cannot lock is parked
+ *   (wave 5, AW2): a ResumeRetry intent carrying the fact
+ *   (WakeupIntent::resume_fact()) on a scheduler that implements
+ *   ICarriesFacts, and the resume subscriber succeeds, so the answer never
+ *   spends its delivery budget. On any other scheduler it throws as in
+ *   wave 3: the delivery invoker records a failed attempt for the resume
+ *   subscriber and re-delivers the fact to it with backoff.
+ * - The resuming fact's event id (wave 5, AW1, D13):
+ *   LongProcess::resumed_by_event_id() in the post-await step, persisted
+ *   with the resuming save (ProcessSteps::$resumed_by).
  * - Ignition (X7, bug 2): #[StartsOn] facts go through
  *   IProcessStore::insert_ignited() (ignition_key = uuid5(event_id,
  *   process_class) under UNIQUE (process_class, ignition_key)); the loser
@@ -228,8 +235,8 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       $this->config->prefix() . '/resume:' . $event_class,
       Subscriber::RESUME,
       $event_class,
-      function (IIntegrationEvent $event): void {
-        $this->resume_on_event($event);
+      function (IIntegrationEvent $event, string $event_id = ''): void {
+        $this->resume_on_event($event, $event_id);
       },
     ));
 
@@ -460,10 +467,15 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   /**
    * Resume suspended processes when an integration event fires. Each
    * candidate is pre-filtered without the lock, then re-read and re-checked
-   * under it. Contention propagates (the delivery retries this subscriber).
+   * under it. Contention parks the fact (AW2, see resume_with_outcome());
+   * when it cannot be parked it propagates and the delivery retries this
+   * subscriber.
+   *
+   * @param string $event_id the fact's event id; '' = the ambient fact's
+   *   (Correlation::current_fact()) when it is this fact's class
    */
-  public function resume_on_event(IIntegrationEvent $event): void {
-    $this->resume_with_outcome($event);
+  public function resume_on_event(IIntegrationEvent $event, string $event_id = ''): void {
+    $this->resume_with_outcome($event, $event_id);
   }
 
   /**
@@ -486,11 +498,28 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * considered only when it is an AwaitAny, so a 0.6 await on a parent
    * class is not reached by a subclass fact there (R1, fix round 2).
    * accepts() is the final filter.
+   *
+   * Contention (AW2, wave 5): a candidate whose lock cannot be taken does not
+   * fail the delivery. The fact is parked as a fact-carrying ResumeRetry
+   * (WakeupIntent::resume_fact(), due after the wake backoff) and the next
+   * candidate is tried; the resume subscriber then succeeds, so the answer
+   * never spends its per-subscriber delivery budget and is never
+   * dead-lettered while the process waits. The wakeup retries on its own
+   * budget and is never dropped (Drain). A parked first-wins candidate counts
+   * as having taken the fact. The fact is parked only when the scheduler
+   * carries facts (ICarriesFacts), the event id is known and the fact
+   * encodes; otherwise ProcessLockUnavailable propagates as in wave 3 (the
+   * delivery invoker retries the subscriber).
+   *
+   * @param string $event_id the fact's event id; '' = the ambient fact's
+   *   (Correlation::current_fact()) when it is this fact's class
    */
-  public function resume_with_outcome(IIntegrationEvent $event): ResumeReport {
+  public function resume_with_outcome(IIntegrationEvent $event, string $event_id = ''): ResumeReport {
+    $event_id = $this->event_id_of($event, $event_id);
     $resumed = [];
     $accumulated = [];
     $cancelled = [];
+    $deferred = [];
     $first_taken = false; // a 0.6-shaped await already took this fact
 
     foreach ($this->candidates($event) as $process_id => $exact) {
@@ -507,65 +536,161 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         continue; // 0.6: only the first accepting process per fact (R1)
       }
 
-      $this->with_process_lock($process_id, function () use ($process_id, $exact, $event, &$resumed, &$accumulated, &$cancelled, &$first_taken): void {
-        $process = $this->find($process_id); // re-read under the lock (C6, C7)
-        if ($process === null || $process->status() !== 'suspended') {
-          return;
+      $entered = false;
+      try {
+        $this->with_process_lock($process_id, function () use ($process_id, $exact, $event, $event_id, &$entered, &$first_taken, &$resumed, &$accumulated, &$cancelled): void {
+          $entered = true;
+          $this->resume_locked($process_id, $exact, $event, $event_id, $first_taken, $resumed, $accumulated, $cancelled);
+        });
+      } catch (ProcessLockUnavailable $e) {
+        // Only this candidate's own acquisition is parked; a lock failure
+        // raised inside its step propagates as before.
+        if ($entered || !$this->park($candidate, $event, $event_id)) {
+          throw $e;
         }
-        $mechanism = $process->await_mechanism();
-        if ($mechanism === null || !self::reachable($mechanism, $exact) || !$mechanism->accepts($event)) {
-          return;
-        }
-        if (self::first_wins($mechanism)) {
-          if ($first_taken) {
-            return;
-          }
+        $deferred[] = $process_id;
+        if (self::first_wins($await)) {
           $first_taken = true;
         }
-
-        $this->in_scope($process, function () use ($process, $event, $mechanism, &$resumed, &$accumulated, &$cancelled): void {
-          $id = (int) $process->get_id();
-          $updated = $mechanism->accumulate($event);
-
-          if (!$updated->is_satisfied()) {
-            // Partial arrival: persist the tally, stay suspended (the alarm stays).
-            $process->update_await($updated);
-            $this->persist($process);
-            $accumulated[] = $id;
-            return;
-          }
-
-          $suspended_at = $process->current_step_index();
-          $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeout_key($id, $suspended_at) : null;
-
-          $reason = $updated instanceof ICancellingAwait ? $updated->cancellation_reason($event) : null;
-          if ($reason !== null) {
-            // A cancellation branch: compensate, as a failed alarm does (see handle_timeout).
-            $process->advance(status: 'running', payload: $process->payload());
-            $process->begin_compensation($reason);
-            $this->persist($process, null, $alarm);
-            $cancelled[] = $id;
-            $this->execute_compensation($process);
-            return;
-          }
-
-          $process->advance_step();
-          $this->take_resume($updated->resume_argument($event), ResumeSource::of_mechanism($updated, $event));
-          $this->stamp_resume($process);
-          $process->advance(status: 'running', payload: $process->payload());
-          $this->persist($process, null, $alarm);
-          $resumed[] = $id;
-
-          try {
-            $this->run($process);
-          } finally {
-            $this->clear_resume();
-          }
-        });
-      });
+      }
     }
 
-    return new ResumeReport($resumed, $accumulated, $cancelled);
+    return new ResumeReport($resumed, $accumulated, $cancelled, $deferred);
+  }
+
+  /**
+   * One candidate's resume, under its lock: re-read, re-check, then
+   * accumulate, cancel or resume (see resume_with_outcome()).
+   *
+   * @param list<int> $resumed
+   * @param list<int> $accumulated
+   * @param list<int> $cancelled
+   */
+  private function resume_locked(int $process_id, bool $exact, IIntegrationEvent $event, string $event_id, bool &$first_taken, array &$resumed, array &$accumulated, array &$cancelled): void {
+    $process = $this->find($process_id); // re-read under the lock (C6, C7)
+    if ($process === null || $process->status() !== 'suspended') {
+      return;
+    }
+    $mechanism = $process->await_mechanism();
+    if ($mechanism === null || !self::reachable($mechanism, $exact) || !$mechanism->accepts($event)) {
+      return;
+    }
+    if (self::first_wins($mechanism)) {
+      if ($first_taken) {
+        return;
+      }
+      $first_taken = true;
+    }
+
+    $this->in_scope($process, function () use ($process, $event, $event_id, $mechanism, &$resumed, &$accumulated, &$cancelled): void {
+      $id = (int) $process->get_id();
+      $updated = $mechanism->accumulate($event);
+
+      if (!$updated->is_satisfied()) {
+        // Partial arrival: persist the tally, stay suspended (the alarm stays).
+        $process->update_await($updated);
+        $this->persist($process);
+        $accumulated[] = $id;
+        return;
+      }
+
+      $suspended_at = $process->current_step_index();
+      $alarm = $this->has_alarm($mechanism) ? WakeupIntent::timeout_key($id, $suspended_at) : null;
+
+      $reason = $updated instanceof ICancellingAwait ? $updated->cancellation_reason($event) : null;
+      if ($reason !== null) {
+        // A cancellation branch: compensate, as a failed alarm does (see handle_timeout).
+        $process->advance(status: 'running', payload: $process->payload());
+        $process->begin_compensation($reason);
+        $this->persist($process, null, $alarm);
+        $cancelled[] = $id;
+        $this->execute_compensation($process);
+        return;
+      }
+
+      $process->advance_step();
+      $this->take_resume($updated->resume_argument($event), ResumeSource::of_mechanism($updated, $event, $event_id));
+      $this->stamp_resume($process);
+      $process->steps()?->mark_resumed_by($event_id); // AW1: the post-await step's cause (D13)
+      $process->advance(status: 'running', payload: $process->payload());
+      $this->persist($process, null, $alarm);
+      $resumed[] = $id;
+
+      try {
+        $this->run($process);
+      } finally {
+        $this->clear_resume();
+      }
+    });
+  }
+
+  /** The fact's event id: the given one, else the ambient fact's when it is this fact. */
+  private function event_id_of(IIntegrationEvent $event, string $event_id): string {
+    if ($event_id !== '') {
+      return $event_id;
+    }
+    $fact = Correlation::current_fact();
+    return $fact !== null && ($fact->event_class === '' || $fact->event_class === get_class($event)) ? $fact->event_id : '';
+  }
+
+  /**
+   * AW2: write the fact-carrying ResumeRetry for a candidate whose lock was
+   * taken. False when the fact cannot be parked (see resume_with_outcome());
+   * the caller then lets the lock failure propagate.
+   */
+  private function park(LongProcess $candidate, IIntegrationEvent $event, string $event_id): bool {
+    if ($event_id === '' || !$this->wakeups() instanceof ICarriesFacts) {
+      return false;
+    }
+    $fact = ResumeSource::fact($event, $event_id);
+    if ($fact === null) {
+      return false;
+    }
+
+    $now = $this->clock()->now();
+    $intent = WakeupIntent::resume_fact(
+      $this->config->prefix(), (int) $candidate->get_id(), $candidate->current_step_index(), $fact,
+      $now->modify('+' . WakeRetryPolicy::backoff_seconds(1) . ' seconds'),
+    );
+    try {
+      $this->atomically(fn () => $this->wakeups()->schedule($intent));
+    } catch (Throwable $e) {
+      Log::write($this->logger, sprintf(
+        '[%s process] fact %s for process #%d could not take its lock and could not be parked as %s: %s',
+        $this->config->prefix(), $event_id, (int) $candidate->get_id(), $intent->key, $e->getMessage()
+      ), 'error');
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * The parked fact's wake (AW2): resume the one process it was parked for,
+   * stale-safe (still `suspended` at the step it was parked at, and still
+   * accepting the fact). Contention propagates: the drain re-queues the
+   * claimed intent on the wake budget. The R1 reachability guard is
+   * re-applied with the exactness the candidate lookup gives now, so a
+   * subclass fact still reaches only an AwaitAny on an exact-match store.
+   */
+  private function resume_parked(WakeupIntent $intent): void {
+    $id = (int) $intent->process_id;
+    $fact = (array) $intent->fact;
+    $event = ResumeSource::event($fact);
+    $event_id = (string) ($fact['event_id'] ?? '');
+
+    $this->with_process_lock($id, function () use ($id, $intent, $event, $event_id): void {
+      $process = $this->find($id);
+      if ($process === null || $process->status() !== 'suspended' || $process->current_step_index() !== $intent->step_index) {
+        return; // resumed, cancelled or timed out meanwhile
+      }
+      $exact = $this->candidates($event)[$id] ?? null;
+      if ($exact === null) {
+        return; // no longer waiting for this fact
+      }
+      $first_taken = false;
+      $resumed = $accumulated = $cancelled = [];
+      $this->resume_locked($id, $exact, $event, $event_id, $first_taken, $resumed, $accumulated, $cancelled);
+    });
   }
 
   /**
@@ -741,6 +866,10 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
   /** The ResumeRetry wake: repeat the wake its expected status names. */
   private function resume_retry(WakeupIntent $intent): void {
+    if ($intent->fact !== null) {
+      $this->resume_parked($intent);
+      return;
+    }
     $id = (int) $intent->process_id;
     match ($intent->expected_status) {
       'scheduled' => $this->continue_scheduled($id, $intent->step_index),
