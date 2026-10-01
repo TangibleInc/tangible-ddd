@@ -46,6 +46,42 @@ The shipped wp code that WPC-1..WPC-3 asked for exists now. The conformance owne
 - **What.** `phpstan.neon` scans only `vendor/woocommerce/action-scheduler/functions.php`. `WpRollbackDrain` needs `ActionScheduler::runner()->process_action()` (there is no procedural form), so it resolves the runner dynamically (`call_user_func(['ActionScheduler', 'runner'])`) behind `class_exists`. The v8 migration uses `as_get_scheduled_actions(…, OBJECT)` and the literal status `'pending'`.
 - **Request.** Add `vendor/woocommerce/action-scheduler/classes/ActionScheduler.php` and `classes/abstracts/ActionScheduler_Store.php` (or the classes directory) to `scanFiles`/`scanDirectories`, so these calls can be written statically.
 
+## WP8-7 (schema, additive; fix round 1): `ddd_delivery_ledger.redelivery`
+
+- **What.** A nullable `redelivery LONGTEXT NULL` column on the new v8 table `{prefix}_ddd_delivery_ledger`. When a DDD subscriber fails, `WpDeliveryLedger::markFailedFor()` (a wp method next to the port's `markFailed()`, which is unchanged) also stores the fact's `{prefix}_ddd_redeliver` args (`['hook', 'event_class', 'payload']`).
+- **Why.** Review finding (minor, delivery): when Action Scheduler fails or never stores a redelivery, nothing could schedule it again, because the ledger did not know the payload. Now each relay tick runs `WpLedgeredDelivery::restoreRedeliveries()`. It schedules a new redelivery for every fact with a `failed` subscriber and no pending or running redeliver action, at `max(now, last failure + backoff(attempts))`. `wp ddd drain --before-rollback` restores lost redeliveries before each round, and counts any it still cannot restore as `remaining`.
+- **Compatibility.** The table is new in v8 and no 0.6 copy reads it. `ddd_migrate_v8()` adds the column with `ddd_add_column_if_missing`, so a ledger created by an earlier v8 build is healed.
+- **Also in this fix.** Redeliveries now use the consumer's `IDDDConfig::hook('ddd_redeliver')` and `as_group('outbox')`. The config is the one `register_delivery_hooks()` saw, else `ConsumerRegistry::config_for()`, else the 0.6 naming. They run on the host `IClock`. A `0` action id is logged, and the next tick restores that redelivery.
+
+## WP8-8 (wake budget; fix round 1): `exhausted` intents, `rearm`, `WpStrandedReport::$exhausted`
+
+- **What.** Register 5.1's wake-layer budget is enforced in `WpdbWakeupScheduler`:
+  - A failed wake (`finish()`, `finishKey()`, a stale `firing` row in `reproject()`) spends one attempt. It goes back to `pending` with `due_at = now + min(300, 2 × 2^n)` s, so a retry is re-projected only once its backoff is due.
+  - The 10th failure sets status `exhausted`, a new value in the new table's `VARCHAR` status column. The row then leaves `reproject()`. It is listed in the operator view (layer `wakeup`, budget 10, repair `rearm`) and logged once.
+  - Scheduling an exhausted key again is a no-op. Re-arming a `firing` key keeps its attempts. A wake that returns resets the count of the keys it re-armed.
+  - `QuarantinedProcess` is terminal: the intent is `cancelled` with the reason.
+  - New wp-only surface: `WpdbWakeupScheduler::{WAKE_BUDGET, BACKOFF_*, backoffSeconds(), rearm(), hasExhaustedIntent()}`, an optional `$terminal` parameter on `finish()` / `finishKey()`, `wp ddd ops --consumer=<p> --rearm=<key>`, an optional `WpStrandedReport::$exhausted` (the stranded scan does not mint a new continuation for a process whose wake is exhausted), and an optional `WpRelayTickReport::$redeliveriesRestored`.
+- **Why.** Review finding (major): without the budget, a deterministic failure such as an undecodable row looped once per tick forever. `WpdbProcessStore::find()` also no longer rewrites an already-quarantined row, so a repeated find does not bump the version.
+- **Register edit (requested).** Register 3.6, wp implementation: name the intent statuses `pending | firing | done | cancelled | exhausted`. Register 5.1, wake row: "exhaustion goes to the `exhausted` intent status (operator view, layer `wakeup`, repair `rearm`)".
+- **Operator view repairs.** These were cut down to what is implemented. `rearm` applies to exhausted wakeups. Delivery rows list no repair (retries are automatic). The unimplemented `redeliver` and `reproject` labels are gone.
+
+## WP8-9 (behaviour, documented limitation; fix round 1): subscriber ids of `integration_action()` closures
+
+- The ledger budget is counted per (event_id, subscriber_id) (register 3.5, 5.1), which assumes subscriber ids are stable.
+  - Ids that are stable across deploys: `listener:<Class>`, `action:<Class>::<method>`, function names, and the ProcessRunner ignition and resume ids.
+  - Ids that are not: a closure passed to `integration_action()` is named `action:Closure@<path>:<line>` (or `<Class>@<path>:<line>` when it is bound), plus `#n` by registration order on the hook. An edit that moves the line, or a change in registration order, changes the id.
+- **Consequence.** If a deploy lands between a failure and its redelivery, an already-delivered closure subscriber of that fact loses its ledger row, so it runs again. Two closures on the same line can also swap `#n`.
+- **Guidance (changelog).** For listeners whose double run matters, use a class (`integration_listener()`) or a `[Class, 'method']` callable. Giving `integration_action()` an explicit subscriber-id parameter would change a frozen procedural signature (B14 snapshot). It is left to the coordinator: if ratified, add an optional trailing `?string $subscriber_id = null` and re-freeze the snapshot.
+
+## Fix round 1: other changes reviewers should know
+
+- **Migration safety.** `ddd_add_unique_index_if_missing()` verifies the index after its `ALTER` and throws when it is missing. `ddd_maybe_migrate()` catches a failing explicit migration, logs it, stores it in `{prefix}_ddd_migration_error` and does **not** bump the schema version, so the v8 adapters stay off and the next trigger retries. Before this, an exception escaped from `init`. The ignition backfill counts only a 1062 as a duplicate and rethrows any other error. It now also requires `source = 'event'`, as X7 states, so there is no deviation to record.
+- **`IOutboxStore` gating.** `WpHostPortFactory` serves `WpdbOutboxStore` only to a consumer at schema v8, because its SQL names `claim_token`. Otherwise it returns null and the caller keeps the 0.6 repository path.
+- **Lock timeout.** In `WpNamedLock::acquireBoth()` the second `GET_LOCK` waits only for the remaining time (`NOW(6)` is the statement start, `SYSDATE(6)` is the current time). The whole call waits at most `timeout + 1 s`. The bound arguments and the statement shape that the core tests read are unchanged.
+- **Unchecked writes.** These now throw `\RuntimeException` (or `ProcessStoreFailed`) on a failed query: every `WpdbWakeupScheduler` write (`cancel`, the `claimDue` lease, which rolls back the claim, `begin`, `finish`, `finishKey`, `beginKey`, `reproject`, `rearm`) and the `WpdbProcessStore::find()` quarantine write. `WpWakeBracket` logs a failed bookkeeping write. After a failed wake it keeps the wake's own exception.
+- **R5 test.** The unit test that checked hand-written column definitions is replaced by an integration test. It reads `information_schema` after a v7 → v8 upgrade and asserts that every column added to a table 0.6 writes is nullable or defaulted.
+- **Changelog entry (still needed).** `is_unique` cancellation now matches the payload signature and never cancels leased rows (O6, C26). 0.6 cancelled every pending row of the type.
+
 ## Compatibility summary (for reviewers)
 
 - Schema v8 is additive (R5). A 0.6 winner after a rollback inserts and updates rows unchanged, and tolerates `installed > DDD_SCHEMA_VERSION`. Outbox rows stay `completed`. Claimed rows carry `locked_until`/`locked_by`, so a 0.6 fetch skips them. Intents are projected on the legacy hooks with the legacy associative args, future-dated.
