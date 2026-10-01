@@ -1,0 +1,46 @@
+[
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\GetLockProcessLock", "kind": "method", "from": "legacyName", "to": "legacy_name", "confidence": "high", "notes": "Static sibling of name(); the pair reads name()/legacy_name()."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger", "kind": "method", "from": "failedSubscribers", "to": "failures", "confidence": "medium", "notes": "Returns subscriber id => attempts for one event. Not failed(): the ledger's delivered()/exhausted() are bool predicates on a (subscriber, event) pair, so a bare failed($event_id) returning a map would read as a third predicate."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger", "kind": "method", "from": "markFailedFor", "to": "mark_failed_with", "confidence": "medium", "notes": "mark_failed() plus the redelivery args; 'For' named nothing. Assumes core-outbox-delivery maps IDeliveryLedger::markFailed -> mark_failed (0.6 vocabulary). Alternative the operator may prefer: drop this method and give WpDeliveryLedger::mark_failed() an optional trailing ?array $redelivery = null (PHP allows an implementation to add optional params); that is a signature change, not a rename."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger", "kind": "method", "from": "markExhaustedBecause", "to": "mark_exhausted_because", "reason": "Reads as a sentence with its $reason arg and says what differs from mark_exhausted(); '_with' would be ambiguous next to mark_failed_with(redelivery).", "confidence": "medium", "notes": "Assumes IDeliveryLedger::markExhausted -> mark_exhausted (core-outbox-delivery)."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLargeEnvelope", "kind": "method", "from": "forTransport", "to": "for_transport", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLargeEnvelope", "kind": "method", "from": "isReference", "to": "is_reference", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "orphanedRedeliveries", "to": "orphan_count", "confidence": "medium", "notes": "Returns an int (count of the private orphans() list); the current name reads as if it returned the redeliveries. Pairs with the existing private orphans()."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "prefixOf", "to": "prefix_of", "confidence": "high", "notes": "Matches the *_of lookup style other areas use (event_id_of, status_of)."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "registerConsumer", "to": "register_consumer", "confidence": "high", "notes": "Bare register() would blur with bind(); the object is a consumer config."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "resetForTests", "to": "reset_for_tests", "reason": "The _for_tests suffix is a deliberate test-seam warning shared across areas (HostDefaults, InMemory* *ForTests); keep it so the seam stays obvious at call sites.", "confidence": "medium", "notes": "Assumes core-effects maps HostDefaults::resetForTests -> reset_for_tests and the other *ForTests seams keep the suffix. If the operator rules seams go bare (reset()), apply the same to both wp seams."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "restoreRedeliveries", "to": "restore_redeliveries", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery", "kind": "method", "from": "subscriberId", "to": "subscriber_id", "confidence": "high", "notes": "Static derivation of the deterministic id from (hook, kind, callable); a noun is right for 'the id of this callable'."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock", "kind": "method", "from": "acquireBoth", "to": "acquire_both", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock", "kind": "method", "from": "releaseBoth", "to": "release_both", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock", "kind": "method", "from": "isFree", "to": "is_free", "confidence": "high", "notes": "Zero call sites in any corpus; candidate for removal rather than rename (operator call)."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock", "kind": "method", "from": "isFreeOrHeldHere", "to": "is_free_or_mine", "reason": "The 'or held by this connection' half is the whole point (the WP8-10 repair guard holds the lock itself); 'mine' is the shortest word that keeps it. Inverting to is_held_elsewhere would flip the fail-closed default on a query error, so it is not a pure rename.", "confidence": "low"},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayPauseStore", "kind": "method", "from": "activeSelectors", "to": "active_selectors", "confidence": "medium", "notes": "Same concept as PdoPauseStore::activePatterns and DbalRelayPauseStore::activePatterns (pdo, symfony areas). IRelayPauseStore::hold()/release() call the thing a 'selector', so I recommend all three converge on active_selectors; if those areas pick active_patterns (or a bare active()), this should follow them instead."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTick", "kind": "method", "from": "isPortForm", "to": "is_port_form", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTickReport", "kind": "property", "from": "portForm", "to": "port_form", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTickReport", "kind": "property", "from": "redeliveriesRestored", "to": "restored", "confidence": "medium", "notes": "Sibling properties are single words (relay, reprojected, stranded, errors); restored parallels reprojected. Promoted ctor param: any named-argument call (redeliveriesRestored:) must follow."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRollbackDrain", "kind": "method", "from": "futureByReference", "to": "future_references", "confidence": "medium", "notes": "Count of pending by-reference integration actions due after now; sits beside pending() in the drain's 'remaining' sum."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema", "kind": "method", "from": "atLeast", "to": "at_least", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema", "kind": "method", "from": "isV8", "to": "is_v8", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema", "kind": "method", "from": "lastErrorIsDuplicateKey", "to": "is_duplicate_key", "confidence": "medium", "notes": "Takes the \\wpdb and inspects its last error; same concept as IHostConnection::isDuplicateKey (pdo area), assumed to become is_duplicate_key. 'last error' is implied by the wpdb argument."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpStrandedReport", "kind": "property", "from": "alreadyQueued", "to": "queued", "confidence": "high", "notes": "Siblings are minted, running, exhausted. Promoted ctor param: named-argument calls must follow."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpWakeBracket", "kind": "method", "from": "resumeRetry", "to": "resume_retry", "confidence": "medium", "notes": "Callback of the {prefix}_ddd_wakeup hook for WakeKind::ResumeRetry intents; keeps the wake kind's name. Assumes core-process maps WakeupIntent::resumeRetry -> resume_retry so the kind has one spelling."},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbTransactionDepth", "kind": "method", "from": "resetForTests", "to": "reset_for_tests", "reason": "Same test-seam suffix rule as WpLedgeredDelivery::reset_for_tests.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler", "kind": "method", "from": "backoffSeconds", "to": "backoff_seconds", "confidence": "medium", "notes": "Shared with IntegrationDelivery, WakeRetryPolicy, ProcessWakeupHandler and Relay backoffSeconds (core-outbox, core-process, symfony). The unit stays in the name (the constants say _SECONDS and the callers add it to timestamps). All five should land on one name; if the operator shortens to backoff(), this follows."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler", "kind": "method", "from": "beginKey", "to": "begin_key", "confidence": "medium", "notes": "begin() for one intent by idempotency key; pairs with finish_key. The string 'beginKey' is also the write() label in an error message (string_refs=1); update it with the rename."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler", "kind": "method", "from": "finishKey", "to": "finish_key", "confidence": "medium", "notes": "finish() by key. 'finishKey' also appears as write() labels in error messages (string_refs=3); update them with the rename."},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler", "kind": "method", "from": "hasLiveIntent", "to": "has_live_intent", "reason": "Same name as PdoJobStore::hasLiveIntent (pdo area), assumed to become has_live_intent; 'live' (pending or firing) is the specific state.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler", "kind": "method", "from": "hasExhaustedIntent", "to": "has_exhausted_intent", "reason": "Counterpart of has_live_intent on the same scheduler; the pair should read alike.", "confidence": "medium"}
+]

@@ -1,0 +1,2414 @@
+[
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\DeliveryBudgetExhausted",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\DeliveryBudgetExhausted",
+    "kind": "property",
+    "from": "subscriberId",
+    "to": "subscriber_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\DeliveryOutcome",
+    "kind": "method",
+    "from": "isComplete",
+    "to": "is_complete"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\DeliveryOutcome",
+    "kind": "method",
+    "from": "needsRetry",
+    "to": "needs_retry"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IDeliveryLedger",
+    "kind": "method",
+    "from": "lastError",
+    "to": "last_error"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IDeliveryLedger",
+    "kind": "method",
+    "from": "markDelivered",
+    "to": "mark_delivered"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IDeliveryLedger",
+    "kind": "method",
+    "from": "markExhausted",
+    "to": "mark_exhausted"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IDeliveryLedger",
+    "kind": "method",
+    "from": "markFailed",
+    "to": "mark_failed"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IDeliveryWorker",
+    "kind": "method",
+    "from": "runDue",
+    "to": "run_due"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\ISubscriberProbe",
+    "kind": "method",
+    "from": "hasSubscribers",
+    "to": "has_subscribers"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\ITransport",
+    "kind": "method",
+    "from": "sharesConnectionWith",
+    "to": "shares_connection"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\IntegrationDelivery",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\Subscriber",
+    "kind": "property",
+    "from": "eventClassOrMarker",
+    "to": "event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\Subscriber",
+    "kind": "property",
+    "from": "onExhausted",
+    "to": "on_exhausted"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\SubscriptionRegistrar",
+    "kind": "method",
+    "from": "registerListener",
+    "to": "register_listener"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Delivery\\SubscriptionRegistrar",
+    "kind": "method",
+    "from": "registerProcess",
+    "to": "register_process"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Drain",
+    "kind": "method",
+    "from": "runOnce",
+    "to": "run_once"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\DrainReport",
+    "kind": "property",
+    "from": "stoppedBy",
+    "to": "stopped_by"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\DrainReport",
+    "kind": "property",
+    "from": "wakesCompleted",
+    "to": "wakes_completed"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\DrainReport",
+    "kind": "property",
+    "from": "wakesExhausted",
+    "to": "wakes_exhausted"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\DrainReport",
+    "kind": "property",
+    "from": "wakesLeaseLost",
+    "to": "wakes_lease_lost"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\DrainReport",
+    "kind": "property",
+    "from": "wakesRetried",
+    "to": "wakes_retried"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\Claim",
+    "kind": "property",
+    "from": "claimToken",
+    "to": "token"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\Claim",
+    "kind": "property",
+    "from": "leaseUntil",
+    "to": "lease_until"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\DeadLetter",
+    "kind": "property",
+    "from": "deadLetteredAt",
+    "to": "dead_lettered_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\DeadLetter",
+    "kind": "property",
+    "from": "dlqId",
+    "to": "dlq_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IOutboxAdministration",
+    "kind": "method",
+    "from": "deadLetters",
+    "to": "dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IOutboxRowIds",
+    "kind": "method",
+    "from": "eventIdOf",
+    "to": "event_id_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IOutboxStore",
+    "kind": "method",
+    "from": "deadLetter",
+    "to": "dead_letter"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IOutboxStore",
+    "kind": "method",
+    "from": "retryLater",
+    "to": "retry_later"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IRelayPauseStore",
+    "kind": "method",
+    "from": "isPaused",
+    "to": "is_paused"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Outbox\\IReportsClaimDeadLetters",
+    "kind": "method",
+    "from": "takeDeadLetteredAtClaim",
+    "to": "take_claim_dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "attemptsOf",
+    "to": "attempts_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "eventIds",
+    "to": "event_ids"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "forgetRowForTests",
+    "to": "forget"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "recordOf",
+    "to": "record_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "statusOf",
+    "to": "status_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryOutboxStore",
+    "kind": "method",
+    "from": "transportRefOf",
+    "to": "transport_ref_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransport",
+    "kind": "method",
+    "from": "rejectNext",
+    "to": "reject_next"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransport",
+    "kind": "method",
+    "from": "returnNoRefNext",
+    "to": "drop_next_ref"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "createdAt",
+    "to": "created_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "forFact",
+    "to": "for_fact"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "perMinute",
+    "to": "per_minute"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "startMarker",
+    "to": "start_marker"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "startError",
+    "to": "start_error"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "startPending",
+    "to": "start_pending"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowStartPending",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowStartPending",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\AwaitAny",
+    "kind": "method",
+    "from": "cancelledBy",
+    "to": "cancelled_by"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeReport",
+    "kind": "method",
+    "from": "isUnheard",
+    "to": "is_unheard"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeSource",
+    "kind": "method",
+    "from": "ofMechanism",
+    "to": "of_mechanism"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeSource",
+    "kind": "method",
+    "from": "ofValue",
+    "to": "of_value"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\IProcessLock",
+    "kind": "method",
+    "from": "forceReleaseAll",
+    "to": "release_all"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\IProcessLock",
+    "kind": "method",
+    "from": "heldCount",
+    "to": "held_count"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "method",
+    "from": "mysqlName",
+    "to": "mysql_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "method",
+    "from": "postgresKey",
+    "to": "postgres_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "method",
+    "from": "keyOf",
+    "to": "key_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "property",
+    "from": "awaitKey",
+    "to": "await_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "property",
+    "from": "eventClass",
+    "to": "event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "findStranded",
+    "to": "find_stranded"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "findWaitingFor",
+    "to": "find_waiting_for"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "insertIgnited",
+    "to": "insert_ignited"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "versionOf",
+    "to": "version_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IStrandedScanner",
+    "kind": "method",
+    "from": "scanStranded",
+    "to": "scan_stranded"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "processClass",
+    "to": "process_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "updatedAt",
+    "to": "updated_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\ClaimedWakeup",
+    "kind": "property",
+    "from": "claimToken",
+    "to": "token"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\ClaimedWakeup",
+    "kind": "property",
+    "from": "leaseUntil",
+    "to": "lease_until"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\IWakeupScheduler",
+    "kind": "method",
+    "from": "claimDue",
+    "to": "claim_due"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\IWakeupScheduler",
+    "kind": "method",
+    "from": "retryLater",
+    "to": "retry_later"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeRetryPolicy",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "resumeRetry",
+    "to": "resume_retry"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "retryVersion",
+    "to": "retry_version"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "timeoutKey",
+    "to": "timeout_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "dueAt",
+    "to": "due_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "expectedStatus",
+    "to": "expected_status"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "idempotencyKey",
+    "to": "key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "failNextAcquire",
+    "to": "fail_next_acquire"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "heldCount",
+    "to": "held_count"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "holdElsewhere",
+    "to": "hold_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "acquireCount",
+    "to": "acquisitions"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "failNextAcquire",
+    "to": "fail_next_acquire"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "holdElsewhere",
+    "to": "hold_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "releaseBugs",
+    "to": "release_bugs"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "releaseElsewhere",
+    "to": "release_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "attachIntents",
+    "to": "attach_intents"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "corruptClassForTests",
+    "to": "corrupt_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "ignitionKeyOf",
+    "to": "ignition_key_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "quarantineReasonOf",
+    "to": "quarantine_reason_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "statusOf",
+    "to": "status_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryWakeupScheduler",
+    "kind": "method",
+    "from": "withoutTransactionCheck",
+    "to": "lenient"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Correlation\\FactRef",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Correlation\\FactRef",
+    "kind": "property",
+    "from": "eventClass",
+    "to": "event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Correlation\\FactRef",
+    "kind": "property",
+    "from": "correlationId",
+    "to": "correlation_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Infra\\Persistence\\Shared\\AggregateRootRepository",
+    "kind": "method",
+    "from": "get_aggregate_class",
+    "to": "aggregate_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Infra\\Services\\LeaseLostOnAccept",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Infra\\Services\\ProcessingResult",
+    "kind": "property",
+    "from": "deadLettered",
+    "to": "dead_lettered"
+  },
+  {
+    "fqcn": "TangibleDDD\\Infra\\Services\\ProcessingResult",
+    "kind": "property",
+    "from": "leaseLost",
+    "to": "lease_lost"
+  },
+  {
+    "fqcn": "TangibleDDD\\Infra\\Services\\ProcessingResult",
+    "kind": "property",
+    "from": "deadLetteredAtClaim",
+    "to": "claim_dead_letters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditClose",
+    "kind": "property",
+    "from": "commandId",
+    "to": "command_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditClose",
+    "kind": "property",
+    "from": "durationMs",
+    "to": "duration_ms"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditClose",
+    "kind": "property",
+    "from": "peakMemoryBytes",
+    "to": "peak_memory_bytes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "commandId",
+    "to": "command_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "correlationId",
+    "to": "correlation_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "commandName",
+    "to": "command_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "causationId",
+    "to": "causation_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "causationType",
+    "to": "causation_type"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\AuditOpen",
+    "kind": "property",
+    "from": "startedAt",
+    "to": "started_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Audit\\IAuditPolicy",
+    "kind": "method",
+    "from": "captureParameters",
+    "to": "captures_parameters"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\LargeString",
+    "kind": "method",
+    "from": "toPayload",
+    "to": "encode"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\LargeString",
+    "kind": "method",
+    "from": "fromPayload",
+    "to": "decode"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\LargeString",
+    "kind": "method",
+    "from": "isEncoded",
+    "to": "is_encoded"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\LargeString",
+    "kind": "property",
+    "from": "maxBytes",
+    "to": "max_bytes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\PayloadTooLarge",
+    "kind": "property",
+    "from": "maxBytes",
+    "to": "max_bytes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Codec\\UndecodableLargeString",
+    "kind": "property",
+    "from": "quarantineReason",
+    "to": "reason"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Effects\\EffectResult",
+    "kind": "property",
+    "from": "externalRef",
+    "to": "external_ref"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Effects\\IExternalEffectCommand",
+    "kind": "method",
+    "from": "idempotencyKey",
+    "to": "idempotency_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Effects\\IExternalEffectCommand",
+    "kind": "method",
+    "from": "failureCommand",
+    "to": "failure_command"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\HostDefaults",
+    "kind": "method",
+    "from": "onMiss",
+    "to": "on_miss"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\HostDefaults",
+    "kind": "method",
+    "from": "resetForTests",
+    "to": "reset_for_tests"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\ITransactionBoundary",
+    "kind": "method",
+    "from": "isActive",
+    "to": "is_active"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ids\\DeterministicCommandId",
+    "kind": "method",
+    "from": "forFact",
+    "to": "for_fact"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ids\\DeterministicCommandId",
+    "kind": "method",
+    "from": "forStep",
+    "to": "for_step"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ops\\OperatorItem",
+    "kind": "method",
+    "from": "toArray",
+    "to": "to_array"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ops\\OperatorItem",
+    "kind": "property",
+    "from": "firstSeen",
+    "to": "first_seen"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ops\\OperatorItem",
+    "kind": "property",
+    "from": "lastError",
+    "to": "last_error"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Ops\\OperatorItem",
+    "kind": "property",
+    "from": "repairActions",
+    "to": "repairs"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\RuntimeReset",
+    "kind": "method",
+    "from": "betweenMessages",
+    "to": "between_messages"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\RuntimeReset",
+    "kind": "method",
+    "from": "guardLock",
+    "to": "guard"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\RuntimeReset",
+    "kind": "method",
+    "from": "forgetRegistrationsForTests",
+    "to": "forget_for_tests"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransactionBoundary",
+    "kind": "method",
+    "from": "failNextCommit",
+    "to": "fail_next_commit"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransactionBoundary",
+    "kind": "method",
+    "from": "failNextRollback",
+    "to": "fail_next_rollback"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransactional",
+    "kind": "method",
+    "from": "snapshotState",
+    "to": "snapshot"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryTransactional",
+    "kind": "method",
+    "from": "restoreState",
+    "to": "restore"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DeliveryJob",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DeliveryJob",
+    "kind": "property",
+    "from": "eventType",
+    "to": "event_type"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DeliveryJob",
+    "kind": "property",
+    "from": "eventClass",
+    "to": "event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DeliveryJob",
+    "kind": "property",
+    "from": "integrationAction",
+    "to": "integration_action"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "queryBus",
+    "to": "query_bus"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "operatorView",
+    "to": "operator_view"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "localListeners",
+    "to": "listeners"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "effectJournal",
+    "to": "journal"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "workItems",
+    "to": "work_items"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\DurableRuntime",
+    "kind": "method",
+    "from": "workflowIgnitions",
+    "to": "ignitions"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "fetchAll",
+    "to": "fetch_all"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "fetchOne",
+    "to": "fetch_one"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "lastInsertId",
+    "to": "last_insert_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "rollBack",
+    "to": "rollback"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "inTransaction",
+    "to": "in_transaction"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\IHostConnection",
+    "kind": "method",
+    "from": "isDuplicateKey",
+    "to": "is_duplicate_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\Glob",
+    "kind": "method",
+    "from": "toRegex",
+    "to": "to_regex"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\OutboxRows",
+    "kind": "method",
+    "from": "insertSql",
+    "to": "insert_sql"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\OutboxRows",
+    "kind": "method",
+    "from": "sharedValues",
+    "to": "shared_values"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\RecordingSubscriptionRegistry",
+    "kind": "method",
+    "from": "subscribedClasses",
+    "to": "fact_classes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\RuntimeContainer",
+    "kind": "method",
+    "from": "setDefaultHandler",
+    "to": "set_default_handler"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\RuntimeContainer",
+    "kind": "method",
+    "from": "handlerFor",
+    "to": "handler_for"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\Utc",
+    "kind": "method",
+    "from": "toDb",
+    "to": "to_db"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\Utc",
+    "kind": "method",
+    "from": "fromDb",
+    "to": "from_db"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\Internal\\Utc",
+    "kind": "method",
+    "from": "fromDbOrNull",
+    "to": "from_db_or_null"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\MySqlNamedLock",
+    "kind": "method",
+    "from": "nameOf",
+    "to": "name_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoConnection",
+    "kind": "method",
+    "from": "assertErrmode",
+    "to": "assert_errmode"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoJobStore",
+    "kind": "method",
+    "from": "deliveryOf",
+    "to": "delivery_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoJobStore",
+    "kind": "method",
+    "from": "hasLiveIntent",
+    "to": "has_live_intent"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoJobStore",
+    "kind": "method",
+    "from": "withClaimKinds",
+    "to": "claiming"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOperatorView",
+    "kind": "method",
+    "from": "repairItem",
+    "to": "repair_item"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOperatorView",
+    "kind": "method",
+    "from": "toArrays",
+    "to": "to_arrays"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOutboxStore",
+    "kind": "method",
+    "from": "appendFact",
+    "to": "append_fact"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOutboxStore",
+    "kind": "method",
+    "from": "withFactClass",
+    "to": "with_event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoOutboxStore",
+    "kind": "method",
+    "from": "eventClassOf",
+    "to": "event_class_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Defaults\\Pdo\\PdoPauseStore",
+    "kind": "method",
+    "from": "activePatterns",
+    "to": "patterns"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\GetLockProcessLock",
+    "kind": "method",
+    "from": "legacyName",
+    "to": "legacy_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger",
+    "kind": "method",
+    "from": "failedSubscribers",
+    "to": "failures"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger",
+    "kind": "method",
+    "from": "markFailedFor",
+    "to": "mark_failed_with"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpDeliveryLedger",
+    "kind": "method",
+    "from": "markExhaustedBecause",
+    "to": "mark_exhausted_because"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLargeEnvelope",
+    "kind": "method",
+    "from": "forTransport",
+    "to": "for_transport"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLargeEnvelope",
+    "kind": "method",
+    "from": "isReference",
+    "to": "is_reference"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "orphanedRedeliveries",
+    "to": "orphan_count"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "prefixOf",
+    "to": "prefix_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "registerConsumer",
+    "to": "register_consumer"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "resetForTests",
+    "to": "reset_for_tests"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "restoreRedeliveries",
+    "to": "restore_redeliveries"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpLedgeredDelivery",
+    "kind": "method",
+    "from": "subscriberId",
+    "to": "subscriber_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock",
+    "kind": "method",
+    "from": "acquireBoth",
+    "to": "acquire_both"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock",
+    "kind": "method",
+    "from": "releaseBoth",
+    "to": "release_both"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock",
+    "kind": "method",
+    "from": "isFree",
+    "to": "is_free"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpNamedLock",
+    "kind": "method",
+    "from": "isFreeOrHeldHere",
+    "to": "is_free_or_mine"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayPauseStore",
+    "kind": "method",
+    "from": "activeSelectors",
+    "to": "selectors"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTick",
+    "kind": "method",
+    "from": "isPortForm",
+    "to": "is_port_form"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTickReport",
+    "kind": "property",
+    "from": "portForm",
+    "to": "port_form"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRelayTickReport",
+    "kind": "property",
+    "from": "redeliveriesRestored",
+    "to": "restored"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpRollbackDrain",
+    "kind": "method",
+    "from": "futureByReference",
+    "to": "future_references"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema",
+    "kind": "method",
+    "from": "atLeast",
+    "to": "at_least"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema",
+    "kind": "method",
+    "from": "isV8",
+    "to": "is_v8"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpSchema",
+    "kind": "method",
+    "from": "lastErrorIsDuplicateKey",
+    "to": "is_duplicate_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpStrandedReport",
+    "kind": "property",
+    "from": "alreadyQueued",
+    "to": "queued"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpWakeBracket",
+    "kind": "method",
+    "from": "resumeRetry",
+    "to": "resume_retry"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbTransactionDepth",
+    "kind": "method",
+    "from": "resetForTests",
+    "to": "reset_for_tests"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler",
+    "kind": "method",
+    "from": "beginKey",
+    "to": "begin_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler",
+    "kind": "method",
+    "from": "finishKey",
+    "to": "finish_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler",
+    "kind": "method",
+    "from": "hasLiveIntent",
+    "to": "has_live_intent"
+  },
+  {
+    "fqcn": "TangibleDDD\\WordPress\\Adapter\\WpdbWakeupScheduler",
+    "kind": "method",
+    "from": "hasExhaustedIntent",
+    "to": "has_exhausted_intent"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IFactClassResolver",
+    "kind": "method",
+    "from": "classFor",
+    "to": "resolve"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage",
+    "kind": "property",
+    "from": "eventType",
+    "to": "event_type"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage",
+    "kind": "property",
+    "from": "eventClass",
+    "to": "event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage",
+    "kind": "property",
+    "from": "integrationAction",
+    "to": "integration_action"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage",
+    "kind": "property",
+    "from": "wrappedPayload",
+    "to": "envelope"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupHandler",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "method",
+    "from": "fromClaim",
+    "to": "from_claim"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "method",
+    "from": "toClaim",
+    "to": "to_claim"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "expectedStatus",
+    "to": "expected_status"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "dueAt",
+    "to": "due_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "idempotencyKey",
+    "to": "key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "claimToken",
+    "to": "claim_token"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage",
+    "kind": "property",
+    "from": "leaseUntil",
+    "to": "lease_until"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\ConnectionTopology",
+    "kind": "method",
+    "from": "isPooled",
+    "to": "is_pooled"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\ConnectionTopology",
+    "kind": "method",
+    "from": "describePooler",
+    "to": "pooler"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore",
+    "kind": "method",
+    "from": "appendFact",
+    "to": "append_fact"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore",
+    "kind": "method",
+    "from": "eventClassOf",
+    "to": "event_class_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore",
+    "kind": "method",
+    "from": "recordFromRow",
+    "to": "record_from_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore",
+    "kind": "method",
+    "from": "withFactClass",
+    "to": "with_event_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalRelayPauseStore",
+    "kind": "method",
+    "from": "activePatterns",
+    "to": "patterns"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalWakeupScheduler",
+    "kind": "method",
+    "from": "intentOf",
+    "to": "intent_from_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalWorkflowIgnitionLedger",
+    "kind": "method",
+    "from": "keyForFact",
+    "to": "fact_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\GlobPattern",
+    "kind": "method",
+    "from": "toRegex",
+    "to": "to_regex"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\PersistenceConflict",
+    "kind": "method",
+    "from": "fromUniqueViolationIn",
+    "to": "find_in"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\Time",
+    "kind": "method",
+    "from": "toDb",
+    "to": "to_db"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\Time",
+    "kind": "method",
+    "from": "fromDb",
+    "to": "from_db"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Persistence\\Time",
+    "kind": "method",
+    "from": "fromDbOrNull",
+    "to": "from_db_or_null"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ActorContext",
+    "kind": "method",
+    "from": "runAs",
+    "to": "run_as"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ConsoleOperatorActorProvider",
+    "kind": "method",
+    "from": "onCommand",
+    "to": "on_command"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ConsoleOperatorActorProvider",
+    "kind": "method",
+    "from": "onTerminate",
+    "to": "on_terminate"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry",
+    "kind": "method",
+    "from": "knownFactClasses",
+    "to": "fact_classes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry",
+    "kind": "method",
+    "from": "listenerSpec",
+    "to": "listener_spec"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry",
+    "kind": "method",
+    "from": "processSpec",
+    "to": "process_spec"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry",
+    "kind": "method",
+    "from": "workflowSpec",
+    "to": "workflow_spec"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\DddRuntimeReset",
+    "kind": "method",
+    "from": "onMessageHandled",
+    "to": "on_handled"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\DddRuntimeReset",
+    "kind": "method",
+    "from": "onMessageFailed",
+    "to": "on_failed"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "auditEnvironment",
+    "to": "environment"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "domainDispatcher",
+    "to": "dispatcher"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "integrationBus",
+    "to": "integration_bus"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "outboxConfig",
+    "to": "outbox_config"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "processLock",
+    "to": "process_lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "processRunner",
+    "to": "process_runner"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory",
+    "kind": "method",
+    "from": "startMode",
+    "to": "start_mode"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay",
+    "kind": "method",
+    "from": "betweenSubmitAndAccept",
+    "to": "between_submit_and_accept"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay",
+    "kind": "method",
+    "from": "runOnce",
+    "to": "run_once"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\RelayReport",
+    "kind": "property",
+    "from": "deadLettered",
+    "to": "dead_lettered"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\SymfonyConsumerConfig",
+    "kind": "method",
+    "from": "normaliseVersion",
+    "to": "normalise_version"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\IWakeupRelayStep",
+    "kind": "method",
+    "from": "runOnce",
+    "to": "run_once"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\PostgresListenWaiter",
+    "kind": "method",
+    "from": "lastPayloads",
+    "to": "payloads"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport",
+    "kind": "method",
+    "from": "didWork",
+    "to": "did_work"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport",
+    "kind": "property",
+    "from": "strandedRequeued",
+    "to": "requeued"
+  },
+  {
+    "fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport",
+    "kind": "property",
+    "from": "strandedReported",
+    "to": "reported"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\AuditEntry",
+    "kind": "property",
+    "from": "commandId",
+    "to": "command_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\AuditEntry",
+    "kind": "property",
+    "from": "commandName",
+    "to": "command_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\AuditEntry",
+    "kind": "property",
+    "from": "errorType",
+    "to": "error_type"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\AuditSinkFaults",
+    "kind": "method",
+    "from": "failNextAuditClose",
+    "to": "fail_next_audit_close"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\BusOptions",
+    "kind": "property",
+    "from": "withBoundary",
+    "to": "boundary"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ConformanceTestCase",
+    "kind": "method",
+    "from": "catchThrowable",
+    "to": "thrown"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ConformanceTestCase",
+    "kind": "method",
+    "from": "createFixture",
+    "to": "create_fixture"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ConformanceTestCase",
+    "kind": "method",
+    "from": "publishFact",
+    "to": "publish"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ConformanceTestCase",
+    "kind": "method",
+    "from": "skipForChangeRequest",
+    "to": "skip_for"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\EffectHost",
+    "kind": "method",
+    "from": "effectBus",
+    "to": "effect_bus"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\EffectHost",
+    "kind": "method",
+    "from": "effectJournal",
+    "to": "effect_journal"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Effects\\ChargeWidget",
+    "kind": "method",
+    "from": "keyFor",
+    "to": "key_for"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Effects\\EffectLedger",
+    "kind": "method",
+    "from": "failRecord",
+    "to": "fail_record"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Effects\\EffectLedger",
+    "kind": "property",
+    "from": "failureSends",
+    "to": "failure_sends"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Effects\\EffectLedger",
+    "kind": "property",
+    "from": "recordFailures",
+    "to": "record_failures"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\KeyedJobProcess",
+    "kind": "method",
+    "from": "doneRow",
+    "to": "done_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\ProcessJournal",
+    "kind": "method",
+    "from": "commandIds",
+    "to": "command_ids"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\ProcessJournal",
+    "kind": "method",
+    "from": "hasRow",
+    "to": "has_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\ProcessJournal",
+    "kind": "method",
+    "from": "markRow",
+    "to": "mark_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\ProcessJournal",
+    "kind": "method",
+    "from": "rowId",
+    "to": "row_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Process\\ProcessJournal",
+    "kind": "property",
+    "from": "onSend",
+    "to": "on_send"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Workflow\\CronExportWorkflow",
+    "kind": "method",
+    "from": "refType",
+    "to": "ref_type"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Fixtures\\Workflow\\CronExportWorkflow",
+    "kind": "property",
+    "from": "failStarts",
+    "to": "fail_starts"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\FreshProcesses",
+    "kind": "method",
+    "from": "deliverInFreshProcess",
+    "to": "deliver_fresh"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\FreshProcesses",
+    "kind": "method",
+    "from": "drainInFreshProcess",
+    "to": "drain_fresh"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\FreshProcesses",
+    "kind": "method",
+    "from": "publishInFreshProcess",
+    "to": "publish_fresh"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\FreshProcesses",
+    "kind": "method",
+    "from": "startInFreshProcess",
+    "to": "start_fresh"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\FreshRun",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "acceptNextSubmissionWithoutRef",
+    "to": "accept_next_without_ref"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "advanceClock",
+    "to": "advance_clock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "auditTrail",
+    "to": "audit_trail"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "commandBus",
+    "to": "command_bus"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "crashNextRelayAfterSubmit",
+    "to": "crash_next_relay"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "deliverTransported",
+    "to": "deliver_transported"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "failNextCommit",
+    "to": "fail_next_commit"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "hostName",
+    "to": "name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "outboxAdministration",
+    "to": "outbox_admin"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "processLock",
+    "to": "lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "rejectNextSubmission",
+    "to": "reject_next_submission"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "relayOnce",
+    "to": "relay_once"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "relayPauses",
+    "to": "pauses"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "runWorker",
+    "to": "run_worker"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "runnerTransients",
+    "to": "runner_transients"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "scenarioRows",
+    "to": "rows"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "seedLegacyDelayedFact",
+    "to": "seed_legacy_fact"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "setUp",
+    "to": "set_up"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\HostFixture",
+    "kind": "method",
+    "from": "tearDown",
+    "to": "tear_down"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "auditSink",
+    "to": "audit_sink"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "buildWorker",
+    "to": "build_worker"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "competitorParticipants",
+    "to": "competitor_participants"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "deliverWith",
+    "to": "deliver_with"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "factObserver",
+    "to": "fact_observer"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "method",
+    "from": "relayProcessor",
+    "to": "relay_processor"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "auditPort",
+    "to": "audit_port"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "effectJournal",
+    "to": "effect_journal"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "outboxConfig",
+    "to": "outbox_config"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "outboxConnection",
+    "to": "outbox_connection"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "processStore",
+    "to": "process_store"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "rawLock",
+    "to": "raw_lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "relayStore",
+    "to": "relay_store"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "startMode",
+    "to": "start_mode"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "transportSharesConnection",
+    "to": "shared_connection"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "wakeFaults",
+    "to": "wake_faults"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Mem\\MemHostFixture",
+    "kind": "property",
+    "from": "workflowRows",
+    "to": "workflows"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "relayPollIntervalSeconds",
+    "to": "poll_seconds"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "relayUntilTransported",
+    "to": "relay_until"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "startRelayWorker",
+    "to": "start_relay"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "stopRelayWorker",
+    "to": "stop_relay"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "suppressNextWakeup",
+    "to": "drop_next_wakeup"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\PostCommitWakeups",
+    "kind": "method",
+    "from": "wakeupArrives",
+    "to": "await_wakeup"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessDecodeFaults",
+    "kind": "method",
+    "from": "forgetProcessClass",
+    "to": "forget_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessDecodeFaults",
+    "kind": "method",
+    "from": "quarantineReason",
+    "to": "quarantine_reason"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessDecodeFaults",
+    "kind": "method",
+    "from": "storedProcessStatus",
+    "to": "stored_status"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "beforeNextProcessLockAcquire",
+    "to": "before_next_lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "failNextProcessLockAcquire",
+    "to": "fail_next_lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "failNextWakeHandoff",
+    "to": "fail_next_handoff"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "holdProcessLockElsewhere",
+    "to": "hold_lock_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "operatorView",
+    "to": "operator_view"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "pendingWakeups",
+    "to": "live_intents"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processConsumer",
+    "to": "consumer_prefix"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processIds",
+    "to": "process_ids"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processLockAcquisitions",
+    "to": "lock_acquisitions"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processLockKey",
+    "to": "lock_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processRow",
+    "to": "process_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "processStore",
+    "to": "process_store"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "releaseProcessLockElsewhere",
+    "to": "release_lock_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessHost",
+    "kind": "method",
+    "from": "wireProcesses",
+    "to": "wire_processes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessRow",
+    "kind": "property",
+    "from": "ignitedByEventId",
+    "to": "ignited_by"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessRow",
+    "kind": "property",
+    "from": "ignitionKey",
+    "to": "ignition_key"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessRow",
+    "kind": "property",
+    "from": "processClass",
+    "to": "process_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessRow",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessScenarioCase",
+    "kind": "method",
+    "from": "intentKeys",
+    "to": "intent_keys"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessWorker",
+    "kind": "method",
+    "from": "deliverFact",
+    "to": "deliver"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessWorker",
+    "kind": "method",
+    "from": "drainOnce",
+    "to": "drain_once"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessWorker",
+    "kind": "method",
+    "from": "processLock",
+    "to": "lock"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ProcessWorker",
+    "kind": "method",
+    "from": "processRunner",
+    "to": "runner"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\RelayRace",
+    "kind": "method",
+    "from": "raceNextRelayAfterSubmit",
+    "to": "race_next_relay"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\RelayReport",
+    "kind": "property",
+    "from": "deadLettered",
+    "to": "dead_lettered"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\RelayReport",
+    "kind": "property",
+    "from": "leaseLost",
+    "to": "lease_lost"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioCatalogue",
+    "kind": "method",
+    "from": "casesFor",
+    "to": "cases_for"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioCatalogue",
+    "kind": "method",
+    "from": "dueBy",
+    "to": "due_by"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioCatalogue",
+    "kind": "method",
+    "from": "firstDueAt",
+    "to": "first_due_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioCatalogue",
+    "kind": "method",
+    "from": "isKnown",
+    "to": "is_known"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioCatalogue",
+    "kind": "method",
+    "from": "scenarioCase",
+    "to": "case_of"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioContext",
+    "kind": "method",
+    "from": "uniqueName",
+    "to": "unique_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioContext",
+    "kind": "property",
+    "from": "scenarioId",
+    "to": "scenario_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioContext",
+    "kind": "property",
+    "from": "testClass",
+    "to": "test_class"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioContext",
+    "kind": "property",
+    "from": "testMethod",
+    "to": "test_method"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioId",
+    "kind": "method",
+    "from": "implementedBy",
+    "to": "implemented_by"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\ScenarioId",
+    "kind": "method",
+    "from": "methodName",
+    "to": "method_name"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\AwaitScenarios",
+    "kind": "method",
+    "from": "deliverFact",
+    "to": "deliver"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\CodecScenarios",
+    "kind": "method",
+    "from": "outboxPayloadCap",
+    "to": "payload_cap"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\CommandScenarios",
+    "kind": "method",
+    "from": "createWidget",
+    "to": "create_widget"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\CommandScenarios",
+    "kind": "method",
+    "from": "outboxRowCount",
+    "to": "outbox_count"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\CommandScenarios",
+    "kind": "method",
+    "from": "reactWithFact",
+    "to": "react"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\DecodeScenarios",
+    "kind": "method",
+    "from": "decodeFaults",
+    "to": "decode_faults"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\DeliveryScenarios",
+    "kind": "method",
+    "from": "assertDueWithin",
+    "to": "assert_due_within"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\RelayScenarios",
+    "kind": "method",
+    "from": "transportedIds",
+    "to": "transported_ids"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Scenarios\\RelayScenarios",
+    "kind": "method",
+    "from": "whileLeased",
+    "to": "while_leased"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\StatementErrors",
+    "kind": "method",
+    "from": "runFailingStatement",
+    "to": "fail_statement"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\ConnectionView",
+    "kind": "method",
+    "from": "asAnotherConnection",
+    "to": "run_elsewhere"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\FaultInjectingAuditSink",
+    "kind": "method",
+    "from": "failNextClose",
+    "to": "fail_next_close"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\FreshProcessBoot",
+    "kind": "method",
+    "from": "effectRowId",
+    "to": "effect_row"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\FreshProcessBoot",
+    "kind": "method",
+    "from": "factClasses",
+    "to": "fact_classes"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\InterleavingProcessLock",
+    "kind": "method",
+    "from": "beforeNextAcquire",
+    "to": "before_next_acquire"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\WakeHandoffFaults",
+    "kind": "method",
+    "from": "failNext",
+    "to": "fail_next"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\Support\\WakeHandoffFaults",
+    "kind": "method",
+    "from": "throwIfArmed",
+    "to": "throw_if_armed"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\TransportedFact",
+    "kind": "property",
+    "from": "dueAt",
+    "to": "due_at"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\TransportedFact",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\WebRequests",
+    "kind": "method",
+    "from": "bootInBandStartOnPooledDsn",
+    "to": "boot_inband_pooled"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\WebRequests",
+    "kind": "method",
+    "from": "inWebRequest",
+    "to": "in_web_request"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\WorkflowHost",
+    "kind": "method",
+    "from": "workflowIgniter",
+    "to": "igniter"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\WorkflowHost",
+    "kind": "method",
+    "from": "workflowIgnitionLedger",
+    "to": "ignition_ledger"
+  },
+  {
+    "fqcn": "TangibleDDD\\Conformance\\WorkflowHost",
+    "kind": "method",
+    "from": "workflowRepository",
+    "to": "workflows"
+  }
+]

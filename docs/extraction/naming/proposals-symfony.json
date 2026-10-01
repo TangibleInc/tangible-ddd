@@ -1,0 +1,76 @@
+[
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IFactClassResolver", "kind": "method", "from": "classFor", "to": "resolve", "reason": "A resolver resolves; the Claim argument says what. Implementation OutboxFactClassResolver follows.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage", "kind": "property", "from": "eventId", "to": "event_id", "reason": "0.6 vocabulary (event_id). Messenger message: renaming a property changes the serialized form, so drain ddd_facts before deploying.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage", "kind": "property", "from": "eventType", "to": "event_type", "reason": "Matches OutboxRecord::$event_type and the outbox column.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage", "kind": "property", "from": "eventClass", "to": "event_class", "reason": "0.6 vocabulary (event_class).", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage", "kind": "property", "from": "integrationAction", "to": "integration_action", "reason": "0.6 frozen vocabulary (integration_action).", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\IntegrationFactMessage", "kind": "property", "from": "wrappedPayload", "to": "envelope", "reason": "The value is exactly IntegrationEnvelope::wrap() output, so 'envelope' names it more precisely than 'wrapped payload' and is one word.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupHandler", "kind": "method", "from": "backoffSeconds", "to": "backoff_seconds", "reason": "Same name as the core OutboxProcessor::backoff_seconds (already snake); the unit stays in the name. Assumes core-process renames WakeRetryPolicy::backoffSeconds the same way.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "method", "from": "fromClaim", "to": "from_claim", "reason": "Matches the from_/to_ pair in 0.6 (from_payload/to_payload, from_array/to_array).", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "method", "from": "toClaim", "to": "to_claim", "reason": "Pairs with from_claim.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "processId", "to": "process_id", "reason": "Mirrors WakeupIntent and the process_id column. Assumes core-process renames WakeupIntent::$processId to process_id. Message property: drain ddd_wakeups before deploying.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "stepIndex", "to": "step_index", "reason": "0.6 vocabulary (step_index); mirrors WakeupIntent.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "expectedStatus", "to": "expected_status", "reason": "Mirrors WakeupIntent and the column. 'status' alone would read as the message's own status.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "dueAt", "to": "due_at", "reason": "Matches OutboxRecord::$due_at and the column; assumes WakeupIntent::$dueAt becomes due_at.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "idempotencyKey", "to": "idempotency_key", "reason": "Mirrors WakeupIntent and the column; assumes core-effects keeps IExternalEffectCommand::idempotency_key in the same vocabulary.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "claimToken", "to": "claim_token", "reason": "Mirrors ClaimedWakeup/Claim and the claim_token column. Assumes core renames Claim::$claimToken and ClaimedWakeup::$claimToken to claim_token.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Messenger\\ProcessWakeupMessage", "kind": "property", "from": "leaseUntil", "to": "lease_until", "reason": "Mirrors ClaimedWakeup/Claim; assumes core renames leaseUntil to lease_until.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\ConnectionTopology", "kind": "method", "from": "isPooled", "to": "is_pooled", "reason": "Predicate. It has no callers, so it could also be removed.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\ConnectionTopology", "kind": "method", "from": "describePooler", "to": "pooler", "reason": "Bare noun: the detected pooler (as a reason string) or null. Call sites read ConnectionTopology::pooler($params) and bind it to $why.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore", "kind": "method", "from": "appendFact", "to": "append_fact", "reason": "append() is the port method; the suffix says it also takes the fact class. Shared with PdoOutboxStore::appendFact, which the pdo area should rename the same way.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore", "kind": "method", "from": "eventClassOf", "to": "event_class", "reason": "Bare-noun accessor keyed by event id, matching the 0.6 event_class() name. Shared with PdoOutboxStore::eventClassOf, which should use the same name.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore", "kind": "method", "from": "recordFromRow", "to": "record_from_row", "reason": "0.6 uses the X_from_row pattern (item_from_row, workflow_from_row, hydrate_from_row). The private recordOf() only delegates to it and should be removed.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalPostgresOutboxStore", "kind": "method", "from": "withFactClass", "to": "with_class", "reason": "Follows the 0.6 with_* scope vocabulary (with_lock, with_context); the class-string argument makes 'fact' redundant. Shared with PdoOutboxStore::withFactClass.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalRelayPauseStore", "kind": "method", "from": "activePatterns", "to": "patterns", "reason": "The $now argument already implies 'active'. It parallels the private activeSelectors(), which should become selectors(). Shared with PdoPauseStore::activePatterns; wp has activeSelectors.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalWakeupScheduler", "kind": "method", "from": "intentOf", "to": "intent_from_row", "reason": "It hydrates a WakeupIntent from a DB row; uses the 0.6 X_from_row pattern, symmetric with record_from_row. String reference [DbalWakeupScheduler::class, 'intentOf'] in tests/Conformance/SfHostFixture.php:782 must be updated.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\DbalWorkflowIgnitionLedger", "kind": "method", "from": "keyForFact", "to": "fact_key", "reason": "Short noun for the once-per-fact key; an alias of core WorkflowIgnitionKey::forFact (assumed to become for_fact). It could also be dropped in favour of the core call.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\GlobPattern", "kind": "method", "from": "toRegex", "to": "to_regex", "reason": "Converter; same name as pdo Glob::toRegex.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\PersistenceConflict", "kind": "method", "from": "fromUniqueViolationIn", "to": "from", "reason": "Named constructor PersistenceConflict::from($e): ?self. The class only ever translates unique violations, so the qualifier adds nothing.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\Time", "kind": "method", "from": "toDb", "to": "to_db", "reason": "Same as pdo Utc::toDb.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\Time", "kind": "method", "from": "fromDb", "to": "from_db", "reason": "Same as pdo Utc::fromDb.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Persistence\\Time", "kind": "method", "from": "fromDbOrNull", "to": "from_db_or_null", "reason": "Kept long: from_db must keep its non-null return type, and PHP has no overloads, so the nullable twin needs its own name. Same as pdo Utc::fromDbOrNull.", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ActorContext", "kind": "method", "from": "runAs", "to": "run_as", "reason": "Verb phrase; reads as $context->run_as($actor, $work).", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ConsoleOperatorActorProvider", "kind": "method", "from": "onCommand", "to": "on_command", "reason": "Listener callback chosen by us, not framework-required. Update the 'onCommand' string in getSubscribedEvents().", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Actor\\ConsoleOperatorActorProvider", "kind": "method", "from": "onTerminate", "to": "on_terminate", "reason": "Update the 'onTerminate' string in getSubscribedEvents().", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry", "kind": "method", "from": "knownFactClasses", "to": "fact_classes", "reason": "'known' adds nothing: the list is the compiled map's. OutboxFactClassResolver's private $knownFactClasses should follow.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry", "kind": "method", "from": "listenerSpec", "to": "listener_spec", "reason": "The spec builders keep _spec because bare listener()/process() on a registry would read as lookups.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry", "kind": "method", "from": "processSpec", "to": "process_spec", "reason": "Same as listener_spec; bare process() would also collide with the Symfony compiler-pass name.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\CompiledSubscriptionRegistry", "kind": "method", "from": "workflowSpec", "to": "workflow_spec", "reason": "Same as listener_spec.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\DddRuntimeReset", "kind": "method", "from": "onMessageHandled", "to": "on_handled", "reason": "The class only subscribes to Messenger worker events, so 'message' is implied. Update the string in getSubscribedEvents().", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\DddRuntimeReset", "kind": "method", "from": "onMessageFailed", "to": "on_failed", "reason": "Pairs with on_handled. Update the string in getSubscribedEvents().", "confidence": "medium"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "auditEnvironment", "to": "environment", "reason": "The factory builds one environment provider. Update the services.php factory string.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "domainDispatcher", "to": "dispatcher", "reason": "The factory builds one dispatcher. Update the services.php factory string.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "integrationBus", "to": "integration_bus", "reason": "Kept qualified: bare 'bus' is ambiguous next to the command and query buses. Update the services.php factory string.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "outboxConfig", "to": "outbox_config", "reason": "Bare config() would be ambiguous. Update the services.php factory string.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "processLock", "to": "process_lock", "reason": "Matches the 0.6 with_process_lock vocabulary; bare lock() could mean a named lock. Update the services.php factory string.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "processRunner", "to": "process_runner", "reason": "Names the core ProcessRunner. Update the services.php factory string.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Factory", "kind": "method", "from": "startMode", "to": "start_mode", "reason": "Names the StartMode enum it returns.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay", "kind": "method", "from": "backoffSeconds", "to": "backoff_seconds", "reason": "Wraps core OutboxProcessor::backoff_seconds; same name.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay", "kind": "method", "from": "betweenSubmitAndAccept", "to": "between_submit_and_accept", "reason": "Kept long on purpose: it wraps the existing snake-case core seam OutboxProcessor::between_submit_and_accept, and the long name marks a conformance test seam.", "confidence": "high"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Relay", "kind": "method", "from": "runOnce", "to": "run_once", "reason": "One step of the ddd:relay loop; 'once' separates it from a loop. Shares the name with IWakeupRelayStep::run_once and core Drain::runOnce (core-outbox should pick run_once too; 'tick', the WP relay name, is the alternative).", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\RelayReport", "kind": "property", "from": "deadLettered", "to": "dead_lettered", "reason": "Matches the core dead_letter() verb; assumes core-effects renames ProcessingResult::$deadLettered to dead_lettered.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\SymfonyConsumerConfig", "kind": "method", "from": "normaliseVersion", "to": "normalise_version", "reason": "Verb plus object; keeps the existing British spelling.", "confidence": "high"},
+
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\IWakeupRelayStep", "kind": "method", "from": "runOnce", "to": "run_once", "reason": "Interface name; the implementation follows. Same name as Relay::run_once, since RelayCommand calls both in one loop.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\PostgresListenWaiter", "kind": "method", "from": "lastPayloads", "to": "payloads", "reason": "Bare noun; the docblock says it holds the payloads from the last wait(). The private $lastPayloads property should follow.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport", "kind": "method", "from": "didWork", "to": "is_idle", "reason": "House style needs is_/has_ for predicates, and has_work misreads as 'work is pending'. INVERTED meaning: is_idle() === !didWork(), so the two RelayCommand call sites need their logic flipped, not just the name replaced.", "confidence": "low"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport", "kind": "property", "from": "strandedRequeued", "to": "requeued", "reason": "Within a wakeup report, 'requeued' only applies to stranded processes (the docblock says so), so it parallels projected/failed.", "confidence": "medium"},
+  {"fqcn": "TangibleDDD\\Symfony\\Runtime\\Wakeup\\WakeupRelayReport", "kind": "property", "from": "strandedReported", "to": "reported", "reason": "Pairs with requeued: stranded running processes reported to the operator only. Bare 'reported' is less self-explanatory, so stranded_reported is the fallback.", "confidence": "medium"}
+]

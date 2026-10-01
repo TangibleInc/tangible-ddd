@@ -1,0 +1,463 @@
+[
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "createdAt",
+    "to": "created_at",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key",
+    "reason": "the entry's identity is the key IStartsFromFact::ignition_key() returns; 'dedup' adds nothing on a ledger class. Alt: ignition_key. Same name on WorkflowIgnition, WorkflowIgnitionResult, WorkflowStartPending",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "eventId",
+    "to": "event_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnition",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "forFact",
+    "to": "for_fact",
+    "reason": "named constructor; matches DeterministicCommandId::for_fact (assumed, core-effects area)",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "perMinute",
+    "to": "per_minute",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionKey",
+    "kind": "method",
+    "from": "startMarker",
+    "to": "start_marker",
+    "reason": "\"start marker\" is the documented ledger concept",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key",
+    "reason": "the entry's identity is the key IStartsFromFact::ignition_key() returns; 'dedup' adds nothing on a ledger class. Alt: ignition_key. Same name on WorkflowIgnition, WorkflowIgnitionResult, WorkflowStartPending",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "startError",
+    "to": "start_error",
+    "reason": "kept the start_ prefix: pairs with start_pending, and the ignition itself can succeed while the start fails",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "startPending",
+    "to": "start_pending",
+    "reason": "bool property named as a participle like dead_lettered/lease_lost; bare \"pending\" would read as the ignition being pending",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowIgnitionResult",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowStartPending",
+    "kind": "property",
+    "from": "dedupKey",
+    "to": "key",
+    "reason": "the entry's identity is the key IStartsFromFact::ignition_key() returns; 'dedup' adds nothing on a ledger class. Alt: ignition_key. Same name on WorkflowIgnition, WorkflowIgnitionResult, WorkflowStartPending",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\BehaviourWorkflows\\WorkflowStartPending",
+    "kind": "property",
+    "from": "workflowId",
+    "to": "workflow_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\AwaitAny",
+    "kind": "method",
+    "from": "cancelledBy",
+    "to": "cancelled_by",
+    "reason": "fluent builder beside until()/within(): ->cancelled_by(...)",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeReport",
+    "kind": "method",
+    "from": "isUnheard",
+    "to": "is_unheard",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeSource",
+    "kind": "method",
+    "from": "ofMechanism",
+    "to": "of_mechanism",
+    "reason": "named constructor; bare mechanism() collides with the private static mechanism(array) reader",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Application\\Process\\ResumeSource",
+    "kind": "method",
+    "from": "ofValue",
+    "to": "of_value",
+    "reason": "pairs with of_mechanism",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\IProcessLock",
+    "kind": "method",
+    "from": "forceReleaseAll",
+    "to": "release_all",
+    "reason": "\"force\" is redundant: release_all() is never the normal path and the doc already says it drops every handle. Implementations follow",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\IProcessLock",
+    "kind": "method",
+    "from": "heldCount",
+    "to": "held_count",
+    "reason": "bare held() would read as a bool; implementations follow",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "method",
+    "from": "mysqlName",
+    "to": "mysql_name",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "method",
+    "from": "postgresKey",
+    "to": "postgres_key",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Lock\\LockKey",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "method",
+    "from": "keyOf",
+    "to": "key_of",
+    "reason": "static reader of a fact's await key: AwaitRoute::key_of($event)",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "property",
+    "from": "awaitKey",
+    "to": "await_key",
+    "reason": "matches IAwaitKeyed::await_key() and the await_key column",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\AwaitRoute",
+    "kind": "property",
+    "from": "eventClass",
+    "to": "event_class",
+    "reason": "matches IAwaitMechanism::event_class() and FactRef/DeliveryJob event_class",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "findStranded",
+    "to": "find_stranded",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "findWaitingFor",
+    "to": "find_waiting_for",
+    "reason": "same name as the frozen 0.6 IProcessRepository::find_waiting_for()",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "insertIgnited",
+    "to": "insert_ignited",
+    "reason": "parallel to insert(); \"ignite()\" would hide that it is the dedup-guarded insert",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IProcessStore",
+    "kind": "method",
+    "from": "versionOf",
+    "to": "version_of",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\IStrandedScanner",
+    "kind": "method",
+    "from": "scanStranded",
+    "to": "scan_stranded",
+    "reason": "kept the noun: the sole implementer is ProcessRunner, where a bare scan() says nothing",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "processClass",
+    "to": "process_class",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id",
+    "reason": "kept over bare id for one vocabulary with WakeupIntent/LockKey/ProcessWakeupMessage",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Process\\StrandedProcess",
+    "kind": "property",
+    "from": "updatedAt",
+    "to": "updated_at",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\ClaimedWakeup",
+    "kind": "property",
+    "from": "claimToken",
+    "to": "token",
+    "reason": "the class is the claim, so \"claim\" is redundant: $w->token. Assumes the outbox Claim::claimToken and ProcessWakeupMessage::claimToken also become token",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\ClaimedWakeup",
+    "kind": "property",
+    "from": "leaseUntil",
+    "to": "lease_until",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\IWakeupScheduler",
+    "kind": "method",
+    "from": "claimDue",
+    "to": "claim_due",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\IWakeupScheduler",
+    "kind": "method",
+    "from": "retryLater",
+    "to": "retry_later",
+    "reason": "house-style example; assumes IOutboxStore::retryLater gets the same name",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeRetryPolicy",
+    "kind": "method",
+    "from": "backoffSeconds",
+    "to": "backoff_seconds",
+    "reason": "kept the unit suffix like timeout_seconds/stale_start_seconds; assumes the four other backoffSeconds (IntegrationDelivery, WpdbWakeupScheduler, ProcessWakeupHandler, Relay) match",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "resumeRetry",
+    "to": "resume_retry",
+    "reason": "matches WakeKind::ResumeRetry and the resume_retry: key prefix; assumes WpWakeBracket::resumeRetry follows",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "retryVersion",
+    "to": "retry_version",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "method",
+    "from": "timeoutKey",
+    "to": "timeout_key",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "dueAt",
+    "to": "due_at",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "expectedStatus",
+    "to": "expected_status",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "idempotencyKey",
+    "to": "key",
+    "reason": "the intent's identity; cancel(), timeout_key() and the docs already say \"the key\". Alt: idempotency_key (matches IExternalEffectCommand). Assumes ProcessWakeupMessage::idempotencyKey follows",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "processId",
+    "to": "process_id",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Runtime\\Scheduling\\WakeupIntent",
+    "kind": "property",
+    "from": "stepIndex",
+    "to": "step_index",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "failNextAcquire",
+    "to": "fail_next_acquire",
+    "reason": "one-shot fault, same shape as fail_next_commit (assumed, core-effects area)",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "heldCount",
+    "to": "held_count",
+    "reason": "same name as IProcessLock::held_count()",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryNamedLock",
+    "kind": "method",
+    "from": "holdElsewhere",
+    "to": "hold_elsewhere",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "acquireCount",
+    "to": "acquisitions",
+    "reason": "bare noun accessor; matches conformance ProcessHost::processLockAcquisitions (assumed process_lock_acquisitions)",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "failNextAcquire",
+    "to": "fail_next_acquire",
+    "reason": "one-shot fault, same shape as fail_next_commit",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "holdElsewhere",
+    "to": "hold_elsewhere",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "releaseBugs",
+    "to": "release_bugs",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessLock",
+    "kind": "method",
+    "from": "releaseElsewhere",
+    "to": "release_elsewhere",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "attachIntents",
+    "to": "attach_intents",
+    "reason": "bare attach() would collide in meaning with IWorkflowIgnitionLedger::attach()",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "corruptClassForTests",
+    "to": "corrupt_class",
+    "reason": "the class lives in TangibleDDD\\Testing, so \"for tests\" is noise. Assumes InMemoryOutboxStore::forgetRowForTests also drops the suffix (forget_row)",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "ignitionKeyOf",
+    "to": "ignition_key_of",
+    "reason": "three words kept: names the ignition_key column, read with the X_of($id) inspector pattern",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "quarantineReasonOf",
+    "to": "quarantine_reason_of",
+    "reason": "three words kept: names the quarantine_reason column; X_of($id) inspector pattern shared with status_of/ignition_key_of",
+    "confidence": "medium"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryProcessStore",
+    "kind": "method",
+    "from": "statusOf",
+    "to": "status_of",
+    "reason": "X_of($id) inspector; assumes InMemoryOutboxStore::statusOf matches",
+    "confidence": "high"
+  },
+  {
+    "fqcn": "TangibleDDD\\Testing\\InMemoryWakeupScheduler",
+    "kind": "method",
+    "from": "withoutTransactionCheck",
+    "to": "lenient",
+    "reason": "named constructor; the doc already calls it \"explicit lenient mode\". Alt: unchecked()",
+    "confidence": "medium"
+  }
+]
