@@ -52,6 +52,22 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     self::assertSame(0, $this->countRows('ddd_jobs'));
   }
 
+  public function test_a_long_alarm_is_one_absolute_intent_claimed_exactly_at_its_instant(): void {
+    // D7: a 25 h alarm with a microsecond instant, in a non-UTC zone.
+    $jobs = $this->jobs();
+    $due = new \DateTimeImmutable('2026-10-02 15:00:00.123456', new \DateTimeZone('Europe/Berlin'));
+    $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 41, 0, $due)));
+    $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 41, 0, $due->modify('+1 hour')))); // same key: a no-op
+
+    self::assertSame('2026-10-02 13:00:00.123456', $this->row('ddd_jobs', 'process_id = ?', [41])['due_at']);
+    self::assertSame(1, $this->countRows('ddd_jobs', 'process_id = ?', [41]));
+    self::assertSame([], $jobs->claimDue(self::utc('2026-10-02 13:00:00.123455'), 10, 60), 'not a microsecond early');
+
+    [$claim] = $jobs->claimDue(self::utc('2026-10-02 13:00:00.123456'), 10, 60);
+    self::assertEquals(self::utc('2026-10-02 13:00:00.123456'), $claim->intent->dueAt);
+    self::assertSame(WakeKind::Timeout, $claim->intent->kind);
+  }
+
   public function test_an_intent_commits_and_rolls_back_with_the_process_transaction(): void {
     $jobs = $this->jobs();
     $this->inTx(fn () => $jobs->schedule(WakeupIntent::continuation('acme', 1, 2, $this->clock->now())));

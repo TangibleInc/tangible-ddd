@@ -12,6 +12,8 @@ use TangibleDDD\Application\Process\IAwaitMechanism;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Core\Tests\Pdo\PdoTestCase;
 use TangibleDDD\Core\Tests\Pdo\Support\FaultyConnection;
+use TangibleDDD\Core\Tests\Pdo\Support\LargeStringProcess;
+use TangibleDDD\Runtime\Codec\LargeString;
 use TangibleDDD\Core\Tests\Unit\Fixtures\AppDestroyScheduled;
 use TangibleDDD\Core\Tests\Unit\Fixtures\BillingFact;
 use TangibleDDD\Core\Tests\Unit\Fixtures\ChildPurged;
@@ -414,6 +416,56 @@ abstract class PdoProcessStoreCases extends PdoTestCase {
 
     self::assertSame(0, $this->countRows('ddd_processes'));
     self::assertSame(0, $this->countRows('ddd_process_waits'));
+  }
+
+  // ── D6: LargeString business data (codec.large-payload, decode.unknown-class) ──
+
+  private function largeStringProcess(LargeString $blob, ?LargeString $optional = null): LargeStringProcess {
+    $p = new LargeStringProcess($blob, $optional, 'big');
+    $p->initialize_lifecycle('corr-ls', new ProcessSteps(['begin'], []));
+    return $p;
+  }
+
+  public function test_a_one_megabyte_binary_large_string_round_trips(): void {
+    $bytes = random_bytes(1024 * 1024);
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString($bytes)));
+
+    $found = $store->find($id);
+
+    self::assertInstanceOf(LargeStringProcess::class, $found);
+    self::assertSame($bytes, $found->blob->value);
+    self::assertNull($found->optional);
+    self::assertSame('big', $found->label);
+    $stored = json_decode((string) $this->row('ddd_processes', 'id = ?', [$id])['business_data'], true);
+    self::assertTrue(LargeString::isEncoded($stored['blob']), 'stored in the LargeString wire form, base64 with sha256');
+  }
+
+  public function test_a_nullable_large_string_round_trips_when_set(): void {
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString('a'), new LargeString("\x00\xff", 16)));
+
+    $found = $store->find($id);
+
+    self::assertSame("\x00\xff", $found?->optional?->value);
+  }
+
+  public function test_a_corrupted_large_string_quarantines_the_row_with_its_reason(): void {
+    $store = $this->store();
+    $id = $store->insert($this->largeStringProcess(new LargeString('payload')));
+    $data = json_decode((string) $this->row('ddd_processes', 'id = ?', [$id])['business_data'], true);
+    $data['blob']['data'] = base64_encode('tampered');
+    $this->db->execute('UPDATE `' . $this->table('ddd_processes') . '` SET business_data = ? WHERE id = ?', [json_encode($data), $id]);
+
+    try {
+      $store->find($id);
+      self::fail('expected QuarantinedProcess');
+    } catch (QuarantinedProcess) {
+    }
+
+    $row = $this->row('ddd_processes', 'id = ?', [$id]);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('LargeString length mismatch', (string) $row['quarantine_reason']);
   }
 
   public function test_find_stranded_reports_old_running_or_scheduled_rows_with_no_live_intent(): void {
