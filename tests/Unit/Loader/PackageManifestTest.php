@@ -94,6 +94,10 @@ class PackageManifestTest extends TestCase
         // The DI bridge (X4) is compiled against symfony/dependency-injection in dev only.
         $this->assertArrayHasKey('symfony/dependency-injection', $core['require-dev'] ?? []);
         $this->assertSame(['TangibleDDD\\' => 'src/'], $core['autoload']['psr-4'] ?? null);
+        // Register 1.5: the guarded assert helper is core's only files entry;
+        // no loader, registry or WordPress file is ever autoloaded by core.
+        $this->assertSame(['src/Domain/Shared/assert.php'], $core['autoload']['files'] ?? null);
+        $this->assertArrayNotHasKey('classmap', $core['autoload']);
     }
 
     public function test_ddd_wp_requires_its_matched_core_and_the_wordpress_closure(): void
