@@ -9,6 +9,11 @@ enum WorkflowIgnitionOutcome: string {
   case Ignited = 'ignited';
   /** The key already ignited a workflow; nothing was saved or started. */
   case AlreadyIgnited = 'already_ignited';
+  /**
+   * The key had already ignited a workflow whose start never completed (it
+   * threw, or the worker died before it); this call loaded and started it.
+   */
+  case Restarted = 'restarted';
   /** workflow_from_fact() returned null; nothing was claimed. */
   case Declined = 'declined';
 }

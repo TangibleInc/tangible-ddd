@@ -19,7 +19,9 @@ use TangibleDDD\Domain\Events\IIntegrationEvent;
  *   2. ignition_key(): the dedup key ('' = cannot dedup);
  *   3. in one transaction: ledger claim of the key, save_ignited(), attach;
  *      a lost claim stops here (exactly one workflow per key);
- *   4. after commit: start_ignited().
+ *   4. after commit: the start marker claim, then start_ignited(); a lost
+ *      claim of an attached key whose start never completed restarts the
+ *      workflow instead (WorkflowIgniter, outcome Restarted).
  */
 interface IStartsFromFact {
 
@@ -40,10 +42,14 @@ interface IStartsFromFact {
 
   /**
    * Run (or durably hand off) the committed workflow. Runs after the
-   * ignition committed, outside its transaction; an exception is logged
-   * and reported in WorkflowIgnitionResult::$startError, and the ignition
-   * stays (a redelivery would be deduped anyway): the workflow's own retry
-   * and failure handling owns the run. A host that needs the start to be
+   * ignition committed, outside its transaction. An exception is logged and
+   * reported in WorkflowIgnitionResult::$startError; the ignition stays,
+   * and the registered subscriber rethrows it, so the delivery ledger
+   * retries the fact. The retry (or any later fact with the same key) finds
+   * the workflow ignited but not started, loads it (ILoadsIgnitedWorkflow)
+   * and calls start_ignited() again on it while it is active. So this
+   * method must tolerate a re-run of a partly run workflow (handle_workflow
+   * does: work items are ledgered). A host that needs the start to be
    * atomic with the ignition enqueues it from save_ignited() instead.
    */
   public function start_ignited(BehaviourWorkflow $workflow): void;

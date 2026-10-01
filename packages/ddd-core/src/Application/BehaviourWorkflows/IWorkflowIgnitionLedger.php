@@ -24,6 +24,11 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
  * - release(): the explicit repair path (an operator re-runs an ignition);
  *   the next claim of the key wins again.
  *
+ * WorkflowIgniter also keeps one start marker per ignited key in the same
+ * ledger (key WorkflowIgnitionKey::startMarker($dedupKey), a 36-character
+ * uuid5, same kind, no workflow attached), claimed right before the start
+ * and released when the start throws. Stores need nothing extra for it.
+ *
  * Error behaviour: storage failures throw; claim() never returns false for
  * a failure.
  */

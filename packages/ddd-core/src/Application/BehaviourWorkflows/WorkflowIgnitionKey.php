@@ -20,6 +20,18 @@ final class WorkflowIgnitionKey {
     return NameBasedUuid::v5($eventId, $kind);
   }
 
+  /** uuid5 namespace of the start markers (fixed; never change it). */
+  public const START_NAMESPACE = '5e7d2c1a-9b3f-4d6e-8a2c-1f0e9d8c7b6a';
+
+  /**
+   * The ledger key that records "the workflow ignited under $dedupKey has
+   * been started" (WorkflowIgniter): uuid5(START_NAMESPACE, 'start:' . key),
+   * 36 characters whatever the length of $dedupKey.
+   */
+  public static function startMarker(string $dedupKey): string {
+    return NameBasedUuid::v5(self::START_NAMESPACE, 'start:' . $dedupKey);
+  }
+
   /**
    * One workflow per $scope per UTC minute (a cron entry's tick):
    * "{scope}:{Y-m-d\TH:i}Z". Two ticks in one minute share it.

@@ -162,6 +162,63 @@ final class WorkflowIgnitionTest extends TestCase {
     self::assertNotSame([], array_filter($this->log->records, static fn (array $r) => $r['level'] === 'error'));
   }
 
+  public function test_a_failed_start_is_redelivered_and_the_workflow_runs_exactly_once(): void {
+    $wf = $this->nightly();
+    $this->igniter->register($wf, $this->registry, 'acme');
+    $ledger = new InMemoryDeliveryLedger();
+    $delivery = new IntegrationDelivery($this->registry, $ledger, 5, new \Psr\Log\NullLogger());
+    $fact = ['entry' => 'nightly', 'due_at' => '2026-10-01T12:00:05+00:00'];
+
+    $wf->failStart = new \RuntimeException('transient: db gone away');
+    $first = $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1));
+    self::assertNotSame([], $first->failed, 'the start failure reaches the delivery ledger, so it retries');
+    self::assertCount(1, $this->repo->rows, 'the ignition itself committed');
+    self::assertSame([], $wf->started);
+
+    $wf->failStart = null;
+    $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1)); // the retry
+    $delivery->deliver(CronEntryDue::class, IntegrationEnvelope::wrap($fact, 'corr-1', 1, self::E1)); // succeeded: skipped
+    $this->deliver(['entry' => 'nightly', 'due_at' => '2026-10-01T12:00:41+00:00'], self::E2); // second tick, same minute
+
+    self::assertCount(1, $this->repo->rows);
+    self::assertSame([1], $wf->started, 'the saved workflow is started once, by the retry');
+  }
+
+  public function test_a_later_tick_restarts_a_workflow_whose_start_failed(): void {
+    $wf = $this->nightly();
+    $wf->failStart = new \RuntimeException('behaviour exploded');
+    $this->igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00'), self::E1);
+    $wf->failStart = null;
+
+    $second = $this->igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:41+00:00'), self::E2);
+    $third = $this->igniter->ignite($wf, new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00'), self::E1);
+
+    self::assertSame(WorkflowIgnitionOutcome::Restarted, $second->outcome);
+    self::assertSame(1, $second->workflowId);
+    self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $third->outcome, 'started: nothing left to do');
+    self::assertSame([1], $wf->started);
+    self::assertCount(1, $this->repo->rows);
+  }
+
+  public function test_a_stale_claim_without_a_workflow_is_reclaimed_when_there_is_no_boundary(): void {
+    // No boundary: a crash between claim() and attach() leaves the key claimed with no workflow.
+    $igniter = new WorkflowIgniter($this->ledger, null, $this->log, $this->clock);
+    $wf = $this->nightly();
+    $fact = new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00');
+    $key = $wf->ignition_key($fact, self::E1);
+    $this->ledger->claim($key, $wf->workflow_kind(), self::E1);
+
+    $fresh = $igniter->ignite($wf, $fact, self::E2);
+    self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $fresh->outcome, 'a fresh claim may still be in flight');
+    self::assertNull($fresh->workflowId);
+
+    $this->clock->advance('PT16M');
+    $stale = $igniter->ignite($wf, $fact, self::E2);
+    self::assertSame(WorkflowIgnitionOutcome::Ignited, $stale->outcome);
+    self::assertSame([1], $wf->started);
+    self::assertSame(1, $this->ledger->find($key)->workflowId);
+  }
+
   public function test_the_default_key_is_uuid5_of_the_event_id_and_kind(): void {
     $wf = new PerFactWorkflow($this->repo, new NoItems());
     $this->igniter->register($wf, $this->registry, 'acme');
