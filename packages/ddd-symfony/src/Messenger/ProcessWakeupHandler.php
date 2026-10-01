@@ -26,10 +26,12 @@ use TangibleDDD\Symfony\Runtime\Wakeup\IProcessWakeTarget;
  *
  * Failures never reach Messenger's retry (the intent row owns the budget):
  * - retryable (lock contention, a lost version fence, a transient DBAL
- *   error): retry_later() with 2 s x 2^n backoff capped at 300 s, until the
- *   10th failed attempt, which exhausts the intent;
+ *   error): retry_later() with 2 s x 2^n backoff capped at 300 s; from the
+ *   10th failed attempt on the intent is exhausted for the operator AND
+ *   still retried every 300 s (WakeRetryPolicy: a wake is never dropped);
  * - anything else: the intent is exhausted at once, kept with its error for
- *   the operator (ddd:ops:stranded), and an ERROR is logged.
+ *   the operator (ddd:ops:stranded), never claimed again, and an ERROR is
+ *   logged.
  * Exhausting needs DbalWakeupScheduler; with another IWakeupScheduler the
  * intent is retried at the cap instead.
  */
@@ -43,7 +45,7 @@ final class ProcessWakeupHandler {
   public const COMPLETED = 'completed';
   /** The wake failed and the intent is due again after the backoff. */
   public const RETRIED = 'retried';
-  /** The wake failed for the last time (budget, or not retryable); the intent is kept for the operator. */
+  /** The wake failed past the budget (still retried at the cap) or not retryably (terminal); the intent is kept for the operator. */
   public const EXHAUSTED = 'exhausted';
   /** The complete / retry / exhaust write matched 0 rows: a re-projected message owns the intent. */
   public const LEASE_LOST = 'lease_lost';
@@ -91,14 +93,17 @@ final class ProcessWakeupHandler {
     $retryable = self::isRetryable($e);
 
     if (!$retryable || $attempt >= self::BUDGET) {
-      $why = $retryable ? "budget of " . self::BUDGET . " attempts spent" : 'not retryable';
+      $now = $this->clock->now();
+      $cap = $now->modify('+' . self::MAX_DELAY_SECONDS . ' seconds');
+      $why = $retryable ? 'budget of ' . self::BUDGET . ' attempts spent' : 'not retryable';
       if ($this->scheduler instanceof DbalWakeupScheduler) {
-        $kept = $this->scheduler->exhaust($claim, $error, $this->clock->now());
-        $this->logger->error("[ddd wakeup] $key exhausted ($why); kept for the operator: $error", ['exception' => $e]);
+        $kept = $this->scheduler->exhaust($claim, $error, $now, $retryable ? $cap : null);
+        $then = $retryable ? 'kept for the operator, retrying every ' . self::MAX_DELAY_SECONDS . ' s' : 'kept for the operator';
+        $this->logger->error("[ddd wakeup] $key exhausted ($why); $then: $error", ['exception' => $e]);
         return $kept ? self::EXHAUSTED : self::LEASE_LOST;
       }
       $this->logger->error("[ddd wakeup] $key failed ($why), retrying at the cap: $error", ['exception' => $e]);
-      $kept = $this->scheduler->retry_later($claim, $error, $this->clock->now()->modify('+' . self::MAX_DELAY_SECONDS . ' seconds'));
+      $kept = $this->scheduler->retry_later($claim, $error, $cap);
       return $kept ? self::EXHAUSTED : self::LEASE_LOST;
     }
 
