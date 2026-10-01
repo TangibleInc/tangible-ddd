@@ -703,6 +703,11 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->lastDeliveryFailures;
   }
 
+  /** Worker 1's DBAL connection (the fixture's one host connection). */
+  public function connection(): Connection {
+    return $this->connection;
+  }
+
   /** Lock attempts made inside web requests (each was refused). */
   public function webLockAttempts(): int {
     return $this->locks->webAttempts;
