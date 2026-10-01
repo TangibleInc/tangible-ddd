@@ -199,11 +199,15 @@ final class LoadDiagnosticsTest extends TestCase
 
     public function test_the_unit_suite_itself_boots_without_findings(): void
     {
-        // Fixture classes these tests declare from scratch dirs are excluded.
+        // Fixture classes the unit tests declare from scratch dirs are excluded:
+        // they live in an `Fx` namespace segment under any TangibleDDD package
+        // (TangibleDDD\Fx\, TangibleDDD\WordPress\Fx\ from WinnerAutoloaderTest,
+        // TangibleDDD\Application\Fx\, TangibleDDD\Symfony\Fx\), and under
+        // random order any of them may already be declared when this runs.
         $root = dirname(__DIR__, 3);
         $found = array_filter(
             \Tangible_DDD_Load_Diagnostics::declared_elsewhere($root),
-            static fn(string $class): bool => !str_starts_with($class, 'TangibleDDD\\Fx\\'),
+            static fn(string $class): bool => !str_contains($class, '\\Fx\\'),
             ARRAY_FILTER_USE_KEY
         );
         $this->assertSame([], $found);
