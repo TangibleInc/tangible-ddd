@@ -51,7 +51,8 @@ use TangibleDDD\Runtime\SystemClock;
  *   IMatchesFactAncestry and the runner makes one lookup per fact.
  * - find_stranded(): `running`/`scheduled` rows whose updated_at is at or
  *   before now - threshold (default 900 s) and that have no live row in
- *   ddd_wakeups (an exhausted intent is not live).
+ *   ddd_wakeups (an exhausted intent is not live, unless it is still retried
+ *   at the cap: exhausted_at with a next_attempt_at, 5.1).
  *
  * updated_at comes from the IClock on every write, so the stranded
  * threshold follows the same clock as the wakeups. Every storage failure
@@ -183,7 +184,8 @@ final class DbalProcessStore implements IProcessStore, IMatchesFactAncestry {
       "SELECT p.id, p.process_class, p.status, p.step_index, p.updated_at FROM {$this->processes} p
         WHERE p.status IN ('running', 'scheduled')
           AND p.updated_at <= ?
-          AND NOT EXISTS (SELECT 1 FROM {$this->wakeups} w WHERE w.process_id = p.id AND w.exhausted_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM {$this->wakeups} w WHERE w.process_id = p.id
+                            AND (w.exhausted_at IS NULL OR w.next_attempt_at IS NOT NULL))
         ORDER BY p.updated_at, p.id",
       [Time::to_db($cutoff)]
     ), 'scan for stranded processes');

@@ -168,6 +168,34 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     self::assertNotEmpty($this->log->at('error'));
   }
 
+  public function test_a_retryable_intent_past_the_budget_is_still_retried_at_the_cap(): void {
+    $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
+    $this->db->executeStatement('UPDATE ddd_wakeups SET attempts = 9');
+    $this->relay()->run_once(10);
+    $busy = fn () => new RecordingWakeTarget([new ProcessLockUnavailable('lock busy', 0, new LockNotAcquired('busy'))]);
+
+    self::assertSame(ProcessWakeupHandler::EXHAUSTED, ($this->handler($busy()))($this->sent()[0]));
+    $first = (string) $this->db->fetchOne('SELECT exhausted_at FROM ddd_wakeups');
+
+    $this->clock->advance('+' . (ProcessWakeupHandler::MAX_DELAY_SECONDS - 1) . ' seconds');
+    self::assertSame([], $this->relay()->run_once(10)->projected, 'not before the cap');
+    $this->clock->advance('+1 second');
+    self::assertSame(['continue:5:0'], $this->relay()->run_once(10)->projected, 'a wake is never dropped (5.1)');
+
+    self::assertSame(ProcessWakeupHandler::EXHAUSTED, ($this->handler($busy()))($this->sent()[1]));
+    $row = $this->db->fetchAssociative('SELECT attempts, exhausted_at FROM ddd_wakeups');
+    self::assertSame(11, (int) $row['attempts']);
+    self::assertSame($first, (string) $row['exhausted_at'], 'exhausted when the budget ran out');
+    self::assertSame(['continue:5:0'], array_map(static fn ($e) => $e['intent']->key, $this->scheduler->exhausted()));
+
+    $this->clock->advance('+' . ProcessWakeupHandler::MAX_DELAY_SECONDS . ' seconds');
+    $this->relay()->run_once(10);
+    $target = new RecordingWakeTarget();
+    self::assertSame(ProcessWakeupHandler::COMPLETED, ($this->handler($target))($this->sent()[2]));
+    self::assertCount(1, $target->woken);
+    self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_wakeups'));
+  }
+
   public function test_a_non_retryable_wake_failure_exhausts_the_intent_for_the_operator(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
     $this->relay()->run_once(10);
@@ -176,6 +204,20 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
 
     self::assertNotNull($this->db->fetchOne('SELECT exhausted_at FROM ddd_wakeups'));
     self::assertStringContainsString('wiring bug', implode("\n", $this->log->at('error')));
+  }
+
+  public function test_a_non_retryable_failure_after_retries_is_never_claimed_again(): void {
+    $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
+    $this->relay()->run_once(10);
+    ($this->handler(new RecordingWakeTarget([new LockNotAcquired('busy')])))($this->sent()[0]);
+    $this->clock->advance('+2 seconds');
+    $this->relay()->run_once(10);
+
+    self::assertSame(ProcessWakeupHandler::EXHAUSTED, ($this->handler(new RecordingWakeTarget([new \LogicException('wiring bug')])))($this->sent()[1]));
+
+    $this->clock->advance('+1 day');
+    self::assertSame([], $this->relay()->run_once(10)->projected, 'a non-retryable failure is terminal');
+    self::assertNotNull($this->db->fetchOne('SELECT exhausted_at FROM ddd_wakeups'));
   }
 
   public function test_a_handler_whose_lease_was_lost_does_not_touch_the_new_holder(): void {

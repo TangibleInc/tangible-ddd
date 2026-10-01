@@ -455,6 +455,16 @@ final class DbalProcessStoreTest extends PostgresTestCase {
       ['continue:' . $exhausted->get_id() . ':0', $exhausted->get_id()]
     );
 
+    // Exhausted for the operator but still retried at the cap (5.1): live.
+    $retrying = OrderProcess::started(7);
+    $retrying->advance(status: 'scheduled');
+    $this->store()->insert($retrying);
+    $this->db->executeStatement(
+      "INSERT INTO ddd_wakeups (idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at, exhausted_at, next_attempt_at)
+       VALUES (?, 'continue', 'acme', ?, 0, 'scheduled', now(), now(), now() + interval '5 minutes')",
+      ['continue:' . $retrying->get_id() . ':0', $retrying->get_id()]
+    );
+
     $this->clock->advance('+16 minutes');
     $fresh = OrderProcess::started(5);
     $this->store()->insert($fresh);
