@@ -44,8 +44,17 @@ class HarnessCliTest extends TestCase
         return [
             'core-pdo' => ['core-pdo'],
             'compat' => ['compat'],
-            'conformance-wp' => ['conformance-wp'],
         ];
+    }
+
+    public function test_the_conformance_wp_subcommand_is_wired(): void
+    {
+        // Running it needs Docker and MySQL 8.0 (CI and by hand); here only
+        // the dispatch and the suite + gate it runs.
+        $source = (string) file_get_contents(self::script());
+        $this->assertMatchesRegularExpression('/^\s*conformance-wp\) conformance_wp ;;$/m', $source);
+        $this->assertStringContainsString('tests/Integration/Conformance/phpunit.xml', $source);
+        $this->assertStringContainsString('tests/Integration/Conformance/bin/check-due.php', $source);
     }
 
     #[DataProvider('later_waves')]
