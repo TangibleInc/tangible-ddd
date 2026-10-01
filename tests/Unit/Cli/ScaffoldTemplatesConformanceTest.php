@@ -31,7 +31,7 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
   private static string $main_plugin_snippet;
 
   public static function setUpBeforeClass(): void {
-    require_once dirname( __DIR__, 3 ) . '/ddd-wordpress/cli/class-ddd-command.php';
+    require_once dirname( __DIR__, 3 ) . '/packages/ddd-wp/wordpress/cli/class-ddd-command.php';
 
     $command = ( new \ReflectionClass( DDD_Command::class ) )->newInstanceWithoutConstructor();
     $method = new \ReflectionMethod( DDD_Command::class, 'get_templates' );

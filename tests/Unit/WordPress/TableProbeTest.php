@@ -9,11 +9,11 @@ use function TangibleDDD\WordPress\outbox_enabled;
 use function TangibleDDD\WordPress\processes_enabled;
 
 if (!function_exists('TangibleDDD\\WordPress\\processes_enabled')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/hooks.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/tables.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/migrations.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerHandle.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerRegistry.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/hooks.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/tables.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/migrations.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/ConsumerHandle.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/ConsumerRegistry.php';
 }
 
 /**

@@ -39,6 +39,25 @@ class PackageManifestTest extends TestCase
         $this->assertArrayNotHasKey('symfony/yaml', $root['require-dev'] ?? []);
     }
 
+    public function test_the_root_requires_everything_the_core_it_replaces_requires(): void
+    {
+        // The root replaces tangible/ddd-core, so Composer never reads core's
+        // manifest inside the root graph: each core runtime requirement must
+        // be restated here or a WordPress install misses it. psr/log arrives
+        // with the PSR-3 loggers of the wave-2 runtime classes (wave-1 notes).
+        $root = self::manifest('composer.json');
+        $core = self::manifest('packages/ddd-core/composer.json');
+
+        $this->assertSame(
+            ['tangible/ddd-core' => 'self.version', 'tangible/ddd-wp' => 'self.version'],
+            $root['replace'] ?? null
+        );
+        foreach ($core['require'] as $pkg => $constraint) {
+            $this->assertSame($constraint, $root['require'][$pkg] ?? null, "root must restate core's {$pkg} {$constraint}");
+        }
+        $this->assertSame('^1|^2|^3', $root['require']['psr/log'] ?? null);
+    }
+
     public function test_the_root_carries_no_symfony_host_dependencies(): void
     {
         // ddd-symfony is not part of the WordPress distribution (register
@@ -75,6 +94,10 @@ class PackageManifestTest extends TestCase
         // The DI bridge (X4) is compiled against symfony/dependency-injection in dev only.
         $this->assertArrayHasKey('symfony/dependency-injection', $core['require-dev'] ?? []);
         $this->assertSame(['TangibleDDD\\' => 'src/'], $core['autoload']['psr-4'] ?? null);
+        // Register 1.5: the guarded assert helper is core's only files entry;
+        // no loader, registry or WordPress file is ever autoloaded by core.
+        $this->assertSame(['src/Domain/Shared/assert.php'], $core['autoload']['files'] ?? null);
+        $this->assertArrayNotHasKey('classmap', $core['autoload']);
     }
 
     public function test_ddd_wp_requires_its_matched_core_and_the_wordpress_closure(): void

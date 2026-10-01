@@ -1,0 +1,167 @@
+# Layer rules of the extraction (register 1.2, X4, B24; section 8 wave 2).
+#
+#   vendor/bin/deptrac analyse            0 violations is the gate
+#
+# Portable core (packages/ddd-core/src minus two fenced corners) depends on
+# nothing below except PHP, league/tactician and the PSR interfaces, which no
+# layer collects and are therefore always allowed:
+#   - no WordPress (functions, classes, the TangibleDDD\WordPress\ API, ddd-wp)
+#   - no Symfony, except through the DI bridge Infra/DependencyInjection (X4)
+#   - no makinacorpus/query-builder
+#   - not the pdo-default adapter set Defaults/Pdo (portable layers never
+#     import it; it depends on core, not the reverse)
+# ddd-wp never uses Defaults/Pdo (B24). ddd-symfony depends on core and its
+# vendors, never on WordPress or ddd-wp.
+#
+# WordPress and Action Scheduler symbols are collected from the stub and
+# library sources in vendor/ (php-stubs/wordpress-stubs, wp-cli-stubs,
+# woocommerce/action-scheduler), so a call to add_action() or a use of wpdb
+# from core is a violation even though WordPress itself is never installed.
+
+deptrac:
+  # Inside an ignored directory (.gitignore lists .phpunit.cache/).
+  cache_file: .phpunit.cache/deptrac.cache
+
+  paths:
+    - ./packages/ddd-core/src
+    - ./packages/ddd-wp/src
+    - ./packages/ddd-wp/wordpress
+    - ./packages/ddd-symfony
+    - ./vendor/php-stubs/wordpress-stubs
+    - ./vendor/php-stubs/wp-cli-stubs
+    - ./vendor/woocommerce/action-scheduler
+
+  exclude_files:
+    - '#/vendor/woocommerce/action-scheduler/(tests|lib/cron-expression/tests)/#'
+    # ddd-symfony's own tests and vendor tree, when present, are not shipped code.
+    - '#/packages/ddd-symfony/(vendor|tests|var)/#'
+    # The scaffolder's heredoc templates name consumer namespaces as text only.
+    - '#/packages/ddd-wp/wordpress/cli/class-ddd-command\.php$#'
+
+  analyser:
+    types:
+      - class
+      - class_superglobal
+      - file
+      - function
+      - function_call
+      - function_superglobal
+      - use
+
+  layers:
+    - name: Core
+      collectors:
+        - type: bool
+          must:
+            - type: directory
+              value: packages/ddd-core/src/.*
+          must_not:
+            - type: directory
+              value: packages/ddd-core/src/Defaults/Pdo/.*
+            - type: directory
+              value: packages/ddd-core/src/Infra/DependencyInjection/.*
+
+    - name: CoreDiBridge
+      collectors:
+        - type: directory
+          value: packages/ddd-core/src/Infra/DependencyInjection/.*
+
+    - name: PdoDefault
+      collectors:
+        - type: directory
+          value: packages/ddd-core/src/Defaults/Pdo/.*
+
+    - name: DddWp
+      collectors:
+        - type: directory
+          value: packages/ddd-wp/.*
+
+    - name: DddSymfony
+      collectors:
+        - type: directory
+          value: packages/ddd-symfony/.*
+
+    - name: WordPress
+      collectors:
+        - type: directory
+          value: vendor/php-stubs/.*
+        - type: directory
+          value: vendor/woocommerce/action-scheduler/.*
+        - type: classNameRegex
+          value: '#^(wpdb|WP_[A-Za-z_]+|WP_CLI(\\.*)?|ActionScheduler(_[A-Za-z_]+)?)$#'
+        # An unqualified call inside a namespace (add_action() in namespace
+        # TangibleDDD\Foo) is recorded under the namespaced name it would try
+        # first. Collect those fallbacks for the WordPress and Action
+        # Scheduler API families so they count as WordPress too.
+        - type: functionName
+          value: '#^TangibleDDD\\(.+\\)?(add_(action|filter|option|site_option|menu_page|submenu_page)|(apply|remove)_filters?|(do|has|did|doing|remove)_action|(get|update|delete)_(option|site_option|transient|site_transient|user_meta|post_meta|userdata|user_by)|set_(transient|site_transient)|wp_\w+|is_(multisite|admin|user_logged_in)|get_current_(blog_id|user_id|user)|switch_to_blog|restore_current_blog|current_user_can|dbDelta|maybe_(un)?serialize|esc_\w+|sanitize_\w+|as_\w+|register_(activation|deactivation)_hook|plugins_url|plugin_dir_(path|url)|admin_url|__|_e|_x|_n|absint|selected|checked)$#'
+
+    - name: Symfony
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\#'
+
+    - name: Makina
+      collectors:
+        - type: classNameRegex
+          value: '#^MakinaCorpus\\#'
+
+    - name: Doctrine
+      collectors:
+        - type: classNameRegex
+          value: '#^Doctrine\\#'
+
+  # Split-deferred classes (docs/extraction/wave2-move-table.md, status
+  # "split-deferred"): Command, InfrastructureEvent and ProcessRunner still
+  # live in packages/ddd-wp/src until their core halves land in wave 2 round 2,
+  # so these core files reach ddd-wp for now. Each entry is exact; deptrac
+  # reports an entry that no longer matches as an error, so the list must
+  # shrink to nothing as the round-2 moves merge. Nothing may be added here.
+  skip_violations:
+    TangibleDDD\Application\Commands\DiscardDeadLetterCommand:
+      - TangibleDDD\Application\Commands\Command
+      - TangibleDDD\WordPress\SelfConsumer\di()
+    TangibleDDD\Application\Commands\PurgeOutboxCommand:
+      - TangibleDDD\Application\Commands\Command
+      - TangibleDDD\WordPress\SelfConsumer\di()
+    TangibleDDD\Application\Commands\ReplayDeadLetterCommand:
+      - TangibleDDD\Application\Commands\Command
+      - TangibleDDD\WordPress\SelfConsumer\di()
+    TangibleDDD\Application\Commands\RetryDeliveryCommand:
+      - TangibleDDD\Application\Commands\Command
+      - TangibleDDD\WordPress\SelfConsumer\di()
+    TangibleDDD\Application\Infrastructure\FactDeliveredUnheard:
+      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
+    TangibleDDD\Application\Infrastructure\OutboxAttemptFailed:
+      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
+    TangibleDDD\Application\Infrastructure\OutboxDeadLettered:
+      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
+    TangibleDDD\Application\Infrastructure\ProcessFailed:
+      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
+    TangibleDDD\Application\Infrastructure\WorkflowFailed:
+      - TangibleDDD\Application\Infrastructure\InfrastructureEvent
+    TangibleDDD\Runtime\Delivery\SubscriptionRegistrar:
+      - TangibleDDD\Application\Process\ProcessRunner
+
+  ruleset:
+    Core: ~
+    CoreDiBridge:
+      - Core
+      - Symfony
+    PdoDefault:
+      - Core
+    DddWp:
+      - Core
+      - CoreDiBridge
+      - WordPress
+      - Symfony
+      - Makina
+    DddSymfony:
+      - Core
+      - CoreDiBridge
+      - Symfony
+      - Doctrine
+    WordPress: ~
+    Symfony: ~
+    Makina: ~
+    Doctrine: ~

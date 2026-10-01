@@ -6,9 +6,10 @@ namespace TangibleDDD\Runtime\Delivery;
 
 use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\Commands\ICommand;
+use TangibleDDD\Application\EventHandlers\IntegrationTranslator;
+use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
-use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Application\Process\StartsOn;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
@@ -23,9 +24,13 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  *   translate(IIntegrationEvent): ?ICommand) and 0.6 IntegrationListener
  *   subclasses (read through their protected get_event_class()/get_command()).
  *   A class string is resolved through the container when it has it, else
- *   constructed without arguments. Priority is Subscriber::LISTENER unless
- *   the class declares #[SubscriberPriority]. Id: `listener:<class>`.
- *   On budget exhaustion, an IExternalEffectCommand's failureCommand() is sent.
+ *   constructed without arguments; a 0.6 IntegrationListener subclass is
+ *   built WITHOUT its self-registering constructor (see resolve()).
+ *   Priority is Subscriber::LISTENER unless the class declares
+ *   #[SubscriberPriority]. Id: `listener:<class>`. The translated command is
+ *   sent with the deterministic id uuid5(event_id, subscriber_id)
+ *   (DeterministicCommandId; register 3.8). On budget exhaustion, an
+ *   IExternalEffectCommand's failureCommand() is sent.
  *
  * registerProcess(class-string<LongProcess>):
  *   Each #[StartsOn(E)] → `ignition:<process>@<E>` at Subscriber::IGNITION,
@@ -37,37 +42,25 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  * listener / LongProcess, an event class that is neither an
  * IIntegrationEvent nor an interface, or #[StartsOn] without a static
  * from_event(); \LogicException for registerProcess() without a process
- * entry, and at construction for a ProcessRunner that does not implement
- * IProcessEntry yet (the 0.6 runner keeps its ignition dedup inside its own
- * hook closure, so wrapping it here would lose bug-2 protection).
+ * entry.
  *
- * Transitional (wave 1): the register 3.5 sketch is
- * `__construct(ISubscriptionRegistry, ProcessRunner $runner, ?ContainerInterface)`.
- * Until wave 2 makes ProcessRunner implement IProcessEntry, the runner
- * parameter is `ProcessRunner|IProcessEntry|null` and a plain ProcessRunner
- * is refused. Wave 2 narrows it to IProcessEntry and removes the
- * LogicException branch (UNRATIFIED; CR-3 in Runtime/API-CHANGE-REQUESTS.md).
+ * The register 3.5 sketch takes `ProcessRunner $runner`; CR-3 (ratified)
+ * types it as the IProcessEntry port, which ProcessRunner implements from
+ * wave 2 (so `new SubscriptionRegistrar($registry, $runner)` is the sketch's
+ * call). Use one registration path per runner: the runner's own
+ * register_event()/register_start() subscribe under consumer-prefixed ids,
+ * so registering the same process through both would resume it twice.
  *
  * Lifetime: boot time; registering the same listener or process twice is
  * idempotent (the registry ignores duplicate ids).
  */
 final class SubscriptionRegistrar {
 
-  private readonly ?IProcessEntry $processes;
-
   public function __construct(
     private readonly ISubscriptionRegistry $registry,
-    ProcessRunner|IProcessEntry|null $runner = null,
+    private readonly ?IProcessEntry $processes = null,
     private readonly ?ContainerInterface $services = null,
-  ) {
-    if ($runner !== null && !$runner instanceof IProcessEntry) {
-      throw new \LogicException(
-        'This ProcessRunner does not implement ' . IProcessEntry::class
-        . ' yet (wave 2/3); pass an IProcessEntry to SubscriptionRegistrar.'
-      );
-    }
-    $this->processes = $runner;
-  }
+  ) {}
 
   public function registerListener(string|object $listener): void {
     $instance = is_object($listener) ? $listener : $this->resolve($listener);
@@ -80,12 +73,22 @@ final class SubscriptionRegistrar {
       $priority = $attrs[0]->newInstance()->priority;
     }
 
+    $id = 'listener:' . get_class($instance);
     $this->registry->add(new Subscriber(
-      'listener:' . get_class($instance),
+      $id,
       $priority,
       $eventClass,
-      static function (IIntegrationEvent $event) use ($translate): void {
-        $translate($event)?->send();
+      static function (IIntegrationEvent $event, string $eventId = '') use ($translate, $id): void {
+        $command = $translate($event);
+        if ($command === null) {
+          return;
+        }
+        // Register 3.8: inside a fact cause the command id is
+        // uuid5(event_id, subscriber_id), so a redelivery repeats it.
+        DeterministicCommandId::within(
+          $eventId !== '' ? DeterministicCommandId::forFact($eventId, $id) : null,
+          static fn () => $command->send()
+        );
       },
       static function (IIntegrationEvent $event, \Throwable $last) use ($translate): void {
         $command = $translate($event);
@@ -139,6 +142,14 @@ final class SubscriptionRegistrar {
     }
   }
 
+  /**
+   * Container first. Otherwise a translator whose constructor is INHERITED
+   * from a framework base (the 0.6 IntegrationListener, whose constructor
+   * self-registers on a WordPress hook) is built without running that
+   * constructor: the registrar is the registration, and running it too would
+   * subscribe twice on WordPress and fatal elsewhere (wave1-notes core
+   * minor 3). Any other class is constructed without arguments.
+   */
   private function resolve(string $class): object {
     if ($this->services?->has($class)) {
       return $this->services->get($class);
@@ -146,6 +157,18 @@ final class SubscriptionRegistrar {
     if (!class_exists($class)) {
       throw new \InvalidArgumentException("Listener class $class does not exist");
     }
+
+    $reflection = new \ReflectionClass($class);
+    $constructor = $reflection->getConstructor();
+    if (
+      $constructor !== null
+      && $reflection->isSubclassOf(IntegrationTranslator::class)
+      && $constructor->getDeclaringClass()->getName() !== $class
+      && str_starts_with($constructor->getDeclaringClass()->getName(), 'TangibleDDD\\')
+    ) {
+      return $reflection->newInstanceWithoutConstructor();
+    }
+
     return new $class();
   }
 

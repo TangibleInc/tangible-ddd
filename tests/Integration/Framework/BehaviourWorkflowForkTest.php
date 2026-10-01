@@ -67,7 +67,7 @@ final class BehaviourWorkflowForkTest extends IntegrationTestCase
 
         $di = \Tangible\Datastream\WordPress\DI\di();
 
-        require_once dirname(__DIR__, 3) . '/ddd-wordpress/tables.php';
+        require_once dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/tables.php';
         \TangibleDDD\WordPress\install_behaviour_workflow_tables($di->get(IDDDConfig::class));
         \TangibleDDD\WordPress\install_behaviour_workflow_item_tables($di->get(IDDDConfig::class));
 

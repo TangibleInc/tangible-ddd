@@ -35,7 +35,7 @@ final class BehaviourWorkflowMetaTableTest extends IntegrationTestCase
 
         $di = \Tangible\Datastream\WordPress\DI\di();
 
-        require_once dirname(__DIR__, 3) . '/ddd-wordpress/tables.php';
+        require_once dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/tables.php';
         \TangibleDDD\WordPress\install_behaviour_workflow_tables($di->get(IDDDConfig::class));
         \TangibleDDD\WordPress\install_behaviour_workflow_meta_table($di->get(IDDDConfig::class));
 
@@ -210,7 +210,7 @@ final class BehaviourWorkflowMetaTableTest extends IntegrationTestCase
         ]);
         $id = (int) $this->wpdb->insert_id;
 
-        require_once dirname(__DIR__, 3) . '/ddd-wordpress/migrations.php';
+        require_once dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/migrations.php';
         $migrations = \TangibleDDD\WordPress\ddd_explicit_migrations();
         $this->assertArrayHasKey(7, $migrations, 'v7 exists');
         $migrations[7]($this->config);

@@ -1,16 +1,6 @@
 <?php
 /**
- * Register WP-CLI commands for TangibleDDD.
- *
- * @package TangibleDDD
+ * Forwarding shim (wave 2): moved to packages/ddd-wp/wordpress/cli/register.php. Kept
+ * while the winner's procedural list in tangible-ddd.php names this path.
  */
-
-namespace TangibleDDD\WordPress\CLI;
-
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
-  return;
-}
-
-require_once __DIR__ . '/class-ddd-command.php';
-
-\WP_CLI::add_command( 'ddd', DDD_Command::class );
+require_once dirname(__DIR__, 2) . '/packages/ddd-wp/wordpress/cli/register.php';

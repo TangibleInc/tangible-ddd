@@ -8,10 +8,8 @@ namespace TangibleDDD\Runtime\Ids;
  * RFC 4122 version-5 (SHA-1, name-based) UUIDs: the deterministic id mint of
  * register 3.1 / D13.
  *
- * The register places this as `TangibleDDD\Domain\Shared\Uuid::v5()`. Wave 1
- * may not edit existing classes, so the algorithm lives here and `Uuid::v5()`
- * delegates to it once the class moves in wave 2 (CR-6 in
- * Runtime/API-CHANGE-REQUESTS.md).
+ * The register places this as `TangibleDDD\Domain\Shared\Uuid::v5()`, which
+ * delegates here from wave 2 (CR-6); adapters call `Uuid::v5()`.
  *
  * Uses: ignition keys `uuid5(event_id, process_class)` (X7), deterministic
  * command ids `uuid5(event_id, subscriber_id)` inside a fact cause (3.8).

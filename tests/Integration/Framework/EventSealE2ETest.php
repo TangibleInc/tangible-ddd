@@ -61,7 +61,7 @@ final class EventSealE2ETest extends CommandIntegrationTestCase
         require_once dirname(__DIR__, 3) . '/.reference/tangible-datastream/includes/database/captured-events.php';
         tangible_datastream_install_captured_events_table(new DatastreamConfig($wpdb->prefix));
 
-        require_once dirname(__DIR__, 3) . '/ddd-wordpress/tables.php';
+        require_once dirname(__DIR__, 3) . '/packages/ddd-wp/wordpress/tables.php';
         \TangibleDDD\WordPress\install_outbox_tables(
             \Tangible\Datastream\WordPress\DI\di()->get(IDDDConfig::class)
         );

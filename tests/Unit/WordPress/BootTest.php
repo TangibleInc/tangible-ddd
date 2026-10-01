@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Tests\Unit\WordPress;
 
-require_once __DIR__ . '/../../../ddd-src/Application/Process/LongProcessCatalog.php';
+require_once __DIR__ . '/../../../packages/ddd-core/src/Application/Process/LongProcessCatalog.php';
 
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Process\LongProcessCatalog;
@@ -20,11 +20,11 @@ use function TangibleDDD\WordPress\consumers;
 
 // Procedural ddd-wordpress files; load directly (mirrors MigrationsTest).
 if (!function_exists('TangibleDDD\\WordPress\\boot')) {
-  require_once __DIR__ . '/../../../ddd-wordpress/hooks.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/tables.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/migrations.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerHandle.php';
-  require_once __DIR__ . '/../../../ddd-wordpress/ConsumerRegistry.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/hooks.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/tables.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/migrations.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/ConsumerHandle.php';
+  require_once __DIR__ . '/../../../packages/ddd-wp/wordpress/ConsumerRegistry.php';
 }
 
 /**

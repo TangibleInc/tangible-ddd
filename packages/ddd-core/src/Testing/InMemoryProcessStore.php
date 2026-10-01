@@ -16,8 +16,11 @@ use TangibleDDD\Runtime\Process\StrandedProcess;
 
 /**
  * In-memory IProcessStore. Rows hold a serialized copy, so find() never
- * returns the live instance (as a database would not). The stranded scan is
- * age-based only: this double does not know about intents; hosts join them.
+ * returns the live instance (as a database would not). The stranded scan
+ * reports `running`/`scheduled` rows older than the threshold that have NO
+ * live intent (a pending, not completed or cancelled, intent for the process
+ * id) in the attached InMemoryWakeupScheduler; with none attached it is
+ * age-based only.
  */
 final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional {
 
@@ -29,10 +32,24 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
 
   private int $nextId = 1;
 
+  private ?InMemoryWakeupScheduler $intents;
+
+  /**
+   * @param InMemoryWakeupScheduler|null $intents the host's intents, so the
+   *   stranded scan can honour "no live intent" (or attachIntents() later)
+   */
   public function __construct(
     private readonly IClock $clock,
     private readonly int $strandedAfterSeconds = 900,
-  ) {}
+    ?InMemoryWakeupScheduler $intents = null,
+  ) {
+    $this->intents = $intents;
+  }
+
+  /** Join the stranded scan to these intents (the scheduler is often built after the store). */
+  public function attachIntents(InMemoryWakeupScheduler $intents): void {
+    $this->intents = $intents;
+  }
 
   public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     $key = IgnitionKey::for($eventId, $processClass);
@@ -114,8 +131,19 @@ final class InMemoryProcessStore implements IProcessStore, InMemoryTransactional
 
   public function findStranded(\DateTimeImmutable $now): array {
     $cutoff = $now->modify("-{$this->strandedAfterSeconds} seconds");
+
+    $live = [];
+    foreach ($this->intents?->pending() ?? [] as $intent) {
+      if ($intent->processId !== null) {
+        $live[$intent->processId] = true;
+      }
+    }
+
     $out = [];
     foreach ($this->rows as $id => $row) {
+      if (isset($live[$id])) {
+        continue;
+      }
       if (in_array($row['status'], ['running', 'scheduled'], true) && $row['updated_at'] <= $cutoff) {
         $out[] = new StrandedProcess($id, $row['class'], $row['status'], $row['step_index'], $row['updated_at']);
       }

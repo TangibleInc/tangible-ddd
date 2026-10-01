@@ -12,10 +12,14 @@ final class RecordingCommand implements ICommand {
   /** @var list<self> */
   public static array $sent = [];
 
+  /** @var list<?string> the deterministic command id hint pending at each send() */
+  public static array $hints = [];
+
   public function __construct(public readonly string $label, public readonly mixed $data = null) {}
 
   public function send(): mixed {
     self::$sent[] = $this;
+    self::$hints[] = \TangibleDDD\Runtime\Ids\DeterministicCommandId::peek();
     return null;
   }
 

@@ -26,6 +26,9 @@
     "autoload": {
         "psr-4": {
             "TangibleDDD\\": "src/"
-        }
+        },
+        "files": [
+            "src/Domain/Shared/assert.php"
+        ]
     }
 }

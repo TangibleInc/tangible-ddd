@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Testing;
 
+use Psr\Log\LoggerInterface;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
@@ -33,10 +34,10 @@ final class InMemoryTransactionBoundary implements ITransactionBoundary {
 
   private ?string $failRollback = null;
 
-  /** @param (\Closure(string):void)|null $log */
+  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
   public function __construct(
     private readonly NestedPolicy $policy = NestedPolicy::Reject,
-    private readonly ?\Closure $log = null,
+    private readonly LoggerInterface|\Closure|null $log = null,
   ) {}
 
   public function enlist(InMemoryTransactional $participant): void {

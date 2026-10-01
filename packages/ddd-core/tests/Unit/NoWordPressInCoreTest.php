@@ -12,7 +12,11 @@ use PHPUnit\Framework\TestCase;
  */
 final class NoWordPressInCoreTest extends TestCase {
 
-  private const FORBIDDEN = '/wpdb|add_action|do_action|as_schedule|get_option|is_multisite|global \$|TangibleDDD\\\\WordPress|Tangible_DDD_Versions|ActionScheduler/';
+  /**
+   * Includes the wave-2 acceptance grep set (apply_filters, as_enqueue,
+   * update_option, wp_json_encode, get_current_user_id, $GLOBALS).
+   */
+  private const FORBIDDEN = '/wpdb|add_action|do_action|apply_filters|as_schedule|as_enqueue|get_option|update_option|is_multisite|wp_json_encode|get_current_user_id|\$GLOBALS|global \$|TangibleDDD\\\\WordPress|Tangible_DDD_Versions|ActionScheduler/';
 
   public function test_core_sources_name_no_wordpress_symbol(): void {
     $src = dirname(__DIR__, 2) . '/src';

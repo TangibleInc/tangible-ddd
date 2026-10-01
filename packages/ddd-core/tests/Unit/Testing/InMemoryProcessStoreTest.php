@@ -157,6 +157,40 @@ final class InMemoryProcessStoreTest extends TestCase {
     self::assertNotContains($fresh, array_map(static fn ($s) => $s->processId, $stranded));
   }
 
+  public function test_find_stranded_skips_a_row_with_a_live_intent(): void {
+    // wave1-notes core minor 4: "running/scheduled with NO LIVE INTENT past threshold".
+    $boundary = new InMemoryTransactionBoundary();
+    $intents = new \TangibleDDD\Testing\InMemoryWakeupScheduler($boundary);
+    $store = new InMemoryProcessStore($this->clock, 900, $intents);
+
+    $covered = $store->insert($this->process('scheduled'));
+    $bare = $store->insert($this->process('scheduled'));
+    $boundary->run(fn () => $intents->schedule(
+      \TangibleDDD\Runtime\Scheduling\WakeupIntent::continuation('acme', $covered, 0, $this->clock->now())
+    ));
+    $this->clock->advance('PT16M');
+
+    self::assertSame([$bare], array_map(static fn ($s) => $s->processId, $store->findStranded($this->clock->now())));
+
+    // Completing the intent makes the row stranded again.
+    $claimed = $intents->claimDue($this->clock->now(), 10, 60);
+    $intents->complete($claimed[0]);
+    self::assertSame([$covered, $bare], array_map(static fn ($s) => $s->processId, $store->findStranded($this->clock->now())));
+  }
+
+  public function test_intents_can_be_attached_after_construction(): void {
+    $boundary = new InMemoryTransactionBoundary();
+    $intents = new \TangibleDDD\Testing\InMemoryWakeupScheduler($boundary);
+    $id = $this->store->insert($this->process('running'));
+    $this->store->attachIntents($intents);
+    $boundary->run(fn () => $intents->schedule(
+      \TangibleDDD\Runtime\Scheduling\WakeupIntent::timeout('acme', $id, 0, $this->clock->now())
+    ));
+    $this->clock->advance('PT16M');
+
+    self::assertSame([], $this->store->findStranded($this->clock->now()));
+  }
+
   public function test_an_undecodable_row_is_quarantined_as_failed_and_the_worker_continues(): void {
     $bad = $this->store->insert($this->process());
     $good = $this->store->insert($this->process());
