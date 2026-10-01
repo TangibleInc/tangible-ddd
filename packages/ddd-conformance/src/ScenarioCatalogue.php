@@ -74,9 +74,10 @@ final class ScenarioCatalogue {
   private const S = 'TangibleDDD\\Conformance\\Scenarios\\';
 
   /**
-   * The abstract scenario case (src/Scenarios) that declares each id up to
-   * wave 3, i.e. the class a host extends to run it. Wave-4 ids are added
-   * with their scenarios. CatalogueTest pins this map against reflection.
+   * The abstract scenario case (src/Scenarios) that declares each id, i.e.
+   * the class a host extends to run it. Wave-4 ids live in cases of their
+   * own, so a host class written for wave 3 runs unchanged.
+   * CatalogueTest pins this map against reflection.
    *
    * @var array<string, class-string>
    */
@@ -131,7 +132,7 @@ final class ScenarioCatalogue {
     'wakeup.post-commit'                      => self::S . 'PostCommitWakeupScenarios',
   ];
 
-  /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
+  /** The abstract scenario case declaring $id, or null for an unknown id. */
   public static function scenarioCase(string $id): ?string {
     return self::CASES[$id] ?? null;
   }
