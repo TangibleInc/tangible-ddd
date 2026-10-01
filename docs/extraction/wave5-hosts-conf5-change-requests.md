@@ -42,6 +42,10 @@ The review confirmed both diagnoses and assigned them as above: HC5-1 to the sf 
 - HC5-1 merged: `cd packages/ddd-symfony && composer install && rm -rf var/cache && vendor/bin/phpunit` (re-install because the conformance package is copied into vendor; see below).
 - HC5-2 merged: `tests/harness/run.sh conformance-wp` (wp reads the conformance package through the root autoloader).
 
+### Fix round 2 status
+
+`origin/extraction/ddd-packages` is still at `f1882c5`, so neither the HC5-1 fix nor the HC5-2 fix (nor a coordinator deferral) is available. Both blockers stay red for the same reasons. This round only fixed the `SfHostFixture` minor: the import block is now sorted, and `deliver_routed()` documents that "due" is Messenger's wall-clock `available_at` and that `$eventClass` is unused. Re-run results: core-pdo green (49/49 due, both modes); conformance-wp red only on `workflow.item-deterministic-id` (40/41); sf 503 tests with 1 failure (`process.resume-contention-keeps-answer`); root suite green. **Do not merge this branch before HC5-1 and HC5-2 are fixed or ruled deferred.** If the branch has to merge first, the coordinator must rule a deferral that takes the two ids out of the wave-5 due set (sf catalogue for HC5-1, wp catalogue cell for HC5-2), so the gates stay green.
+
 ## Other notes
 
 - The usage text and the header comment at the top of `tests/harness/run.sh` still say "wave 3" / "wave 2" for `core-pdo` / `conformance-wp`. Both are outside the two owned blocks, so they are not edited here; whoever owns the harness can bring them up to date.
