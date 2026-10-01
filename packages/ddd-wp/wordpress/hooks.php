@@ -137,7 +137,24 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
   }
 
   register_outbox_hooks($config, $di_getter);
+  register_delivery_hooks($config);
   register_migration_hooks($config);
+}
+
+/**
+ * Register the handler-retry hook `{prefix}_ddd_redeliver` (register 3.6,
+ * 5.1; schema v8): Action Scheduler runs it with ['hook', 'event_class',
+ * 'payload'] to re-run the DDD subscribers of one fact that failed, through
+ * the delivery ledger (WpLedgeredDelivery). It has no callback under 0.6,
+ * so pending redeliveries are lost on a rollback unless
+ * `wp ddd drain --before-rollback` ran first. Once per prefix.
+ */
+function register_delivery_hooks(IDDDConfig $config): void {
+  // Named parameters $hook, $event_class, $payload match the action's args keys.
+  $callback = [\TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class, 'redeliver'];
+  if (has_action($config->hook('ddd_redeliver'), $callback) === false) {
+    add_action($config->hook('ddd_redeliver'), $callback, 10, 3);
+  }
 }
 
 /**

@@ -9,28 +9,28 @@ use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Infra\Consumers\IntegrationHookName;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
-use TangibleDDD\Runtime\Support\Log;
 
 /**
- * Transitional wave-2 ISubscriptionRegistry on WordPress (register 3.5,
- * section 8), fed by SubscriptionRegistrar and by ProcessRunner's
- * register_event()/register_start(). add() binds ONE add_action callback per
- * Subscriber on the fact's legacy integration hook, at the subscriber's
- * numeric priority, so ordering (listeners 10, ignition 50, resume 99,
- * anything else where its caller put it) is WordPress' own, exactly as 0.6.
+ * The wp ISubscriptionRegistry (register 3.5), fed by SubscriptionRegistrar
+ * and by ProcessRunner's register_event()/register_start(). add() binds ONE
+ * add_action callback per Subscriber on the fact's legacy integration hook,
+ * at the subscriber's numeric priority, so ordering (listeners 10, ignition
+ * 50, resume 99, anything else where its caller put it) is WordPress' own,
+ * exactly as 0.6.
  *
- * The callback is the 0.6 drain bracket: unwrap the envelope, open
+ * The callback is the 0.6 drain bracket (unwrap the envelope, open
  * Correlation::within(for_fact(event_id)) when the envelope carries a
- * correlation id and an event id, hydrate with from_payload(), and call the
- * subscriber's handle($event, $eventId).
- *
- * No IntegrationDelivery and no ledger before schema v8 (wave 3), so a
+ * correlation id and an event id, hydrate with from_payload(), call the
+ * subscriber's handle($event, $eventId)), bound through WpLedgeredDelivery:
+ * on a schema v8 consumer each subscriber is isolated and ledgered per
+ * (subscriber id, event_id), retried through `{prefix}_ddd_redeliver` and
+ * budgeted, with its onExhausted compensation at the budget. Before v8 a
  * throwing callback aborts the rest of do_action, as in 0.6.
  *
  * Id-less payloads (wave1-notes): an envelope without `__event_id` (a hook
- * fired by hand, a hand-built payload) is still delivered, unledgered, with
- * eventId '' (the runner then starts without ignition dedup, as 0.6 did),
- * and a notice is logged once per hook per request.
+ * fired by hand, a hand-built payload) bypasses the ledger and is delivered
+ * directly with eventId '' (the runner then starts without ignition dedup,
+ * as 0.6 did); WpLedgeredDelivery notes it once per hook per request.
  *
  * Unresolvable facts: a fact whose owning consumer is absent has no hook
  * (IntegrationHookName); add() skips it with the usual once-per-class note.
@@ -48,9 +48,6 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
   private array $bound = [];
 
   private int $seq = 0;
-
-  /** @var array<string, true> hooks already noted for an id-less payload this request */
-  private array $idlessNoted = [];
 
   public function add(Subscriber $s): void {
     $class = $s->eventClassOrMarker;
@@ -71,12 +68,9 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
       return;
     }
 
-    $callback = function (array $payload) use ($s, $class, $hook): void {
+    $invoke = static function (array $payload) use ($s, $class): void {
       $envelope = IntegrationEnvelope::unwrap($payload);
       $eventId = $envelope->event_id;
-      if ($eventId === null || $eventId === '') {
-        $this->noteIdless($hook);
-      }
 
       $ctx = $envelope->trace_context();
       if ($ctx !== null && $eventId !== null) {
@@ -90,6 +84,7 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
 
       $ctx !== null ? Correlation::within($ctx, $run) : $run();
     };
+    $callback = WpLedgeredDelivery::bind($hook, $class, $s->id, $s->priority, $invoke, $s->onExhausted);
     add_action($hook, $callback, $s->priority, 1);
 
     $this->bound[$s->id] = ['sub' => $s, 'hook' => $hook, 'callback' => $callback, 'seq' => ++$this->seq];
@@ -103,17 +98,6 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
     usort($matching, static fn (array $a, array $b) => [$a['sub']->priority, $a['seq']] <=> [$b['sub']->priority, $b['seq']]);
 
     return array_map(static fn (array $e) => $e['sub'], $matching);
-  }
-
-  private function noteIdless(string $hook): void {
-    if (isset($this->idlessNoted[$hook])) {
-      return;
-    }
-    $this->idlessNoted[$hook] = true;
-    Log::write(null, sprintf(
-      '[DDD Integration] %s fired without __event_id: delivered to DDD subscribers directly, without ledger or ignition dedup',
-      $hook
-    ), 'notice');
   }
 
   private static function ceremony(Subscriber $s): string {
