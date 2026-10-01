@@ -14,6 +14,7 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use TangibleDDD\Application\BehaviourWorkflows\IStartsFromFact;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
+use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Queries\SelfHandlingQuery;
 use TangibleDDD\Application\QueryHandlers\IQueryHandler;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
@@ -225,6 +226,9 @@ final class TangibleDddBundle extends AbstractBundle {
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
+    // Process classes found by the app's resource loading are processes, not services:
+    // the tag feeds the compile-time map; the unused definitions are removed afterwards.
+    $builder->registerForAutoconfiguration(LongProcess::class)->addTag(DddTags::LONG_PROCESS);
     $builder->registerForAutoconfiguration(IQueryHandler::class)->addTag(DddTags::QUERY_HANDLER);
     $builder->setParameter('tangible_ddd.self_handling', self::withCoreRepairCommands($config['self_handling'], $builder));
     $builder->registerForAutoconfiguration(SelfHandlingCommand::class)->addTag(DddTags::SELF_HANDLING);

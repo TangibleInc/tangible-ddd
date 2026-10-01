@@ -54,6 +54,7 @@ use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
 use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
@@ -323,7 +324,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.actor_context'), service('tangible_ddd.actor.security'), $console ? service('tangible_ddd.actor.console') : null]);
   $s->alias(IActorProvider::class, 'tangible_ddd.actor_provider');
 
-  // ── command pipeline (frozen order: act → tx → events → self → handler) ──
+  // ── command pipeline (frozen order: act → effect → tx → events → self → handler) ──
   $s->set(EventsUnitOfWork::class)->public();
 
   $s->set('tangible_ddd.domain_dispatcher', IDomainEventDispatcher::class)
@@ -370,6 +371,10 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       $logger,
     ])
     ->public();
+  // D1: between the act bracket and the transaction (register 3.11): perform()
+  // outside any transaction, journaled; record() through the transaction.
+  $s->set('tangible_ddd.middleware.effect', EffectMiddleware::class)
+    ->args([service('tangible_ddd.effect_journal'), service('tangible_ddd.transaction_boundary')]);
   $s->set('tangible_ddd.middleware.transaction', TransactionalCommandMiddleware::class)
     ->args([service('tangible_ddd.transaction_boundary')]);
   $s->set('tangible_ddd.middleware.domain_events', DomainEventsPublishMiddleware::class)
@@ -387,6 +392,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.command_bus', CommandBus::class)
     ->args([
       service('tangible_ddd.middleware.act_bracket'),
+      service('tangible_ddd.middleware.effect'),
       service('tangible_ddd.middleware.transaction'),
       service('tangible_ddd.middleware.domain_events'),
       service('tangible_ddd.middleware.self_executing'),
