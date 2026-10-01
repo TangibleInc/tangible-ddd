@@ -124,6 +124,9 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private bool $previousSuppress = false;
   private bool $crashAfterSubmit = false;
 
+  /** The id the first process of this test gets (a random base, see WpConformanceRuntime::installSchema()). */
+  private int $firstProcessId = 1;
+
   /** @var array<int, WpProcessWorker> */
   private array $workers = [];
 
@@ -168,7 +171,8 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->rt = new WpConformanceRuntime($this->clock, $this->logger);
     $this->config = $this->rt->config;
     $this->rt->provideHostDefaults();
-    $this->rt->installSchema();
+    $this->firstProcessId = random_int(1_000_000, 900_000_000);
+    $this->rt->installSchema($this->firstProcessId);
     foreach (['integration_outbox', 'integration_dlq', 'command_audit', 'touches', 'long_processes', 'ddd_wakeups', 'ddd_delivery_ledger', 'ddd_relay_pauses', 'scenario_rows'] as $table) {
       if ((string) $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $this->config->table($table))) !== $this->config->table($table)) {
         throw new \RuntimeException("conformance-wp: table {$this->config->table($table)} was not created: {$wpdb->last_error}");
@@ -459,6 +463,11 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->config;
   }
 
+  /** The id the next process inserted into this test's fresh table gets first. */
+  public function firstProcessId(): int {
+    return $this->firstProcessId;
+  }
+
   /**
    * What a 0.6 copy's relay would fetch right now (its own OutboxRepository
    * on the same tables; it leases what it returns, as 0.6 does).
@@ -565,10 +574,15 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   public function holdProcessLockElsewhere(int $processId): void {
     $db = $this->holder();
     $key = $this->processLockKey($processId);
+    $taken = [];
     foreach ([GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key)] as $name) {
       if ((string) $db->get_var($db->prepare('SELECT GET_LOCK(%s, 0)', $name)) !== '1') {
-        throw new \RuntimeException("conformance-wp: the other session could not take $name");
+        foreach ($taken as $held) {
+          $db->get_var($db->prepare('SELECT RELEASE_LOCK(%s)', $held));
+        }
+        throw new \RuntimeException("conformance-wp: the other session could not take $name (held by another run on this MySQL server?)");
       }
+      $taken[] = $name;
     }
   }
 

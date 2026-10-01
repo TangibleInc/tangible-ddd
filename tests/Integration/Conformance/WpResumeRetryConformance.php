@@ -99,26 +99,27 @@ final class WpResumeRetryConformance extends ProcessScenarioCase {
   #[TestDox('an in-band start that cannot lock is re-queued as a running ResumeRetry at the row version; the hook runs the first step once')]
   public function test_a_running_resume_retry_runs_the_first_step_at_the_stored_version(): void {
     $processes = $this->processes();
-    // The table is fresh: the process about to be inserted is #1.
-    $processes->beforeNextProcessLockAcquire(static fn () => $processes->holdProcessLockElsewhere(1));
+    // The table is fresh: the process about to be inserted gets the first id.
+    $id = $this->wp()->firstProcessId();
+    $processes->beforeNextProcessLockAcquire(static fn () => $processes->holdProcessLockElsewhere($id));
 
     $thrown = self::catchThrowable(fn () => $processes->worker()->processRunner()->start(new MakeWidgetProcess('w-1')));
 
     self::assertInstanceOf(ProcessLockUnavailable::class, $thrown);
-    self::assertSame('running', $this->row(1)->status);
+    self::assertSame('running', $this->row($id)->status);
     self::assertSame([], ProcessJournal::$steps, 'no step ran without the lock');
-    $retries = $this->intents(1, WakeKind::ResumeRetry);
+    $retries = $this->intents($id, WakeKind::ResumeRetry);
     self::assertCount(1, $retries);
     self::assertSame('running', $retries[0]->expectedStatus);
-    self::assertSame($this->row(1)->version, $retries[0]->retryVersion(), 'the key carries the row version');
+    self::assertSame($this->row($id)->version, $retries[0]->retryVersion(), 'the key carries the row version');
 
-    $processes->releaseProcessLockElsewhere(1);
+    $processes->releaseProcessLockElsewhere($id);
     $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
     \ActionScheduler::runner()->process_action($this->pendingActions('ddd_wakeup', ['key' => $retries[0]->idempotencyKey])[0], 'w3c-r1');
 
     self::assertSame(['make', 'finish'], ProcessJournal::$steps, 'the first step ran once, then the process finished');
-    self::assertSame('completed', $this->row(1)->status);
-    self::assertSame([], $this->intents(1));
+    self::assertSame('completed', $this->row($id)->status);
+    self::assertSame([], $this->intents($id));
   }
 
   #[TestDox('scheduling a finished ResumeRetry key again re-arms it with its own step index (null stays null) and expected status')]

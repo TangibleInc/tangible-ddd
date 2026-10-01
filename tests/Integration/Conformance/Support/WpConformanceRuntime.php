@@ -151,11 +151,24 @@ final class WpConformanceRuntime {
     );
   }
 
-  /** The schema v8 tables of the consumer and its schema version option, as a migrated install has them. */
-  public function installSchema(): void {
+  /**
+   * The schema v8 tables of the consumer and its schema version option, as
+   * a migrated install has them; process ids start at $firstProcessId.
+   *
+   * The legacy lock name `ddd_process_<id>` that GetLockProcessLock also
+   * takes is global to the MySQL SERVER (register 3.7, why lock.namespace
+   * is `-` on wp). Starting the ids at a random base keeps this run's
+   * process locks apart from any other run or suite on the same server,
+   * whose process tables count from 1.
+   */
+  public function installSchema(int $firstProcessId): void {
+    global $wpdb;
     install_tables($this->config);
     update_option(ddd_schema_version_key($this->config), 8, false);
     $this->rows->create();
+    if ($wpdb->query(sprintf('ALTER TABLE `%s` AUTO_INCREMENT = %d', $this->config->table('long_processes'), $firstProcessId)) === false) {
+      throw new \RuntimeException("conformance-wp: could not set the process id base: {$wpdb->last_error}");
+    }
   }
 
   /**
