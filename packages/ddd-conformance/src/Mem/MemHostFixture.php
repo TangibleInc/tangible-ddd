@@ -16,6 +16,8 @@ use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
 use TangibleDDD\Conformance\AuditEntry;
+use TangibleDDD\Conformance\AuditSinkFaults;
+use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\BusOptions;
 use TangibleDDD\Conformance\HostFixture;
 use TangibleDDD\Conformance\RelayReport;
@@ -23,6 +25,7 @@ use TangibleDDD\Conformance\ScenarioContext;
 use TangibleDDD\Conformance\ScenarioRows;
 use TangibleDDD\Conformance\SimulatedCrash;
 use TangibleDDD\Conformance\Support\ConformanceConfig;
+use TangibleDDD\Conformance\Support\FaultInjectingAuditSink;
 use TangibleDDD\Conformance\Support\HandlerMapMiddleware;
 use TangibleDDD\Conformance\Support\RecordingLogger;
 use TangibleDDD\Conformance\Support\RecordingOutboxStore;
@@ -86,7 +89,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in setUp().
  */
-final class MemHostFixture implements HostFixture {
+final class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -109,6 +112,7 @@ final class MemHostFixture implements HostFixture {
   private InMemoryScenarioRows $rows;
   private OrderedListenerDispatcher $dispatcher;
   private InMemoryAuditSink $audit;
+  private FaultInjectingAuditSink $auditPort;
   private RecordingFactObserver $facts;
   private OutboxConfig $outboxConfig;
 
@@ -148,6 +152,7 @@ final class MemHostFixture implements HostFixture {
     $this->rows = new InMemoryScenarioRows();
     $this->dispatcher = new OrderedListenerDispatcher();
     $this->audit = new InMemoryAuditSink();
+    $this->auditPort = new FaultInjectingAuditSink($this->audit);
     $this->facts = new RecordingFactObserver();
 
     $this->boundary->enlist($this->outbox);
@@ -236,7 +241,7 @@ final class MemHostFixture implements HostFixture {
         $this->config,
         $this->events,
         new Redactor(),
-        $this->audit,
+        $this->auditPort,
         new FixedActorProvider(),
         $policy,
         new PhpEnvironmentProvider(['host' => 'mem']),
@@ -387,6 +392,16 @@ final class MemHostFixture implements HostFixture {
 
   public function runnerTransients(): ?array {
     return null; // no process runner on mem until wave 3 (ProcessRunner on the ports)
+  }
+
+  // ── optional seams (CR-CC-1) ─────────────────────────────────────────────
+
+  public function failNextAuditClose(string $reason): void {
+    $this->auditPort->failNextClose($reason);
+  }
+
+  public function signals(): array {
+    return array_map(static fn (array $s) => $s['event'], $this->signals->emitted);
   }
 
   // ── mem-only read-back (not HostFixture) ─────────────────────────────────

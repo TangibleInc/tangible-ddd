@@ -37,6 +37,8 @@ final class SfRelayScenariosTest extends RelayScenarios {
 
 Host hooks: `RelayScenarios::whileLeased(Claim)` runs while a lease is live. wp overrides it to check that a 0.6 `fetch_pending()` skips the claimed row.
 
+Optional seams (separate interfaces, so `HostFixture` itself does not change; CR-CC-1): `audit.sink-fails` needs the fixture to implement `AuditSinkFaults` (`failNextAuditClose(string)`) and `RecordsSignals` (`signals()`, the `IInfrastructureEvent`s emitted since setUp). Without both the scenario is skipped with `blocked on CR-CC-1`.
+
 ## The mem pipeline
 
 Since wave 2 round 3 the mem host runs on the real ddd-core classes; the wave-1 stand-ins (CONF-1..3) are deleted and `tests/bootstrap.php` loads only Composer autoload. `tests/Mem/MemHostCompositionTest.php` pins this.

@@ -6,12 +6,15 @@ namespace TangibleDDD\Conformance\Tests;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Conformance\AuditSinkFaults;
+use TangibleDDD\Conformance\Mem\MemHostFixture;
+use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\ScenarioCatalogue;
 use TangibleDDD\Conformance\ScenarioId;
 
 /**
  * Pins the catalogue to the exact per-wave id lists of register section 8,
- * and proves every id due on mem by wave 1 has a scenario method on a mem
+ * and proves every id due on mem by wave 2 has a scenario method on a mem
  * host class. Runs under `--group mem` too, so the acceptance command
  * fails when a due id has no scenario.
  */
@@ -48,15 +51,22 @@ final class CatalogueTest extends TestCase {
     self::assertCount(23, ScenarioCatalogue::firstDueAt('sf', 3));
   }
 
-  public function test_every_id_due_on_mem_by_wave_1_has_a_mem_scenario(): void {
+  public function test_every_id_due_on_mem_by_wave_2_has_a_mem_scenario(): void {
     $implemented = ScenarioId::implementedBy(self::memHostClasses());
 
-    $missing = array_values(array_diff(ScenarioCatalogue::dueBy('mem', 1), array_keys($implemented)));
-    self::assertSame([], $missing, 'Due on mem by wave 1 but no scenario method carries the id');
+    self::assertEqualsCanonicalizing([...self::MEM_WAVE_1, 'audit.sink-fails'], ScenarioCatalogue::dueBy('mem', 2), 'the 18 mem ids of waves 1-2');
+    $missing = array_values(array_diff(ScenarioCatalogue::dueBy('mem', 2), array_keys($implemented)));
+    self::assertSame([], $missing, 'Due on mem by wave 2 but no scenario method carries the id');
 
     foreach (array_keys($implemented) as $id) {
       self::assertTrue(ScenarioCatalogue::isKnown($id), "Scenario group '$id' is not a register id");
     }
+  }
+
+  public function test_the_mem_host_provides_the_optional_seams_its_wave_2_ids_need(): void {
+    // audit.sink-fails is skipped (CR-CC-1) on a fixture without them; mem must not skip it.
+    self::assertTrue(is_a(MemHostFixture::class, AuditSinkFaults::class, true), 'MemHostFixture implements AuditSinkFaults');
+    self::assertTrue(is_a(MemHostFixture::class, RecordsSignals::class, true), 'MemHostFixture implements RecordsSignals');
   }
 
   /** @return list<class-string> */
