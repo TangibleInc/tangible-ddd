@@ -17,6 +17,7 @@ use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
 use TangibleDDD\Conformance\ProcessWorker;
@@ -111,7 +112,7 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * then installs the v8 schema fresh. Nothing is wrapped in a per-test
  * transaction. tearDown() restores ddd-wp's HostDefaults.
  */
-final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses {
+final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, ProcessDecodeFaults {
 
   private const WAKE_HOOKS = ['process_continue', 'await_timeout', 'ddd_wakeup'];
 
@@ -632,6 +633,31 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
       add_action($hook, $fault, 0, 0);
       $this->boundHooks[] = [$hook, $fault, 0];
     }
+  }
+
+  // ── ProcessDecodeFaults (CR-W4C4-3, decode.unknown-class) ────────────────
+
+  /** The stored class is the 0.6 `process_class` column; nothing else in the row names it. */
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    global $wpdb;
+    $n = $wpdb->update($this->config->table('long_processes'), ['process_class' => $missingClass], ['id' => $processId]);
+    if ($n !== 1) {
+      throw new \RuntimeException("conformance-wp: could not rewrite the class of process #$processId: {$wpdb->last_error}");
+    }
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    return $this->processColumn($processId, 'status');
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    return $this->processColumn($processId, 'quarantine_reason');
+  }
+
+  private function processColumn(int $processId, string $column): ?string {
+    global $wpdb;
+    $v = $wpdb->get_var($wpdb->prepare("SELECT `$column` FROM `{$this->config->table('long_processes')}` WHERE id = %d", $processId));
+    return $v === null ? null : (string) $v;
   }
 
   // ── FreshProcesses (CR-W3CP-4) ───────────────────────────────────────────

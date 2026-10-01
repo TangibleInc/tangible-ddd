@@ -41,6 +41,25 @@ final class WpCatalogueConformance extends TestCase {
     'worker.no-leak',
   ];
 
+  /** Register section 8, wave 4, wp (3 ids; D1, D10 and the D3 ids are `-` on wp, O9 and CR-W4C4-1). */
+  private const WP_WAVE_4 = ['process.alarm-long', 'codec.large-payload', 'decode.unknown-class'];
+
+  public function test_wp_wave_4_matches_register_section_8(): void {
+    self::assertEqualsCanonicalizing(self::WP_WAVE_4, ScenarioCatalogue::firstDueAt('wp', 4));
+    self::assertEqualsCanonicalizing([...self::WP_WAVE_2, ...self::WP_WAVE_3, ...self::WP_WAVE_4], ScenarioCatalogue::dueBy('wp', 4));
+    foreach (['effect.journal-reuse', 'workflow.fact-ignition-once', 'wakeup.post-commit', 'process.await-keyed-precheck', 'process.await-any-cancellation', 'process.await-all-dynamic'] as $outOfScope) {
+      self::assertNotContains($outOfScope, ScenarioCatalogue::dueBy('wp', 4), "$outOfScope is - on wp");
+    }
+  }
+
+  public function test_every_id_due_on_wp_by_wave_4_has_a_wp_scenario_and_a_wp_class(): void {
+    $implemented = ScenarioId::implementedBy(self::wpHostClasses());
+    self::assertSame([], array_values(array_diff(ScenarioCatalogue::dueBy('wp', 4), array_keys($implemented))), 'due on wp by wave 4 but no wp scenario method carries the id');
+
+    $extended = array_values(array_filter(array_map(static fn (string $c) => get_parent_class($c), self::wpHostClasses())));
+    self::assertSame([], array_values(array_diff(ScenarioCatalogue::casesFor('wp', 4), $extended)));
+  }
+
   public function test_wp_wave_2_matches_register_section_8(): void {
     self::assertEqualsCanonicalizing(self::WP_WAVE_2, ScenarioCatalogue::firstDueAt('wp', 2));
     self::assertEqualsCanonicalizing(self::WP_WAVE_2, ScenarioCatalogue::dueBy('wp', 2));
