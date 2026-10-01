@@ -575,7 +575,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   public function fail_statement(): void {
     if (!$this->db->in_transaction()) {
-      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+      throw new \LogicException('fail_statement() runs inside the open transaction');
     }
     // MySQL rejects the statement (1048, NOT NULL) and keeps the transaction usable.
     $this->db->execute("INSERT INTO `{$this->tablePrefix}scenario_rows` (id, value) VALUES (?, NULL)", ['statement-error']);

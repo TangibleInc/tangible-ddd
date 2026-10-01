@@ -477,7 +477,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   public function relay_until(string $eventId, float $timeoutSeconds): ?float {
-    $waiter = $this->relayWaiter ?? throw new \LogicException('startRelayWorker() first');
+    $waiter = $this->relayWaiter ?? throw new \LogicException('start_relay() first');
     $start = microtime(true);
     while (true) {
       // Idle: blocked in LISTEN until a NOTIFY arrives or the poll interval (from going idle) is up.
@@ -497,7 +497,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   public function await_wakeup(float $timeoutSeconds): bool {
-    return ($this->relayWaiter ?? throw new \LogicException('startRelayWorker() first'))->wait($timeoutSeconds);
+    return ($this->relayWaiter ?? throw new \LogicException('start_relay() first'))->wait($timeoutSeconds);
   }
 
   public function drop_next_wakeup(): void {
@@ -698,7 +698,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   public function fail_statement(): void {
     if (!$this->connection->isTransactionActive()) {
-      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+      throw new \LogicException('fail_statement() runs inside the open transaction');
     }
     // A duplicate primary key: Postgres rejects it and aborts the transaction (25P02).
     $this->connection->executeStatement('INSERT INTO ' . ScenarioSchemaMiddleware::FAULT_TABLE . '_parent (id) VALUES (1), (1)');
