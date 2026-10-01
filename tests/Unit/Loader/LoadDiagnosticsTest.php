@@ -207,9 +207,25 @@ final class LoadDiagnosticsTest extends TestCase
         $root = dirname(__DIR__, 3);
         $found = array_filter(
             \Tangible_DDD_Load_Diagnostics::declared_elsewhere($root),
-            static fn(string $class): bool => !str_contains($class, '\\Fx\\'),
+            static fn(string $class): bool => !self::is_fixture($class),
             ARRAY_FILTER_USE_KEY
         );
         $this->assertSame([], $found);
+    }
+
+    public function test_only_tangible_ddd_fx_namespaces_count_as_fixtures(): void
+    {
+        $this->assertTrue(self::is_fixture('TangibleDDD\\Fx\\Preloaded1'));
+        $this->assertTrue(self::is_fixture('TangibleDDD\\WordPress\\Fx\\Winner'));
+        $this->assertTrue(self::is_fixture('TangibleDDD\\Symfony\\Fx\\Kernel'));
+        $this->assertFalse(self::is_fixture('Acme\\Fx\\Duplicate'));
+        $this->assertFalse(self::is_fixture('TangibleDDD\\Fxx\\Thing'));
+        $this->assertFalse(self::is_fixture('TangibleDDD\\Infra\\Fx'));
+    }
+
+    private static function is_fixture(string $class): bool
+    {
+        return str_starts_with($class, 'TangibleDDD\\')
+            && str_contains($class, '\\Fx\\');
     }
 }
