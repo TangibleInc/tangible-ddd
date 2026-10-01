@@ -31,7 +31,7 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
  * - no idempotency-key dedup (the runner schedules each intent once; an AS
  *   "has scheduled action" probe would also match the IN-PROGRESS action of
  *   the wake that is rescheduling itself);
- * - claimDue() returns [] and complete()/retryLater() return false: Action
+ * - claim_due() returns [] and complete()/retry_later() return false: Action
  *   Scheduler claims and runs the actions itself.
  *
  * Error behaviour: an AS call returning 0 (no action created) throws
@@ -45,14 +45,14 @@ final class ActionSchedulerWakeupScheduler implements IWakeupScheduler {
     [$hook, $args] = $this->projection($i);
     $group = $this->config->as_group('processes');
 
-    if ($i->kind === WakeKind::Continue && $i->dueAt->getTimestamp() <= time()) {
+    if ($i->kind === WakeKind::Continue && $i->due_at->getTimestamp() <= time()) {
       $id = as_enqueue_async_action($hook, $args, $group);
     } else {
-      $id = as_schedule_single_action($i->dueAt->getTimestamp(), $hook, $args, $group);
+      $id = as_schedule_single_action($i->due_at->getTimestamp(), $hook, $args, $group);
     }
 
     if ((int) $id === 0) {
-      throw new \RuntimeException("Action Scheduler did not create the $hook action for {$i->idempotencyKey}");
+      throw new \RuntimeException("Action Scheduler did not create the $hook action for {$i->key}");
     }
   }
 
@@ -74,7 +74,7 @@ final class ActionSchedulerWakeupScheduler implements IWakeupScheduler {
     }
   }
 
-  public function claimDue(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
+  public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     return [];
   }
 
@@ -82,24 +82,24 @@ final class ActionSchedulerWakeupScheduler implements IWakeupScheduler {
     return false;
   }
 
-  public function retryLater(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
     return false;
   }
 
   /** @return array{0: string, 1: array<string, int>} */
   private function projection(WakeupIntent $i): array {
-    if ($i->processId === null) {
-      throw new \InvalidArgumentException("Wakeup {$i->idempotencyKey} has no process id");
+    if ($i->process_id === null) {
+      throw new \InvalidArgumentException("Wakeup {$i->key} has no process id");
     }
 
     return match ($i->kind) {
       WakeKind::Timeout => [
         $this->config->hook('await_timeout'),
-        ['process_id' => $i->processId, 'step_index' => (int) $i->stepIndex],
+        ['process_id' => $i->process_id, 'step_index' => (int) $i->step_index],
       ],
       WakeKind::Continue => [
         $this->config->hook('process_continue'),
-        ['process_id' => $i->processId],
+        ['process_id' => $i->process_id],
       ],
       default => throw new \LogicException("Wake kind {$i->kind->value} is not supported by the transitional Action Scheduler wakeups (wave 3)"),
     };

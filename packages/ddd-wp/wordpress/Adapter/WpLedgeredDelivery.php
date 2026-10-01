@@ -30,13 +30,13 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * - skipped when the ledger says delivered (or exhausted) for
  *   (subscriber id, event_id);
- * - run; success → markDelivered;
- * - a throw → markFailed(attempt + 1), logged, NOT rethrown: the rest of
+ * - run; success → mark_delivered;
+ * - a throw → mark_failed(attempt + 1), logged, NOT rethrown: the rest of
  *   do_action still runs (isolation); a `{prefix}_ddd_redeliver` action is
- *   scheduled at now + IntegrationDelivery::backoffSeconds(attempt), which
+ *   scheduled at now + IntegrationDelivery::backoff_seconds(attempt), which
  *   re-runs only the DDD subscribers of that hook through the same gate
  *   (redeliver()); raw callbacks never run twice;
- * - at the budget (5): its onExhausted compensation (when it has one) and
+ * - at the budget (5): its on_exhausted compensation (when it has one) and
  *   then the terminal marker; a throwing compensation stays pending and is
  *   re-fired on a later delivery; a fact that no longer decodes is marked
  *   exhausted without it ('compensation skipped: undecodable', as core
@@ -80,7 +80,7 @@ final class WpLedgeredDelivery {
   private static array $configs = [];
 
   /** The consumer whose `{prefix}_ddd_redeliver` hook is registered (register_delivery_hooks()). */
-  public static function registerConsumer(IDDDConfig $config): void {
+  public static function register_consumer(IDDDConfig $config): void {
     self::$configs[$config->prefix()] = $config;
   }
 
@@ -94,15 +94,15 @@ final class WpLedgeredDelivery {
    *
    * @return int redeliveries scheduled
    */
-  public static function restoreRedeliveries(IDDDConfig $config, ?\DateTimeImmutable $now = null, int $limit = 100): int {
-    if (!WpSchema::isV8($config) || !function_exists('as_schedule_single_action')) {
+  public static function restore_redeliveries(IDDDConfig $config, ?\DateTimeImmutable $now = null, int $limit = 100): int {
+    if (!WpSchema::is_v8($config) || !function_exists('as_schedule_single_action')) {
       return 0;
     }
     $now ??= self::clock()->now();
     $n = 0;
     foreach (self::orphans($config, $limit) as $row) {
       $failedAt = (new \DateTimeImmutable($row['updated_at'], new \DateTimeZone('UTC')))->getTimestamp();
-      $due = max($now->getTimestamp(), $failedAt + IntegrationDelivery::backoffSeconds(max(1, $row['attempts'])));
+      $due = max($now->getTimestamp(), $failedAt + IntegrationDelivery::backoff_seconds(max(1, $row['attempts'])));
       $id = as_schedule_single_action($due, $config->hook('ddd_redeliver'), $row['redelivery'], $config->as_group('outbox'));
       if ((int) $id === 0) {
         Log::write(null, sprintf('[ddd delivery] could not re-schedule the redelivery of event %s on %s', $row['event_id'], $config->prefix()), 'error');
@@ -118,8 +118,8 @@ final class WpLedgeredDelivery {
    * `{prefix}_ddd_redeliver` action: what a 0.6 winner would never retry
    * (WpRollbackDrain counts them as remaining).
    */
-  public static function orphanedRedeliveries(IDDDConfig $config, int $limit = 1000): int {
-    return WpSchema::isV8($config) ? count(self::orphans($config, $limit)) : 0;
+  public static function orphan_count(IDDDConfig $config, int $limit = 1000): int {
+    return WpSchema::is_v8($config) ? count(self::orphans($config, $limit)) : 0;
   }
 
   /** @return list<array{event_id: string, attempts: int, updated_at: string, redelivery: array<string, mixed>}> */
@@ -177,7 +177,7 @@ final class WpLedgeredDelivery {
    * Class::method, a function name, or `Closure@path:line` (path relative to
    * ABSPATH when under it), plus `#n` for the n-th repeat on the same hook.
    */
-  public static function subscriberId(string $hook, string $kind, callable $callback, ?string $name = null): string {
+  public static function subscriber_id(string $hook, string $kind, callable $callback, ?string $name = null): string {
     $name ??= self::callableName($callback);
     $base = "$kind:$name";
     $id = $base;
@@ -228,7 +228,7 @@ final class WpLedgeredDelivery {
    * @param array<string, mixed> $wrapped
    */
   private static function spendUnbound(WpDeliveryLedger $ledger, string $hook, string $eventClass, string $eventId, array $wrapped): void {
-    foreach ($ledger->failedSubscribers($eventId) as $id => $attempts) {
+    foreach ($ledger->failures($eventId) as $id => $attempts) {
       if (isset(self::$bound[$hook][$id])) {
         continue;
       }
@@ -236,12 +236,12 @@ final class WpLedgeredDelivery {
       $reason = sprintf('subscriber %s is not bound on %s in this request (removed, registered only in some contexts, or its closure id changed)', $id, $hook);
       try {
         if ($attempt >= self::BUDGET) {
-          $ledger->markFailedFor($id, $eventId, $reason, $attempt, null);
-          $ledger->markExhaustedBecause($id, $eventId, "$reason; exhausted without a compensation");
+          $ledger->mark_failed_with($id, $eventId, $reason, $attempt, null);
+          $ledger->mark_exhausted_because($id, $eventId, "$reason; exhausted without a compensation");
           Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s while unbound; no compensation ran', $id, self::BUDGET, $hook, $eventId), 'error');
           continue;
         }
-        $ledger->markFailedFor($id, $eventId, $reason, $attempt, self::redeliveryArgs($hook, $eventClass, $wrapped));
+        $ledger->mark_failed_with($id, $eventId, $reason, $attempt, self::redeliveryArgs($hook, $eventClass, $wrapped));
       } catch (\Throwable $e) {
         Log::write(null, sprintf('[ddd delivery] could not count the unbound subscriber %s on event %s: %s', $id, $eventId, $e->getMessage()), 'error');
         continue;
@@ -262,7 +262,7 @@ final class WpLedgeredDelivery {
   }
 
   /** @internal test seam */
-  public static function resetForTests(): void {
+  public static function reset_for_tests(): void {
     self::$bound = [];
     self::$seq = 0;
     self::$idlessNoted = [];
@@ -309,7 +309,7 @@ final class WpLedgeredDelivery {
     $attempts = $ledger->attempts($id, $eventId);
     if ($attempts >= self::BUDGET) {
       // Budget reached, compensation never completed: re-fire it.
-      $last = new DeliveryBudgetExhausted($id, $eventId, $attempts, $ledger->lastError($id, $eventId));
+      $last = new DeliveryBudgetExhausted($id, $eventId, $attempts, $ledger->last_error($id, $eventId));
       if (!self::exhaust($ledger, $hook, $entry, $eventId, $wrapped, $last)) {
         self::scheduleRedelivery($hook, $entry['event'], $eventId, $wrapped, $attempts);
       }
@@ -323,9 +323,9 @@ final class WpLedgeredDelivery {
     } catch (\Throwable $e) {
       $attempt = $attempts + 1;
       if ($ledger instanceof WpDeliveryLedger) {
-        $ledger->markFailedFor($id, $eventId, $e->getMessage(), $attempt, self::redeliveryArgs($hook, $entry['event'], $wrapped));
+        $ledger->mark_failed_with($id, $eventId, $e->getMessage(), $attempt, self::redeliveryArgs($hook, $entry['event'], $wrapped));
       } else {
-        $ledger->markFailed($id, $eventId, $e->getMessage(), $attempt);
+        $ledger->mark_failed($id, $eventId, $e->getMessage(), $attempt);
       }
       Log::write(null, sprintf(
         '[ddd delivery] subscriber %s failed on %s event %s (attempt %d/%d): %s',
@@ -337,7 +337,7 @@ final class WpLedgeredDelivery {
       return;
     }
 
-    $ledger->markDelivered($id, $eventId);
+    $ledger->mark_delivered($id, $eventId);
   }
 
   /**
@@ -354,8 +354,8 @@ final class WpLedgeredDelivery {
         // Terminal without it, as core IntegrationDelivery::poisoned() does.
         $reason = sprintf('compensation skipped: undecodable payload (%s: %s)', get_class($e), $e->getMessage());
         $ledger instanceof WpDeliveryLedger
-          ? $ledger->markExhaustedBecause($entry['id'], $eventId, $reason)
-          : $ledger->markExhausted($entry['id'], $eventId);
+          ? $ledger->mark_exhausted_because($entry['id'], $eventId, $reason)
+          : $ledger->mark_exhausted($entry['id'], $eventId);
         Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s; %s', $entry['id'], self::BUDGET, $hook, $eventId, $reason), 'error');
         return true;
       }
@@ -369,7 +369,7 @@ final class WpLedgeredDelivery {
         return false;
       }
     }
-    $ledger->markExhausted($entry['id'], $eventId);
+    $ledger->mark_exhausted($entry['id'], $eventId);
     Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s', $entry['id'], self::BUDGET, $hook, $eventId), 'error');
     return true;
   }
@@ -385,7 +385,7 @@ final class WpLedgeredDelivery {
     if (!function_exists('as_schedule_single_action')) {
       return false;
     }
-    $prefix = self::prefixOf($hook, $eventClass);
+    $prefix = self::prefix_of($hook, $eventClass);
     if ($prefix === null) {
       return false;
     }
@@ -393,7 +393,7 @@ final class WpLedgeredDelivery {
     self::$redeliveryScheduled["$hook|$eventId"] = true;
     try {
       $id = as_schedule_single_action(
-        self::clock()->now()->getTimestamp() + IntegrationDelivery::backoffSeconds($attempt),
+        self::clock()->now()->getTimestamp() + IntegrationDelivery::backoff_seconds($attempt),
         $config->hook('ddd_redeliver'),
         self::redeliveryArgs($hook, $eventClass, $wrapped),
         $config->as_group('outbox')
@@ -404,7 +404,7 @@ final class WpLedgeredDelivery {
     }
     if ((int) $id === 0) {
       // A `failed` ledger row with its redelivery args is scheduled again
-      // by the next relay tick (restoreRedeliveries()).
+      // by the next relay tick (restore_redeliveries()).
       unset(self::$redeliveryScheduled["$hook|$eventId"]);
       Log::write(null, sprintf('[ddd delivery] Action Scheduler did not store the redelivery of %s event %s; the relay tick re-schedules it', $hook, $eventId), 'error');
       return false;
@@ -438,12 +438,12 @@ final class WpLedgeredDelivery {
   }
 
   private static function ledgerFor(string $hook, string $eventClass): ?IDeliveryLedger {
-    $prefix = self::prefixOf($hook, $eventClass);
-    return $prefix !== null && WpSchema::isV8($prefix) ? new WpDeliveryLedger($prefix) : null;
+    $prefix = self::prefix_of($hook, $eventClass);
+    return $prefix !== null && WpSchema::is_v8($prefix) ? new WpDeliveryLedger($prefix) : null;
   }
 
   /** The consumer prefix owning $hook: `{prefix}_integration_{name}`. */
-  public static function prefixOf(string $hook, string $eventClass): ?string {
+  public static function prefix_of(string $hook, string $eventClass): ?string {
     if (!is_a($eventClass, IIntegrationEvent::class, true) || !method_exists($eventClass, 'name')) {
       return null;
     }

@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\LockScenarios;
 #[Group('wp')]
 final class WpLockConformance extends LockScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

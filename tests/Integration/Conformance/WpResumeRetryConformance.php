@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
  * stores the intent row and projects it, at schedule time, to the
  * DDD-owned Action Scheduler hook `{prefix}_ddd_wakeup` with
  * ['key' => idempotency key]; that hook's callback (hooks.php →
- * WpWakeBracket::resumeRetry) calls ProcessRunner::wake() with the STORED
+ * WpWakeBracket::resume_retry) calls ProcessRunner::wake() with the STORED
  * intent, so a `running` retry is checked against the row version its key
  * carries. Not a catalogue id (check-due ignores these methods);
  * lock.contention and process.crash-mid-step exercise the same path inside
@@ -33,7 +33,7 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 #[Group('w3c-r1')]
 final class WpResumeRetryConformance extends ProcessScenarioCase {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 
@@ -45,55 +45,55 @@ final class WpResumeRetryConformance extends ProcessScenarioCase {
   #[TestDox('a ResumeRetry intent is stored and projected to {prefix}_ddd_wakeup [key]; running that action wakes the runner with the stored intent')]
   public function test_resume_retry_is_projected_to_the_ddd_wakeup_hook_and_wakes_the_runner(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [PartArrived::class]);
+    $processes->wire_processes([], [PartArrived::class]);
     $id = $this->start(new GatherPartsProcess('w-1', ['a', 'b'], AwaitAll::TIMEOUT_FAIL));
-    $this->host->advanceClock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
+    $this->host->advance_clock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
     $now = $this->host->clock()->now();
-    $retry = WakeupIntent::resumeRetry($processes->processConsumer(), $id, 1, 'suspended', $this->row($id)->version, $now, 'r1');
+    $retry = WakeupIntent::resume_retry($processes->consumer_prefix(), $id, 1, 'suspended', $this->row($id)->version, $now, 'r1');
 
     $this->host->boundary()->run(static fn () => $processes->wakeups()->schedule($retry));
 
-    $row = $this->intentRow($retry->idempotencyKey);
+    $row = $this->intentRow($retry->key);
     self::assertSame(['resume_retry', 'pending', $this->hook('ddd_wakeup')], [$row['kind'], $row['status'], $row['hook']]);
-    self::assertSame(['key' => $retry->idempotencyKey], json_decode((string) $row['args'], true));
-    $actions = $this->pendingActions('ddd_wakeup', ['key' => $retry->idempotencyKey]);
+    self::assertSame(['key' => $retry->key], json_decode((string) $row['args'], true));
+    $actions = $this->pendingActions('ddd_wakeup', ['key' => $retry->key]);
     self::assertCount(1, $actions, 'projected at schedule time, in the same transaction');
     self::assertSame((int) $row['as_action_id'], $actions[0]);
-    self::assertEquals([$retry], array_values(array_filter($processes->pendingWakeups(), static fn (WakeupIntent $i) => $i->kind === WakeKind::ResumeRetry)), 'read back as the stored intent');
+    self::assertEquals([$retry], array_values(array_filter($processes->live_intents(), static fn (WakeupIntent $i) => $i->kind === WakeKind::ResumeRetry)), 'read back as the stored intent');
 
     \ActionScheduler::runner()->process_action($actions[0], 'w3c-r1');
 
     self::assertSame(1, ProcessJournal::runs('undo_prepare'), 'the stored intent re-ran the timeout through ProcessRunner::wake()');
     self::assertSame('failed', $this->row($id)->status);
-    self::assertSame('done', $this->intentRow($retry->idempotencyKey)['status']);
+    self::assertSame('done', $this->intentRow($retry->key)['status']);
   }
 
   #[TestDox('a timeout fired on its legacy hook while another session holds the lock is re-queued as a ResumeRetry on {prefix}_ddd_wakeup, which later succeeds')]
   public function test_a_contended_timeout_is_re_queued_as_a_resume_retry_and_later_succeeds(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [PartArrived::class]);
+    $processes->wire_processes([], [PartArrived::class]);
     $id = $this->start(new GatherPartsProcess('w-1', ['a', 'b'], AwaitAll::TIMEOUT_FAIL));
-    $this->host->advanceClock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
+    $this->host->advance_clock(GatherPartsProcess::TIMEOUT_SECONDS + 1);
     $timeout = $this->pendingActions('await_timeout', ['process_id' => $id, 'step_index' => 1]);
     self::assertCount(1, $timeout);
-    $processes->holdProcessLockElsewhere($id);
+    $processes->hold_lock_elsewhere($id);
 
     \ActionScheduler::runner()->process_action($timeout[0], 'w3c-r1');
 
     $retries = $this->intents($id, WakeKind::ResumeRetry);
     self::assertCount(1, $retries, 'the contended wake was re-queued (core: ResumeRetry on LockNotAcquired)');
-    self::assertSame(['suspended', 1], [$retries[0]->expectedStatus, $retries[0]->stepIndex]);
-    $action = $this->pendingActions('ddd_wakeup', ['key' => $retries[0]->idempotencyKey]);
+    self::assertSame(['suspended', 1], [$retries[0]->expected_status, $retries[0]->step_index]);
+    $action = $this->pendingActions('ddd_wakeup', ['key' => $retries[0]->key]);
     self::assertCount(1, $action, 'on the DDD-owned hook');
     self::assertSame('suspended', $this->row($id)->status, 'nothing ran without the lock');
 
-    $processes->releaseProcessLockElsewhere($id);
-    $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
+    $processes->release_lock_elsewhere($id);
+    $this->host->advance_clock(self::PAST_WAKE_BACKOFF);
     \ActionScheduler::runner()->process_action($action[0], 'w3c-r1');
 
     self::assertSame(1, ProcessJournal::runs('undo_prepare'), 'later succeeds, once');
     self::assertSame('failed', $this->row($id)->status);
-    self::assertSame('done', $this->intentRow($retries[0]->idempotencyKey)['status']);
+    self::assertSame('done', $this->intentRow($retries[0]->key)['status']);
   }
 
   #[TestDox('an in-band start that cannot lock is re-queued as a running ResumeRetry at the row version; the hook runs the first step once')]
@@ -101,21 +101,21 @@ final class WpResumeRetryConformance extends ProcessScenarioCase {
     $processes = $this->processes();
     // The table is fresh: the process about to be inserted gets the first id.
     $id = $this->wp()->firstProcessId();
-    $processes->beforeNextProcessLockAcquire(static fn () => $processes->holdProcessLockElsewhere($id));
+    $processes->before_next_lock(static fn () => $processes->hold_lock_elsewhere($id));
 
-    $thrown = self::catchThrowable(fn () => $processes->worker()->processRunner()->start(new MakeWidgetProcess('w-1')));
+    $thrown = self::thrown(fn () => $processes->worker()->runner()->start(new MakeWidgetProcess('w-1')));
 
     self::assertInstanceOf(ProcessLockUnavailable::class, $thrown);
     self::assertSame('running', $this->row($id)->status);
     self::assertSame([], ProcessJournal::$steps, 'no step ran without the lock');
     $retries = $this->intents($id, WakeKind::ResumeRetry);
     self::assertCount(1, $retries);
-    self::assertSame('running', $retries[0]->expectedStatus);
-    self::assertSame($this->row($id)->version, $retries[0]->retryVersion(), 'the key carries the row version');
+    self::assertSame('running', $retries[0]->expected_status);
+    self::assertSame($this->row($id)->version, $retries[0]->retry_version(), 'the key carries the row version');
 
-    $processes->releaseProcessLockElsewhere($id);
-    $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
-    \ActionScheduler::runner()->process_action($this->pendingActions('ddd_wakeup', ['key' => $retries[0]->idempotencyKey])[0], 'w3c-r1');
+    $processes->release_lock_elsewhere($id);
+    $this->host->advance_clock(self::PAST_WAKE_BACKOFF);
+    \ActionScheduler::runner()->process_action($this->pendingActions('ddd_wakeup', ['key' => $retries[0]->key])[0], 'w3c-r1');
 
     self::assertSame(['make', 'finish'], ProcessJournal::$steps, 'the first step ran once, then the process finished');
     self::assertSame('completed', $this->row($id)->status);
@@ -127,23 +127,23 @@ final class WpResumeRetryConformance extends ProcessScenarioCase {
     $processes = $this->processes();
     $id = $this->start(new MakeWidgetProcess('w-1'));
     $now = $this->host->clock()->now();
-    $retry = WakeupIntent::resumeRetry($processes->processConsumer(), $id, null, 'running', 1, $now, 'rearm');
+    $retry = WakeupIntent::resume_retry($processes->consumer_prefix(), $id, null, 'running', 1, $now, 'rearm');
     $config = $this->wp()->consumer();
     $scheduler = $processes->wakeups();
 
     $this->host->boundary()->run(static fn () => $scheduler->schedule($retry));
-    self::assertNull($this->intentRow($retry->idempotencyKey)['step_index']);
-    [$claimed] = $scheduler->claimDue($now, 10, 30);
+    self::assertNull($this->intentRow($retry->key)['step_index']);
+    [$claimed] = $scheduler->claim_due($now, 10, 30);
     self::assertTrue($scheduler->complete($claimed));
-    self::assertSame('done', $this->intentRow($retry->idempotencyKey)['status']);
+    self::assertSame('done', $this->intentRow($retry->key)['status']);
 
     $this->host->boundary()->run(static fn () => $scheduler->schedule($retry));
 
-    $row = $this->intentRow($retry->idempotencyKey);
+    $row = $this->intentRow($retry->key);
     self::assertSame('pending', $row['status'], 're-armed');
     self::assertNull($row['step_index'], 'a ResumeRetry without a step index keeps none (its key reads "-")');
     self::assertSame('running', $row['expected_status']);
-    $intent = array_values(array_filter($processes->pendingWakeups(), static fn (WakeupIntent $i) => $i->idempotencyKey === $retry->idempotencyKey));
+    $intent = array_values(array_filter($processes->live_intents(), static fn (WakeupIntent $i) => $i->key === $retry->key));
     self::assertEquals([$retry], $intent, 'read back unchanged');
     self::assertSame($config->prefix(), $intent[0]->consumer);
   }

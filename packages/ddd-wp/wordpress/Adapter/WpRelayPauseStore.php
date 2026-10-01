@@ -24,9 +24,9 @@ use TangibleDDD\Runtime\SystemClock;
  * superset of 0.6's exact-or-`*` match).
  *
  * Errors: hold()/release() throw OutboxWriteFailed on a wpdb failure. A
- * failed read of the rows fails CLOSED: activeSelectors() / exclusion()
+ * failed read of the rows fails CLOSED: selectors() / exclusion()
  * throw \RuntimeException (so WpdbOutboxStore::claim() throws and the tick
- * reports it), and isPaused() never throws but answers true.
+ * reports it), and is_paused() never throws but answers true.
  */
 final class WpRelayPauseStore implements IRelayPauseStore {
 
@@ -58,9 +58,9 @@ final class WpRelayPauseStore implements IRelayPauseStore {
     }
   }
 
-  public function isPaused(string $eventType, \DateTimeImmutable $now): bool {
+  public function is_paused(string $eventType, \DateTimeImmutable $now): bool {
     try {
-      $selectors = $this->activeSelectors($now);
+      $selectors = $this->selectors($now);
     } catch (\RuntimeException $e) {
       // Fail closed: a hold that cannot be read is assumed to be there.
       \TangibleDDD\Runtime\Support\Log::write(null, "[ddd relay] {$e->getMessage()}; treating $eventType as paused", 'error');
@@ -80,10 +80,10 @@ final class WpRelayPauseStore implements IRelayPauseStore {
    *
    * @return list<string>
    * @throws \RuntimeException when the pause rows cannot be read: the relay
-   *         fails closed (claim() throws, isPaused() says paused) rather
+   *         fails closed (claim() throws, is_paused() says paused) rather
    *         than relaying event types that may be held
    */
-  public function activeSelectors(\DateTimeImmutable $now): array {
+  public function selectors(\DateTimeImmutable $now): array {
     $db = self::db();
     $at = $now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     $suppress = $db->suppress_errors(true); // reported below, not printed
@@ -93,7 +93,7 @@ final class WpRelayPauseStore implements IRelayPauseStore {
     ));
     $db->suppress_errors($suppress);
     if ($db->last_error !== '') {
-      if (WpSchema::isV8($this->config)) {
+      if (WpSchema::is_v8($this->config)) {
         throw new \RuntimeException("Relay pause read failed on {$this->table()}: {$db->last_error}");
       }
       // Before the v8 migration the table may not exist yet (no hold can
@@ -126,7 +126,7 @@ final class WpRelayPauseStore implements IRelayPauseStore {
    * @return array{0: ?string, 1: list<string>}
    */
   public function exclusion(\DateTimeImmutable $now): array {
-    $selectors = $this->activeSelectors($now);
+    $selectors = $this->selectors($now);
     if (in_array('*', $selectors, true)) {
       return [null, []];
     }

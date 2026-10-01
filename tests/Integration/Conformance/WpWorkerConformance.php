@@ -11,7 +11,7 @@ use TangibleDDD\Conformance\Scenarios\WorkerScenarios;
 #[Group('wp')]
 final class WpWorkerConformance extends WorkerScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

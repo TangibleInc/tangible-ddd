@@ -43,13 +43,13 @@ use TangibleDDD\Runtime\SystemClock;
  *   LEASE_EXPIRED_ERROR, an error_history entry), and Claim::$attempts
  *   includes it. When that reaches max_attempts the row is dead-lettered
  *   inside the claim's transaction (status `dlq`, lease cleared, DLQ row)
- *   and returned by takeDeadLetteredAtClaim(), not handed out. A row a 0.6
+ *   and returned by take_claim_dead_letters(), not handed out. A row a 0.6
  *   copy leased (locked_until without claim_token) is not counted: 0.6
  *   counts its own attempts.
  * - accept() writes status `completed` (the 0.6 ENUM value; `accepted` is
  *   the port's read alias, so a rolled-back 0.6 winner still purges and
- *   counts them); retryLater() attempts + 1 in SQL, `next_attempt_at` =
- *   $nextAt, the error appended to `error_history`; deadLetter() counts the
+ *   counts them); retry_later() attempts + 1 in SQL, `next_attempt_at` =
+ *   $nextAt, the error appended to `error_history`; dead_letter() counts the
  *   final attempt and inserts the DLQ row in one transaction. All three are
  *   fenced `WHERE event_id = ? AND claim_token = ?`: 0 rows = lease lost,
  *   false, nothing written.
@@ -69,7 +69,7 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
   private readonly IRelayPauseStore $pauses;
 
   /** @var list<array{0: Claim, 1: string}> claim-time dead letters not yet taken by the relay step */
-  private array $deadLetteredAtClaim = [];
+  private array $claim_dead_letters = [];
 
   public function __construct(
     OutboxRepository $repository,
@@ -92,7 +92,7 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
       $signature = json_encode($r->payload_signature ?? $r->payload, JSON_UNESCAPED_SLASHES);
       // Before the v8 migration ran there is no claim_token column; the
       // 0.6 lock column alone marks a leased row then.
-      $unclaimed = WpSchema::isV8($this->config) ? 'claim_token IS NULL AND ' : '';
+      $unclaimed = WpSchema::is_v8($this->config) ? 'claim_token IS NULL AND ' : '';
       $cancelled = $db->query($db->prepare(
         "UPDATE `{$this->outbox()}` SET status = 'cancelled'
          WHERE event_type = %s AND status = 'pending' AND is_unique = 1
@@ -174,13 +174,13 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
       $claims = [];
       foreach (is_array($rows) ? $rows : [] as $row) {
-        if (!$this->pauses instanceof WpRelayPauseStore && $this->pauses->isPaused((string) $row->event_type, $at)) {
+        if (!$this->pauses instanceof WpRelayPauseStore && $this->pauses->is_paused((string) $row->event_type, $at)) {
           continue;
         }
         $token = bin2hex(random_bytes(16));
         // CR-PDO-6: a row that still carries a claim_token was claimed by N
-        // and its holder died without an outcome (accept / retryLater /
-        // deadLetter all clear the token). Its lease is expired (the SELECT
+        // and its holder died without an outcome (accept / retry_later /
+        // dead_letter all clear the token). Its lease is expired (the SELECT
         // only takes lease-free rows), so this re-claim is one attempt.
         $reclaim = $row->claim_token !== null && $row->claim_token !== '';
         $ok = $db->query($reclaim
@@ -214,7 +214,7 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
         if ($reclaim && $attempts >= (int) $row->max_attempts) {
           $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $attempts);
           $this->deadLetterAtClaim($claim, $error, $stamp);
-          $this->deadLetteredAtClaim[] = [$claim, $error];
+          $this->claim_dead_letters[] = [$claim, $error];
           continue;
         }
         $claims[] = $claim;
@@ -223,9 +223,9 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
     });
   }
 
-  public function takeDeadLetteredAtClaim(): array {
-    $taken = $this->deadLetteredAtClaim;
-    $this->deadLetteredAtClaim = [];
+  public function take_claim_dead_letters(): array {
+    $taken = $this->claim_dead_letters;
+    $this->claim_dead_letters = [];
     return $taken;
   }
 
@@ -238,7 +238,7 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
        WHERE event_id = %s AND claim_token = %s",
       $error,
       $c->event_id,
-      $c->claimToken
+      $c->token
     ));
     if ($ok === false || (int) $ok !== 1) {
       throw new OutboxWriteFailed("Dead-lettering {$c->event_id} at claim failed: " . (string) $db->last_error);
@@ -265,12 +265,12 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
        WHERE event_id = %s AND claim_token = %s",
       $this->stamp(),
       $c->event_id,
-      $c->claimToken
+      $c->token
     ));
     return $this->fenced($n, 'accept', $c);
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
     $db = self::db();
     // error_history is assigned before attempts, so it reads the old count.
     $n = $db->query($db->prepare(
@@ -284,12 +284,12 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
       $error,
       $nextAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
       $c->event_id,
-      $c->claimToken
+      $c->token
     ));
-    return $this->fenced($n, 'retryLater', $c);
+    return $this->fenced($n, 'retry_later', $c);
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
+  public function dead_letter(Claim $c, string $error): bool {
     return $this->atomically(function () use ($c, $error): bool {
       $db = self::db();
       $n = $db->query($db->prepare(
@@ -299,9 +299,9 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
          WHERE event_id = %s AND claim_token = %s",
         $error,
         $c->event_id,
-        $c->claimToken
+        $c->token
       ));
-      if (!$this->fenced($n, 'deadLetter', $c)) {
+      if (!$this->fenced($n, 'dead_letter', $c)) {
         return false;
       }
 

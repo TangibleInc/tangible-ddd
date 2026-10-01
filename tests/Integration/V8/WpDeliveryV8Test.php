@@ -37,14 +37,14 @@ final class WpDeliveryV8Test extends V8TestCase {
   protected function setUp(): void {
     parent::setUp();
     $this->installV8();
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
     $this->hook = V8Fact::integration_action();
     $this->runs = [];
     V8IgnitedProcess::$runs = 0;
   }
 
   protected function tearDown(): void {
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
     parent::tearDown();
   }
 
@@ -76,19 +76,19 @@ final class WpDeliveryV8Test extends V8TestCase {
 
   public function test_the_ledger_counts_attempts_and_never_downgrades_a_delivery(): void {
     $l = $this->ledger();
-    self::assertSame([false, 0, null, false], [$l->delivered('s', 'e'), $l->attempts('s', 'e'), $l->lastError('s', 'e'), $l->exhausted('s', 'e')]);
+    self::assertSame([false, 0, null, false], [$l->delivered('s', 'e'), $l->attempts('s', 'e'), $l->last_error('s', 'e'), $l->exhausted('s', 'e')]);
 
-    $l->markFailed('s', 'e', 'boom', 1);
-    $l->markFailed('s', 'e', 'boom again', 2);
-    self::assertSame([2, 'boom again', false], [$l->attempts('s', 'e'), $l->lastError('s', 'e'), $l->delivered('s', 'e')]);
+    $l->mark_failed('s', 'e', 'boom', 1);
+    $l->mark_failed('s', 'e', 'boom again', 2);
+    self::assertSame([2, 'boom again', false], [$l->attempts('s', 'e'), $l->last_error('s', 'e'), $l->delivered('s', 'e')]);
 
-    $l->markDelivered('s', 'e');
-    $l->markFailed('s', 'e', 'late', 3);
+    $l->mark_delivered('s', 'e');
+    $l->mark_failed('s', 'e', 'late', 3);
     self::assertTrue($l->delivered('s', 'e'));
     self::assertSame(2, $l->attempts('s', 'e'));
 
     $long = str_repeat('x', 400);
-    $l->markExhausted($long, 'e');
+    $l->mark_exhausted($long, 'e');
     self::assertTrue($l->exhausted($long, 'e'));
     self::assertNotNull($this->wpdb->get_var("SELECT exhausted_at FROM `{$this->table('ddd_delivery_ledger')}` WHERE subscriber_id = '$long'"));
   }
@@ -139,11 +139,11 @@ final class WpDeliveryV8Test extends V8TestCase {
     $drain = new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config);
     self::assertSame(['ran' => 0, 'remaining' => 1, 'rounds' => 0], $drain->run(0), 'the drain counts a failed pair with no redelivery as remaining');
 
-    self::assertSame(1, WpLedgeredDelivery::restoreRedeliveries($this->config, $clock->now()));
+    self::assertSame(1, WpLedgeredDelivery::restore_redeliveries($this->config, $clock->now()));
     $restored = $this->pendingActions('ddd8it_ddd_redeliver');
     self::assertSame(['hook' => $this->hook, 'event_class' => V8Fact::class, 'payload' => $this->wrapped()], $restored[0]->args);
     self::assertSame($clock->now()->getTimestamp() + 30, $restored[0]->due, 'at the backoff after the last failure');
-    self::assertSame(0, WpLedgeredDelivery::restoreRedeliveries($this->config, $clock->now()), 'never while one is pending');
+    self::assertSame(0, WpLedgeredDelivery::restore_redeliveries($this->config, $clock->now()), 'never while one is pending');
 
     as_unschedule_all_actions('ddd8it_ddd_redeliver');
     $result = $drain->run(10);
@@ -168,7 +168,7 @@ final class WpDeliveryV8Test extends V8TestCase {
 
     $restored = $ran = 0;
     for ($tick = 0; $tick < 2; $tick++) {
-      $restored += WpLedgeredDelivery::restoreRedeliveries($this->config);
+      $restored += WpLedgeredDelivery::restore_redeliveries($this->config);
       foreach ($this->pendingActions('ddd8it_ddd_redeliver') as $action) {
         \ActionScheduler::runner()->process_action($action->id, 'ddd-v8-test');
         $ran++;
@@ -177,7 +177,7 @@ final class WpDeliveryV8Test extends V8TestCase {
     self::assertSame(0, $restored, 'each redelivery of the unbound pair schedules its successor at the backoff; the tick adds none');
     self::assertSame(2, $ran);
     self::assertSame(3, $this->ledger()->attempts($a, self::EVENT_ID), 'an unbound subscriber spends one attempt per redelivery');
-    self::assertStringContainsString('not bound', (string) $this->ledger()->lastError($a, self::EVENT_ID));
+    self::assertStringContainsString('not bound', (string) $this->ledger()->last_error($a, self::EVENT_ID));
     self::assertCount(1, $this->pendingActions('ddd8it_ddd_redeliver'));
 
     $result = (new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config))->run();
@@ -185,7 +185,7 @@ final class WpDeliveryV8Test extends V8TestCase {
     self::assertSame(2, $result['ran'], 'attempts 4 and 5');
     self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
     self::assertSame(['a' => 1], $this->runs, 'the unbound callback never ran again');
-    self::assertSame(0, WpLedgeredDelivery::restoreRedeliveries($this->config));
+    self::assertSame(0, WpLedgeredDelivery::restore_redeliveries($this->config));
     self::assertSame([], $this->pendingActions('ddd8it_ddd_redeliver'));
   }
 
@@ -204,7 +204,7 @@ final class WpDeliveryV8Test extends V8TestCase {
     self::assertFalse($this->ledger()->abandon('nobody', self::EVENT_ID, 'operator'), 'only a failed pair can be abandoned');
     self::assertTrue($this->ledger()->abandon($a, self::EVENT_ID, 'abandoned by operator'));
     self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
-    self::assertSame('abandoned by operator', $this->ledger()->lastError($a, self::EVENT_ID));
+    self::assertSame('abandoned by operator', $this->ledger()->last_error($a, self::EVENT_ID));
     self::assertSame([], $view->list('delivery')[0]['repair_actions'], 'an exhausted pair is terminal');
 
     // Its pending redelivery now skips it.
@@ -231,7 +231,7 @@ final class WpDeliveryV8Test extends V8TestCase {
 
     $l = $this->ledger();
     self::assertTrue($l->exhausted('ddd8it/listener:needs-n', self::EVENT_ID), 'terminal: the compensation can never be built');
-    self::assertStringContainsString('compensation skipped: undecodable', (string) $l->lastError('ddd8it/listener:needs-n', self::EVENT_ID));
+    self::assertStringContainsString('compensation skipped: undecodable', (string) $l->last_error('ddd8it/listener:needs-n', self::EVENT_ID));
     self::assertSame(0, $compensated);
   }
 

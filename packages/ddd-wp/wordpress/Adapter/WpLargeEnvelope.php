@@ -49,7 +49,7 @@ final class WpLargeEnvelope {
    * @param array<string, mixed> $wrapped
    * @return array<string, mixed>
    */
-  public static function forTransport(array $wrapped, string $integrationAction, string $eventType): array {
+  public static function for_transport(array $wrapped, string $integrationAction, string $eventType): array {
     $encoded = wp_json_encode([$wrapped]);
     if (!is_string($encoded) || strlen($encoded) <= self::ARGS_LIMIT) {
       return $wrapped;
@@ -70,7 +70,7 @@ final class WpLargeEnvelope {
   }
 
   /** @param array<string, mixed> $wrapped */
-  public static function isReference(array $wrapped): bool {
+  public static function is_reference(array $wrapped): bool {
     return isset($wrapped[self::MARKER]) && is_array($wrapped[self::MARKER]);
   }
 
@@ -83,7 +83,7 @@ final class WpLargeEnvelope {
    * @throws \RuntimeException when the outbox row or its payload is gone
    */
   public static function resolve(array $wrapped): array {
-    if (!self::isReference($wrapped)) {
+    if (!self::is_reference($wrapped)) {
       return $wrapped;
     }
     $prefix = (string) ($wrapped[self::MARKER]['prefix'] ?? '');

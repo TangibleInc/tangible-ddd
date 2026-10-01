@@ -10,7 +10,7 @@ use TangibleDDD\Conformance\ScenarioId;
  * Verdicts of the conformance-wp gate (bin/check-due.php), read from the
  * run's JUnit log.
  *
- * A scenario id is carried by test methods named ScenarioId::methodName($id)
+ * A scenario id is carried by test methods named ScenarioId::method_name($id)
  * on Wp*Conformance classes. One id may be carried by more than one class
  * (a shared scenario class and a wp-local class). The id passes when at
  * least one copy passed, no copy failed or errored, and no copy was skipped.
@@ -57,7 +57,7 @@ final class DueGate {
 
   /** @return 'passed'|'failed'|'skipped'|'missing' */
   public function verdict(string $id): string {
-    $n = $this->counts[ScenarioId::methodName($id)] ?? null;
+    $n = $this->counts[ScenarioId::method_name($id)] ?? null;
     if ($n === null) {
       return 'missing';
     }

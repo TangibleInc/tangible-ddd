@@ -53,7 +53,7 @@ $rt = new WpConformanceRuntime(new FrozenClock(new DateTimeImmutable('@' . $now)
 $rt->provideHostDefaults();
 $rt->registerHooks();
 RuntimeReset::register('conformance.events', static fn () => $rt->events->reset());
-RuntimeReset::guardLock($rt->lock);
+RuntimeReset::guard($rt->lock);
 FreshProcessBoot::boot($rt->runner, $rt->subscriptions, $rt->rows, $rt->boundary);
 $emit(['conn' => (int) $GLOBALS['wpdb']->get_var('SELECT CONNECTION_ID()')]);
 
@@ -92,7 +92,7 @@ try {
       $process = unserialize(base64_decode((string) $args['process']));
       $die = $args['die'] ?? null;
       if (is_string($die)) {
-        ProcessJournal::$onSend = static function (StepCommand $c) use ($die, $process, $emit, $kill): void {
+        ProcessJournal::$on_send = static function (StepCommand $c) use ($die, $process, $emit, $kill): void {
           if ($c->label === $die) {
             $emit(['processId' => $process->get_id()]);
             $kill(); // the step's command committed; its checkpoint is not saved

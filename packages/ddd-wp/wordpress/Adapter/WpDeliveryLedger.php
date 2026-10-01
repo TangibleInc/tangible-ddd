@@ -18,7 +18,7 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * status: `failed` (attempts counted, last_error kept) → `delivered`, or
  * `exhausted` (exhausted_at set, the terminal marker of CR-1). A delivered
- * pair is never downgraded by a late markFailed().
+ * pair is never downgraded by a late mark_failed().
  *
  * Every write is a single upsert on the WordPress connection, outside any
  * transaction of its own (subscribers commit their commands themselves).
@@ -40,29 +40,29 @@ final class WpDeliveryLedger implements IDeliveryLedger {
     return $this->status($subscriberId, $eventId) === 'delivered';
   }
 
-  public function markDelivered(string $subscriberId, string $eventId): void {
+  public function mark_delivered(string $subscriberId, string $eventId): void {
     $now = $this->stamp();
     $this->write(
       "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, delivered_at, created_at, updated_at)
        VALUES (%s, %s, %s, 'delivered', 0, %s, %s, %s)
        ON DUPLICATE KEY UPDATE status = 'delivered', delivered_at = VALUES(delivered_at), updated_at = VALUES(updated_at)",
       [sha1($subscriberId), $subscriberId, $eventId, $now, $now, $now],
-      'markDelivered'
+      'mark_delivered'
     );
   }
 
-  public function markFailed(string $subscriberId, string $eventId, string $error, int $attempt): void {
-    $this->markFailedFor($subscriberId, $eventId, $error, $attempt, null);
+  public function mark_failed(string $subscriberId, string $eventId, string $error, int $attempt): void {
+    $this->mark_failed_with($subscriberId, $eventId, $error, $attempt, null);
   }
 
   /**
-   * markFailed() that also keeps the `{prefix}_ddd_redeliver` args of the
+   * mark_failed() that also keeps the `{prefix}_ddd_redeliver` args of the
    * fact (['hook', 'event_class', 'payload']), so a redelivery Action
    * Scheduler lost can be scheduled again (restorable()).
    *
    * @param array<string, mixed>|null $redelivery
    */
-  public function markFailedFor(string $subscriberId, string $eventId, string $error, int $attempt, ?array $redelivery): void {
+  public function mark_failed_with(string $subscriberId, string $eventId, string $error, int $attempt, ?array $redelivery): void {
     $now = $this->stamp();
     $this->write(
       "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, last_error, redelivery, created_at, updated_at)
@@ -77,7 +77,7 @@ final class WpDeliveryLedger implements IDeliveryLedger {
         $redelivery === null ? [] : [(string) wp_json_encode($redelivery)],
         [$now, $now]
       ),
-      'markFailed'
+      'mark_failed'
     );
   }
 
@@ -114,12 +114,12 @@ final class WpDeliveryLedger implements IDeliveryLedger {
     return (int) $this->column('attempts', $subscriberId, $eventId);
   }
 
-  public function lastError(string $subscriberId, string $eventId): ?string {
+  public function last_error(string $subscriberId, string $eventId): ?string {
     $v = $this->column('last_error', $subscriberId, $eventId);
     return $v === null ? null : (string) $v;
   }
 
-  public function markExhausted(string $subscriberId, string $eventId): void {
+  public function mark_exhausted(string $subscriberId, string $eventId): void {
     $now = $this->stamp();
     $this->write(
       "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, exhausted_at, created_at, updated_at)
@@ -127,7 +127,7 @@ final class WpDeliveryLedger implements IDeliveryLedger {
        ON DUPLICATE KEY UPDATE status = IF(status = 'delivered', status, 'exhausted'),
          exhausted_at = COALESCE(exhausted_at, VALUES(exhausted_at)), updated_at = VALUES(updated_at)",
       [sha1($subscriberId), $subscriberId, $eventId, $now, $now, $now],
-      'markExhausted'
+      'mark_exhausted'
     );
   }
 
@@ -135,8 +135,8 @@ final class WpDeliveryLedger implements IDeliveryLedger {
     return $this->status($subscriberId, $eventId) === 'exhausted';
   }
 
-  /** markExhausted() that also records why in last_error (no compensation ran, or an operator abandoned it). */
-  public function markExhaustedBecause(string $subscriberId, string $eventId, string $reason): void {
+  /** mark_exhausted() that also records why in last_error (no compensation ran, or an operator abandoned it). */
+  public function mark_exhausted_because(string $subscriberId, string $eventId, string $reason): void {
     $now = $this->stamp();
     $this->write(
       "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, last_error, exhausted_at, created_at, updated_at)
@@ -146,7 +146,7 @@ final class WpDeliveryLedger implements IDeliveryLedger {
          status = IF(status = 'delivered', status, 'exhausted'),
          exhausted_at = COALESCE(exhausted_at, VALUES(exhausted_at)), updated_at = VALUES(updated_at)",
       [sha1($subscriberId), $subscriberId, $eventId, $reason, $now, $now, $now],
-      'markExhausted'
+      'mark_exhausted'
     );
   }
 
@@ -176,7 +176,7 @@ final class WpDeliveryLedger implements IDeliveryLedger {
    *
    * @return array<string, int>
    */
-  public function failedSubscribers(string $eventId): array {
+  public function failures(string $eventId): array {
     $db = self::db();
     $rows = $db->get_results($db->prepare(
       "SELECT subscriber_id, attempts FROM `{$this->table()}` WHERE event_id = %s AND status = 'failed' ORDER BY id ASC",

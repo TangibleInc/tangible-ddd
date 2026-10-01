@@ -36,7 +36,7 @@ if ($xml === false) {
 }
 
 $gate = DueGate::fromJUnit($xml);
-$due = ScenarioCatalogue::dueBy('wp', $wave);
+$due = ScenarioCatalogue::due_by('wp', $wave);
 sort($due);
 $bad = 0;
 foreach ($due as $id) {

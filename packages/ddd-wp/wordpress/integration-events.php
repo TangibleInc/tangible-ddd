@@ -68,7 +68,7 @@ function integration_action(
   $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
   add_action(
     $action,
-    $ledgered::bind($action, $event_class, $ledgered::subscriberId($action, 'action', $callback), $priority, $invoke),
+    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'action', $callback), $priority, $invoke),
     $priority,
     $arg_count
   );
@@ -119,7 +119,7 @@ function integration_listener(string $event_class, callable $translate): void {
   $ledgered = \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class;
   add_action(
     $action,
-    $ledgered::bind($action, $event_class, $ledgered::subscriberId($action, 'listener', $translate, $this_ !== null ? get_class($this_) : null), 10, $invoke),
+    $ledgered::bind($action, $event_class, $ledgered::subscriber_id($action, 'listener', $translate, $this_ !== null ? get_class($this_) : null), 10, $invoke),
     10,
     1
   );

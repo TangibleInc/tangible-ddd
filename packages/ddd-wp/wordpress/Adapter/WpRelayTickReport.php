@@ -12,12 +12,12 @@ final class WpRelayTickReport {
   /** @param array<string, string> $errors step => message */
   public function __construct(
     public readonly string $prefix,
-    public readonly bool $portForm,
+    public readonly bool $port_form,
     public readonly ?ProcessingResult $relay,
     public readonly ?int $reprojected,
     public readonly ?WpStrandedReport $stranded,
     public readonly array $errors,
-    public readonly ?int $redeliveriesRestored = null,
+    public readonly ?int $restored = null,
   ) {}
 
   public function ok(): bool {
@@ -26,20 +26,20 @@ final class WpRelayTickReport {
 
   /** One log/CLI line. */
   public function summary(): string {
-    $parts = [sprintf('[%s] relay (%s form): ', $this->prefix, $this->portForm ? 'port' : '0.6')];
+    $parts = [sprintf('[%s] relay (%s form): ', $this->prefix, $this->port_form ? 'port' : '0.6')];
     $parts[] = $this->relay === null
       ? 'failed'
       : sprintf('%d processed, %d completed, %d failed, %d moved to DLQ', $this->relay->total, $this->relay->completed, $this->relay->failed, $this->relay->dlq);
     if ($this->reprojected !== null) {
       $parts[] = sprintf('; %d wakeups re-projected', $this->reprojected);
     }
-    if ($this->redeliveriesRestored !== null) {
-      $parts[] = sprintf('; %d lost redeliveries re-scheduled', $this->redeliveriesRestored);
+    if ($this->restored !== null) {
+      $parts[] = sprintf('; %d lost redeliveries re-scheduled', $this->restored);
     }
     if ($this->stranded !== null) {
       $parts[] = sprintf(
         '; stranded: %d continued, %d already queued, %d running, %d wake budget exhausted (operator view)',
-        count($this->stranded->minted), count($this->stranded->alreadyQueued), count($this->stranded->running), count($this->stranded->exhausted)
+        count($this->stranded->minted), count($this->stranded->queued), count($this->stranded->running), count($this->stranded->exhausted)
       );
     }
     foreach ($this->errors as $step => $message) {

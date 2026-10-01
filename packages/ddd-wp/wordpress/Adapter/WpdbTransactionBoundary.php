@@ -73,7 +73,7 @@ final class WpdbTransactionBoundary implements ITransactionBoundary {
     return $result;
   }
 
-  public function isActive(): bool {
+  public function is_active(): bool {
     return WpdbTransactionDepth::current() > 0;
   }
 

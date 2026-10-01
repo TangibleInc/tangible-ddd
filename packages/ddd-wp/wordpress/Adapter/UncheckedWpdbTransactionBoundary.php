@@ -56,7 +56,7 @@ final class UncheckedWpdbTransactionBoundary implements ITransactionBoundary {
     }
   }
 
-  public function isActive(): bool {
+  public function is_active(): bool {
     return $this->depth > 0;
   }
 }

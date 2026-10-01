@@ -44,7 +44,7 @@ use TangibleDDD\WordPress\Adapter\WpOptionsOutboxConfigReader;
 final class LateWordPressBootTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register();
   }
 
@@ -120,7 +120,7 @@ final class LateWordPressBootTest extends TestCase {
   }
 
   public function test_the_lazy_fill_never_replaces_an_explicitly_provided_port(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     $clock = new FrozenClock(new \DateTimeImmutable('2030-01-01'));
     HostDefaults::provide(IClock::class, $clock);
 
@@ -132,12 +132,12 @@ final class LateWordPressBootTest extends TestCase {
   }
 
   public function test_the_resolver_runs_once_and_reset_removes_it(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register_lazily();
     HostDefaults::get(IOutboxOptionsReader::class);
 
     $replacement = new WpOptionsOutboxConfigReader();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     self::assertNull(HostDefaults::get(IOutboxOptionsReader::class), 'resetForTests removes the resolver: a reset set is not topped up');
 
     HostDefaults::provide(IOutboxOptionsReader::class, $replacement);

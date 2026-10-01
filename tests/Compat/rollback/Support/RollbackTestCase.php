@@ -227,7 +227,7 @@ abstract class RollbackTestCase extends TestCase {
           $seen[$id] = true;
           \ActionScheduler::runner()->process_action($id, 'ddd-rollback-n');
           $ran[] = $hook;
-          RuntimeReset::betweenMessages();
+          RuntimeReset::between_messages();
         }
       }
     } finally {
@@ -332,13 +332,13 @@ abstract class RollbackTestCase extends TestCase {
   }
 
   private function resetStatics(): void {
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
     Reactions::reset();
-    WpdbTransactionDepth::resetForTests();
-    WpLedgeredDelivery::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
+    WpLedgeredDelivery::reset_for_tests();
     IntegrationHookName::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register();
     $this->runner = null;
   }

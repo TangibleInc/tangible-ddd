@@ -16,7 +16,7 @@ use TangibleDDD\Conformance\Scenarios\FreshProcessScenarios;
 #[Group('wp')]
 final class WpFreshProcessConformance extends FreshProcessScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

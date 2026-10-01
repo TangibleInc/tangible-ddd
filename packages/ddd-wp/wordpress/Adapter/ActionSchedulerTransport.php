@@ -26,7 +26,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  * not store it) is returned as '0', which the relay treats as a rejection
  * (CONF-4). A missing Action Scheduler throws TransportRejected.
  *
- * sharesConnectionWith(): true for the wpdb outbox store, since both write
+ * shares_connection(): true for the wpdb outbox store, since both write
  * through the global $wpdb; the relay then runs submit + accept in one
  * WpdbTransactionBoundary transaction, so relay failures are DB errors only.
  */
@@ -39,13 +39,13 @@ final class ActionSchedulerTransport implements ITransport {
       throw new TransportRejected('Action Scheduler is not loaded; the fact stays in the outbox.');
     }
 
-    $args = WpLargeEnvelope::forTransport($wrappedEnvelope, $c->record->integration_action, $c->record->event_type);
+    $args = WpLargeEnvelope::for_transport($wrappedEnvelope, $c->record->integration_action, $c->record->event_type);
     $id = as_schedule_single_action($dueAt->getTimestamp(), $c->record->integration_action, [$args], $this->group);
 
     return (string) (int) $id;
   }
 
-  public function sharesConnectionWith(IOutboxStore $store): bool {
+  public function shares_connection(IOutboxStore $store): bool {
     return $store instanceof WpdbOutboxStore;
   }
 }

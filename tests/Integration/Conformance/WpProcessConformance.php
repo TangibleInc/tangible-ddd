@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\ProcessScenarios;
 #[Group('wp')]
 final class WpProcessConformance extends ProcessScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

@@ -14,7 +14,7 @@ namespace TangibleDDD\Tests\Integration\Conformance\Support;
  * is "a second php-fpm child" inside one test process.
  *
  * The caller guarantees no transaction is open on the current connection
- * (ProcessHost::beforeNextProcessLockAcquire's contract): the transaction
+ * (ProcessHost::before_next_lock's contract): the transaction
  * depth counter (WpdbTransactionDepth) is process-wide.
  */
 final class ConnectionSwitch {

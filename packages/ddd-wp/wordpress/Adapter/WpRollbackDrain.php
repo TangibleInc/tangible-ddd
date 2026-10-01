@@ -24,7 +24,7 @@ use TangibleDDD\Infra\IDDDConfig;
  * Neither hook has a callback under 0.6, so whatever is still pending when
  * the winner switches back is failed by Action Scheduler and lost. Each
  * round first re-schedules redeliveries Action Scheduler lost
- * (WpLedgeredDelivery::restoreRedeliveries()) and re-projects every pending
+ * (WpLedgeredDelivery::restore_redeliveries()) and re-projects every pending
  * wakeup intent that has no Action Scheduler action, ignoring its retry
  * backoff (a Timeout or Continue whose wake just failed is back in
  * `pending` with its action gone; re-projected, it sits future-dated on its
@@ -50,7 +50,7 @@ final class WpRollbackDrain {
       // A redelivery Action Scheduler lost is scheduled again first, and
       // every intent without an action is projected again, so the drain
       // (or, on a legacy hook, the 0.6 winner) runs them too.
-      WpLedgeredDelivery::restoreRedeliveries($this->config);
+      WpLedgeredDelivery::restore_redeliveries($this->config);
       $wakeups?->reproject($this->now(), 1000, true);
       $ids = $this->pending();
       if ($ids === []) {
@@ -66,15 +66,15 @@ final class WpRollbackDrain {
     return [
       'ran' => $ran,
       'remaining' => count($this->pending())
-        + $this->futureByReference()
-        + WpLedgeredDelivery::orphanedRedeliveries($this->config)
+        + $this->future_references()
+        + WpLedgeredDelivery::orphan_count($this->config)
         + ($wakeups?->unprojected() ?? 0),
       'rounds' => $rounds,
     ];
   }
 
   private function wakeups(): ?WpdbWakeupScheduler {
-    if (!WpSchema::isV8($this->config) || !function_exists('as_has_scheduled_action')) {
+    if (!WpSchema::is_v8($this->config) || !function_exists('as_has_scheduled_action')) {
       return null;
     }
     $scheduler = \TangibleDDD\Runtime\HostDefaults::for(\TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $this->config);
@@ -116,7 +116,7 @@ final class WpRollbackDrain {
    * run early, because their delay is part of the fact. The runbook waits
    * for them.
    */
-  public function futureByReference(): int {
+  public function future_references(): int {
     $now = $this->now()->getTimestamp();
     return count(array_filter($this->byReference(), static fn (array $a) => $a[1] !== null && $a[1] > $now));
   }
@@ -136,7 +136,7 @@ final class WpRollbackDrain {
     ], 'ids') as $id) {
       $action = $store->fetch_action((string) $id);
       $args = $action->get_args();
-      if (!str_starts_with((string) $action->get_hook(), $prefix) || !is_array($args[0] ?? null) || !WpLargeEnvelope::isReference($args[0])) {
+      if (!str_starts_with((string) $action->get_hook(), $prefix) || !is_array($args[0] ?? null) || !WpLargeEnvelope::is_reference($args[0])) {
         continue;
       }
       $date = $action->get_schedule()->get_date();

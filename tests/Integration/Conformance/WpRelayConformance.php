@@ -18,12 +18,12 @@ use TangibleDDD\Runtime\Outbox\Claim;
 #[Group('wp')]
 final class WpRelayConformance extends RelayScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 
   /** While a port claim is live, a 0.6 copy's fetch_pending() must skip the row (`locked_until` set). */
-  protected function whileLeased(Claim $c): void {
+  protected function while_leased(Claim $c): void {
     self::assertInstanceOf(WpHostFixture::class, $this->host);
     self::assertNotContains($c->event_id, $this->host->legacyFetchPending(), 'a 0.6 fetch_pending() skips the leased row');
   }

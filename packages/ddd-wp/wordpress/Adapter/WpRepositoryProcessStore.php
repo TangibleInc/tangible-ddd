@@ -21,20 +21,20 @@ use TangibleDDD\Runtime\Process\ProcessStoreFailed;
  * the portable equivalent; this one keeps the wave-1 ignition lock name a
  * 0.6.7 copy also takes.)
  *
- * - insertIgnited(): the wave-1 schema-free ignition fix. Under the named
+ * - insert_ignited(): the wave-1 schema-free ignition fix. Under the named
  *   lock `ddd_ign_` + md5(prefix|class|event_id) it re-checks
  *   has_ignition(class, event_id) and inserts; a second delivery returns
  *   AlreadyIgnited. No ignition_key column yet (schema v8, wave 3).
  *   A contended or failed ignition lock throws LockNotAcquired and nothing is
  *   persisted.
  * - NO version fencing: there is no version column before schema v8.
- *   save()/touch() return expectedVersion + 1 without checking, versionOf()
+ *   save()/touch() return expectedVersion + 1 without checking, version_of()
  *   is tracked per instance (1 for a row it has not saved).
- * - findWaitingFor() returns ids (E F14); the runner then find()s each
+ * - find_waiting_for() returns ids (E F14); the runner then find()s each
  *   candidate, so a resume reads a waiting row twice where 0.6 read it once.
  *   Deliberately not cached: a cached row could be served stale to a later
  *   wake in a long-lived Action Scheduler worker.
- * - findStranded() returns []: without an intent table there is nothing to
+ * - find_stranded() returns []: without an intent table there is nothing to
  *   compare against (wave 3).
  *
  * Errors from the repository propagate unchanged; a repository save that
@@ -54,7 +54,7 @@ final class WpRepositoryProcessStore implements IProcessStore {
     return $this->repository;
   }
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     $name = 'ddd_ign_' . md5($this->consumer->prefix() . '|' . $processClass . '|' . $eventId);
     WpNamedLock::acquire($name, 5);
 
@@ -97,11 +97,11 @@ final class WpRepositoryProcessStore implements IProcessStore {
     return $this->versions[$id] = $expectedVersion + 1;
   }
 
-  public function versionOf(int $id): ?int {
+  public function version_of(int $id): ?int {
     return $this->versions[$id] ?? 1;
   }
 
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array {
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array {
     $ids = [];
     foreach ($this->repository->find_waiting_for($eventClass) as $p) {
       $id = $p->get_id();
@@ -112,7 +112,7 @@ final class WpRepositoryProcessStore implements IProcessStore {
     return $ids;
   }
 
-  public function findStranded(\DateTimeImmutable $now): array {
+  public function find_stranded(\DateTimeImmutable $now): array {
     return [];
   }
 }

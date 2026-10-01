@@ -249,7 +249,7 @@ class DDD_Command {
         \WP_CLI::error( '--abandon needs --consumer=<prefix>.' );
       }
       [ $handle ] = $this->selected_consumers( $assoc_args );
-      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::isV8( $handle->config() ) ) {
+      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::is_v8( $handle->config() ) ) {
         \WP_CLI::error( "Consumer '{$handle->prefix()}' has no delivery ledger (schema v8 not installed)." );
       }
       $key = (string) $assoc_args['abandon'];

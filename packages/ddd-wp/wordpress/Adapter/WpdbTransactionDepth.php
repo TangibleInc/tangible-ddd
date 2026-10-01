@@ -7,7 +7,7 @@ namespace TangibleDDD\WordPress\Adapter;
 /**
  * How many wpdb transactions THIS request has open through DDD boundaries.
  *
- * wpdb has no inTransaction(), and every DDD boundary on WordPress wraps the
+ * wpdb has no in_transaction(), and every DDD boundary on WordPress wraps the
  * one global connection, so the checked WpdbTransactionBoundary and the 0.6
  * UncheckedWpdbTransactionBoundary (TransactionMiddleware) share this count:
  * a process save made while a legacy command transaction is open sees it as
@@ -36,7 +36,7 @@ final class WpdbTransactionDepth {
   }
 
   /** @internal test seam */
-  public static function resetForTests(): void {
+  public static function reset_for_tests(): void {
     self::$depth = 0;
   }
 }

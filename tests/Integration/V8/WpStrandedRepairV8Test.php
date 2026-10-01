@@ -78,7 +78,7 @@ final class WpStrandedRepairV8Test extends V8TestCase {
     $intents = $this->rows("SELECT kind, process_id, status FROM `{$this->table('ddd_wakeups')}`");
     self::assertSame([['kind' => 'resume_retry', 'process_id' => (string) $id, 'status' => 'pending']], $intents);
     self::assertCount(1, $this->pendingActions($this->config->hook('ddd_wakeup')), 'a worker runs the re-run');
-    self::assertSame([], $this->store->findStranded($this->clock->now()), 'no longer stranded: it has a live intent');
+    self::assertSame([], $this->store->find_stranded($this->clock->now()), 'no longer stranded: it has a live intent');
   }
 
   public function test_fail_stranded_fails_the_row_with_the_operator_reason(): void {
@@ -96,7 +96,7 @@ final class WpStrandedRepairV8Test extends V8TestCase {
     $id = $this->strandedRunning();
     $other = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::open($this->wpdb);
     try {
-      $other->get_var($other->prepare('SELECT GET_LOCK(%s, 0)', GetLockProcessLock::legacyName(new LockKey($this->config->prefix(), '', $id))));
+      $other->get_var($other->prepare('SELECT GET_LOCK(%s, 0)', GetLockProcessLock::legacy_name(new LockKey($this->config->prefix(), '', $id))));
       $this->expectException(ProcessNotStranded::class);
       (new WpStrandedRepairs($this->config, $this->clock))->fail($id, 'nope');
     } finally {

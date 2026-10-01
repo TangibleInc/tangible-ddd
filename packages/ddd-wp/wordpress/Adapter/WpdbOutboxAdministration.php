@@ -37,7 +37,7 @@ use TangibleDDD\Runtime\SystemClock;
  *   (wp keeps writing `completed`; `accepted` is the port's read alias).
  * - stats(): counts by port status (`completed` reported as `accepted`) plus
  *   `dead_letters` (no `resolved_at` column is read, C24).
- * - eventIdOf(int): IOutboxRowIds, for RetryDeliveryCommand's integer id.
+ * - event_id_of(int): IOutboxRowIds, for RetryDeliveryCommand's integer id.
  *
  * Transactions: replay runs in the repair command's transaction when one is
  * open (the self-consumer bus), else in its own (WpdbTransactionBoundary).
@@ -56,7 +56,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
     return ($this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock())->now()->setTimezone(new \DateTimeZone('UTC'));
   }
 
-  public function deadLetters(int $limit, ?string $after = null): array {
+  public function dead_letters(int $limit, ?string $after = null): array {
     $db = self::db();
     $rows = $db->get_results($db->prepare(
       "SELECT * FROM `{$this->dlq()}` WHERE id > %d ORDER BY id ASC LIMIT %d",
@@ -161,7 +161,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
     return $stats;
   }
 
-  public function eventIdOf(int $outboxId): ?string {
+  public function event_id_of(int $outboxId): ?string {
     $db = self::db();
     $id = $db->get_var($db->prepare("SELECT event_id FROM `{$this->outbox()}` WHERE id = %d", $outboxId));
     return $id === null ? null : (string) $id;
@@ -177,7 +177,7 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
       'locked_by' => null,
       'last_error' => null,
     ];
-    if (WpSchema::isV8($this->prefix)) {
+    if (WpSchema::is_v8($this->prefix)) {
       $reset['claim_token'] = null; // schema v8: a stale token must fence nothing
     }
     $this->checked($db->update($this->outbox(), $reset, ['event_id' => $event_id]), "reset outbox row $event_id");

@@ -59,7 +59,7 @@ final class WpHostPortFactory implements IHostPortFactory {
       // repository (exact class: a consumer subclass may override save()),
       // and only once the consumer's v8 migration has run.
       if ($legacy instanceof ProcessRepository && get_class($legacy) === ProcessRepository::class
-        && $consumer instanceof IDDDConfig && WpSchema::isV8($consumer)) {
+        && $consumer instanceof IDDDConfig && WpSchema::is_v8($consumer)) {
         return new WpdbProcessStore($legacy, $consumer);
       }
       return $legacy instanceof IProcessRepository ? new WpRepositoryProcessStore($legacy, $consumer) : null;
@@ -75,9 +75,9 @@ final class WpHostPortFactory implements IHostPortFactory {
     }
 
     if ($port === IOutboxStore::class) {
-      // The store's claim / accept / retryLater / deadLetter SQL names
+      // The store's claim / accept / retry_later / dead_letter SQL names
       // claim_token: only for a consumer whose v8 migration has run.
-      return $legacy instanceof OutboxRepository && WpSchema::isV8($consumer) ? new WpdbOutboxStore($legacy, $consumer) : null;
+      return $legacy instanceof OutboxRepository && WpSchema::is_v8($consumer) ? new WpdbOutboxStore($legacy, $consumer) : null;
     }
 
     return match ($port) {
@@ -86,8 +86,8 @@ final class WpHostPortFactory implements IHostPortFactory {
         : new NullAuditSink(),
       IFactObserver::class => new TouchesFactObserver($consumer),
       IRelayPauseStore::class => new WpRelayPauseStore($consumer),
-      IDeliveryLedger::class => WpSchema::isV8($consumer) ? new WpDeliveryLedger($consumer->prefix()) : null,
-      IWakeupScheduler::class => WpSchema::isV8($consumer)
+      IDeliveryLedger::class => WpSchema::is_v8($consumer) ? new WpDeliveryLedger($consumer->prefix()) : null,
+      IWakeupScheduler::class => WpSchema::is_v8($consumer)
         ? new WpdbWakeupScheduler($consumer)
         : new ActionSchedulerWakeupScheduler($consumer),
       default => null,

@@ -11,13 +11,13 @@ final class WpStrandedReport {
 
   /**
    * @param list<int> $minted process ids that got a fresh Continue intent
-   * @param list<int> $alreadyQueued process ids left alone: a legacy continue action is queued
+   * @param list<int> $queued process ids left alone: a legacy continue action is queued
    * @param list<StrandedProcess> $running reported for the operator view only
    * @param list<int> $exhausted process ids left alone: a wake of theirs exhausted its budget (operator re-arms it)
    */
   public function __construct(
     public readonly array $minted,
-    public readonly array $alreadyQueued,
+    public readonly array $queued,
     public readonly array $running,
     public readonly array $exhausted = [],
   ) {}

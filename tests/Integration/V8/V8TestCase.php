@@ -37,8 +37,8 @@ abstract class V8TestCase extends TestCase {
     global $wpdb;
     $this->wpdb = $wpdb;
     $this->config = new DDDConfig(static::PREFIX, 'TangibleDDD\\Tests\\Integration\\V8\\Fakes', '8.0-test');
-    WpdbTransactionDepth::resetForTests();
-    HostDefaults::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register();
     ConsumerRegistry::add($this->config, static fn () => null, 'v8 tests', 'TangibleDDD\\Tests\\Integration\\V8\\Fakes');
     $this->wipe();
@@ -46,8 +46,8 @@ abstract class V8TestCase extends TestCase {
 
   protected function tearDown(): void {
     $this->wipe();
-    WpdbTransactionDepth::resetForTests();
-    HostDefaults::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register();
     parent::tearDown();
   }

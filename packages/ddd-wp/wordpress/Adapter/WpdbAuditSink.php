@@ -36,13 +36,13 @@ final class WpdbAuditSink implements IAuditSink {
 
   public function open(AuditOpen $r): void {
     command_audit_preflight($this->config, [
-      'command_id' => $r->commandId,
-      'correlation_id' => $r->correlationId,
-      'command_name' => $r->commandName,
+      'command_id' => $r->command_id,
+      'correlation_id' => $r->correlation_id,
+      'command_name' => $r->command_name,
       'source' => $r->actor->kind->value,
       'source_id' => in_array($r->actor->kind, [ActorKind::User, ActorKind::Machine], true) ? (string) ($r->actor->id ?? '') : '',
-      'causation_id' => $r->causationId,
-      'causation_type' => $r->causationType,
+      'causation_id' => $r->causation_id,
+      'causation_type' => $r->causation_type,
       'blog_id' => is_multisite() ? get_current_blog_id() : 1,
       'parameters' => $r->parameters,
       'environment' => $r->environment,
@@ -51,10 +51,10 @@ final class WpdbAuditSink implements IAuditSink {
 
   public function close(AuditClose $r): void {
     command_audit_finalise($this->config, [
-      'command_id' => $r->commandId,
+      'command_id' => $r->command_id,
       'status' => $r->status,
-      'duration_ms' => $r->durationMs,
-      'peak_memory_bytes' => $r->peakMemoryBytes,
+      'duration_ms' => $r->duration_ms,
+      'peak_memory_bytes' => $r->peak_memory_bytes,
       'events' => $r->events,
       'error' => $r->error,
     ]);

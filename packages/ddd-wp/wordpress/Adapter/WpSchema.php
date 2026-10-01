@@ -40,12 +40,12 @@ final class WpSchema {
     return (int) get_option($prefix . '_ddd_schema_version', 0);
   }
 
-  public static function atLeast(IConsumerIdentity|string $consumer, int $version): bool {
+  public static function at_least(IConsumerIdentity|string $consumer, int $version): bool {
     return self::installed($consumer) >= $version;
   }
 
-  public static function isV8(IConsumerIdentity|string $consumer): bool {
-    return self::atLeast($consumer, self::V8);
+  public static function is_v8(IConsumerIdentity|string $consumer): bool {
+    return self::at_least($consumer, self::V8);
   }
 
   /**
@@ -53,7 +53,7 @@ final class WpSchema {
    * 1062 only, never the SQLSTATE class 23000, which also covers FK and
    * NOT NULL violations (register 3.8).
    */
-  public static function lastErrorIsDuplicateKey(\wpdb $db): bool {
+  public static function is_duplicate_key(\wpdb $db): bool {
     $dbh = $db->dbh ?? null; // protected, read through wpdb::__get
     if ($dbh instanceof \mysqli) {
       return mysqli_errno($dbh) === 1062;

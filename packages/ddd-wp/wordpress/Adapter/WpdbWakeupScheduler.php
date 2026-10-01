@@ -57,7 +57,7 @@ use TangibleDDD\Runtime\SystemClock;
  * Transactions: schedule() and cancel() throw WakeupOutsideTransaction
  * unless a DDD wpdb transaction is open (WpdbTransactionDepth): the intent,
  * its AS projection (same connection) and the state change commit together.
- * claimDue() / complete() / retryLater() are the port's lease-fenced drain
+ * claim_due() / complete() / retry_later() are the port's lease-fenced drain
  * path (claim_token + locked_until); begin() / finish() / reproject() are
  * the wp-specific hooks used by the Action Scheduler callbacks and the
  * relay tick. A 0.6 copy never reads the table. Every failed storage write
@@ -82,7 +82,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
   ) {}
 
   /** Seconds before the retry that follows the ($failuresBefore + 1)-th failure. */
-  public static function backoffSeconds(int $failuresBefore): int {
+  public static function backoff_seconds(int $failuresBefore): int {
     return min(self::BACKOFF_CAP_SECONDS, self::BACKOFF_BASE_SECONDS << max(0, min(16, $failuresBefore)));
   }
 
@@ -92,7 +92,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
     $db = self::db();
     $now = $this->stamp();
 
-    $row = $db->get_row($db->prepare("SELECT id, status FROM `{$this->table()}` WHERE idempotency_key = %s FOR UPDATE", $i->idempotencyKey));
+    $row = $db->get_row($db->prepare("SELECT id, status FROM `{$this->table()}` WHERE idempotency_key = %s FOR UPDATE", $i->key));
     if ($row && in_array($row->status, ['pending', 'exhausted'], true)) {
       return; // duplicate key, or an exhausted wake only an operator re-arms
     }
@@ -110,17 +110,17 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
            locked_until = NULL, hook = %s, args = %s, as_action_id = %d, kind = %s, process_id = %d,
            step_index = IF(%d = 1, NULL, %d), expected_status = IF(%d = 1, NULL, %s), updated_at = %s
          WHERE id = %d",
-        self::utc($i->dueAt), (int) $keep, (int) $keep, $hook, (string) wp_json_encode($args), $actionId, $i->kind->value, (int) $i->processId,
-        (int) ($i->stepIndex === null), (int) $i->stepIndex, (int) ($i->expectedStatus === null), (string) $i->expectedStatus, $now, (int) $row->id
+        self::utc($i->due_at), (int) $keep, (int) $keep, $hook, (string) wp_json_encode($args), $actionId, $i->kind->value, (int) $i->process_id,
+        (int) ($i->step_index === null), (int) $i->step_index, (int) ($i->expected_status === null), (string) $i->expected_status, $now, (int) $row->id
       ));
     } else {
       $ok = $db->insert($this->table(), [
-        'idempotency_key' => $i->idempotencyKey,
+        'idempotency_key' => $i->key,
         'kind' => $i->kind->value,
-        'process_id' => $i->processId,
-        'step_index' => $i->stepIndex,
-        'expected_status' => $i->expectedStatus,
-        'due_at' => self::utc($i->dueAt),
+        'process_id' => $i->process_id,
+        'step_index' => $i->step_index,
+        'expected_status' => $i->expected_status,
+        'due_at' => self::utc($i->due_at),
         'status' => 'pending',
         'attempts' => 0,
         'hook' => $hook,
@@ -132,7 +132,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
       ]);
     }
     if ($ok === false) {
-      throw new \RuntimeException("Wakeup intent {$i->idempotencyKey} was not stored in {$this->table()}: " . (string) $db->last_error);
+      throw new \RuntimeException("Wakeup intent {$i->key} was not stored in {$this->table()}: " . (string) $db->last_error);
     }
   }
 
@@ -154,7 +154,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
     }
   }
 
-  public function claimDue(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
+  public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     if (WpdbTransactionDepth::current() > 0) {
       throw new \TangibleDDD\Runtime\NestedTransactionRejected('IWakeupScheduler::claimDue() runs its own transaction and must be called outside one.');
     }
@@ -192,17 +192,17 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
     $n = $db->query($db->prepare(
       "UPDATE `{$this->table()}` SET status = 'done', claim_token = NULL, locked_until = NULL, updated_at = %s
        WHERE idempotency_key = %s AND claim_token = %s",
-      $this->stamp(), $w->intent->idempotencyKey, $w->claimToken
+      $this->stamp(), $w->intent->key, $w->token
     ));
     return (int) $n === 1;
   }
 
-  public function retryLater(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
     $db = self::db();
     $n = $db->query($db->prepare(
       "UPDATE `{$this->table()}` SET attempts = attempts + 1, last_error = %s, due_at = %s, claim_token = NULL, locked_until = NULL, updated_at = %s
        WHERE idempotency_key = %s AND claim_token = %s",
-      $error, self::utc($nextAt), $this->stamp(), $w->intent->idempotencyKey, $w->claimToken
+      $error, self::utc($nextAt), $this->stamp(), $w->intent->key, $w->token
     ));
     return (int) $n === 1;
   }
@@ -354,12 +354,12 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
   }
 
   /** begin() for one intent by key (the ResumeRetry hook); null when it is not pending. */
-  public function beginKey(string $idempotencyKey): ?WakeupIntent {
+  public function begin_key(string $idempotencyKey): ?WakeupIntent {
     $db = self::db();
     $n = $this->write($db->prepare(
       "UPDATE `{$this->table()}` SET status = 'firing', updated_at = %s WHERE idempotency_key = %s AND status = 'pending'",
       $this->stamp(), $idempotencyKey
-    ), 'beginKey');
+    ), 'begin_key');
     if ($n !== 1) {
       return null;
     }
@@ -368,13 +368,13 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
   }
 
   /** finish() for one intent by key. */
-  public function finishKey(string $idempotencyKey, ?string $error, bool $terminal = false): void {
+  public function finish_key(string $idempotencyKey, ?string $error, bool $terminal = false): void {
     $db = self::db();
     $match = $db->prepare('idempotency_key = %s', $idempotencyKey);
     if ($error === null) {
       $this->write(
         "UPDATE `{$this->table()}` SET " . $db->prepare("status = 'done', updated_at = %s", $this->stamp()) . " WHERE $match AND status = 'firing'",
-        'finishKey'
+        'finish_key'
       );
       $this->write(
         "UPDATE `{$this->table()}` SET attempts = 0, last_error = NULL WHERE $match AND status = 'pending' AND attempts > 0",
@@ -382,11 +382,11 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
       );
       return;
     }
-    $this->fail("$match AND status = 'firing'", $error, $terminal, 'finishKey');
+    $this->fail("$match AND status = 'firing'", $error, $terminal, 'finish_key');
   }
 
   /** The live (pending or firing) intents of a process. */
-  public function hasLiveIntent(int $processId): bool {
+  public function has_live_intent(int $processId): bool {
     $db = self::db();
     return (bool) $db->get_var($db->prepare(
       "SELECT 1 FROM `{$this->table()}` WHERE process_id = %d AND status IN ('pending', 'firing') LIMIT 1",
@@ -395,7 +395,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
   }
 
   /** Whether a wake of the process exhausted its budget (the operator re-arms it). */
-  public function hasExhaustedIntent(int $processId): bool {
+  public function has_exhausted_intent(int $processId): bool {
     $db = self::db();
     return (bool) $db->get_var($db->prepare(
       "SELECT 1 FROM `{$this->table()}` WHERE process_id = %d AND status = 'exhausted' LIMIT 1",
@@ -412,14 +412,14 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
     if ($i->kind === WakeKind::Deliver) {
       throw new \LogicException("Wake kind deliver is not an intent on WordPress: handler retries use the {$this->config->hook('ddd_redeliver')} hook");
     }
-    if ($i->processId === null) {
-      throw new \InvalidArgumentException("Wakeup {$i->idempotencyKey} has no process id");
+    if ($i->process_id === null) {
+      throw new \InvalidArgumentException("Wakeup {$i->key} has no process id");
     }
 
     return match ($i->kind) {
-      WakeKind::Timeout => [$this->config->hook('await_timeout'), ['process_id' => $i->processId, 'step_index' => (int) $i->stepIndex]],
-      WakeKind::Continue => [$this->config->hook('process_continue'), ['process_id' => $i->processId]],
-      WakeKind::ResumeRetry => [$this->config->hook('ddd_wakeup'), ['key' => $i->idempotencyKey]],
+      WakeKind::Timeout => [$this->config->hook('await_timeout'), ['process_id' => $i->process_id, 'step_index' => (int) $i->step_index]],
+      WakeKind::Continue => [$this->config->hook('process_continue'), ['process_id' => $i->process_id]],
+      WakeKind::ResumeRetry => [$this->config->hook('ddd_wakeup'), ['key' => $i->key]],
     };
   }
 
@@ -470,15 +470,15 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
   /** @param array<string, int|string> $args */
   private function project(WakeupIntent $i, string $hook, array $args): int {
     if (!function_exists('as_schedule_single_action')) {
-      throw new \RuntimeException("Action Scheduler is not loaded; wakeup {$i->idempotencyKey} cannot be projected");
+      throw new \RuntimeException("Action Scheduler is not loaded; wakeup {$i->key} cannot be projected");
     }
-    $due = $i->dueAt->getTimestamp();
+    $due = $i->due_at->getTimestamp();
     $id = $i->kind === WakeKind::Continue && $due <= $this->clock()->now()->getTimestamp()
       ? as_enqueue_async_action($hook, $args, $this->group())
       : as_schedule_single_action($due, $hook, $args, $this->group());
 
     if ((int) $id === 0) {
-      throw new \RuntimeException("Action Scheduler did not create the $hook action for {$i->idempotencyKey}");
+      throw new \RuntimeException("Action Scheduler did not create the $hook action for {$i->key}");
     }
     return (int) $id;
   }

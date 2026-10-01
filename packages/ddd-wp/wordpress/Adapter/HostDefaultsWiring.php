@@ -79,11 +79,11 @@ final class HostDefaultsWiring {
    * idempotent (a second call replaces the resolver with an equivalent one).
    */
   public static function register_lazily(): void {
-    HostDefaults::onMiss(static function (): void {
+    HostDefaults::on_miss(static function (): void {
       if (!self::wordpress_is_present()) {
         return;
       }
-      HostDefaults::onMiss(null);
+      HostDefaults::on_miss(null);
       self::fill_missing();
     });
   }

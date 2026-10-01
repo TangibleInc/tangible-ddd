@@ -185,7 +185,7 @@ final class WpWakeupsV8Test extends V8TestCase {
     as_unschedule_all_actions('ddd8it_await_timeout');
     $this->clock->set(new \DateTimeImmutable('@' . ($start + 86400)));
     self::assertSame(0, $this->wakeups->reproject($this->clock->now()), 'an exhausted intent is never re-projected');
-    self::assertFalse($this->wakeups->hasLiveIntent(5));
+    self::assertFalse($this->wakeups->has_live_intent(5));
 
     $ops = (new \TangibleDDD\WordPress\Adapter\WpOperatorView($this->config, $this->clock))->list('wakeup');
     self::assertSame([['timeout:5:2', 10, 10, 'Process #5 was quarantined', ['rearm']]], array_map(
@@ -264,8 +264,8 @@ final class WpWakeupsV8Test extends V8TestCase {
       foreach ([
         'begin' => fn () => $this->wakeups->begin(WakeKind::Timeout, 5, 2),
         'finish' => fn () => $this->wakeups->finish(WakeKind::Timeout, 5, 2, 'x'),
-        'finishKey' => fn () => $this->wakeups->finishKey('timeout:5:2', null),
-        'claimDue' => fn () => $this->wakeups->claimDue($this->clock->now(), 10, 60),
+        'finish_key' => fn () => $this->wakeups->finish_key('timeout:5:2', null),
+        'claim_due' => fn () => $this->wakeups->claim_due($this->clock->now(), 10, 60),
         'reproject' => fn () => $this->wakeups->reproject($this->clock->now()),
       ] as $what => $call) {
         try {
@@ -297,16 +297,16 @@ final class WpWakeupsV8Test extends V8TestCase {
   public function test_claim_due_complete_and_retry_later_are_fenced(): void {
     $this->tx(fn () => $this->wakeups->schedule(WakeupIntent::timeout('ddd8it', 5, 2, $this->clock->now())));
 
-    [$w] = $this->wakeups->claimDue($this->clock->now(), 10, 60);
-    self::assertSame('timeout:5:2', $w->intent->idempotencyKey);
+    [$w] = $this->wakeups->claim_due($this->clock->now(), 10, 60);
+    self::assertSame('timeout:5:2', $w->intent->key);
     self::assertSame(WakeKind::Timeout, $w->intent->kind);
-    self::assertSame([], $this->wakeups->claimDue($this->clock->now(), 10, 60), 'leased');
+    self::assertSame([], $this->wakeups->claim_due($this->clock->now(), 10, 60), 'leased');
 
-    [$w2] = $this->wakeups->claimDue($this->clock->now()->modify('+61 seconds'), 10, 60);
+    [$w2] = $this->wakeups->claim_due($this->clock->now()->modify('+61 seconds'), 10, 60);
     self::assertFalse($this->wakeups->complete($w), 'lost lease');
-    self::assertTrue($this->wakeups->retryLater($w2, 'busy', $this->clock->now()->modify('+2 minutes')));
-    self::assertSame([], $this->wakeups->claimDue($this->clock->now()->modify('+61 seconds'), 10, 60));
-    [$w3] = $this->wakeups->claimDue($this->clock->now()->modify('+2 minutes'), 10, 60);
+    self::assertTrue($this->wakeups->retry_later($w2, 'busy', $this->clock->now()->modify('+2 minutes')));
+    self::assertSame([], $this->wakeups->claim_due($this->clock->now()->modify('+61 seconds'), 10, 60));
+    [$w3] = $this->wakeups->claim_due($this->clock->now()->modify('+2 minutes'), 10, 60);
     self::assertSame(1, $w3->attempts);
     self::assertTrue($this->wakeups->complete($w3));
     self::assertSame('done', $this->intents()[0]['status']);
@@ -324,8 +324,8 @@ final class WpWakeupsV8Test extends V8TestCase {
     $report = (new WpStrandedScan($this->config, $store, $this->wakeups, $this->clock))->run();
 
     self::assertSame([$bare], $report->minted);
-    self::assertSame([$queued], $report->alreadyQueued);
-    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $report->running));
+    self::assertSame([$queued], $report->queued);
+    self::assertSame([$running], array_map(static fn ($s) => $s->process_id, $report->running));
     self::assertSame(["continue:$bare:2"], array_column($this->intents(), 'idempotency_key'));
     self::assertEqualsCanonicalizing([['process_id' => $queued], ['process_id' => $bare]], array_column($this->pendingActions('ddd8it_process_continue'), 'args'), 'one action each, no duplicate for the 0.6-queued one');
 

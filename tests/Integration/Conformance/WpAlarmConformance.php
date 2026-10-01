@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\AlarmScenarios;
 #[Group('wp')]
 final class WpAlarmConformance extends AlarmScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

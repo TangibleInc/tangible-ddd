@@ -159,7 +159,7 @@ function register_delivery_hooks(IDDDConfig $config): void {
   // Named parameters $hook, $event_class, $payload match the action's args keys.
   $callback = [\TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::class, 'redeliver'];
   // Redeliveries are scheduled on this config's hook() and as_group('outbox').
-  \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::registerConsumer($config);
+  \TangibleDDD\WordPress\Adapter\WpLedgeredDelivery::register_consumer($config);
   if (has_action($config->hook('ddd_redeliver'), $callback) === false) {
     add_action($config->hook('ddd_redeliver'), $callback, 10, 3);
   }
@@ -263,7 +263,7 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
   // like {prefix}_ddd_redeliver (register 3.6).
   add_action($config->hook('ddd_wakeup'), function(string $key) use ($config, $di_getter) {
     try {
-      \TangibleDDD\WordPress\Adapter\WpWakeBracket::resumeRetry($config, $key, static fn () => ($di_getter())->get(ProcessRunner::class));
+      \TangibleDDD\WordPress\Adapter\WpWakeBracket::resume_retry($config, $key, static fn () => ($di_getter())->get(ProcessRunner::class));
     } catch (\Throwable $e) {
       error_log(sprintf('[%s-process] Wakeup %s failed: %s', $config->prefix(), $key, $e->getMessage()));
       throw $e;

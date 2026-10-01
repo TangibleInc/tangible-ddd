@@ -38,7 +38,7 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
   protected function setUp(): void {
     parent::setUp();
     $this->installV8();
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     $this->store = new WpdbOutboxStore(
       new OutboxRepository($this->config, new OutboxConfig(action_scheduler_group: $this->config->as_group('outbox'))),
@@ -48,7 +48,7 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
   }
 
   protected function tearDown(): void {
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
     parent::tearDown();
   }
 
@@ -103,7 +103,7 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
 
   public function test_a_failed_by_reference_delivery_is_redelivered_by_reference(): void {
     register_delivery_hooks($this->config);
-    WpLedgeredDelivery::registerConsumer($this->config);
+    WpLedgeredDelivery::register_consumer($this->config);
     $blob = str_repeat('x', 20000);
     $failures = 1;
     $received = [];
@@ -158,6 +158,6 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
     $ledger = new WpDeliveryLedger($this->config->prefix());
     $subscriber = WpLedgeredDelivery::subscribers(V8BlobFact::integration_action())[0];
     self::assertSame(1, $ledger->attempts($subscriber, $id));
-    self::assertStringContainsString('outbox row', (string) $ledger->lastError($subscriber, $id));
+    self::assertStringContainsString('outbox row', (string) $ledger->last_error($subscriber, $id));
   }
 }

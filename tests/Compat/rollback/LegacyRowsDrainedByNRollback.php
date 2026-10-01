@@ -126,7 +126,7 @@ final class LegacyRowsDrainedByNRollback extends RollbackTestCase {
 
     // The legacy pause option still holds its selector; the DLQ row is listed.
     self::assertContains('rb_held', array_values(array_map(static fn ($h) => $h['selector'], (array) get_option($this->config->option('outbox_pauses'), []))));
-    self::assertSame([$dead], array_map(static fn ($l) => $l->event_id, $this->admin()->deadLetters(10)));
+    self::assertSame([$dead], array_map(static fn ($l) => $l->event_id, $this->admin()->dead_letters(10)));
 
     // Later: the 0.6 lease expired, the delay is due (once: no second delay).
     $this->age(400);
