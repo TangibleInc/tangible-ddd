@@ -49,6 +49,12 @@ final class DbalBehaviourWorkflowRepository extends PersistsAggregatesRepository
     return BehaviourWorkflow::class;
   }
 
+  /** get_by_id() that answers null for an unknown id (decode errors still throw). */
+  public function find(int $id): ?BehaviourWorkflow {
+    $row = $this->connection->fetchAssociative("SELECT * FROM {$this->table} WHERE id = ?", [$id], [ParameterType::INTEGER]);
+    return $row === false ? null : $this->fromRow($row, $this->metaFor([$id])[$id] ?? []);
+  }
+
   public function get_by_id(int $id): BehaviourWorkflow {
     $row = $this->connection->fetchAssociative("SELECT * FROM {$this->table} WHERE id = ?", [$id], [ParameterType::INTEGER]);
     if ($row === false) {

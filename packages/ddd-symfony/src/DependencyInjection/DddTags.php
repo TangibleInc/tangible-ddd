@@ -38,6 +38,13 @@ final class DddTags {
    */
   public const WORKFLOW = 'tangible_ddd.workflow';
 
+  /**
+   * W1: WorkflowHandler services that continue through the wakeup scheduler
+   * (IContinuesWorkflows, autoconfigured; the ReschedulesThroughWakeups
+   * trait). Located by class for the workflow wake target.
+   */
+  public const CONTINUES_WORKFLOW = 'tangible_ddd.continues_workflow';
+
   /** LongProcess classes (the existing core tag read by LongProcessCatalogPass). */
   public const LONG_PROCESS = 'ddd.long_process';
 }

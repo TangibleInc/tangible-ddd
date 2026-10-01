@@ -50,6 +50,8 @@ use TangibleDDD\Symfony\Runtime\DddSignal;
 use TangibleDDD\Symfony\Runtime\DeliveryNotes;
 use TangibleDDD\Symfony\Runtime\SubscriptionProbe;
 use TangibleDDD\Symfony\Runtime\UnheardFactNotes;
+use TangibleDDD\Symfony\Workflow\WorkflowContinuations;
+use TangibleDDD\Symfony\Workflow\WorkflowWakeTarget;
 use TangibleDDD\Symfony\Ops\MessengerFailureTransportSource;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
@@ -218,8 +220,22 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.process_entry', LazyProcessEntry::class)
     ->args([service_closure($config['process_entry'] ?? 'tangible_ddd.process_runner')]);
 
-  $s->set('tangible_ddd.wake_target', ProcessRunnerWakeTarget::class)
+  $s->set('tangible_ddd.process_wake_target', ProcessRunnerWakeTarget::class)
     ->args([service('tangible_ddd.process_runner')]);
+  // W1: workflow continuations share the wakeup intents; the rest go to the runner.
+  $s->set('tangible_ddd.workflow_continuations', WorkflowContinuations::class)
+    ->args([service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'), service('tangible_ddd.clock'), $consumer['prefix']]);
+  $s->alias(WorkflowContinuations::class, 'tangible_ddd.workflow_continuations');
+  $s->set('tangible_ddd.wake_target', WorkflowWakeTarget::class)
+    ->args([
+      abstract_arg('IContinuesWorkflows locator, set by HandlerLocatorPass'),
+      service('tangible_ddd.workflow_repository'),
+      service('tangible_ddd.workflow_continuations'),
+      service('tangible_ddd.process_wake_target'),
+      service('tangible_ddd.process_lock'),
+      $consumer['prefix'],
+      $logger,
+    ]);
   $s->set('tangible_ddd.wakeup_handler', ProcessWakeupHandler::class)
     ->args([service('tangible_ddd.wake_target'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.clock'), $logger])
     ->tag('messenger.message_handler', ['bus' => $config['messenger']['bus'], 'handles' => ProcessWakeupMessage::class]);

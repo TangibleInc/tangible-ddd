@@ -30,6 +30,7 @@ use TangibleDDD\Application\CQRS\HandlerClassNameInflector;
 use TangibleDDD\Symfony\DependencyInjection\DddTags;
 use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
+use TangibleDDD\Symfony\Workflow\IContinuesWorkflows;
 
 /**
  * The Symfony host for tangible/ddd-core (register 1.2, 3.2-3.5, 5.1).
@@ -251,6 +252,7 @@ final class TangibleDddBundle extends AbstractBundle {
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IReturningCommandHandler::class)->addTag(DddTags::COMMAND_HANDLER); // L1
     $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
+    $builder->registerForAutoconfiguration(IContinuesWorkflows::class)->addTag(DddTags::CONTINUES_WORKFLOW); // W1
     // Process classes found by the app's resource loading are processes, not services:
     // the tag feeds the compile-time map; the unused definitions are removed afterwards.
     $builder->registerForAutoconfiguration(LongProcess::class)->addTag(DddTags::LONG_PROCESS);

@@ -149,6 +149,8 @@ final class TestKernel extends Kernel {
     $services->alias('test.workflow_ledger', \TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger::class)->public();
     $services->alias('test.workflow_igniter', 'tangible_ddd.workflow_igniter')->public();
     $services->alias('test.subscriptions', 'tangible_ddd.subscriptions')->public();
+    $services->alias('test.workflow_continuations', 'tangible_ddd.workflow_continuations')->public();
+    $services->alias('test.chunked_digest', Workflows\ChunkedDigestWorkflow::class)->public();
     $services->alias('test.effect_middleware', 'tangible_ddd.middleware.effect')->public();
     $services->alias('test.process_lock', \TangibleDDD\Runtime\Lock\IProcessLock::class)->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Process,Reactions,Workflows}/')

@@ -44,6 +44,7 @@ final class HandlerLocatorPass implements CompilerPassInterface {
   public function process(ContainerBuilder $container): void {
     $this->locate($container, DddTags::COMMAND_HANDLER, 'tangible_ddd.middleware.command_handler');
     $this->locate($container, DddTags::QUERY_HANDLER, 'tangible_ddd.middleware.query_handler');
+    $this->locate($container, DddTags::CONTINUES_WORKFLOW, 'tangible_ddd.wake_target'); // W1
 
     if (!$container->hasDefinition('tangible_ddd.middleware.self_executing')) {
       return;
