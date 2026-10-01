@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace TangibleDDD\Conformance\Mem;
 
 use League\Tactician\CommandBus;
+use League\Tactician\Middleware;
 use Psr\Log\LoggerInterface;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\CorrelationMiddleware;
 use TangibleDDD\Application\Events\DomainEventsPublishMiddleware;
@@ -20,8 +23,10 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
+use TangibleDDD\Conformance\EffectHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
 use TangibleDDD\Conformance\ProcessWorker;
@@ -42,7 +47,9 @@ use TangibleDDD\Conformance\Support\RecordingOutboxStore;
 use TangibleDDD\Conformance\Support\WakeHandoffFaults;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Conformance\WorkerRun;
+use TangibleDDD\Conformance\WorkflowHost;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Services\OutboxIntegrationEventBus;
 use TangibleDDD\Infra\Services\OutboxProcessor;
@@ -57,6 +64,10 @@ use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistry;
 use TangibleDDD\Runtime\Drain;
+use TangibleDDD\Runtime\Effects\EffectMiddleware;
+use TangibleDDD\Runtime\Effects\EffectResult;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\RecordEffect;
 use TangibleDDD\Runtime\DrainReport;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
@@ -82,6 +93,7 @@ use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Testing\FixedActorProvider;
 use TangibleDDD\Testing\InMemoryAuditSink;
 use TangibleDDD\Testing\InMemoryDeliveryLedger;
+use TangibleDDD\Testing\InMemoryEffectJournal;
 use TangibleDDD\Testing\InMemoryOutboxStore;
 use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\InMemoryProcessStore;
@@ -119,7 +131,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in setUp().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -150,6 +162,9 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected InMemoryProcessStore $processStore;
   protected InMemoryWakeupScheduler $wakeups;
   protected WakeHandoffFaults $wakeFaults;
+  protected InMemoryEffectJournal $effectJournal;
+  protected InMemoryWorkflowIgnitionLedger $ignitions;
+  protected InMemoryWorkflowRepository $workflowRows;
 
   /** @var array<int, MemProcessWorker> */
   protected array $workers = [];
@@ -209,6 +224,9 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
     $this->processStore->attachIntents($this->wakeups);
     $this->wakeFaults = new WakeHandoffFaults();
+    $this->effectJournal = new InMemoryEffectJournal();
+    $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
+    $this->workflowRows = new InMemoryWorkflowRepository();
     $this->workers = [];
     $this->starts = [];
     $this->awaits = [];
@@ -218,6 +236,11 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->boundary->enlist($this->rows);
     $this->boundary->enlist($this->processStore);
     $this->boundary->enlist($this->wakeups);
+    // EffectMiddleware stores outside any transaction; invalidate() inside a
+    // repair command's transaction rolls back with it.
+    $this->boundary->enlist($this->effectJournal);
+    $this->boundary->enlist($this->ignitions);
+    $this->boundary->enlist($this->workflowRows);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
@@ -290,6 +313,14 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   // ── command pipeline ─────────────────────────────────────────────────────
 
   public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+    return $this->bus($handlers, $options, null);
+  }
+
+  /**
+   * @param array<class-string, callable(object): mixed> $handlers
+   * @param Middleware|null $effects EffectMiddleware, placed between the act bracket and Transaction
+   */
+  protected function bus(array $handlers, BusOptions $options, ?Middleware $effects): CommandBus {
     $policy = $options->audit ? new AuditEverything() : new class implements IAuditPolicy {
       public function audits(object $command): bool {
         return false;
@@ -300,7 +331,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       }
     };
 
-    return new CommandBus(
+    return new CommandBus(...array_filter([
       new CorrelationMiddleware(
         $this->config,
         $this->events,
@@ -310,6 +341,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
         $policy,
         new PhpEnvironmentProvider(['host' => 'mem']),
       ),
+      $effects,
       new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
@@ -323,7 +355,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
         )),
       ),
       new HandlerMapMiddleware($handlers),
-    );
+    ]));
   }
 
   public function listen(string $eventClassOrMarker, callable $listener, int $priority = 10): void {
@@ -587,6 +619,48 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   public function failNextWakeHandoff(string $reason): void {
     $this->wakeFaults->failNext($reason);
+  }
+
+  // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
+
+  public function effectJournal(): IEffectJournal {
+    return $this->effectJournal;
+  }
+
+  public function effectBus(array $handlers): CommandBus {
+    return $this->bus(
+      [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
+      new BusOptions(),
+      new EffectMiddleware($this->effectJournal, $this->boundary),
+    );
+  }
+
+  // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
+
+  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+    return $this->ignitions;
+  }
+
+  public function workflowRepository(): IBehaviourWorkflowRepository {
+    return $this->workflowRows;
+  }
+
+  public function workflowIgniter(): WorkflowIgniter {
+    return new WorkflowIgniter($this->ignitions, $this->boundary, $this->logger, $this->clock);
+  }
+
+  // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
+
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    $this->processStore->corruptClassForTests($processId, $missingClass);
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    return $this->processStore->statusOf($processId);
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    return $this->processStore->quarantineReasonOf($processId);
   }
 
   // ── mem-only read-back (not HostFixture) ─────────────────────────────────

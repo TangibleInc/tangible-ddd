@@ -6,14 +6,19 @@ namespace TangibleDDD\Conformance\Scenarios;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestDox;
+use TangibleDDD\Application\Infrastructure\OutboxDeadLettered;
 use TangibleDDD\Conformance\ConformanceTestCase;
 use TangibleDDD\Conformance\Fixtures\WidgetRegistered;
+use TangibleDDD\Conformance\ProcessHost;
+use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\RelayRace;
 use TangibleDDD\Conformance\SimulatedCrash;
 use TangibleDDD\Conformance\TransportedFact;
 use TangibleDDD\Runtime\Delivery\Subscriber;
 use TangibleDDD\Runtime\Delivery\TransportRejected;
+use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Outbox\Claim;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 
 /**
  * The process-free relay scenarios (register section 4): lease fencing,
@@ -27,7 +32,7 @@ abstract class RelayScenarios extends ConformanceTestCase {
   protected const PAST_ANY_LEASE = 3601;
 
   #[Group('relay.lease-fencing')]
-  #[TestDox('relay.lease-fencing: A claims, the lease expires, B claims and accepts, A\'s late accept/retryLater/deadLetter change nothing')]
+  #[TestDox('relay.lease-fencing: A claims, the lease expires, B claims and accepts, A\'s late accept/retryLater/deadLetter change nothing; expired-lease re-claims count as attempts and dead-letter at claim (CR-PDO-6)')]
   public function test_relay_lease_fencing(): void {
     $id = $this->publishFact(new WidgetRegistered('w-1'));
     $outbox = $this->host->outbox();
@@ -60,6 +65,80 @@ abstract class RelayScenarios extends ConformanceTestCase {
     if ($this->host instanceof RelayRace) {
       $this->lateHolderOfARelayStep($this->host);
     }
+
+    $this->expiredLeaseReclaimsAreCounted();
+  }
+
+  /**
+   * CR-PDO-6 ruling (wave3-notes; core rule since wave 4, CR-W4CE-9): a
+   * re-claim of an expired lease counts as a relay attempt, and a row that
+   * reaches max_attempts through re-claims is dead-lettered AT CLAIM, not
+   * handed out, and is visible like any other dead letter (DLQ, operator
+   * view, OutboxDeadLettered).
+   */
+  private function expiredLeaseReclaimsAreCounted(): void {
+    $id = $this->publishFact(new WidgetRegistered('w-3'));
+    $outbox = $this->host->outbox();
+    $signalsBefore = $this->host instanceof RecordsSignals ? count($this->host->signals()) : 0;
+
+    $claim = $this->claimOf($id);
+    self::assertNotNull($claim);
+    self::assertSame(0, $claim->attempts, 'a first claim counts nothing');
+    $budget = $claim->record->max_attempts;
+    self::assertGreaterThan(1, $budget);
+
+    // The submitter dies after every claim (fatal, OOM, SIGKILL): no outcome is written.
+    for ($n = 1; $n < $budget; $n++) {
+      $this->host->advanceClock(31);
+      $claim = $this->claimOf($id);
+      self::assertNotNull($claim, "re-claim $n is handed out");
+      self::assertSame($n, $claim->attempts, "re-claim $n of an expired lease counts as attempt $n");
+    }
+
+    // The next re-claim reaches the budget: dead-lettered at claim, inside the relay step.
+    $this->host->advanceClock(self::PAST_ANY_LEASE);
+    $report = $this->host->relayOnce();
+    self::assertNotContains($id, $report->claimed, 'not handed out again');
+    self::assertNotContains($id, $report->accepted);
+    self::assertNotContains($id, $this->transportedIds(), 'never transported');
+    self::assertSame([], $outbox->claim(10, $this->host->clock()->now()->modify('+1 day'), 30), 'nothing left to claim');
+
+    $letters = array_values(array_filter(
+      $this->host->outboxAdministration()->deadLetters(10),
+      static fn ($l) => $l->event_id === $id,
+    ));
+    self::assertCount(1, $letters, 'in the DLQ');
+    self::assertSame($budget, $letters[0]->attempts, 'with attempts equal to the budget');
+    self::assertStringContainsString(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, (string) $letters[0]->error);
+    $stats = $this->host->outboxAdministration()->stats();
+    self::assertSame(0, $stats['pending']);
+    self::assertSame(1, $stats['dlq']);
+
+    if ($this->host instanceof ProcessHost) {
+      $items = array_values(array_filter(
+        $this->host->operatorView()->list(Layer::Relay),
+        static fn ($i) => $i->key === $id,
+      ));
+      self::assertCount(1, $items, 'the operator view lists the claim-time dead letter');
+      self::assertSame($budget, $items[0]->attempts);
+    }
+    if ($this->host instanceof RecordsSignals) {
+      $dead = array_values(array_filter(
+        array_slice($this->host->signals(), $signalsBefore),
+        static fn ($s) => $s instanceof OutboxDeadLettered && $s->entry()->event_id === $id,
+      ));
+      self::assertCount(1, $dead, 'OutboxDeadLettered is emitted once, as for a relay-side dead letter');
+    }
+  }
+
+  /** Claim directly, as a submitter would, and return the claim of $eventId (null if not handed out). */
+  private function claimOf(string $eventId): ?Claim {
+    foreach ($this->host->outbox()->claim(10, $this->host->clock()->now(), 30) as $c) {
+      if ($c->event_id === $eventId) {
+        return $c;
+      }
+    }
+    return null;
   }
 
   /**

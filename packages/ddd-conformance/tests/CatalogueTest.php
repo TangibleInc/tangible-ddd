@@ -7,8 +7,11 @@ namespace TangibleDDD\Conformance\Tests;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Conformance\AuditSinkFaults;
+use TangibleDDD\Conformance\EffectHost;
 use TangibleDDD\Conformance\Mem\MemHostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
+use TangibleDDD\Conformance\WorkflowHost;
 use TangibleDDD\Conformance\RecordsSignals;
 use TangibleDDD\Conformance\RelayRace;
 use TangibleDDD\Conformance\ScenarioCatalogue;
@@ -16,11 +19,12 @@ use TangibleDDD\Conformance\ScenarioId;
 use TangibleDDD\Conformance\StatementErrors;
 
 /**
- * Pins the catalogue to the exact per-wave id lists of register section 8,
- * proves every id due on mem by wave 3 has a scenario method on a mem host
- * class, and every id due on any host by wave 3 has an abstract scenario
- * method a host can extend. Runs under `--group mem` too, so the
- * acceptance command fails when a due id has no scenario.
+ * Pins the catalogue to the exact per-wave id lists of register section 8
+ * (plus the three D3 ids of CR-W4C4-1), proves every id due on mem by wave
+ * 4 has a scenario method on a mem host class, and every id due on any host
+ * by wave 4 has an abstract scenario method a host can extend. Runs under
+ * `--group mem` too, so the acceptance command fails when a due id has no
+ * scenario.
  */
 #[Group('mem')]
 #[Group('catalogue')]
@@ -75,8 +79,47 @@ final class CatalogueTest extends TestCase {
     ],
   ];
 
-  public function test_the_catalogue_has_the_44_register_ids(): void {
-    self::assertCount(44, ScenarioCatalogue::WAVES);
+  /**
+   * Register section 8, wave 4, conformance: the ids each host ADDS (exact
+   * lists), plus the three D3 ids of CR-W4C4-1 (TXP process-kernel), which
+   * are mem 4, pdo 4, wp -, sf 4.
+   */
+  private const WAVE_4 = [
+    'mem' => [
+      'process.alarm-long', 'workflow.fact-ignition-once', 'codec.large-payload', 'decode.unknown-class',
+      'effect.journal-reuse', ...self::D3_IDS,
+    ],
+    'pdo' => ['process.alarm-long', 'codec.large-payload', 'decode.unknown-class', 'effect.journal-reuse', ...self::D3_IDS],
+    'wp' => ['process.alarm-long', 'codec.large-payload', 'decode.unknown-class'],
+    'sf' => [
+      'process.alarm-long', 'workflow.fact-ignition-once', 'codec.large-payload', 'decode.unknown-class',
+      'effect.journal-reuse', 'wakeup.post-commit', ...self::D3_IDS,
+    ],
+  ];
+
+  /** CR-W4C4-1: D3 scenarios TXP's process-kernel needs, added to the catalogue in wave 4. */
+  private const D3_IDS = ['process.await-keyed-precheck', 'process.await-any-cancellation', 'process.await-all-dynamic'];
+
+  public function test_the_catalogue_has_the_44_register_ids_and_the_3_d3_ids(): void {
+    self::assertCount(44 + count(self::D3_IDS), ScenarioCatalogue::WAVES);
+    foreach (self::D3_IDS as $id) {
+      self::assertSame([4, 4, null, 4], ScenarioCatalogue::WAVES[$id], "$id: mem 4, pdo 4, wp -, sf 4 (CR-W4C4-1)");
+    }
+  }
+
+  public function test_wave_4_lists_match_register_section_8_exactly(): void {
+    $counts = ['mem' => 8, 'pdo' => 7, 'wp' => 3, 'sf' => 9];
+    foreach (self::WAVE_4 as $host => $ids) {
+      self::assertCount($counts[$host], $ids);
+      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::firstDueAt($host, 4), "$host wave 4");
+    }
+    self::assertSame([], ScenarioCatalogue::firstDueAt('mem', 5), 'nothing is due after wave 4');
+  }
+
+  public function test_every_id_has_a_scenario_case_by_wave_4(): void {
+    foreach (array_keys(ScenarioCatalogue::WAVES) as $id) {
+      self::assertNotNull(ScenarioCatalogue::scenarioCase($id), "'$id' names its abstract scenario case");
+    }
   }
 
   public function test_mem_wave_1_matches_register_section_8(): void {
@@ -99,12 +142,13 @@ final class CatalogueTest extends TestCase {
     }
   }
 
-  public function test_every_id_due_on_mem_by_wave_3_has_a_mem_scenario(): void {
+  public function test_every_id_due_on_mem_by_wave_4_has_a_mem_scenario(): void {
     $implemented = ScenarioId::implementedBy(self::memHostClasses());
 
     self::assertEqualsCanonicalizing([...self::MEM_WAVE_1, 'audit.sink-fails', ...self::WAVE_3['mem']], ScenarioCatalogue::dueBy('mem', 3), 'the 31 mem ids of waves 1-3');
-    $missing = array_values(array_diff(ScenarioCatalogue::dueBy('mem', 3), array_keys($implemented)));
-    self::assertSame([], $missing, 'Due on mem by wave 3 but no scenario method carries the id');
+    self::assertEqualsCanonicalizing([...ScenarioCatalogue::dueBy('mem', 3), ...self::WAVE_4['mem']], ScenarioCatalogue::dueBy('mem', 4), 'the 39 mem ids of waves 1-4');
+    $missing = array_values(array_diff(ScenarioCatalogue::dueBy('mem', 4), array_keys($implemented)));
+    self::assertSame([], $missing, 'Due on mem by wave 4 but no scenario method carries the id');
 
     foreach (array_keys($implemented) as $id) {
       self::assertTrue(ScenarioCatalogue::isKnown($id), "Scenario group '$id' is not a register id");
@@ -112,12 +156,25 @@ final class CatalogueTest extends TestCase {
     }
   }
 
-  public function test_every_id_due_on_any_host_by_wave_3_has_an_abstract_scenario(): void {
+  public function test_every_id_due_on_any_host_by_wave_4_has_an_abstract_scenario(): void {
     $byCase = self::scenarioMethodsOfAbstractCases();
 
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      $missing = array_values(array_diff(ScenarioCatalogue::dueBy($host, 3), array_keys($byCase)));
-      self::assertSame([], $missing, "Due on $host by wave 3 but no abstract scenario case carries the id");
+      $missing = array_values(array_diff(ScenarioCatalogue::dueBy($host, 4), array_keys($byCase)));
+      self::assertSame([], $missing, "Due on $host by wave 4 but no abstract scenario case carries the id");
+    }
+  }
+
+  public function test_wave_4_ids_live_in_new_cases_so_wave_3_host_classes_run_unchanged(): void {
+    $wave3Cases = [];
+    foreach (ScenarioCatalogue::HOSTS as $host) {
+      $wave3Cases = [...$wave3Cases, ...ScenarioCatalogue::casesFor($host, 3)];
+    }
+    self::assertNotEmpty($wave3Cases);
+    foreach (ScenarioCatalogue::HOSTS as $host) {
+      foreach (ScenarioCatalogue::firstDueAt($host, 4) as $id) {
+        self::assertNotContains(ScenarioCatalogue::scenarioCase($id), $wave3Cases, "'$id' is not added to a case a wave-3 host already extends");
+      }
     }
   }
 
@@ -140,6 +197,10 @@ final class CatalogueTest extends TestCase {
     self::assertTrue(is_a(MemHostFixture::class, ProcessHost::class, true), 'MemHostFixture implements ProcessHost');
     self::assertTrue(is_a(MemHostFixture::class, RelayRace::class, true), 'MemHostFixture implements RelayRace (CR sf-3 assertion)');
     self::assertTrue(is_a(MemHostFixture::class, StatementErrors::class, true), 'MemHostFixture implements StatementErrors (CR sf-7 case)');
+    // wave 4 (CR-W4C4-2..4)
+    self::assertTrue(is_a(MemHostFixture::class, EffectHost::class, true), 'MemHostFixture implements EffectHost (effect.journal-reuse)');
+    self::assertTrue(is_a(MemHostFixture::class, WorkflowHost::class, true), 'MemHostFixture implements WorkflowHost (workflow.fact-ignition-once)');
+    self::assertTrue(is_a(MemHostFixture::class, ProcessDecodeFaults::class, true), 'MemHostFixture implements ProcessDecodeFaults (decode.unknown-class)');
   }
 
   /** @return list<class-string> */

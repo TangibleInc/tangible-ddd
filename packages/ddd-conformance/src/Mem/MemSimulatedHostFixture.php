@@ -14,6 +14,7 @@ use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\Fixtures\Process\StepCommand;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
+use TangibleDDD\Conformance\PostCommitWakeups;
 use TangibleDDD\Conformance\Support\FreshProcessBoot;
 use TangibleDDD\Conformance\WebRequests;
 use TangibleDDD\Domain\Events\DomainEvent;
@@ -46,11 +47,22 @@ use TangibleDDD\Testing\InMemoryTransactional;
  *   fact's class comes from the outbox record the bus appended.
  * - A "web request" is a plain call; the pooled-DSN boot refusal is the sf
  *   rule (register 5.2) restated, not sf's code.
+ * - The post-commit wakeup (PostCommitWakeups, sf-only D14): each outbox
+ *   row committed since the worker last looked is a wakeup; latency is
+ *   simulated (0 s with a wakeup, one poll interval without), no wall time
+ *   is measured.
  */
-final class MemSimulatedHostFixture extends MemHostFixture implements FreshProcesses, WebRequests {
+final class MemSimulatedHostFixture extends MemHostFixture implements FreshProcesses, WebRequests, PostCommitWakeups {
 
   /** @var array<int, true> transport submission indexes a fresh delivery stage consumed */
   private array $consumed = [];
+
+  private bool $listening = false;
+
+  /** @var array<string, true> outbox event ids whose wakeup was already taken (or swallowed) */
+  private array $notified = [];
+
+  private bool $suppressNextWakeup = false;
 
   /**
    * @param bool $abortOnStatementError model an engine that aborts the
@@ -135,6 +147,66 @@ final class MemSimulatedHostFixture extends MemHostFixture implements FreshProce
   public function bootInBandStartOnPooledDsn(): ?\Throwable {
     // sf's boot rule, restated: an in-band first step needs the direct connection.
     return new \LogicException('ddd.process.inband_start: true requires a direct (non-pooled) connection (simulated)');
+  }
+
+  // ── PostCommitWakeups (simulated; sf runs it for real) ───────────────────
+
+  /** Simulated poll interval: "waiting" for it costs no wall time here. */
+  public const SIMULATED_POLL_SECONDS = 5.0;
+
+  public function startRelayWorker(): void {
+    $this->listening = true;
+    $this->notified = array_fill_keys($this->outbox->eventIds(), true);
+    $this->relayOnce(); // the first, empty pass
+  }
+
+  public function relayUntilTransported(string $eventId, float $timeoutSeconds): ?float {
+    if (!$this->listening) {
+      throw new \LogicException('startRelayWorker() first');
+    }
+    // Woken at once by a wakeup, else after one poll interval.
+    $elapsed = $this->takeWakeups() ? 0.0 : self::SIMULATED_POLL_SECONDS;
+    if ($elapsed > $timeoutSeconds) {
+      return null;
+    }
+    return in_array($eventId, $this->relayOnce()->accepted, true) ? $elapsed : null;
+  }
+
+  public function wakeupArrives(float $timeoutSeconds): bool {
+    return $this->takeWakeups();
+  }
+
+  public function suppressNextWakeup(): void {
+    $this->suppressNextWakeup = true;
+  }
+
+  public function relayPollIntervalSeconds(): float {
+    return self::SIMULATED_POLL_SECONDS;
+  }
+
+  public function stopRelayWorker(): void {
+    $this->listening = false;
+  }
+
+  /**
+   * The simulated transactional NOTIFY: every outbox row committed since the
+   * last look is one wakeup, unless suppressNextWakeup() swallowed it. A
+   * rolled-back row never reaches the outbox, so it wakes nothing.
+   */
+  private function takeWakeups(): bool {
+    $woken = false;
+    foreach ($this->outbox->eventIds() as $id) {
+      if (isset($this->notified[$id])) {
+        continue;
+      }
+      $this->notified[$id] = true;
+      if ($this->suppressNextWakeup) {
+        $this->suppressNextWakeup = false;
+        continue;
+      }
+      $woken = true;
+    }
+    return $woken && $this->listening;
   }
 
   // ── internals ────────────────────────────────────────────────────────────
