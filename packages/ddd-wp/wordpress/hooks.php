@@ -122,27 +122,49 @@ function consumers(): array {
 function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label = null, ?string $namespace_root = null): void {
   ConsumerRegistry::add($config, $di_getter, $label, $namespace_root);
   register_event_handlers($di_getter);
-  register_process_hooks($config, $di_getter);
 
-  // Prefer the catalog materialized by the DDD compiler pass. Retained
-  // ContainerBuilder consumers without that pass keep the tagged fallback.
-  if (processes_enabled($config)) {
-    $container = $di_getter();
-    if (method_exists($container, 'has') && $container->has(LongProcessCatalog::class)) {
-      $entries = $container->get(LongProcessCatalog::class)->all();
-      if (!empty($entries)) {
-        register_process_entries(
-          $config,
-          $container->get(ProcessRunner::class),
-          $entries,
-        );
+  // The process and outbox hooks are gated on their tables. On a fresh
+  // database they are absent here (init:2) and created by the migration
+  // trigger at init:3, so whatever was skipped is wired once the tables
+  // are installed (TABLES_INSTALLED_ACTION), in the same request: the
+  // first fact on a fresh install already ignites its #[StartsOn] process.
+  $processes = $outbox = false;
+  $wire = static function () use ($config, $di_getter, &$processes, &$outbox): bool {
+    if (!$processes && processes_enabled($config)) {
+      $processes = true;
+      register_process_hooks($config, $di_getter);
+
+      // Prefer the catalog materialized by the DDD compiler pass. Retained
+      // ContainerBuilder consumers without that pass keep the tagged fallback.
+      $container = $di_getter();
+      if (method_exists($container, 'has') && $container->has(LongProcessCatalog::class)) {
+        $entries = $container->get(LongProcessCatalog::class)->all();
+        if (!empty($entries)) {
+          register_process_entries(
+            $config,
+            $container->get(ProcessRunner::class),
+            $entries,
+          );
+        }
+      } elseif (method_exists($container, 'findTaggedServiceIds')) {
+        register_processes_from_container($config, $container);
       }
-    } elseif (method_exists($container, 'findTaggedServiceIds')) {
-      register_processes_from_container($config, $container);
     }
+    if (!$outbox && outbox_enabled($config)) {
+      $outbox = true;
+      register_outbox_hooks($config, $di_getter);
+    }
+    return $processes && $outbox;
+  };
+
+  if (!$wire()) {
+    add_action(TABLES_INSTALLED_ACTION, static function (IDDDConfig $installed) use ($config, $wire): void {
+      if ($installed->prefix() === $config->prefix()) {
+        $wire();
+      }
+    }, 10, 1);
   }
 
-  register_outbox_hooks($config, $di_getter);
   register_delivery_hooks($config);
   register_migration_hooks($config);
 }

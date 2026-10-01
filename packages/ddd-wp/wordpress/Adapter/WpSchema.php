@@ -25,6 +25,12 @@ final class WpSchema {
 
   public const V8 = 8;
 
+  /** Wave 5 (AW2): `{prefix}_ddd_wakeups.fact`, the fact a parked resume carries. */
+  public const V9 = 9;
+
+  /** @var array<string, bool> table => reachable, for the request (outbox_enabled(), processes_enabled()) */
+  private static array $reachable = [];
+
   /**
    * After a failed explicit migration, ddd_maybe_migrate() retries at most
    * this often (option `{prefix}_ddd_migration_retry_at`; delete it to
@@ -46,6 +52,28 @@ final class WpSchema {
 
   public static function is_v8(IConsumerIdentity|string $consumer): bool {
     return self::at_least($consumer, self::V8);
+  }
+
+  public static function is_v9(IConsumerIdentity|string $consumer): bool {
+    return self::at_least($consumer, self::V9);
+  }
+
+  /**
+   * Whether $table answers a query, probed once per request and cached:
+   * the feature gates outbox_enabled() and processes_enabled() read this.
+   * ddd_maybe_migrate() forgets the cache after it installed the tables, so
+   * a gate probed closed earlier in the same request (a fresh database)
+   * opens.
+   *
+   * @param callable(string): bool $probe
+   */
+  public static function reachable(string $table, callable $probe): bool {
+    return self::$reachable[$table] ??= (bool) $probe($table);
+  }
+
+  /** Forget every probed table: the next gate check probes again. */
+  public static function forget_tables(): void {
+    self::$reachable = [];
   }
 
   /**

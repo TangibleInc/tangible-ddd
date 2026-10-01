@@ -131,6 +131,9 @@ function install_relay_pauses_table(IDDDConfig $config): void {
  * schedule time so a rolled-back 0.6 winner still fires it.
  *
  * status: pending (armed) | firing (its wake is running) | done | cancelled.
+ *
+ * fact (schema v9, wave 5 AW2): the fact a parked resume carries
+ * (WakeupIntent::$fact as JSON), NULL for every other intent.
  */
 function install_wakeups_table(IDDDConfig $config): void {
   global $wpdb;
@@ -154,6 +157,7 @@ function install_wakeups_table(IDDDConfig $config): void {
     locked_until DATETIME NULL,
     hook VARCHAR(191) NULL,
     args LONGTEXT NULL,
+    fact LONGTEXT NULL,
     as_action_id BIGINT UNSIGNED NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -471,37 +475,28 @@ function table_reachable(string $table): bool {
 }
 
 /**
- * Check if outbox tables exist.
+ * Check if outbox tables exist. Probed once per request
+ * (WpSchema::reachable()); ddd_maybe_migrate() forgets the probe after it
+ * installed the tables.
  */
 function outbox_enabled(IDDDConfig $config): bool {
   global $wpdb;
 
-  static $cache = [];
-  $key = $config->prefix();
-
-  if (isset($cache[$key])) {
-    return $cache[$key];
-  }
-
-  $cache[$key] = table_reachable($wpdb->prefix . $config->prefix() . '_integration_outbox');
-
-  return $cache[$key];
+  return \TangibleDDD\WordPress\Adapter\WpSchema::reachable(
+    $wpdb->prefix . $config->prefix() . '_integration_outbox',
+    __NAMESPACE__ . '\\table_reachable'
+  );
 }
 
 /**
- * Check if process tables exist.
+ * Check if process tables exist. Probed once per request, like
+ * outbox_enabled().
  */
 function processes_enabled(IDDDConfig $config): bool {
   global $wpdb;
 
-  static $cache = [];
-  $key = $config->prefix();
-
-  if (isset($cache[$key])) {
-    return $cache[$key];
-  }
-
-  $cache[$key] = table_reachable($wpdb->prefix . $config->prefix() . '_long_processes');
-
-  return $cache[$key];
+  return \TangibleDDD\WordPress\Adapter\WpSchema::reachable(
+    $wpdb->prefix . $config->prefix() . '_long_processes',
+    __NAMESPACE__ . '\\table_reachable'
+  );
 }

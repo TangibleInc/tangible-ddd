@@ -12,6 +12,8 @@ use TangibleDDD\Tests\Integration\V8\Fakes\V8ManualProcess;
 use function TangibleDDD\WordPress\ddd_maybe_migrate;
 use function TangibleDDD\WordPress\ddd_schema_installed;
 
+use const TangibleDDD\WordPress\DDD_SCHEMA_VERSION;
+
 /**
  * Schema v8 (register section 8 wave 3 wp bullet, R5): a fresh install, and
  * an upgrade of a v7 database that holds pending rows left by a 0.6 winner.
@@ -26,7 +28,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
   public function test_a_fresh_install_creates_every_v8_table_and_column(): void {
     ddd_maybe_migrate($this->config);
 
-    self::assertSame(8, ddd_schema_installed($this->config));
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
     foreach (self::V8_TABLES as $t) {
       self::assertTrue($this->tableExists($this->table($t)), "$t created");
     }
@@ -60,7 +62,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
 
     ddd_maybe_migrate($this->config);
 
-    self::assertSame(8, ddd_schema_installed($this->config));
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
     foreach (self::V8_TABLES as $t) {
       self::assertTrue($this->tableExists($this->table($t)), "$t created on upgrade");
     }
@@ -142,7 +144,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     }
 
     ddd_maybe_migrate($this->config);
-    self::assertSame(8, ddd_schema_installed($this->config));
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
 
     $added = [];
     foreach ($before as $t => $columns) {
@@ -193,7 +195,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET ignition_key = NULL");
     update_option($this->config->option('ddd_migration_retry_at'), time() - 1, false);
     ddd_maybe_migrate($this->config);
-    self::assertSame(8, ddd_schema_installed($this->config));
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
     self::assertFalse(get_option($this->config->option('ddd_migration_retry_at')));
   }
 

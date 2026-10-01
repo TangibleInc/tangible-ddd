@@ -62,8 +62,17 @@ use TangibleDDD\Runtime\SystemClock;
  * the wp-specific hooks used by the Action Scheduler callbacks and the
  * relay tick. A 0.6 copy never reads the table. Every failed storage write
  * throws \RuntimeException.
+ *
+ * Wave 5 (AW2, schema v9): the `fact` column keeps WakeupIntent::$fact; it
+ * is written only for an intent that carries one (so a v8 table keeps
+ * working for every other intent) and returned by claim_due(), begin_key()
+ * and intent(). The ResumeRetry projection stays `['key' => …]`: the
+ * `{prefix}_ddd_wakeup` callback re-reads the row, fact included. This class
+ * does not declare ICarriesFacts: the runner parks a contended fact resume
+ * only on WpdbParkingScheduler, which WpHostPortFactory serves to a v9
+ * consumer.
  */
-final class WpdbWakeupScheduler implements IWakeupScheduler {
+class WpdbWakeupScheduler implements IWakeupScheduler {
 
   /** A firing row older than this is a wake that died (fatal, killed worker): re-armed by reproject(). */
   public const FIRING_STALE_SECONDS = 900;
@@ -113,6 +122,9 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
         self::utc($i->due_at), (int) $keep, (int) $keep, $hook, (string) wp_json_encode($args), $actionId, $i->kind->value, (int) $i->process_id,
         (int) ($i->step_index === null), (int) $i->step_index, (int) ($i->expected_status === null), (string) $i->expected_status, $now, (int) $row->id
       ));
+      if ($ok !== false && $i->fact !== null) {
+        $ok = $db->update($this->table(), ['fact' => self::fact_to_db($i)], ['id' => (int) $row->id]);
+      }
     } else {
       $ok = $db->insert($this->table(), [
         'idempotency_key' => $i->key,
@@ -129,7 +141,7 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
         'created_at' => $now,
         'updated_at' => $now,
         'blog_id' => is_multisite() ? get_current_blog_id() : 1,
-      ]);
+      ] + ($i->fact === null ? [] : ['fact' => self::fact_to_db($i)]));
     }
     if ($ok === false) {
       throw new \RuntimeException("Wakeup intent {$i->key} was not stored in {$this->table()}: " . (string) $db->last_error);
@@ -492,7 +504,32 @@ final class WpdbWakeupScheduler implements IWakeupScheduler {
       $row->expected_status === null ? null : (string) $row->expected_status,
       new \DateTimeImmutable((string) $row->due_at, new \DateTimeZone('UTC')),
       (string) $row->idempotency_key,
+      self::fact_from_db($row->fact ?? null, (string) $row->idempotency_key),
     );
+  }
+
+  private static function fact_to_db(WakeupIntent $i): string {
+    try {
+      return json_encode($i->fact, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+    } catch (\JsonException $e) {
+      throw new \RuntimeException("The fact of wakeup {$i->key} does not encode as JSON: " . $e->getMessage(), 0, $e);
+    }
+  }
+
+  /** @return array{class: string, payload: array<string, mixed>, event_id: string}|null */
+  private static function fact_from_db(mixed $value, string $key): ?array {
+    if ($value === null) {
+      return null;
+    }
+    try {
+      $fact = json_decode((string) $value, true, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+      throw new \RuntimeException("The fact of wakeup $key does not decode: " . $e->getMessage(), 0, $e);
+    }
+    if (!is_array($fact)) {
+      throw new \RuntimeException("The fact of wakeup $key is not a JSON object.");
+    }
+    return $fact;
   }
 
   private function requireTransaction(string $what): void {

@@ -37,7 +37,8 @@ use function TangibleDDD\WordPress\command_audit_enabled;
  *   implemented it (0.6 schema semantics).
  * - IWakeupScheduler: WpdbWakeupScheduler (intent rows + an AS projection
  *   on the legacy hooks at schedule time) for a migrated consumer, else the
- *   wave-2 ActionSchedulerWakeupScheduler (AS only).
+ *   wave-2 ActionSchedulerWakeupScheduler (AS only). At schema v9 (wave 5)
+ *   it is WpdbParkingScheduler, so a contended fact resume is parked (AW2).
  * - IOutboxStore: WpdbOutboxStore over the framework's own wpdb
  *   OutboxRepository ($legacy) of a migrated consumer (it needs v8's
  *   claim_token); an unmigrated consumer or a consumer-authored
@@ -87,9 +88,11 @@ final class WpHostPortFactory implements IHostPortFactory {
       IFactObserver::class => new TouchesFactObserver($consumer),
       IRelayPauseStore::class => new WpRelayPauseStore($consumer),
       IDeliveryLedger::class => WpSchema::is_v8($consumer) ? new WpDeliveryLedger($consumer->prefix()) : null,
-      IWakeupScheduler::class => WpSchema::is_v8($consumer)
-        ? new WpdbWakeupScheduler($consumer)
-        : new ActionSchedulerWakeupScheduler($consumer),
+      IWakeupScheduler::class => match (true) {
+        WpSchema::is_v9($consumer) => new WpdbParkingScheduler($consumer), // AW2: parked fact resumes
+        WpSchema::is_v8($consumer) => new WpdbWakeupScheduler($consumer),
+        default => new ActionSchedulerWakeupScheduler($consumer),
+      },
       default => null,
     };
   }
