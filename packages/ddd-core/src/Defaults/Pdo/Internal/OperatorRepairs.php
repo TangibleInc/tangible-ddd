@@ -11,6 +11,7 @@ use TangibleDDD\Application\Process\Repair\ResumeStrandedProcessHandler;
 use TangibleDDD\Defaults\Pdo\IHostConnection;
 use TangibleDDD\Defaults\Pdo\MySqlNamedLock;
 use TangibleDDD\Defaults\Pdo\PdoJobStore;
+use TangibleDDD\Defaults\Pdo\PdoEffectJournal;
 use TangibleDDD\Defaults\Pdo\PdoOutboxAdministration;
 use TangibleDDD\Defaults\Pdo\PdoProcessStore;
 use TangibleDDD\Defaults\Pdo\PdoRepairRefused;
@@ -35,7 +36,10 @@ final class OperatorRepairs {
     'delivery' => ['redeliver'],
     'wakeup' => ['retry_wake'],
     'process' => ['resume_stranded', 'fail_stranded'],
+    'effect' => ['invalidate'],
   ];
+
+  public const INVALIDATE_REASON = 'operator: invalidate';
 
   private readonly string $jobs;
   private readonly string $dlq;
@@ -48,6 +52,7 @@ final class OperatorRepairs {
     private readonly IClock $clock,
     private readonly PdoOutboxAdministration $administration,
     private readonly PdoProcessStore $processes,
+    private readonly ?PdoEffectJournal $journal = null,
   ) {
     $tables = new PrefixedTableNames($tablePrefix);
     $this->jobs = $tables->table('ddd_jobs');
@@ -76,7 +81,24 @@ final class OperatorRepairs {
         $this->consumer, $this->processId($key), self::reason($options), (bool) ($options['compensate'] ?? false),
         self::optionalInt($options, 'expected_version'),
       )),
+      'invalidate' => $this->invalidate($key, $options),
     };
+  }
+
+  /**
+   * E2: the effect performs again on its next dispatch. One UPDATE (it joins
+   * the caller's transaction when one is open); refused for a key without a
+   * live entry.
+   *
+   * @param array<string, mixed> $options
+   */
+  private function invalidate(string $key, array $options): void {
+    $journal = $this->journal ?? new PdoEffectJournal($this->db, $this->tablePrefix, $this->clock);
+    if ($journal->find_entry($key) === null) {
+      throw new PdoRepairRefused("Effect $key has no live journal entry; nothing to invalidate");
+    }
+    $reason = is_string($options['reason'] ?? null) && trim($options['reason']) !== '' ? $options['reason'] : self::INVALIDATE_REASON;
+    $journal->invalidate($key, $reason);
   }
 
   private function newestDeadLetter(string $eventId): int {

@@ -45,10 +45,19 @@ use TangibleDDD\Runtime\SystemClock;
  * counts an attempt and sets next_attempt_at; both are fenced on
  * (idempotency_key, claim_token) and return false when the lease was lost.
  * delivery_of() returns the fact of a claimed `deliver` job.
+ *
+ * Wave 5 (AW2, schema 011): the fact of a parked resume
+ * (WakeupIntent::$fact) is kept in `{prefix}ddd_job_facts`, written by
+ * schedule() in the job's transaction, returned by claim_due() and deleted
+ * with the job by complete() and cancel(). This class does not declare
+ * ICarriesFacts: the runner parks a contended fact resume only on
+ * PdoParkingJobStore, which DurableRuntime composes (a store built directly
+ * keeps the wave-3 delivery retry).
  */
-final class PdoJobStore implements IWakeupScheduler, ITransport {
+class PdoJobStore implements IWakeupScheduler, ITransport {
 
   private readonly string $jobs;
+  private readonly string $facts;
   private readonly string $outbox;
   private readonly IClock $clock;
   private readonly LoggerInterface $logger;
@@ -65,6 +74,7 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
   ) {
     $tables = new PrefixedTableNames($tablePrefix);
     $this->jobs = $tables->table('ddd_jobs');
+    $this->facts = $tables->table('ddd_job_facts');
     $this->outbox = $tables->table('ddd_outbox');
     $this->clock = $clock ?? new SystemClock();
     $this->logger = $logger ?? new NullLogger();
@@ -98,18 +108,28 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
   public function schedule(WakeupIntent $i): void {
     $this->assertInTransaction('schedule');
     $due = Utc::to_db($i->due_at);
-    $this->db->execute(
+    $inserted = $this->db->execute(
       "INSERT INTO `{$this->jobs}`
          (idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at, next_attempt_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE id = id",
       [$i->key, $i->kind->value, $i->consumer, $i->process_id, $i->step_index, $i->expected_status, $due, $due, $this->now()]
     );
+    if ($i->fact !== null && $inserted > 0) {
+      // A new job: its fact replaces any row a repair left behind for the key.
+      $this->db->execute(
+        "INSERT INTO `{$this->facts}` (idempotency_key, fact) VALUES (?, ?) AS new ON DUPLICATE KEY UPDATE fact = new.fact",
+        [$i->key, OutboxRows::json($i->fact)]
+      );
+    }
   }
 
   public function cancel(string $idempotencyKey): void {
     $this->assertInTransaction('cancel');
-    $this->db->execute("DELETE FROM `{$this->jobs}` WHERE idempotency_key = ?", [$idempotencyKey]);
+    $this->db->execute(
+      "DELETE j, f FROM `{$this->jobs}` j LEFT JOIN `{$this->facts}` f ON f.idempotency_key = j.idempotency_key WHERE j.idempotency_key = ?",
+      [$idempotencyKey]
+    );
   }
 
   public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
@@ -146,8 +166,9 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
         $in = implode(', ', array_fill(0, count($ids), '?'));
         $this->db->execute("UPDATE `{$this->jobs}` SET claim_token = ?, lease_until = ? WHERE id IN ($in)", [$token, Utc::to_db($leaseUntil), ...$ids]);
         $rows = $this->db->fetch_all(
-          "SELECT id, idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at, attempts
-           FROM `{$this->jobs}` WHERE id IN ($in) ORDER BY due_at, id",
+          "SELECT j.id, j.idempotency_key, j.kind, j.consumer, j.process_id, j.step_index, j.expected_status, j.due_at, j.attempts, f.fact
+           FROM `{$this->jobs}` j LEFT JOIN `{$this->facts}` f ON f.idempotency_key = j.idempotency_key
+           WHERE j.id IN ($in) ORDER BY j.due_at, j.id",
           $ids
         );
       }
@@ -168,6 +189,7 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
         $row['expected_status'] === null ? null : (string) $row['expected_status'],
         Utc::from_db((string) $row['due_at']),
         (string) $row['idempotency_key'],
+        self::fact_of($row),
       ),
       $token,
       $leaseUntil,
@@ -177,7 +199,8 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
 
   public function complete(ClaimedWakeup $w): bool {
     return $this->fenced(
-      "DELETE FROM `{$this->jobs}` WHERE idempotency_key = ? AND claim_token = ?",
+      "DELETE j, f FROM `{$this->jobs}` j LEFT JOIN `{$this->facts}` f ON f.idempotency_key = j.idempotency_key
+       WHERE j.idempotency_key = ? AND j.claim_token = ?",
       [$w->intent->key, $w->token],
       $w,
       'complete'
@@ -247,6 +270,25 @@ final class PdoJobStore implements IWakeupScheduler, ITransport {
       (string) $row['integration_action'],
       (array) json_decode((string) $row['envelope'], true, 512, JSON_THROW_ON_ERROR),
     );
+  }
+
+  /**
+   * @param array<string, mixed> $row
+   * @return array{class: string, payload: array<string, mixed>, event_id: string}|null
+   */
+  private static function fact_of(array $row): ?array {
+    if (($row['fact'] ?? null) === null) {
+      return null;
+    }
+    try {
+      $fact = json_decode((string) $row['fact'], true, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+      throw new \RuntimeException("The fact of job {$row['idempotency_key']} does not decode: " . $e->getMessage(), 0, $e);
+    }
+    if (!is_array($fact)) {
+      throw new \RuntimeException("The fact of job {$row['idempotency_key']} is not a JSON object.");
+    }
+    return $fact;
   }
 
   /** @param list<mixed> $params */
