@@ -77,6 +77,23 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     self::assertSame(['hello', 3], [$found->payload()->note, $found->payload()->count]);
   }
 
+  public function test_a_step_checkpoint_round_trips_and_is_readable_after_find(): void {
+    // D3 dynamic AwaitAll reads its checkpointed key set after a reload (process.await-all-dynamic).
+    $p = OrderProcess::started(7);
+    $p->steps()->record_checkpoint('reserve', new OrderPayload('children', 2));
+    $p->steps()->advance();
+    $id = $this->store()->insert($p);
+
+    $found = $this->store()->find($id);
+
+    self::assertNotNull($found);
+    $checkpoint = $found->steps()->checkpoint_for('reserve');
+    self::assertInstanceOf(OrderPayload::class, $checkpoint);
+    self::assertSame(['children', 2], [$checkpoint->note, $checkpoint->count]);
+    self::assertSame(['reserve' => 'release'], $found->steps()->compensations);
+    self::assertSame('charge', $found->current_step_name());
+  }
+
   public function test_find_and_version_of_an_unknown_id_are_null(): void {
     self::assertNull($this->store()->find(999));
     self::assertNull($this->store()->versionOf(999));

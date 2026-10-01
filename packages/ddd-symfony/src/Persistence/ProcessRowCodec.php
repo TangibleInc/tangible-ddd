@@ -71,7 +71,9 @@ final class ProcessRowCodec {
     try {
       $process = self::instantiate($class, self::json((string) $row['business_data']) ?? []);
 
-      $steps = $row['steps'] === null ? null : ProcessSteps::from_json(json_decode((string) $row['steps'], false, 512, JSON_THROW_ON_ERROR));
+      // Arrays, not stdClass: ProcessSteps::checkpoint_for() hands each stored
+      // checkpoint to JsonLifecycleValue::deserialize_polymorphic(?array).
+      $steps = $row['steps'] === null ? null : ProcessSteps::from_json(self::json((string) $row['steps']) ?? []);
       $payload = $row['payload'] === null ? null : JsonLifecycleValue::deserialize_polymorphic(self::json((string) $row['payload']));
       $criteria = $row['match_criteria'] === null ? null : self::json((string) $row['match_criteria']);
 
