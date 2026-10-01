@@ -25,6 +25,8 @@ use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Domain\Repositories\IWorkItemRepository;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourTypes;
+use TangibleDDD\Domain\ValueObjects\Behaviours\IBehaviourTypes;
 use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IActorProvider;
 use TangibleDDD\Runtime\Audit\NullAuditSink;
@@ -36,6 +38,8 @@ use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
+use TangibleDDD\Runtime\Effects\ITracksEffectState;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
 use TangibleDDD\Runtime\Lock\IProcessLock;
@@ -54,6 +58,7 @@ use TangibleDDD\Symfony\Console\Ops\DlqDiscardCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
+use TangibleDDD\Symfony\Console\Ops\EffectsInvalidateCommand;
 use TangibleDDD\Symfony\Console\Ops\OpsListCommand;
 use TangibleDDD\Symfony\Console\Ops\PauseCommand;
 use TangibleDDD\Symfony\Console\Ops\ResumeCommand;
@@ -418,6 +423,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
             ->args([service($id('connection')), $prefix, $tables]),
           inline_service(DbalWorkflowOperatorSource::class) // W5
             ->args([service($id('connection')), $prefix, $tables, $config['workflow']['stale_start_seconds'], null, service('tangible_ddd.clock')]),
+          inline_service(UnrecordedEffects::class) // E2: performed, never recorded (repair ddd:ops:effects:invalidate)
+            ->args([service($id('effect_journal')), $prefix, service('tangible_ddd.clock')]),
           inline_service(MessengerFailureTransportSource::class)
             ->args([
               $failureTransport === null || $failureTransport === '' ? null : service('messenger.transport.' . $failureTransport)->nullOnInvalid(),
@@ -455,8 +462,15 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
 
     // D1: between the act bracket and the transaction (register 3.11): perform()
     // outside any transaction, journaled; record() through the transaction.
+    // E1 (wave 5): a handler-class effect's IExternalEffectHandler comes from
+    // the command handler locator, named by the bundle's handler mapping.
     $s->set($id('middleware.effect'), EffectMiddleware::class)
-      ->args([service($id('effect_journal')), service($id('transaction_boundary'))]);
+      ->args([
+        service($id('effect_journal')),
+        service($id('transaction_boundary')),
+        abstract_arg('command handler locator, set by EffectHandlersPass'),
+        service('tangible_ddd.handler_mapping'),
+      ]);
     $s->set($id('middleware.transaction'), TransactionalCommandMiddleware::class)
       ->args([service($id('transaction_boundary'))]);
     $s->set($id('middleware.domain_events'), DomainEventsPublishMiddleware::class)
@@ -503,6 +517,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->alias(IOutboxAdministration::class, 'tangible_ddd.outbox_administration');
   $s->alias(IDeliveryLedger::class, 'tangible_ddd.delivery_ledger');
   $s->alias(IEffectJournal::class, 'tangible_ddd.effect_journal');
+  $s->alias(ITracksEffectState::class, 'tangible_ddd.effect_journal');
   $s->alias(IProcessStore::class, 'tangible_ddd.process_store');
   $s->alias(IWakeupScheduler::class, 'tangible_ddd.wakeup_scheduler');
   $s->alias(IProcessLock::class, 'tangible_ddd.process_lock');
@@ -548,6 +563,14 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       array_map(static fn (array $c) => service(ConsumerSettings::id($c, 'outbox_store')), $consumers),
     )), $logger])
     ->tag('kernel.event_listener', ['event' => DddSignal::class, 'method' => '__invoke']);
+
+  // W2 (CR-W5CC-4): the one behaviour type registry, from the compiled map
+  // (BehaviourTypePass); the bundle provides it to core at boot and hands
+  // the include-time registrations over to it.
+  $s->set('tangible_ddd.behaviour_types', BehaviourTypes::class)
+    ->args([param('tangible_ddd.behaviour_types')])
+    ->public();
+  $s->alias(IBehaviourTypes::class, 'tangible_ddd.behaviour_types');
 
   $s->set('tangible_ddd.host_defaults', HostDefaultsInstaller::class)
     ->args([
@@ -612,6 +635,9 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle'], CoreStrandedRepairs::RESUME, CoreStrandedRepairs::FAIL, $primary['prefix']]),
     ])
     ->tag('console.command', ['command' => 'ddd:ops:stranded']);
+  $s->set('tangible_ddd.command.ops.effects_invalidate', EffectsInvalidateCommand::class)
+    ->args([service('tangible_ddd.effect_journal'), service('tangible_ddd.transaction_boundary')])
+    ->tag('console.command', ['command' => 'ddd:ops:effects:invalidate']);
   $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)
     ->args([service('tangible_ddd.relay_pauses'), service('tangible_ddd.clock')])
     ->tag('console.command', ['command' => 'ddd:ops:pause']);
