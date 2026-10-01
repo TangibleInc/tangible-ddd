@@ -143,6 +143,8 @@ A command that calls an external API implements `IExternalEffectCommand` (`idemp
 - Dispatching an effect inside an open transaction throws `EffectInsideTransaction`.
 - When a listener's handler budget is spent, `failure_command()` is sent once.
 - A repair calls `IEffectJournal::invalidate($key, $reason)` in its own transaction, and only then performs again.
+- Entry states (wave 5, `{prefix}_ddd_effect_recorded`, schema `010`): an entry is Performed until `record()` commits, then Recorded. A Recorded entry is returned as it is, and `record()` does not run again. A Performed entry runs `record()` again with the journaled result. `$runtime->journal()->find_entry($key)` shows the state.
+- A handler-class effect (wave 5) is an `IEffectCommand` (`idempotency_key()`, `failure_command()`) whose `IExternalEffectHandler` performs and records it. Pass the handler like any other: `[RefundCharge::class => new RefundChargeHandler($gateway)]` in `$handlers`, or a convention-named `CommandHandlers\RefundChargeHandler` in your container. With no handler, the bus throws `NoEffectHandler` before anything is performed.
 
 The Symfony guide has a full effect example ([examples/symfony/README.md](../symfony/README.md), section 6), and it reads the same on pdo.
 
@@ -154,7 +156,7 @@ foreach ($runtime->operator_view()->to_arrays() as $item) { /* render */ }
 $runtime->operator_view()->repair(Layer::Process, '42', 'resume_stranded');
 ```
 
-`drain()` never loops or sleeps. Run it from cron, from a shutdown function, or from your own `while (true) { $runtime->drain(); sleep(1); }` worker. Overlapping runs are safe, because claims and leases keep them apart. The operator view lists the `relay`, `delivery`, `wakeup` and `process` layers, with attempts against budget, the last error and the repairs that apply:
+`drain()` never loops or sleeps. Run it from cron, from a shutdown function, or from your own `while (true) { $runtime->drain(); sleep(1); }` worker. Overlapping runs are safe, because claims and leases keep them apart. The operator view lists the `relay`, `delivery`, `wakeup`, `process` and `effect` layers, with attempts against budget, the last error and the repairs that apply:
 
 | Layer | Repairs |
 |---|---|
@@ -162,6 +164,11 @@ $runtime->operator_view()->repair(Layer::Process, '42', 'resume_stranded');
 | delivery | `redeliver` |
 | wakeup | `retry_wake` |
 | process | `resume_stranded`, `fail_stranded` |
+| effect | `invalidate` (an effect performed more than 5 minutes ago and never recorded; option `reason`) |
+
+An answer that arrives while another worker holds its process lock is not failed (wave 5): the runtime's jobs table is a `PdoParkingJobStore`, so the resume is parked as a `resume_retry` job carrying the fact (`{prefix}_ddd_job_facts`, schema `011`), the delivery completes, and a later drain resumes the process once the lock is free. The parked job shows in the `wakeup` layer while it waits.
+
+Behaviour config types: `compose()` provides one `IBehaviourTypes` to `HostDefaults` (or uses the one already there), and the `register_type()` calls made before it are handed over (`$runtime->behaviour_types()`).
 
 A refused repair throws `PdoRepairRefused`, `OutboxAdministrationRefused`, `OutboxRowNotFound` or `ProcessNotStranded`.
 
