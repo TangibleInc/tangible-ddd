@@ -12,8 +12,10 @@ namespace TangibleDDD\Conformance;
  * change to either is a register edit, and CatalogueTest pins the per-host
  * wave lists of register section 8 against it. The three D3 ids
  * `process.await-*` are change request CR-W4C4-1
- * (docs/extraction/wave4-conformance-4-change-requests.md), pending their
- * register row.
+ * (docs/extraction/wave4-conformance-4-change-requests.md), in the register
+ * since wave 5. The six wave-5 ids are CR-W5C5-1
+ * (docs/extraction/wave5-conformance-5-change-requests.md), pending their
+ * register rows.
  */
 final class ScenarioCatalogue {
 

@@ -23,9 +23,10 @@ use TangibleDDD\Conformance\StatementErrors;
 
 /**
  * Pins the catalogue to the exact per-wave id lists of register section 8
- * (plus the three D3 ids of CR-W4C4-1), proves every id due on mem by wave
- * 4 has a scenario method on a mem host class, and every id due on any host
- * by wave 4 has an abstract scenario method a host can extend. Runs under
+ * (plus the three D3 ids of CR-W4C4-1 and the wave-5 ids of CR-W5C5-1),
+ * proves every id due on mem by wave 5 has a scenario method on a mem host
+ * class, and every id due on any host by wave 5 has an abstract scenario
+ * method a host can extend. Runs under
  * `--group mem` too, so the acceptance command fails when a due id has no
  * scenario.
  */

@@ -20,8 +20,9 @@ vendor/bin/phpunit --list-groups                     # host groups + scenario id
 | `src/ProcessHost.php`, `src/ProcessWorker.php` | Optional seam for the wave-3 process and lock scenarios (CR-W3CP-1) |
 | `src/FreshProcesses.php`, `src/WebRequests.php`, `src/RelayRace.php`, `src/StatementErrors.php`, `src/AuditSinkFaults.php`, `src/RecordsSignals.php` | The other wave-2/3 optional seams (below) |
 | `src/EffectHost.php`, `src/WorkflowHost.php`, `src/ProcessDecodeFaults.php`, `src/PostCommitWakeups.php` | The wave-4 optional seams (CR-W4C4-2..5, below) |
+| `src/EffectStateHost.php`, `src/WorkItemHost.php`, `src/CrossConsumerHost.php` | The wave-5 optional seams (CR-W5C5-2..4, below) |
 | `src/Scenarios/*Scenarios.php` | Abstract scenario cases. Each scenario method has `#[Group('<scenario id>')]` and is named `test_<id with . and - as _>` |
-| `src/ScenarioCatalogue.php` | The 47 ids with the wave each must pass per host (a copy of the register table's 44 ids plus the three D3 ids of CR-W4C4-1, pinned by `tests/CatalogueTest.php`), and `CASES`: the abstract case that declares each id |
+| `src/ScenarioCatalogue.php` | The 53 ids with the wave each must pass per host (a copy of the register table's 47 ids plus the six wave-5 ids of CR-W5C5-1, pinned by `tests/CatalogueTest.php`), and `CASES`: the abstract case that declares each id |
 | `src/Fixtures/`, `src/Fixtures/{Process,Effects,Workflow,Codec}/` | Commands, facts, the conformance processes, the D1 effect command, the D10 workflow and the D6 facts the scenarios use |
 | `src/Support/` | Helpers hosts may reuse |
 | `src/Mem/` | The mem host on the real ddd-core classes, and `MemSimulatedHostFixture` (the simulation, not a host) |
@@ -57,6 +58,18 @@ Wave 4 adds cases of its own, so a host class written for wave 3 runs unchanged 
 | `WorkflowScenarios` | `workflow.fact-ignition-once` (D10) | WorkflowHost | mem, sf |
 | `PostCommitWakeupScenarios` | `wakeup.post-commit` (D14) | PostCommitWakeups | sf |
 
+Wave 5 (TXP process-kernel demands AW1, AW2, E2, W4 and sf multi-consumer; [wave5-conformance-5-change-requests.md](../../docs/extraction/wave5-conformance-5-change-requests.md)) again adds cases of its own, so a wave-4 host class runs unchanged. Two wave-3 scenarios gained a branch for a scheduler that carries facts (`ICarriesFacts`, CR-W5CC-7): `lock.acquire-error` asserts the answer is parked as one fact-carrying ResumeRetry and resumes on its wake, and `process.await-all-concurrent` drains once past the first wake backoff. A host without `ICarriesFacts` keeps the wave-3 assertions.
+
+| Case | Ids | Needs | Hosts (wave 5) |
+|---|---|---|---|
+| `ParkedAnswerScenarios` | `lock.parked-answer`, `process.resume-contention-keeps-answer` (AW2) | ProcessHost whose `wakeups()` implements `ICarriesFacts` (else skipped with CR-W5CC-7) | mem, pdo, sf (wp `-`: no fact column) |
+| `ResumeCauseScenarios` | `process.resume-cause` (AW1) | ProcessHost | mem, pdo, wp, sf |
+| `EffectStateScenarios` | `effect.performed-not-recorded` (E2) | EffectStateHost with an `ITracksEffectState` journal (else skipped with CR-W5CC-6) | mem, pdo, sf (wp `-`: no effect journal) |
+| `WorkItemScenarios` | `workflow.item-deterministic-id` (W4) | WorkItemHost | mem, pdo, wp, sf |
+| `CrossConsumerScenarios` | `delivery.cross-consumer-once` (multi-consumer) | CrossConsumerHost | sf |
+
+On mem, the AW2 cases run on `new MemHostFixture(parks_facts: true)` (`InMemoryParkingScheduler`); `MemParkingLockScenariosTest` runs the lock cases on it too, and `MemLockScenariosTest` keeps the wave-3 branch.
+
 A case also contains ids that are `-` on some host (e.g. `lock.namespace` on wp): that host overrides the method (same `#[Group]`) with `skip_for()` naming the register cell.
 
 ## Adding a host
@@ -73,7 +86,7 @@ final class SfRelayScenariosTest extends RelayScenarios {
 
 3. Add the host's class directory to `CatalogueTest` so the ids due on that host are enforced.
    Hosts outside this package (pdo in `packages/ddd-core/tests/Pdo/Conformance`, sf, wp) pin their ids in their own catalogue test instead.
-4. If the host cannot express a scenario yet, override that one method (same `#[Group]`) and call `skip_for('<request id>', '<why>')`. A missing optional seam skips on its own with its request id (`CR-CC-1`, `CR-W3CP-1`, `CR-W3CP-4`, `CR-W3CP-5`, and in wave 4 `CR-W4C4-2` EffectHost, `CR-W4C4-3` ProcessDecodeFaults, `CR-W4C4-4` WorkflowHost, `CR-W4C4-5` PostCommitWakeups); the parts of a scenario guarded by `RelayRace` / `StatementErrors` / `RecordsSignals` / `ProcessHost` are simply not run.
+4. If the host cannot express a scenario yet, override that one method (same `#[Group]`) and call `skip_for('<request id>', '<why>')`. A missing optional seam skips on its own with its request id (`CR-CC-1`, `CR-W3CP-1`, `CR-W3CP-4`, `CR-W3CP-5`, in wave 4 `CR-W4C4-2` EffectHost, `CR-W4C4-3` ProcessDecodeFaults, `CR-W4C4-4` WorkflowHost, `CR-W4C4-5` PostCommitWakeups, and in wave 5 `CR-W5C5-2` EffectStateHost, `CR-W5C5-3` WorkItemHost, `CR-W5C5-4` CrossConsumerHost, `CR-W5CC-6` a journal without `ITracksEffectState`, `CR-W5CC-7` a scheduler without `ICarriesFacts`); the parts of a scenario guarded by `RelayRace` / `StatementErrors` / `RecordsSignals` / `ProcessHost` are simply not run.
 
 Host hooks: `RelayScenarios::while_leased(Claim)` runs while a lease is live. wp overrides it to check that a 0.6 `fetch_pending()` skips the claimed row.
 
@@ -136,6 +149,18 @@ Each method runs one fresh php process against the per-test schema: a separate `
 
 `wakeup.post-commit` (D14). The host's relay worker (sf `ddd:relay`: LISTEN on a direct connection, wait for a notification or the poll interval) driven in steps on its own connection: `start_relay()` (first empty pass, then listening; called before the scenario commits), `relay_until($eventId, $timeout)` (wall seconds to the hand-off, or null), `await_wakeup($timeout)`, `drop_next_wakeup()` (a lost NOTIFY, one-shot), `poll_seconds()` (keep it a few seconds, longer than 1 s) and `stop_relay()`. `MemSimulatedHostFixture` simulates it (no wall time) so the scenario logic runs here first.
 
+### `EffectStateHost` (wave 5, CR-W5C5-2; mem, pdo, sf)
+
+`effect.performed-not-recorded` (E2). Extends `EffectHost` with `operator_view()`: the host's merged view (the same as `ProcessHost::operator_view()` when the fixture has both) with the core `UnrecordedEffects` source over `effect_journal()` at its default threshold (300 s) and the host clock. `effect_journal()` must implement `ITracksEffectState` and timestamp entries with `HostFixture::clock()`. Fixtures: the `effect.journal-reuse` ones; `EffectLedger::$records` counts successful `record()` calls.
+
+### `WorkItemHost` (wave 5, CR-W5C5-3; mem, pdo, wp, sf)
+
+`workflow.item-deterministic-id` (W4). `workflows()` and `work_items()`: the host's behaviour-workflow store and work-item ledger on the per-test schema. Separate from `WorkflowHost`, so a host without an ignition ledger (wp) can provide it; a fixture with both serves one `workflows()`. The scenario runs `Fixtures\Workflow\GrantWorkflow` (a core `WorkflowHandler`, behaviour `GrantConfig`, registered with `BaseBehaviourConfig::register_type()`) and dispatches `GrantAccess` through `HostFixture::command_bus()`, reading the command ids from `audit_trail()`.
+
+### `CrossConsumerHost` (wave 5, CR-W5C5-4; sf)
+
+`delivery.cross-consumer-once`. A second consumer in the same app: `other_subscriptions()` (a subscriber added there makes that consumer an audience of its fact class, so `relay_once()` routes it a copy), `other_ledger()`, `deliver_routed($class)` (deliver every copy routed to it not yet delivered by this method) and `deliver_other($class, $wrapped)` (one redelivered copy). `Mem\MemCrossConsumerFixture` (group `simulated`) simulates it.
+
 ### `relay.lease-fencing` and CR-PDO-6 (wave 4)
 
 After the fencing checks, the scenario lets a submitter die after every claim of one fact: each re-claim of an expired lease must come back with `attempts` = n, and the re-claim that reaches `max_attempts` must be dead-lettered inside `claim()` (the next `relay_once()` neither claims nor transports it), with attempts equal to the budget and `IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR` in the error. With `ProcessHost` the operator view's relay layer must list it; with `RecordsSignals` one `OutboxDeadLettered` must be emitted. A store meets this by implementing `IReportsClaimDeadLetters` (CR-W4CE-9). `Support\RecordingOutboxStore` forwards that interface to the store it wraps.
@@ -159,6 +184,7 @@ Since wave 2 round 3 the mem host runs on the real ddd-core classes. The wave-1 
 | processes (wave 3) | `ProcessRunner(config, null, ReentrantProcessLock, InMemoryProcessStore, InMemoryWakeupScheduler, registry, boundary, clock, StartMode, logger)`; `Drain(relay, wakeups, runner, null, runner, clock, logger)::run_once()`; `PortOperatorView` over the outbox, the process store, the ledger and the intents |
 | effects (wave 4) | `EffectMiddleware(InMemoryEffectJournal, boundary)` between the act bracket and Transaction, on `effect_bus()` only; the journal is enlisted in the boundary |
 | workflows (wave 4) | `WorkflowIgniter(ledger, boundary, logger, clock)` over `Mem\InMemoryWorkflowIgnitionLedger` and `Mem\InMemoryWorkflowRepository` (both enlisted; the ledger stands in for the core double W4P-R2 asks to promote to `Testing`) |
+| wave 5 | `InMemoryParkingScheduler` when built with `parks_facts: true`; `InMemoryEffectJournal($clock)` (`ITracksEffectState`) and `UnrecordedEffects` among the operator view's sources; `Mem\InMemoryWorkItemRepository` (enlisted) |
 
 Mem workers: worker n > 1 is a second runner, re-entrant lock and registry over the same stores and the same raw `InMemoryProcessLock`, which then sees worker 1's keys as held.
 
