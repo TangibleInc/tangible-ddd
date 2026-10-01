@@ -128,6 +128,7 @@ final class ScenarioCatalogue {
     'codec.large-payload'                     => self::S . 'CodecScenarios',
     'effect.journal-reuse'                    => self::S . 'EffectScenarios',
     'workflow.fact-ignition-once'             => self::S . 'WorkflowScenarios',
+    'wakeup.post-commit'                      => self::S . 'PostCommitWakeupScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
