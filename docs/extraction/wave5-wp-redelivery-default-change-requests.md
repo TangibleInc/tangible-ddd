@@ -86,4 +86,10 @@ Note for core, not a request this round: if the other hosts want a per-listener 
    After that, `LateWordPressBootTest` stubs-first reports `loader_wires: true` and runs end to end through the real loader. The fixture's fallback call can stay; it is skipped once the loader wires.
 2. **Packaging (`CHANGELOG.md`, 0.7.0).** Text in the return payload (`api_change_requests`): one `### Changed` bullet and one migration step.
 3. **Conformance (optional).** The shared scenarios assert the core budget, so `tests/Integration/bootstrap.php` (owned here) opts the `ddd_conformance` consumer in through the filter. If the conformance owner prefers, move that opt-in into `WpConformanceRuntime` (for example as a filter registered in its boot) and drop it from the bootstrap.
-4. **Compat rollback fixtures (`tests/Compat/rollback/**`).** `NRowsRolledBackRollback` relies on the RbNote listener leaving a pending `{prefix}_ddd_redeliver` after one failure. Under the new default it is exhausted instead. Opt that consumer in, either with `update_option('{prefix}_ddd_delivery_attempts', 5)` in the case set-up or with `#[Retries(4)]` on the RbNote callback.
+4. **Compat rollback fixtures (`tests/Compat/rollback/**`).** This one is needed for the `compat` gate (7.3). `NRowsRolledBackRollback` relies on the RbNote listener leaving a pending `{prefix}_ddd_redeliver` after one failure. Under the new default the listener is exhausted instead. Verified: `tests/harness/run.sh compat` on this branch gives cs, allowances, artifact and 7.2 ok, and 7.3 FAILED with 6 failures, all in `failOnce()` (line 190, `assertCount(1, pending('ddd_redeliver'))`), across the `test_a_pending_redelivery_is_lost_on_rollback_without_the_drain` and `test_drain_before_rollback_empties_the_pending_redeliveries_first` cases × 0.6.2/0.6.5/0.6.6. The fix is one line at the top of `failOnce()`:
+
+   ```php
+   update_option($this->config->option(WpLedgeredDelivery::ATTEMPTS_OPTION), WpLedgeredDelivery::BUDGET, false);
+   ```
+
+   A `#[Retries(4)]` on the RbNote callback works too.
