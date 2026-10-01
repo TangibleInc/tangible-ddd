@@ -7,6 +7,7 @@ namespace TangibleDDD\Tests\Integration\V8;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessSteps;
 use TangibleDDD\Infra\Persistence\ProcessRepository;
+use TangibleDDD\Runtime\Codec\LargeString;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\Lock\LockKey;
@@ -16,6 +17,7 @@ use TangibleDDD\Runtime\Process\IgnitionKey;
 use TangibleDDD\Runtime\Process\IgnitionResult;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\QuarantinedProcess;
+use TangibleDDD\Tests\Integration\V8\Fakes\V8BlobProcess;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8IgnitedProcess;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8ManualProcess;
 use TangibleDDD\WordPress\Adapter\GetLockProcessLock;
@@ -160,6 +162,44 @@ final class WpProcessV8Test extends V8TestCase {
     } catch (QuarantinedProcess) {
     }
     self::assertSame($row['version'], $this->row($id)['version'], 'a second find does not write again');
+  }
+
+  // ── D6: LargeString in process state (CR-W4CE-5 request) ─────────────────
+
+  public function test_a_large_binary_string_round_trips_through_process_state(): void {
+    $bytes = substr(str_repeat(implode('', array_map('chr', range(0, 255))), 4097), 0, 1024 * 1024);
+    $id = $this->store->insert($this->process(new V8BlobProcess(new LargeString($bytes), 'one MiB')));
+
+    $found = $this->store->find($id);
+    self::assertInstanceOf(V8BlobProcess::class, $found);
+    self::assertSame(hash('sha256', $bytes), hash('sha256', (string) $found->blob), 'byte-identical');
+    self::assertSame('one MiB', $found->label);
+
+    $empty = $this->store->insert($this->process(new V8BlobProcess(null, 'none')));
+    self::assertNull($this->store->find($empty)?->blob, 'a nullable LargeString stays null');
+
+    // The 0.6 repository writes and reads the same encoded form.
+    $repository = new ProcessRepository($this->config);
+    self::assertSame(hash('sha256', $bytes), hash('sha256', (string) $repository->find($id)?->blob));
+  }
+
+  public function test_a_corrupt_large_string_quarantines_the_row_with_its_reason(): void {
+    $id = $this->store->insert($this->process(new V8BlobProcess(new LargeString(str_repeat("\x00\xff", 1000)))));
+    $data = json_decode((string) $this->row($id)['business_data'], true);
+    $data['blob']['data'] = base64_encode('tampered');
+    $this->wpdb->update($this->table('long_processes'), ['business_data' => wp_json_encode($data)], ['id' => $id]);
+
+    try {
+      $this->store->find($id);
+      self::fail('expected QuarantinedProcess');
+    } catch (QuarantinedProcess) {
+    }
+
+    $row = $this->row($id);
+    self::assertSame('failed', $row['status']);
+    self::assertStringContainsString('LargeString', (string) $row['quarantine_reason']);
+    self::assertStringContainsString('$blob', (string) $row['quarantine_reason'], 'names the field');
+    self::assertStringContainsString('length mismatch', (string) $row['quarantine_reason'], 'carries UndecodableLargeString::$quarantineReason');
   }
 
   public function test_find_waiting_for_returns_suspended_ids(): void {
