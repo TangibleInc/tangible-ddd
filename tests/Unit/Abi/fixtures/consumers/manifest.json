@@ -1,0 +1,90 @@
+{
+    "about": "Verbatim copies of the IDDDConfig implementations of every live consumer (report D section 4.1, finding F4). Never edit a copy: the sha256 pins it. Golden values are what each implementation derives today.",
+    "consumers": {
+        "cred": {
+            "file": "cred/Config.php",
+            "class": "Tangible\\Cred\\Infra\\Config",
+            "source": "tangible-cred:src/Infra/Config.php (last change 6c6bdcaf, clone at 9459b949)",
+            "sha256": "68e39ba11250f43b53835eec4dfd0d43cd17a40c0e8ea6d730107b08c206cbdd",
+            "args": ["1.4.0"],
+            "golden": {
+                "prefix": "tgbl_cred",
+                "table": "wp_tgbl_cred_integration_outbox",
+                "hook": "tgbl_cred_process_continue",
+                "as_group": "tgbl-cred-outbox",
+                "option": "tgbl_cred_outbox_pauses",
+                "domain_action": "tgbl_cred_domain_user_earned",
+                "integration_action": "tgbl_cred_integration_user_earned",
+                "version": "1.4.0"
+            }
+        },
+        "lms": {
+            "file": "lms/Config.php",
+            "class": "Tangible\\LMS\\Infra\\Config",
+            "source": "lms-monorepo:plugins/lms/src/Infra/Config.php (lms 0.12.0 line)",
+            "sha256": "503819d055b9f121ce4420bd420d09822143f85ddbbb23a9d570567560a597f3",
+            "args": ["0.12.0"],
+            "golden": {
+                "prefix": "tangible_lms",
+                "table": "wp_tangible_lms_integration_outbox",
+                "hook": "tangible_lms_process_continue",
+                "as_group": "tangible-lms-outbox",
+                "option": "tangible_lms_outbox_pauses",
+                "domain_action": "tangible_lms_domain_user_earned",
+                "integration_action": "tangible_lms_integration_user_earned",
+                "version": "0.12.0"
+            }
+        },
+        "quiz": {
+            "file": "quiz/Config.php",
+            "class": "Tangible\\Quiz\\Infra\\Config",
+            "source": "lms-monorepo:plugins/quiz/src/Infra/Config.php (quiz 0.7.0 line)",
+            "sha256": "9a20acee54cf957e37de4298a8cee3a638cfad9932419589eec9616aa6d22c30",
+            "args": ["0.7.0"],
+            "golden": {
+                "prefix": "tangible_quiz",
+                "table": "wp_tangible_quiz_integration_outbox",
+                "hook": "tangible_quiz_process_continue",
+                "as_group": "tangible-quiz-outbox",
+                "option": "tangible_quiz_outbox_pauses",
+                "domain_action": "tangible_quiz_domain_user_earned",
+                "integration_action": "tangible_quiz_integration_user_earned",
+                "version": "0.7.0"
+            }
+        },
+        "certificates": {
+            "file": "certificates/Config.php",
+            "class": "Tangible\\Certificates\\Infra\\Config",
+            "source": "TangibleInc/tangible-certificates@1ca7ff5:src/Infra/Config.php (0.3.1)",
+            "sha256": "7348a38e9d66b0dafc0aca0e6fb7195cc67504564b8e4f0c885050053ae0ef4e",
+            "args": ["0.3.1"],
+            "golden": {
+                "prefix": "tangible_certificates",
+                "table": "wp_tangible_certificates_integration_outbox",
+                "hook": "tangible_certificates_process_continue",
+                "as_group": "tangible-certificates-outbox",
+                "option": "tangible_certificates_outbox_pauses",
+                "domain_action": "tangible_certificates_domain_user_earned",
+                "integration_action": "tangible_certificates_integration_user_earned",
+                "version": "0.3.1"
+            }
+        },
+        "datastream": {
+            "file": "datastream/DatastreamConfig.php",
+            "class": "Tangible\\Datastream\\Infra\\DatastreamConfig",
+            "source": "TangibleInc/tangible-datastream@04418d5:src/Infra/DatastreamConfig.php (the pinned integration host)",
+            "sha256": "2c9bc4d64e303ce0293949d831a6d63b0376b4bef04c0b709c7ab8fc396fd422",
+            "args": ["wp_"],
+            "golden": {
+                "prefix": "tangible_datastream",
+                "table": "wp_tangible_datastream_integration_outbox",
+                "hook": "tangible_datastream_process_continue",
+                "as_group": "tangible-datastream-outbox",
+                "option": "tangible_datastream_outbox_pauses",
+                "domain_action": "tangible_datastream_domain_user_earned",
+                "integration_action": "tangible_datastream_integration_user_earned",
+                "version": "3.0.0-dev"
+            }
+        }
+    }
+}
