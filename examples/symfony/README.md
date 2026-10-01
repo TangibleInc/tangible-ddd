@@ -299,7 +299,7 @@ final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffec
 ```php
 namespace App\Billing\Commands;
 
-final class RefundCharge implements IEffectCommand {
+final class RefundChargeCommand implements IEffectCommand {
   use CommandBusAware;
   public function __construct(public readonly string $charge_id, public readonly int $amount) {}
   public function idempotency_key(): string { return "refund:{$this->charge_id}"; }
@@ -308,18 +308,18 @@ final class RefundCharge implements IEffectCommand {
 
 namespace App\Billing\CommandHandlers;
 
-/** @implements IExternalEffectHandler<RefundCharge> */
+/** @implements IExternalEffectHandler<RefundChargeCommand> */
 final class RefundChargeHandler implements IExternalEffectHandler {
   public function __construct(private readonly StripeClient $stripe, private readonly RefundRepository $refunds) {}
 
   public function perform(IEffectCommand $command): EffectResult {      // no transaction open here
-    assert($command instanceof RefundCharge);
+    assert($command instanceof RefundChargeCommand);
     $refund = $this->stripe->refunds->create(['charge' => $command->charge_id], ['idempotency_key' => $command->idempotency_key()]);
     return new EffectResult(['amount' => $command->amount], $refund->id);
   }
 
   public function record(IEffectCommand $command, EffectResult $result): void {   // inside the transaction
-    assert($command instanceof RefundCharge);
+    assert($command instanceof RefundChargeCommand);
     $this->refunds->save(Refund::of($command->charge_id, (string) $result->external_ref));
   }
 }

@@ -144,7 +144,7 @@ A command that calls an external API implements `IExternalEffectCommand` (`idemp
 - When a listener's handler budget is spent, `failure_command()` is sent once.
 - A repair calls `IEffectJournal::invalidate($key, $reason)` in its own transaction, and only then performs again.
 - Entry states (wave 5, `{prefix}_ddd_effect_recorded`, schema `010`): an entry is Performed until `record()` commits, then Recorded. A Recorded entry is returned as it is, and `record()` does not run again. A Performed entry runs `record()` again with the journaled result. `$runtime->journal()->find_entry($key)` shows the state.
-- A handler-class effect (wave 5) is an `IEffectCommand` (`idempotency_key()`, `failure_command()`) whose `IExternalEffectHandler` performs and records it. Pass the handler like any other: `[RefundCharge::class => new RefundChargeHandler($gateway)]` in `$handlers`, or a convention-named `CommandHandlers\RefundChargeHandler` in your container. With no handler, the bus throws `NoEffectHandler` before anything is performed.
+- A handler-class effect (wave 5) is an `IEffectCommand` (`idempotency_key()`, `failure_command()`) whose `IExternalEffectHandler` performs and records it. Pass the handler like any other: `[RefundChargeCommand::class => new RefundChargeHandler($gateway)]` in `$handlers`, or a convention-named `CommandHandlers\RefundChargeHandler` in your container. With no handler, the bus throws `NoEffectHandler` before anything is performed.
 
 The Symfony guide has a full effect example ([examples/symfony/README.md](../symfony/README.md), section 6), and it reads the same on pdo.
 
