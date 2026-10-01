@@ -39,6 +39,15 @@ final class ProcessWakeupHandler {
   public const BASE_DELAY_SECONDS = 2;
   public const MAX_DELAY_SECONDS = 300;
 
+  /** Handler results: woken (or stale) and completed. */
+  public const COMPLETED = 'completed';
+  /** The wake failed and the intent is due again after the backoff. */
+  public const RETRIED = 'retried';
+  /** The wake failed for the last time (budget, or not retryable); the intent is kept for the operator. */
+  public const EXHAUSTED = 'exhausted';
+  /** The complete / retry / exhaust write matched 0 rows: a re-projected message owns the intent. */
+  public const LEASE_LOST = 'lease_lost';
+
   private readonly LoggerInterface $logger;
 
   public function __construct(
@@ -50,27 +59,32 @@ final class ProcessWakeupHandler {
     $this->logger = $logger ?? new NullLogger();
   }
 
-  public function __invoke(ProcessWakeupMessage $message): void {
+  /**
+   * @return self::COMPLETED|self::RETRIED|self::EXHAUSTED|self::LEASE_LOST what happened to the
+   *   intent (the HandledStamp result; a drain reports it like core DrainReport's wake lists)
+   */
+  public function __invoke(ProcessWakeupMessage $message): string {
     $claim = $message->toClaim();
     $key = $claim->intent->idempotencyKey;
 
     try {
       $this->target->wake($claim->intent);
     } catch (\Throwable $e) {
-      $this->failed($claim, $e);
-      return;
+      return $this->failed($claim, $e);
     }
 
     if (!$this->scheduler->complete($claim)) {
       $this->logger->info("[ddd wakeup] $key woke, but its lease was re-taken (a re-projected message owns it now)");
+      return self::LEASE_LOST;
     }
+    return self::COMPLETED;
   }
 
   public static function backoffSeconds(int $attempt): int {
     return (int) min(self::MAX_DELAY_SECONDS, self::BASE_DELAY_SECONDS * (2 ** max(0, $attempt)));
   }
 
-  private function failed(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $claim, \Throwable $e): void {
+  private function failed(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $claim, \Throwable $e): string {
     $key = $claim->intent->idempotencyKey;
     $error = get_class($e) . ': ' . $e->getMessage();
     $attempt = $claim->attempts + 1;
@@ -79,18 +93,19 @@ final class ProcessWakeupHandler {
     if (!$retryable || $attempt >= self::BUDGET) {
       $why = $retryable ? "budget of " . self::BUDGET . " attempts spent" : 'not retryable';
       if ($this->scheduler instanceof DbalWakeupScheduler) {
-        $this->scheduler->exhaust($claim, $error, $this->clock->now());
+        $kept = $this->scheduler->exhaust($claim, $error, $this->clock->now());
         $this->logger->error("[ddd wakeup] $key exhausted ($why); kept for the operator: $error", ['exception' => $e]);
-        return;
+        return $kept ? self::EXHAUSTED : self::LEASE_LOST;
       }
       $this->logger->error("[ddd wakeup] $key failed ($why), retrying at the cap: $error", ['exception' => $e]);
-      $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify('+' . self::MAX_DELAY_SECONDS . ' seconds'));
-      return;
+      $kept = $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify('+' . self::MAX_DELAY_SECONDS . ' seconds'));
+      return $kept ? self::EXHAUSTED : self::LEASE_LOST;
     }
 
     $delay = self::backoffSeconds($claim->attempts);
     $this->logger->notice("[ddd wakeup] $key attempt $attempt failed, retrying in {$delay}s: $error");
-    $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify("+{$delay} seconds"));
+    $kept = $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify("+{$delay} seconds"));
+    return $kept ? self::RETRIED : self::LEASE_LOST;
   }
 
   private static function isRetryable(\Throwable $e): bool {

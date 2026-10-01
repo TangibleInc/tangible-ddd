@@ -123,8 +123,9 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->relay()->runOnce(10);
     $target = new RecordingWakeTarget();
 
-    ($this->handler($target))($this->sent()[0]);
+    $outcome = ($this->handler($target))($this->sent()[0]);
 
+    self::assertSame(ProcessWakeupHandler::COMPLETED, $outcome, 'the handler result names what happened (HandledStamp)');
     self::assertCount(1, $target->woken);
     self::assertSame(WakeKind::Timeout, $target->woken[0]->kind);
     self::assertSame(5, $target->woken[0]->processId);
@@ -137,7 +138,7 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->relay()->runOnce(10);
     $target = new RecordingWakeTarget([new ProcessLockUnavailable('lock busy', 0, new LockNotAcquired('busy'))]);
 
-    ($this->handler($target))($this->sent()[0]);
+    self::assertSame(ProcessWakeupHandler::RETRIED, ($this->handler($target))($this->sent()[0]));
 
     $row = $this->db->fetchAssociative('SELECT attempts, next_attempt_at, exhausted_at FROM ddd_wakeups');
     self::assertSame(1, (int) $row['attempts']);
@@ -159,7 +160,7 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->db->executeStatement('UPDATE ddd_wakeups SET attempts = 9');
     $this->relay()->runOnce(10);
 
-    ($this->handler(new RecordingWakeTarget([new LockNotAcquired('busy')])))($this->sent()[0]);
+    self::assertSame(ProcessWakeupHandler::EXHAUSTED, ($this->handler(new RecordingWakeTarget([new LockNotAcquired('busy')])))($this->sent()[0]));
 
     $row = $this->db->fetchAssociative('SELECT attempts, exhausted_at FROM ddd_wakeups');
     self::assertSame(10, (int) $row['attempts']);
@@ -184,7 +185,7 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->relay(null, 30)->runOnce(10);
     [$stale, $fresh] = $this->sent();
 
-    ($this->handler(new RecordingWakeTarget()))($stale);
+    self::assertSame(ProcessWakeupHandler::LEASE_LOST, ($this->handler(new RecordingWakeTarget()))($stale));
     self::assertSame(1, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_wakeups'), 'the stale message cannot complete the re-leased intent');
 
     ($this->handler(new RecordingWakeTarget()))($fresh);
