@@ -99,6 +99,18 @@ final class SchemaV8MigrationTest extends V8TestCase {
 
     // The 0.6 pause option is kept (still read until drained).
     self::assertSame(['ops' => ['selector' => 'v8.fact', 'until' => -1]], get_option($this->config->option('outbox_pauses')));
+
+    // The upgraded tables serve the v8 adapters: the 0.6 pending row is
+    // held by the 0.6 pause, then claimed with a token once it is released.
+    $store = new \TangibleDDD\WordPress\Adapter\WpdbOutboxStore(
+      new \TangibleDDD\Infra\Persistence\OutboxRepository($this->config, new \TangibleDDD\Application\Outbox\OutboxConfig()),
+      $this->config
+    );
+    self::assertSame([], $store->claim(10, new \DateTimeImmutable('+1 second'), 60));
+    delete_option($this->config->option('outbox_pauses'));
+    [$claim] = $store->claim(10, new \DateTimeImmutable('+1 second'), 60);
+    self::assertSame('aaaaaaaa-0000-4000-8000-000000000001', $claim->event_id);
+    self::assertTrue($store->accept($claim, '1'));
   }
 
   public function test_the_v8_migration_is_idempotent(): void {
