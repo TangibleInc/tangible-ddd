@@ -482,7 +482,10 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * from its index and a column store (mem, pdo, wp, which ignore the key)
    * returns its usual candidates. On a store without IMatchesFactAncestry
    * the fact's IIntegrationEvent ancestors are looked up too (an AwaitAny
-   * row holds the branches' common ancestor). accepts() is the final filter.
+   * row holds the branches' common ancestor); a row found only that way is
+   * considered only when it is an AwaitAny, so a 0.6 await on a parent
+   * class is not reached by a subclass fact there (R1, fix round 2).
+   * accepts() is the final filter.
    */
   public function resume_with_outcome(IIntegrationEvent $event): ResumeReport {
     $resumed = [];
@@ -490,27 +493,27 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $cancelled = [];
     $first_taken = false; // a 0.6-shaped await already took this fact
 
-    foreach ($this->candidates($event) as $process_id) {
+    foreach ($this->candidates($event) as $process_id => $exact) {
       try {
         $candidate = $this->store()->find($process_id);
       } catch (QuarantinedProcess) {
         continue; // undecodable row: quarantined by the store, the worker continues
       }
       $await = $candidate?->await_mechanism();
-      if ($candidate === null || $candidate->status() !== 'suspended' || $await === null || !$await->accepts($event)) {
+      if ($candidate === null || $candidate->status() !== 'suspended' || $await === null || !self::reachable($await, $exact) || !$await->accepts($event)) {
         continue;
       }
       if ($first_taken && self::first_wins($await)) {
         continue; // 0.6: only the first accepting process per fact (R1)
       }
 
-      $this->with_process_lock($process_id, function () use ($process_id, $event, &$resumed, &$accumulated, &$cancelled, &$first_taken): void {
+      $this->with_process_lock($process_id, function () use ($process_id, $exact, $event, &$resumed, &$accumulated, &$cancelled, &$first_taken): void {
         $process = $this->find($process_id); // re-read under the lock (C6, C7)
         if ($process === null || $process->status() !== 'suspended') {
           return;
         }
         $mechanism = $process->await_mechanism();
-        if ($mechanism === null || !$mechanism->accepts($event)) {
+        if ($mechanism === null || !self::reachable($mechanism, $exact) || !$mechanism->accepts($event)) {
           return;
         }
         if (self::first_wins($mechanism)) {
@@ -581,7 +584,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     };
   }
 
-  /** @return list<int> candidate process ids for $event (see resume_with_outcome) */
+  /**
+   * Candidate process ids for $event (see resume_with_outcome), in id
+   * order, each mapped to whether the store matched it on the fact's own
+   * class (true) or only through one of its ancestors (false).
+   *
+   * @return array<int, bool>
+   */
   private function candidates(IIntegrationEvent $event): array {
     $store = $this->store();
     $class = get_class($event);
@@ -589,20 +598,32 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $ids = $key === null
       ? $store->findWaitingFor($class)
       : [...$store->findWaitingFor($class, $key), ...$store->findWaitingFor($class, '')];
+    $found = array_fill_keys($ids, true);
 
     if (!$store instanceof IMatchesFactAncestry) {
       // An exact-match column store: an AwaitAny row holds the branches'
       // common ancestor in `waiting_for`, so ask for each ancestor as well.
       foreach ([...array_values(class_parents($event) ?: []), ...array_values(class_implements($event) ?: [])] as $ancestor) {
         if (is_a($ancestor, IIntegrationEvent::class, true)) {
-          array_push($ids, ...$store->findWaitingFor($ancestor));
+          foreach ($store->findWaitingFor($ancestor) as $id) {
+            $found[$id] ??= false;
+          }
         }
       }
     }
 
-    $ids = array_values(array_unique($ids));
-    sort($ids);
-    return $ids;
+    ksort($found);
+    return $found;
+  }
+
+  /**
+   * R1 on exact-match stores: a row found only through an ancestor of the
+   * fact is a candidate when it is an AwaitAny (whose `waiting_for` holds
+   * its branches' common ancestor). A 0.6-shaped await on a parent class
+   * stays unreached by a subclass fact, as on 0.6.
+   */
+  private static function reachable(IAwaitMechanism $mechanism, bool $exact): bool {
+    return $exact || $mechanism instanceof AwaitAny;
   }
 
   /**

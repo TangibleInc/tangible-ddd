@@ -411,3 +411,32 @@ final class UnkeyedWaitProcess extends LongProcess {
     return new Result();
   }
 }
+
+/** A fact with a subclass (R1 ancestry on exact-match stores). */
+class MemberJoined extends \TangibleDDD\Domain\Events\IntegrationEvent {
+
+  public function __construct(public readonly int $member_id = 1) {}
+
+  protected static function prefix(): string {
+    return 'acme';
+  }
+}
+
+final class VipJoined extends MemberJoined {}
+
+/** A 0.6-shaped unkeyed await on the parent class. */
+final class ParentClassWaitProcess extends LongProcess {
+
+  public function __construct() {
+    parent::__construct(null);
+  }
+
+  protected function wait(): Result {
+    return new Result(await: new AwaitEvent(MemberJoined::class));
+  }
+
+  protected function joined(mixed $payload, MemberJoined $fact): Result {
+    Journal::note('member:' . get_class($fact));
+    return new Result();
+  }
+}

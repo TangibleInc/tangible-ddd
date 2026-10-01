@@ -360,6 +360,23 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame('failed', $repo->find($cancelled->get_id())->status());
   }
 
+  public function test_on_an_exact_match_store_a_0_6_await_on_a_parent_class_is_not_resumed_by_a_subclass_fact(): void {
+    // R1: 0.6 matched waiting_for = class exactly; the ancestor lookup is for AwaitAny rows only.
+    $repo = new ArrayProcessRepository();
+    $runner = $this->legacyRunner($repo);
+    $runner->register_event(\TangibleDDD\Core\Tests\Unit\Fixtures\Process\MemberJoined::class);
+    $runner->register_event(\TangibleDDD\Core\Tests\Unit\Fixtures\Process\VipJoined::class);
+    $p = new \TangibleDDD\Core\Tests\Unit\Fixtures\Process\ParentClassWaitProcess();
+    $runner->start($p);
+
+    $child = $runner->resume_with_outcome(new \TangibleDDD\Core\Tests\Unit\Fixtures\Process\VipJoined(4));
+    self::assertTrue($child->isUnheard(), 'as on 0.6: the subclass fact does not reach the parent-class await');
+    self::assertSame('suspended', $repo->find($p->get_id())->status());
+
+    $parent = $runner->resume_with_outcome(new \TangibleDDD\Core\Tests\Unit\Fixtures\Process\MemberJoined(4));
+    self::assertSame([$p->get_id()], $parent->resumed);
+  }
+
   public function test_unkeyed_0_6_awaits_keep_first_wins_on_one_fact(): void {
     $a = new UnkeyedWaitProcess('a');
     $b = new UnkeyedWaitProcess('b');
