@@ -254,16 +254,31 @@ final class WpProcessV8Test extends V8TestCase {
     $running = SchemaV7::process($this->config, V8ManualProcess::class, 'running', 1, null);
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET updated_at = '$old' WHERE id = $running");
 
+    // A long wake in ANOTHER session (another php-fpm child) holds the lock.
+    $other = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::open($this->wpdb);
+    try {
+      $lock = new GetLockProcessLock();
+      $handle = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1));
+      self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
+      \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->release($handle));
+
+      self::assertWpdbLegacyHolderHides($other, $running, fn () => $this->store->findStranded($this->clock->now()));
+    } finally {
+      $other->close();
+    }
+    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+
+    // This session's own hold is the WP8-10 repair guard re-reading the row under the lock.
     $lock = new GetLockProcessLock();
     $handle = $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1);
-    self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
-    $lock->release($handle);
-
-    self::assertWpdbLegacyHolderHides($this->wpdb, $running, fn () => $this->store->findStranded($this->clock->now()));
-    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+    try {
+      self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+    } finally {
+      $lock->release($handle);
+    }
   }
 
-  /** A 0.6 copy holding only the legacy name hides the row too. */
+  /** A 0.6 copy (another session) holding only the legacy name hides the row too. */
   private static function assertWpdbLegacyHolderHides(\wpdb $db, int $id, callable $find): void {
     $db->get_var("SELECT GET_LOCK('ddd_process_$id', 1)");
     try {

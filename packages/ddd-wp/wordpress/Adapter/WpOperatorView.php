@@ -22,7 +22,9 @@ use TangibleDDD\Runtime\SystemClock;
  *             (budget 5);
  * - wakeup:   intents that failed at least once or died while firing, and
  *             exhausted intents (budget 10, repair `rearm`);
- * - process:  stranded `scheduled`/`running` rows and quarantined rows.
+ * - process:  stranded `scheduled`/`running` rows (a `running` one with
+ *             repairs `resume-stranded`, `fail-stranded`) and quarantined
+ *             rows.
  *
  * Schema v8 only for the delivery, wakeup and process layers; the relay
  * layer works on the 0.6 schema too. Rows are plain arrays with the
@@ -33,6 +35,9 @@ use TangibleDDD\Runtime\SystemClock;
 final class WpOperatorView {
 
   public const LAYERS = ['relay', 'delivery', 'wakeup', 'process'];
+
+  /** Repairs of a stranded `running` row: the `wp ddd ops` flags that dispatch them (WP8-10). */
+  public const STRANDED_REPAIRS = ['resume-stranded', 'fail-stranded'];
 
   public function __construct(
     private readonly IDDDConfig $config,
@@ -120,11 +125,21 @@ final class WpOperatorView {
     }
     $out = [];
     $store = new WpdbProcessStore(new ProcessRepository($this->config), $this->config, $this->clock);
-    // No repair labels yet: a stranded `scheduled` row is continued by the
-    // relay tick on its own, and the `running` repairs (ResumeStrandedProcess,
-    // FailStrandedProcess) are pending core (change request WP8-10).
+    // A stranded `scheduled` row is continued by the relay tick on its own
+    // (no label). A stranded `running` row needs an operator (an automatic
+    // re-run would repeat step effects): `wp ddd ops --resume-stranded=<id>`
+    // / `--fail-stranded=<id>` dispatch core's ResumeStrandedProcess /
+    // FailStrandedProcess (WpStrandedRepairs, WP8-10).
     foreach (array_slice($store->findStranded($this->now()), 0, $limit) as $s) {
-      $out[] = $this->item('process', "#{$s->processId} {$s->processClass} ({$s->status}, step {$s->stepIndex})", 0, 0, 'stranded', $s->updatedAt->format('Y-m-d H:i:s'), []);
+      $out[] = $this->item(
+        'process',
+        "#{$s->processId} {$s->processClass} ({$s->status}, step {$s->stepIndex})",
+        0,
+        0,
+        'stranded',
+        $s->updatedAt->format('Y-m-d H:i:s'),
+        $s->status === 'running' ? self::STRANDED_REPAIRS : [],
+      );
     }
     $db = self::db();
     foreach ((array) $db->get_results($db->prepare(

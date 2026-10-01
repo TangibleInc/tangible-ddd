@@ -102,6 +102,24 @@ final class WpNamedLock {
     return $free !== null && (string) $free === '1';
   }
 
+  /**
+   * Whether no OTHER session holds any of the names: each is free, or held
+   * by this connection (IS_USED_LOCK = CONNECTION_ID()). The stranded scan
+   * uses it, because the WP8-10 repair guard re-reads findStranded() while
+   * it holds the process lock itself. A query error answers false.
+   */
+  public static function isFreeOrHeldHere(string ...$names): bool {
+    if ($names === []) {
+      return true;
+    }
+    $db = self::db();
+    $free = $db->get_var($db->prepare(
+      'SELECT ' . implode(' AND ', array_fill(0, count($names), 'COALESCE(IS_USED_LOCK(%s) = CONNECTION_ID(), 1)')),
+      ...$names
+    ));
+    return $free !== null && (string) $free === '1';
+  }
+
   /** Never throws; a failed release is logged as a bug. */
   public static function release(string $name): void {
     try {

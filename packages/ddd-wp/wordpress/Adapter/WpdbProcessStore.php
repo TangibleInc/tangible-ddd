@@ -47,8 +47,9 @@ use TangibleDDD\Runtime\SystemClock;
  *   then QuarantinedProcess is thrown; the worker continues.
  * - findStranded($now): `scheduled` / `running` rows not updated for
  *   $strandedAfterSeconds (default 900) with no live (`pending` / `firing`)
- *   intent in `{prefix}_ddd_wakeups`; a `running` row only while its
- *   process lock is free on both names (IS_FREE_LOCK).
+ *   intent in `{prefix}_ddd_wakeups`; a `running` row only while no other
+ *   session holds its process lock on either name (IS_USED_LOCK; this
+ *   session's own hold, the WP8-10 repair guard's, does not count).
  *
  * Every write failure throws ProcessStoreFailed (C27). Time is the host
  * IClock (constructor, else HostDefaults, else SystemClock).
@@ -200,11 +201,12 @@ final class WpdbProcessStore implements IProcessStore {
     $out = [];
     foreach (is_array($rows) ? $rows : [] as $r) {
       // Register 5.3: a `running` row is stranded only when its lock is
-      // free; a long wake that holds it (either name: N or a 0.6 copy) is
-      // still running.
+      // free; a long wake that holds it (either name: N or a 0.6 copy, in
+      // another session) is still running. This session's own hold is the
+      // WP8-10 repair guard re-reading the row under the lock.
       if ($r->status === 'running') {
         $key = new \TangibleDDD\Runtime\Lock\LockKey($this->config->prefix(), '', (int) $r->id);
-        if (!WpNamedLock::isFree(GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key))) {
+        if (!WpNamedLock::isFreeOrHeldHere(GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key))) {
           continue;
         }
       }
