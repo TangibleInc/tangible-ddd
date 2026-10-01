@@ -27,8 +27,10 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  *   commit only, D14).
  * - cancel(): DELETE by key, same transaction rule.
  * - claim_due(): ONE autocommit statement leasing due rows (`due_at <= now`,
- *   `next_attempt_at` passed, lease free or expired) with FOR UPDATE SKIP
- *   LOCKED, each with its own claim token. Refuses to join an open
+ *   `next_attempt_at` passed, lease free or expired, not terminally
+ *   exhausted) with FOR UPDATE SKIP LOCKED, each with its own claim token.
+ *   An exhausted row with a `next_attempt_at` is still retried at the cap
+ *   (see exhaust()). Refuses to join an open
  *   transaction (NestedTransactionRejected), as the outbox claim does.
  * - complete() deletes the row; retry_later() counts an attempt, records the
  *   error, sets next_attempt_at and clears the lease. Both are fenced on
@@ -101,7 +103,7 @@ class DbalWakeupScheduler implements IWakeupScheduler {
       "WITH picked AS (
          SELECT id FROM {$this->table}
          WHERE due_at <= :now
-           AND exhausted_at IS NULL
+           AND (exhausted_at IS NULL OR next_attempt_at IS NOT NULL)
            AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
            AND (claim_token IS NULL OR lease_until <= :now)
          ORDER BY due_at, id
@@ -141,16 +143,31 @@ class DbalWakeupScheduler implements IWakeupScheduler {
 
   /**
    * The wake budget ran out, or the wake failed for a non-retryable reason:
-   * count the attempt, keep the row for the operator and never claim it
-   * again (it no longer counts as a live intent for the stranded scan).
+   * count the attempt and mark the row exhausted for the operator (layer
+   * `wakeup`, `ddd:ops:stranded`). The first exhaustion time is kept.
+   *
+   * - $retry_at null (not retryable): never claimed again; it no longer
+   *   counts as a live intent for the stranded scan.
+   * - $retry_at set (retryable, budget spent; 5.1 WakeRetryPolicy): still
+   *   claimed at $retry_at and live, so a wake is never dropped. A later
+   *   exhaust without a retry time ends the retries.
+   *
    * Fenced on the claim token like complete().
    */
-  public function exhaust(ClaimedWakeup $w, string $error, ?\DateTimeImmutable $at = null): bool {
+  public function exhaust(ClaimedWakeup $w, string $error, ?\DateTimeImmutable $at = null, ?\DateTimeImmutable $retry_at = null): bool {
     return $this->connection->executeStatement(
       "UPDATE {$this->table}
-          SET attempts = attempts + 1, last_error = ?, exhausted_at = ?, claim_token = NULL, lease_until = NULL
+          SET attempts = attempts + 1, last_error = ?, exhausted_at = COALESCE(exhausted_at, ?), next_attempt_at = ?,
+              claim_token = NULL, lease_until = NULL
         WHERE idempotency_key = ? AND claim_token = ?",
-      [$error, Time::to_db($at ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))), $w->intent->key, $w->token]
+      [
+        $error,
+        Time::to_db($at ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))),
+        $retry_at === null ? null : Time::to_db($retry_at),
+        $w->intent->key,
+        $w->token,
+      ],
+      [ParameterType::STRING, ParameterType::STRING, $retry_at === null ? ParameterType::NULL : ParameterType::STRING, ParameterType::STRING, ParameterType::STRING]
     ) > 0;
   }
 

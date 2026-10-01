@@ -7,9 +7,11 @@
 -- A lost message or a crash between save and send leaves the row due, and the next
 -- relay tick re-projects it once the lease expires.
 -- exhausted_at marks an intent whose wake budget (5.1: 10 attempts) ran out or whose
--- wake failed for a non-retryable reason: it is never claimed again, it no longer
--- counts as a live intent for the stranded scan, and it stays for the operator
--- (ddd:ops:stranded) until repaired or cancelled.
+-- wake failed for a non-retryable reason; it stays for the operator (ddd:ops:stranded)
+-- until it completes, or is repaired or cancelled. With next_attempt_at set (a
+-- retryable failure past the budget) it is still claimed at the cap and stays live;
+-- with next_attempt_at NULL (not retryable) it is never claimed again and no longer
+-- counts as a live intent for the stranded scan.
 
 CREATE TABLE IF NOT EXISTS {{prefix}}ddd_wakeups (
     id               BIGSERIAL    PRIMARY KEY,

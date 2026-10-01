@@ -48,9 +48,11 @@ abstract class WorkItemScenarios extends ConformanceTestCase {
     $host = $this->work_items();
     BaseBehaviourConfig::register_type(GrantConfig::TYPE, GrantConfig::class);
     $rows = $this->host->rows();
+    $ran = [];
     GrantWorkflow::$bus = $this->host->command_bus([
-      GrantAccess::class => static function (GrantAccess $c) use ($rows): void {
-        $row = GrantAccess::row((string) Correlation::current()->cause?->id);
+      GrantAccess::class => static function (GrantAccess $c) use ($rows, &$ran): void {
+        $ran[] = $cid = (string) Correlation::current()->cause?->id;
+        $row = GrantAccess::row($cid);
         if (!$rows->has($row)) {
           $rows->insert($row, $c->item_key);
         }
@@ -80,7 +82,8 @@ abstract class WorkItemScenarios extends ConformanceTestCase {
     self::assertSame(['user:1' => WorkItemStatus::done, 'user:2' => WorkItemStatus::done], $this->statuses($id));
     self::assertTrue($host->workflows()->get_by_id($id)->is_complete());
     self::assertSame($granted, $rows->count(), 'the re-run added no grant');
-    self::assertSame([$first, $second, $second], $this->granted_ids(), 'the re-run dispatched the same command id');
+    self::assertSame([$first, $second, $second], $ran, 'the re-run dispatched the same command id');
+    self::assertSame([], array_values(array_diff($this->granted_ids(), [$first, $second])), 'the audit trail names no other GrantAccess id');
 
     // 3. Another workflow: its items have ids of their own.
     $other = new BehaviourWorkflow(null, 1, 'conformance.grant', [new GrantConfig()]);
@@ -115,7 +118,11 @@ abstract class WorkItemScenarios extends ConformanceTestCase {
     return $out;
   }
 
-  /** @return list<string> the command ids GrantAccess ran under, in audit order */
+  /**
+   * @return list<string> the command ids the audit trail names for GrantAccess,
+   *   in audit order. A host may keep one row per command id (wp), so a
+   *   re-run under the same id need not add a row (HC5-2).
+   */
   private function granted_ids(): array {
     $ids = [];
     foreach ($this->host->audit_trail() as $entry) {

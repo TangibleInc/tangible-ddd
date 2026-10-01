@@ -95,9 +95,11 @@ column, and `--consumer=<name>` narrows it.
   (default `warn`).
 - Intent rows (`ddd_wakeups`) are the source of truth; the `ddd_wakeups`
   transport is a projection with Messenger retries off. A wake that fails on a
-  lock, a version fence or a transient DB error is retried (2 s x 2^n, 10
-  attempts); then, or on any other error, the intent is kept as exhausted for
-  `ddd:ops:stranded`.
+  lock, a version fence or a transient DB error is retried (2 s x 2^n, capped
+  at 300 s); from the 10th attempt it shows as exhausted in
+  `ddd:ops:stranded` and the `wakeup` layer but is still retried every 300 s,
+  so a wake is never dropped (5.1). Any other error exhausts the intent at
+  once and it is not claimed again until an operator re-arms it.
 - `ddd:ops:stranded --resume|--fail` dispatch core's
   `Application\Process\Repair\ResumeStrandedProcess` / `FailStrandedProcess`
   (WP8-10) on the command bus; the core handlers refuse a process that is not

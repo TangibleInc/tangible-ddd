@@ -16,9 +16,10 @@ use TangibleDDD\Symfony\Persistence\Time;
 /**
  * `{prefix}ddd_wakeups` as layer `wakeup` of the operator view (D9, register
  * 3.10, 5.1): $consumer's intents that failed at least once, attempts against
- * the wake budget (10). An exhausted intent (never claimed again) carries the
- * repair `rearm` (`ddd:ops:stranded --rearm=<key>`); one still retrying has
- * none. Key: the intent's idempotency key. Oldest first; storage errors
+ * the wake budget (10). An exhausted intent carries the repair `rearm`
+ * (`ddd:ops:stranded --rearm=<key>`, a fresh budget), whether it is terminal
+ * (not retryable, never claimed again) or still retried at the cap (5.1); one
+ * within the budget has none. Key: the intent's idempotency key. Oldest first; storage errors
  * propagate.
  */
 final class DbalWakeupOperatorSource implements IOperatorItemSource {
