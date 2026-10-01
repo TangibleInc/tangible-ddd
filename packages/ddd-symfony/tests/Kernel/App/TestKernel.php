@@ -69,7 +69,16 @@ final class TestKernel extends Kernel {
     ]);
 
     $params = PostgresDatabase::params();
-    $container->extension('doctrine', [
+    $orm = $this->variant === 'orm' ? ['orm' => [
+      'controller_resolver' => ['auto_mapping' => false],
+      'mappings' => ['KernelApp' => [
+        'type' => 'attribute',
+        'is_bundle' => false,
+        'dir' => __DIR__ . '/Orm/Entity',
+        'prefix' => __NAMESPACE__ . '\\Orm\\Entity',
+      ]],
+    ]] : [];
+    $container->extension('doctrine', $orm + [
       'dbal' => [
         'driver' => 'pdo_pgsql',
         'host' => $params['host'],
@@ -89,7 +98,11 @@ final class TestKernel extends Kernel {
         'version' => '0.7.0-test',
       ],
       'connection' => 'default',
-      'transaction' => $this->variant === 'flush' ? ['entity_manager' => 'test.flusher'] : [],
+      'transaction' => match ($this->variant) {
+        'flush' => ['entity_manager' => 'test.flusher'],
+        'orm' => ['entity_manager' => 'doctrine.orm.default_entity_manager'],
+        default => [],
+      },
       'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
     ]);
 
@@ -107,5 +120,8 @@ final class TestKernel extends Kernel {
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.
       ->exclude(__DIR__ . '/Events/');
+    if ($this->variant === 'orm') {
+      $services->load(__NAMESPACE__ . '\\Orm\\', __DIR__ . '/Orm/{Commands,CommandHandlers}/');
+    }
   }
 }

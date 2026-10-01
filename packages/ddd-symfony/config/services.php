@@ -51,6 +51,7 @@ use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
+use TangibleDDD\Symfony\Persistence\EntityManagerSession;
 use TangibleDDD\Symfony\Runtime\Actor\ActorContext;
 use TangibleDDD\Symfony\Runtime\Actor\ConsoleOperatorActorProvider;
 use TangibleDDD\Symfony\Runtime\Actor\SecurityUserActorProvider;
@@ -112,12 +113,21 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->public();
 
   // ── persistence (register 3.2, 3.4, 3.5) ─────────────────────────────────
+  // L6: the configured EntityManager is flushed before COMMIT and cleared (or,
+  // when a failed flush closed it, reset through the `doctrine` registry) after
+  // every rollback. No ORM dependency: any service with flush() works.
+  $entityManager = $config['transaction']['entity_manager'];
+  if ($entityManager !== null) {
+    $s->set('tangible_ddd.entity_manager_session', EntityManagerSession::class)
+      ->args([service($entityManager), service('doctrine')->nullOnInvalid(), $entityManager, $logger]);
+  }
   $s->set('tangible_ddd.transaction_boundary', DbalTransactionBoundary::class)
     ->args([
       service('tangible_ddd.connection'),
       $config['transaction']['nested'] === 'savepoint' ? NestedPolicy::Savepoint : NestedPolicy::Reject,
-      $config['transaction']['entity_manager'] === null ? null : [service($config['transaction']['entity_manager']), 'flush'],
+      $entityManager === null ? null : [service('tangible_ddd.entity_manager_session'), 'flush'],
       $logger,
+      $entityManager === null ? null : [service('tangible_ddd.entity_manager_session'), 'reset'],
     ]);
   $s->alias(ITransactionBoundary::class, 'tangible_ddd.transaction_boundary');
 

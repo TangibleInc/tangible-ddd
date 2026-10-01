@@ -73,7 +73,7 @@ final class TangibleDddBundle extends AbstractBundle {
             ->enumNode('nested')->values(['reject', 'savepoint'])->defaultValue('reject')
               ->info('What a command does when a transaction is already open: reject (production) or savepoint (test wrappers).')->end()
             ->scalarNode('entity_manager')->defaultNull()
-              ->info('ORM EntityManager service id (on the same connection) to flush() before COMMIT, e.g. doctrine.orm.default_entity_manager.')->end()
+              ->info('ORM EntityManager service id (on the same connection), e.g. doctrine.orm.default_entity_manager: flush()ed before COMMIT; after a rollback clear()ed, or reset through the doctrine registry when the failed flush closed it.')->end()
           ->end()
         ->end()
         ->arrayNode('relay')
