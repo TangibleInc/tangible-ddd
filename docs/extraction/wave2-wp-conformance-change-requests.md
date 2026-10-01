@@ -4,9 +4,11 @@ Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owne
 
 ## Status of the acceptance
 
-- `tests/harness/run.sh conformance-wp` runs 24 tests (17 shared scenario methods on four wp classes, 3 wp audit cases, 2 catalogue checks and 2 fixture-parameter checks; 2 wave-3 scenarios skipped, see "Scenarios not due on wp in wave 2"). **On this branch alone, 11 of the 12 wave-2 wp ids pass.** `relay.invalid-acceptance` fails on a defect in the transitional `WpdbOutboxStore` (WPC-5), which is outside this branch's owned paths. On a trial worktree of this branch with only the WPC-5 and WPC-6 patches below applied, the run is 24 tests, 0 failures, 2 skipped, and the gate prints `check-due: 12 of 12 scenario ids due on wp by wave 2 passed`.
-- `vendor/bin/phpunit` (root): 874 tests. On this branch alone, it is green except `tests/Unit/Loader/HarnessCliTest`'s data set `conformance-wp`, which pins the placeholder this task replaces (WPC-6). That data set also starts the real Docker harness from the unit suite. With WPC-6 applied in the trial worktree it is green (874 tests) and runs no Docker.
-- **Merge order (coordinator).** Merge WPC-5 (wp) and WPC-6 (packaging) with this branch or before it. Merging this branch alone turns the integration branch's unit suite red, and `conformance-wp` stays at 11 of 12.
+- `tests/harness/run.sh conformance-wp` runs 32 tests (17 shared scenario methods on four wp classes, 3 wp audit cases, 2 catalogue checks, 2 fixture-parameter checks and 8 gate-rule checks; 2 wave-3 scenarios skipped, see "Scenarios not due on wp in wave 2"). **On this branch alone, 11 of the 12 wave-2 wp ids pass and the subcommand exits 1.** `relay.invalid-acceptance` fails on a defect in the transitional `WpdbOutboxStore` (WPC-5), which is outside this branch's owned paths. On a trial worktree of this branch's HEAD with only the WPC-5 and WPC-6 patches in the appendix applied, the run is 32 tests, 0 failures, 2 skipped, the gate prints `check-due: 12 of 12 scenario ids due on wp by wave 2 passed`, and the subcommand exits 0.
+- `vendor/bin/phpunit` (root): 874 tests. On this branch alone, it is green except `tests/Unit/Loader/HarnessCliTest`'s data set `conformance-wp`, which pins the placeholder this task replaces (WPC-6). That data set also starts the real Docker harness from the unit suite. With WPC-6 applied in the trial worktree it is green (874 tests, 2.7 s) and runs no Docker.
+- **Merge order (coordinator). This branch must not be merged alone.** Land the appendix patches WPC-5 (wp) and WPC-6 (packaging) before it or in the same merge. Merging this branch alone turns the integration branch's unit suite red, makes it start Docker, and leaves `conformance-wp` at 11 of 12. Both patches are outside this branch's owned paths, so they are not committed here. They are given verbatim (`git apply`-able against this branch's HEAD) in the appendix.
+- **Gate (fix round 2).** `bin/check-due.php` now delegates to `Support/DueGate.php`, pinned by `WpDueGateConformance`. When an id is carried by more than one wp class, a skipped copy fails the id. The one tolerated skip is `audit.sink-fails`, and only while `TangibleDDD\Conformance\AuditSinkFaults` does not exist. Once `wave2/conformance-cleanup` lands, the shared `CommandScenarios::test_audit_sink_fails` must run on wp, so WPC-4 becomes mandatory and the wp-local copy can no longer mask it. `run.sh conformance-wp` now runs the gate even when phpunit is red, so the per-id verdicts always print.
+- **Merge note: provisional ids on wp.** `relay.invalid-acceptance`, `relay.replay-keeps-identity`, `delivery.phase-order` and `delivery.delayed-once` are **provisional on wp in wave 2**. They are green on fixture stand-ins (WPC-1..WPC-3, below), not on the shipped wp relay path. When ddd-wp ships the Action Scheduler `ITransport`, the v8 ledger and IClock-aware adapters, wave 3 replaces the stand-ins and deletes `Support/clock-functions.php`.
 - `tests/harness/run.sh wp-integration`: green, unchanged (27 tests). Files under `tests/Integration/Conformance/` end in `Conformance.php`, so `phpunit.integration.xml` never loads them.
 - **What the green relay/delivery ids prove (WPC-1, WPC-2, WPC-3).** `relay.*` and `delivery.*` run the core port-form `OutboxProcessor` over a fixture `ITransport` (`Support/ActionSchedulerTransport.php`). Shipped wp still relays through `legacy_batch()` / `IOutboxPublisher`. `relay.replay-keeps-identity` and the delivery ids also go through a fixture ledger gate over `InMemoryDeliveryLedger` (`Support/LedgerGatedSubscriptions.php`). Scenario time reaches the 0.6 outbox code through namespaced `time()`/`gmdate()` shims (`Support/clock-functions.php`). On wp in wave 2, these ids pass on fixture stand-ins over the real wpdb store, the real Action Scheduler and real `add_action`/`do_action`. They do not prove the shipped wp relay path. Wave 3 replaces the stand-ins with ddd-wp code (WPC-1..WPC-3).
 - **Fixture parameters (review minor).** `relayOnce($limit)` is now honoured: `RecordingOutboxStore::start($limit)` caps the relay step's claim, because the core step claims `OutboxConfig::$batch_size`. `deliverTransported($eventClass)` runs only the Action Scheduler actions whose hook is that class's `integration_action`. `WpFixtureParametersConformance` pins both. These checks are not catalogue ids, and `check-due` ignores them.
@@ -66,7 +68,7 @@ Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owne
   ```
 
   On a trial merge of both branches with that one line, the shared `test_audit_sink_fails` passes on wp: 23 tests, with only the WPC-5 failure and the 2 wave-3 skips.
-- **Until then.** `WpAuditConformance` carries `audit.sink-fails` on wp (`#[Group('audit.sink-fails')]`, `test_audit_sink_fails`), plus open-phase and error-path cases. `bin/check-due.php` passes an id when at least one wp test carrying it passed and none failed, so the shared copy being skipped on `WpCommandConformance` does not fail the gate. After WPC-4, both copies run.
+- **Until then.** `WpAuditConformance` carries `audit.sink-fails` on wp (`#[Group('audit.sink-fails')]`, `test_audit_sink_fails`), plus open-phase and error-path cases. `bin/check-due.php` (`Support/DueGate`) tolerates the shared copy being skipped on `WpCommandConformance` only while `TangibleDDD\Conformance\AuditSinkFaults` does not exist. Once that interface is on the branch, a skipped shared copy fails the gate until WPC-4 is applied, and both copies must pass.
 - **Compatibility.** Additive.
 
 ## WPC-1 (wp, wave 3): ship an Action Scheduler `ITransport`
@@ -105,7 +107,65 @@ Author: wp-conformance (branch `wave2/wp-conformance`, based on `6258c0d`). Owne
 
 All are under `tests/Unit/Abi` and run in the root suite.
 
-- **B14** `ProceduralSignatureSnapshotTest`. Static snapshots (nikic/php-parser) of every function and namespace constant under `ddd-wordpress/` at v0.6.0 and v0.6.2..v0.6.6. Each is compared with N's `packages/ddd-wp/wordpress/` under the B14 rule: same FQN; parameter names, types, by-ref and defaults kept; only optional parameters appended. N is also frozen in `fixtures/procedural/current.json`. `php tests/Unit/Abi/bin/generate-fixtures.php [--current]` regenerates the snapshots. It relies on `nikic/php-parser`, which comes in transitively through phpunit/phpstan in require-dev. If packaging wants it explicit, it belongs in root `require-dev` (`^5`).
+- **B14** `ProceduralSignatureSnapshotTest`. Static snapshots (nikic/php-parser) of every function and namespace constant under `ddd-wordpress/` at v0.6.0 and v0.6.2..v0.6.6. Each is compared with N's `packages/ddd-wp/wordpress/` under the B14 rule: same FQN; parameter names, types, by-ref and defaults kept; only optional parameters appended. N is also frozen in `fixtures/procedural/current.json`. `php tests/Unit/Abi/bin/generate-fixtures.php [--current]` regenerates the snapshots. It relies on `nikic/php-parser`, which comes in transitively through phpunit/phpstan in require-dev. **WPC-8 (packaging, review minor):** add `"nikic/php-parser": "^5"` to root `require-dev`, so an upstream bump cannot silently drop it.
 - **B9** `HistoricalScaffoldCompileTest`. The `wp ddd init` output of each tag (v0.6.3..v0.6.6 equal v0.6.2, see the manifest) compiles following that tag's `di/index.php`, and every public service resolves. A transactional command with an announcing event then runs through the scaffolded bus and returns its value.
 - **B15** `GoldenDerivedNamesTest`. Literal 0.6.6 names, observed on N's code paths. Not covered: `tangible_ddd_dashboard_consumer_accent` (dashboard-only filter).
 - **D F4** `ConsumerConfigShapeTest`. Verbatim, sha256-pinned copies of the cred, lms, quiz, certificates (`TangibleInc/tangible-certificates@1ca7ff5`) and datastream (`@04418d5`) `IDDDConfig` implementations load unchanged in separate processes and are accepted by `ConsumerRegistry`, the 0.6 constructors and `HostDefaults::for()`. `IDDDConfig` keeps exactly its eight methods.
+
+## Appendix: patches for other owners (apply with or before this branch)
+
+Both were applied to a detached trial worktree at this branch's HEAD and verified there: `run.sh conformance-wp` exit 0 with 12 of 12, root `vendor/bin/phpunit` 874 green with no Docker. Apply with `git apply` from the repo root.
+
+### WPC-5 (wp)
+
+```diff
+diff --git a/packages/ddd-wp/wordpress/Adapter/WpdbOutboxStore.php b/packages/ddd-wp/wordpress/Adapter/WpdbOutboxStore.php
+index 8141596..e13d30e 100644
+--- a/packages/ddd-wp/wordpress/Adapter/WpdbOutboxStore.php
++++ b/packages/ddd-wp/wordpress/Adapter/WpdbOutboxStore.php
+@@ -121,6 +121,14 @@ final class WpdbOutboxStore implements IOutboxStore {
+   }
+ 
+   public function deadLetter(Claim $c, string $error): bool {
++    // The dead-lettering attempt never went through markFailed(); count it
++    // before move_to_dlq() copies the row (port contract: attempts made).
++    $db = $GLOBALS['wpdb'];
++    $db->query($db->prepare(
++      "UPDATE `{$this->config->table('integration_outbox')}` SET attempts = attempts + 1, last_error = %s WHERE event_id = %s",
++      $error,
++      $c->event_id
++    ));
+     $this->repository->move_to_dlq($c->event_id, $error);
+     return true;
+   }
+```
+
+### WPC-6 (packaging)
+
+```diff
+diff --git a/tests/Unit/Loader/HarnessCliTest.php b/tests/Unit/Loader/HarnessCliTest.php
+index be64901..99b51a5 100644
+--- a/tests/Unit/Loader/HarnessCliTest.php
++++ b/tests/Unit/Loader/HarnessCliTest.php
+@@ -44,10 +44,19 @@ class HarnessCliTest extends TestCase
+         return [
+             'core-pdo' => ['core-pdo'],
+             'compat' => ['compat'],
+-            'conformance-wp' => ['conformance-wp'],
+         ];
+     }
+ 
++    public function test_the_conformance_wp_subcommand_is_wired(): void
++    {
++        // Running it needs Docker and MySQL 8.0 (CI and by hand); here only
++        // the dispatch and the suite + gate it runs.
++        $source = (string) file_get_contents(self::script());
++        $this->assertMatchesRegularExpression('/^\s*conformance-wp\) conformance_wp ;;$/m', $source);
++        $this->assertStringContainsString('tests/Integration/Conformance/phpunit.xml', $source);
++        $this->assertStringContainsString('tests/Integration/Conformance/bin/check-due.php', $source);
++    }
++
+     #[DataProvider('later_waves')]
+     public function test_subcommands_of_later_waves_exit_2_not_yet_implemented(string $sub): void
+     {
+```
