@@ -121,6 +121,14 @@ final class WpdbOutboxStore implements IOutboxStore {
   }
 
   public function deadLetter(Claim $c, string $error): bool {
+    // The dead-lettering attempt never went through markFailed(); count it
+    // before move_to_dlq() copies the row (port contract: attempts made).
+    $db = $GLOBALS['wpdb'];
+    $db->query($db->prepare(
+      "UPDATE `{$this->config->table('integration_outbox')}` SET attempts = attempts + 1, last_error = %s WHERE event_id = %s",
+      $error,
+      $c->event_id
+    ));
     $this->repository->move_to_dlq($c->event_id, $error);
     return true;
   }

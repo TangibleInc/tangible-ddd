@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance scenarios on the WordPress host (register section 4, column wp).
+  Run through the hermetic harness: tests/harness/run.sh conformance-wp.
+
+  Files end in Conformance.php, not Test.php, so the wp-integration suite
+  (phpunit.integration.xml, which scans tests/Integration for *Test.php)
+  never loads them: they need this bootstrap's clock shims and Action
+  Scheduler, which that suite does not load.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="../../../vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         cacheDirectory="../../../.phpunit.cache"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnSkippedTests="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="conformance-wp">
+            <directory suffix="Conformance.php">.</directory>
+        </testsuite>
+    </testsuites>
+
+    <php>
+        <const name="DOING_TANGIBLE_TESTS" value="1" />
+    </php>
+</phpunit>

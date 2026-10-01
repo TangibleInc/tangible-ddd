@@ -1,0 +1,118 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: true
+
+  # Every LongProcess subclass is auto-tagged; boot() discovers the tag at
+  # init:2 and registers each process (plus the resume hooks for its
+  # #[Awaits] events) with the ProcessRunner. No per-saga wiring needed.
+  _instanceof:
+    TangibleDDD\Application\Process\LongProcess:
+      tags: ['ddd.long_process']
+
+  # Config — the framework's concrete, parameterized with THIS consumer's
+  # identity (0.2.5c: no stamped Infra\Config class). Version is wired via
+  # the acme_orders.version container parameter set in di/index.php.
+  TangibleDDD\Infra\DDDConfig:
+    arguments:
+      $prefix: 'acme_orders'
+      $namespace_root: 'AcmeOrders'
+      $version: '%acme_orders.version%'
+
+  TangibleDDD\Infra\IDDDConfig:
+    alias: TangibleDDD\Infra\DDDConfig
+
+  # Correlation (the act bracket: guard + scope + audit record)
+  TangibleDDD\Application\Correlation\CorrelationMiddleware: ~
+
+  # Transaction middleware
+  TangibleDDD\Application\Persistence\TransactionMiddleware: ~
+
+  # Domain Event Dispatcher (no constructor — arguments here would be
+  # silently discarded by PHP)
+  TangibleDDD\Application\Events\IDomainEventDispatcher:
+    class: TangibleDDD\Infra\Services\WordPressEventDispatcher
+
+  # Events Unit of Work and Router
+  TangibleDDD\Application\Events\EventsUnitOfWork: ~
+  TangibleDDD\Application\Events\EventRouter: ~
+  TangibleDDD\Application\Events\DomainEventsPublishMiddleware:
+    arguments:
+      - '@TangibleDDD\Application\Events\EventsUnitOfWork'
+      - '@TangibleDDD\Application\Events\EventRouter'
+
+  # Outbox
+  TangibleDDD\Application\Outbox\OutboxConfig:
+    factory: ['TangibleDDD\Application\Outbox\OutboxConfig', 'from_options']
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+
+  TangibleDDD\Infra\IOutboxRepository:
+    class: TangibleDDD\Infra\Persistence\OutboxRepository
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+
+  TangibleDDD\Application\Outbox\IOutboxPublisher:
+    class: TangibleDDD\Infra\Services\ActionSchedulerOutboxPublisher
+    arguments:
+      - '@TangibleDDD\Application\Outbox\OutboxConfig'
+
+  # Resolved by the outbox processing cron (ddd hooks.php) every tick.
+  # Autowired (~) by type so it can't drift from the constructor arg order.
+  TangibleDDD\Infra\Services\OutboxProcessor: ~
+
+  # Integration Event Bus
+  TangibleDDD\Application\Events\IIntegrationEventBus:
+    class: TangibleDDD\Infra\Services\OutboxIntegrationEventBus
+
+  # Long-running Processes
+  TangibleDDD\Infra\IProcessRepository:
+    class: TangibleDDD\Infra\Persistence\ProcessRepository
+    arguments:
+      - '@TangibleDDD\Infra\IDDDConfig'
+
+  # Autowired — hand-listed args drifted from the real constructor once
+  # already and shipped to every consumer; don't reintroduce them.
+  TangibleDDD\Application\Process\ProcessRunner: ~
+
+  # Command Audit (optional - configure Redactor separately)
+  TangibleDDD\Application\Logging\Redactor: ~
+
+  # Plugin-specific service autoloading
+  AcmeOrders\Application\CommandHandlers\:
+    public: true
+    resource: '../../ddd-src/Application/CommandHandlers'
+    shared: false
+
+  AcmeOrders\Application\QueryHandlers\:
+    public: true
+    resource: '../../ddd-src/Application/QueryHandlers'
+    shared: false
+
+  AcmeOrders\Application\EventHandlers\:
+    public: true
+    resource: '../../ddd-src/Application/EventHandlers'
+
+  # Integration listeners: fact-in, command-out translators for the async
+  # surface — eager-booted by register_hooks() alongside event handlers.
+  AcmeOrders\Application\IntegrationListeners\:
+    public: true
+    resource: '../../ddd-src/Application/IntegrationListeners'
+
+  AcmeOrders\Application\Services\:
+    public: true
+    resource: '../../ddd-src/Application/Services'
+
+  AcmeOrders\Domain\Services\:
+    public: true
+    resource: '../../ddd-src/Domain/Services'
+
+  AcmeOrders\Infra\Services\:
+    public: true
+    resource: '../../ddd-src/Infra/Services'
+
+  AcmeOrders\Infra\Persistence\:
+    public: true
+    resource: '../../ddd-src/Infra/Persistence'

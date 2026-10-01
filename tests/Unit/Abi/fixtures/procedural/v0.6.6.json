@@ -1,0 +1,1201 @@
+{
+    "source": "v0.6.6:ddd-wordpress",
+    "functions": {
+        "TangibleDDD\\WordPress\\SelfConsumer\\di": {
+            "file": "self/index.php",
+            "byRef": false,
+            "returnType": "Symfony\\Component\\DependencyInjection\\ContainerBuilder",
+            "params": [
+                {
+                    "name": "container_instance",
+                    "type": "?Symfony\\Component\\DependencyInjection\\ContainerBuilder",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\acquire_lock": {
+            "file": "locking.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "name",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "duration",
+                    "type": "int",
+                    "default": "30",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "retries",
+                    "type": "int",
+                    "default": "10",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "retry_interval_ms",
+                    "type": "int",
+                    "default": "1000",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\assert_process_catalog_entry": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "class",
+                    "type": "mixed",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "metadata",
+                    "type": "mixed",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\boot": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "label",
+                    "type": "?string",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "namespace_root",
+                    "type": "?string",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\boot_module": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "host_prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "namespace_root",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\command_audit_enabled": {
+            "file": "audit.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\command_audit_finalise": {
+            "file": "audit.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "data",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\command_audit_preflight": {
+            "file": "audit.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "data",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\consumers": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": []
+        },
+        "TangibleDDD\\WordPress\\ddd_add_column_if_missing": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "column",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "definition",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "after",
+                    "type": "?string",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_add_index_if_missing": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "index",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "columns",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_explicit_migrations": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": []
+        },
+        "TangibleDDD\\WordPress\\ddd_maybe_migrate": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_pending_migrations": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "installed",
+                    "type": "int",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "current",
+                    "type": "int",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\ddd_schema_version_key": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "string",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\decrypt_secret": {
+            "file": "secret.php",
+            "byRef": false,
+            "returnType": "?string",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "b64",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "info",
+                    "type": "string",
+                    "default": "'ddd-secret'",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\derive_key": {
+            "file": "secret.php",
+            "byRef": false,
+            "returnType": "string",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "info",
+                    "type": "string",
+                    "default": "'ddd-secret'",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\encrypt_secret": {
+            "file": "secret.php",
+            "byRef": false,
+            "returnType": "string",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "plaintext",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "info",
+                    "type": "string",
+                    "default": "'ddd-secret'",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\infrastructure_action": {
+            "file": "infrastructure-events.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "action",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "callback",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "priority",
+                    "type": "int",
+                    "default": "10",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_behaviour_workflow_item_tables": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_behaviour_workflow_meta_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_behaviour_workflow_tables": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_command_audit_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_outbox_tables": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_process_tables": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_tables": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\install_touches_table": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\integration_action": {
+            "file": "integration-events.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "event_class",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "callback",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "priority",
+                    "type": "int",
+                    "default": "10",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "arg_count",
+                    "type": "int",
+                    "default": "1",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\integration_listener": {
+            "file": "integration-events.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "event_class",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "translate",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\module_runtime_state": {
+            "file": "modules.php",
+            "byRef": true,
+            "returnType": "array",
+            "params": []
+        },
+        "TangibleDDD\\WordPress\\outbox_enabled": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\process_entries_from_host_container": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "container",
+                    "type": "object",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\process_entries_from_module_container": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "container",
+                    "type": "object",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\process_entries_from_runtime_container": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "container",
+                    "type": "object",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "allow_retained_tags",
+                    "type": "bool",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\processes_enabled": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_dashboard": {
+            "file": "dashboard.php",
+            "byRef": false,
+            "returnType": "TangibleDDD\\WordPress\\Admin\\Dashboard\\Dashboard",
+            "params": [
+                {
+                    "name": "frameworkPath",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_event_handlers": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "fail_fast",
+                    "type": "bool",
+                    "default": "false",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_hooks": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "label",
+                    "type": "?string",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "namespace_root",
+                    "type": "?string",
+                    "default": "null",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_migration_hooks": {
+            "file": "migrations.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_outbox_hooks": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_process_entries": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "runner",
+                    "type": "TangibleDDD\\Application\\Process\\ProcessRunner",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "entries",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_process_hooks": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "di_getter",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\register_processes_from_container": {
+            "file": "hooks.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "container",
+                    "type": null,
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "tag",
+                    "type": "string",
+                    "default": "'ddd.long_process'",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\release_lock": {
+            "file": "locking.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "name",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\reset_module_runtime": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": []
+        },
+        "TangibleDDD\\WordPress\\sql_placeholders": {
+            "file": "db.php",
+            "byRef": false,
+            "returnType": "string",
+            "params": [
+                {
+                    "name": "items",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "placeholder",
+                    "type": "string",
+                    "default": "'%d'",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "placeholder_empty",
+                    "type": "string",
+                    "default": "''",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\table_add_column_if_missing": {
+            "file": "db.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "column",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "definition_sql",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\table_add_index_if_missing": {
+            "file": "db.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "index_name",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "index_sql_fragment",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\table_has_column": {
+            "file": "db.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "column",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\table_reachable": {
+            "file": "tables.php",
+            "byRef": false,
+            "returnType": "bool",
+            "params": [
+                {
+                    "name": "table",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\touches_index_fact": {
+            "file": "touches.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "fact",
+                    "type": "TangibleDDD\\Domain\\Events\\IIntegrationEvent",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "event_id",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "correlation_id",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "command_id",
+                    "type": "?string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\touches_record": {
+            "file": "touches.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "config",
+                    "type": "TangibleDDD\\Infra\\IDDDConfig",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "rows",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\validate_module_container_contract": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "host_prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "container",
+                    "type": "object",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\validate_module_process_entries": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "array",
+            "params": [
+                {
+                    "name": "host_prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "namespace_root",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "entries",
+                    "type": "array",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\wire_module": {
+            "file": "modules.php",
+            "byRef": false,
+            "returnType": "void",
+            "params": [
+                {
+                    "name": "host_prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "namespace_root",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        },
+        "TangibleDDD\\WordPress\\with_lock": {
+            "file": "locking.php",
+            "byRef": false,
+            "returnType": "mixed",
+            "params": [
+                {
+                    "name": "prefix",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "name",
+                    "type": "string",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "callback",
+                    "type": "callable",
+                    "default": null,
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "duration",
+                    "type": "int",
+                    "default": "30",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "retries",
+                    "type": "int",
+                    "default": "10",
+                    "byRef": false,
+                    "variadic": false
+                },
+                {
+                    "name": "retry_interval_ms",
+                    "type": "int",
+                    "default": "1000",
+                    "byRef": false,
+                    "variadic": false
+                }
+            ]
+        }
+    },
+    "constants": {
+        "TangibleDDD\\WordPress\\DDD_SCHEMA_VERSION": "7"
+    }
+}
