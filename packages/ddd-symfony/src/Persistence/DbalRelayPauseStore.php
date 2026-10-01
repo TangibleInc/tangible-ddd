@@ -6,7 +6,6 @@ namespace TangibleDDD\Symfony\Persistence;
 
 use Doctrine\DBAL\Connection;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IRelayPauseStore on `{prefix}ddd_relay_pauses` (register 3.4, C25): one
@@ -24,7 +23,7 @@ final class DbalRelayPauseStore implements IRelayPauseStore {
   private readonly string $table;
 
   public function __construct(private readonly Connection $connection, string $tablePrefix = '') {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_relay_pauses');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_relay_pauses');
   }
 
   public function connection(): Connection {

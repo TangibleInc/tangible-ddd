@@ -9,6 +9,7 @@ use Psr\Log\NullLogger;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Infra\IDDDConfig;
 use TangibleDDD\Infra\Services\OutboxProcessor;
+use TangibleDDD\Runtime\Delivery\ISubscriberProbe;
 use TangibleDDD\Runtime\Delivery\ITransport;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\ITransactionBoundary;
@@ -38,6 +39,9 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  *   CR-W4CE-9); this wrapper only adds ProcessingResult::$claim_dead_letters
  *   to the report's dead_lettered list. It never signals them a second time.
  * - between_submit_and_accept(): the core test seam, for conformance.
+ * - AW3: an ISubscriberProbe (the bundle's SubscriptionProbe over every
+ *   consumer's subscription map) lets the core step raise
+ *   FactDeliveredUnheard for a fact nobody subscribes to.
  */
 final class Relay {
 
@@ -55,6 +59,7 @@ final class Relay {
     private readonly OutboxConfig $config = new OutboxConfig(),
     ?LoggerInterface $logger = null,
     ?IDDDConfig $consumer = null,
+    private readonly ?ISubscriberProbe $probe = null,
   ) {
     $this->logger = $logger ?? new NullLogger();
     $this->consumer = $consumer ?? new SymfonyConsumerConfig('ddd', 'App');
@@ -81,7 +86,7 @@ final class Relay {
       null,
       $this->config,
       null,
-      null,
+      $this->probe,
       $this->logger,
       $this->clock,
       $this->outbox,

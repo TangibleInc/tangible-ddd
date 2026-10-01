@@ -25,6 +25,8 @@ use TangibleDDD\Symfony\Runtime\Wakeup\IWakeupRelayStep;
  *   ddd:relay --time-limit=3600   stop after N seconds (supervisor restarts it)
  *   ddd:relay --sleep=1           idle poll interval when a step claimed nothing
  *
+ *   ddd:relay --consumer=billing  only that consumer (wave 5; default: every consumer, in turn)
+ *
  * Run it on a DIRECT (non-pooled) Postgres connection. SIGTERM / SIGINT stop
  * the loop after the current step. Each step is Relay::run_once(), i.e. the
  * core relay step (OutboxProcessor port form, CONF-3), followed by the
@@ -54,6 +56,10 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
   /** @var \Closure(int): void */
   private readonly \Closure $sleeper;
 
+  /**
+   * @param array<string, array{0: Relay, 1: ?IWakeupRelayStep}> $lanes several consumers (wave 5): name → its relay
+   *   and wakeup step, primary first; empty = the one consumer of $relay / $wakeups
+   */
   public function __construct(
     private readonly Relay $relay,
     private readonly int $defaultLimit,
@@ -63,6 +69,7 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
     private readonly int $maxConsecutiveFailures = 10,
     private readonly ?IWakeupRelayStep $wakeups = null,
     private readonly ?IRelayWaiter $waiter = null,
+    private readonly array $lanes = [],
   ) {
     $this->logger = $logger ?? new NullLogger();
     $this->sleeper = $sleeper === null ? static function (int $s): void { sleep($s); } : \Closure::fromCallable($sleeper);
@@ -74,7 +81,20 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
       ->addOption('once', null, InputOption::VALUE_NONE, 'Run one relay step and exit')
       ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Rows per relay step', (string) $this->defaultLimit)
       ->addOption('time-limit', null, InputOption::VALUE_REQUIRED, 'Stop after this many seconds')
-      ->addOption('sleep', null, InputOption::VALUE_REQUIRED, 'Seconds to wait when a step found nothing', (string) $this->defaultSleep);
+      ->addOption('sleep', null, InputOption::VALUE_REQUIRED, 'Seconds to wait when a step found nothing', (string) $this->defaultSleep)
+      ->addOption('consumer', null, InputOption::VALUE_REQUIRED, 'Relay only this consumer (its name in tangible_ddd.consumers); default: every consumer');
+  }
+
+  /** @return array<string, array{0: Relay, 1: ?IWakeupRelayStep}>|null the lanes to run; null for an unknown consumer */
+  private function lanes(?string $consumer): ?array {
+    $lanes = $this->lanes === [] ? ['' => [$this->relay, $this->wakeups]] : $this->lanes;
+    if ($consumer === null) {
+      return $lanes;
+    }
+    if ($this->lanes === []) {
+      return $lanes; // one consumer: --consumer can only name it
+    }
+    return isset($lanes[$consumer]) ? [$consumer => $lanes[$consumer]] : null;
   }
 
   public function getSubscribedSignals(): array {
@@ -92,14 +112,22 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
     $timeLimit = $input->getOption('time-limit');
     $deadline = $timeLimit === null ? null : microtime(true) + (float) $timeLimit;
     $once = (bool) $input->getOption('once');
+    $consumer = $input->getOption('consumer');
+    $lanes = $this->lanes($consumer === null ? null : (string) $consumer);
+    if ($lanes === null) {
+      $output->writeln(sprintf('<error>ddd:relay: unknown consumer "%s"; one of %s</error>', $consumer, implode(', ', array_keys($this->lanes))));
+      return Command::FAILURE;
+    }
 
     $totals = ['claimed' => 0, 'accepted' => 0, 'retried' => 0, 'dlq' => 0, 'lost' => 0, 'wakeups' => 0, 'requeued' => 0];
     $failures = 0;
     $exit = Command::SUCCESS;
     do {
       try {
-        $report = $this->relay->run_once($limit);
-        $wakeups = $this->wakeups?->run_once($limit);
+        $reports = [];
+        foreach ($lanes as [$relay, $wakeupStep]) {
+          $reports[] = [$relay->run_once($limit), $wakeupStep?->run_once($limit)];
+        }
         $failures = 0;
       } catch (DbalException $e) {
         $failures++;
@@ -121,22 +149,26 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
         continue;
       }
 
-      $totals['claimed'] += count($report->claimed);
-      $totals['accepted'] += count($report->accepted);
-      $totals['retried'] += count($report->retried);
-      $totals['dlq'] += count($report->dead_lettered);
-      $totals['lost'] += count($report->lost);
-      $totals['wakeups'] += count($wakeups?->projected ?? []);
-      $totals['requeued'] += count($wakeups?->requeued ?? []);
-      if ($output->isVerbose() && ($report->claimed !== [] || $wakeups?->did_work())) {
-        $output->writeln(sprintf('claimed %d, accepted %d, retried %d, dead-lettered %d, lease lost %d, wakeups projected %d',
-          count($report->claimed), count($report->accepted), count($report->retried), count($report->dead_lettered), count($report->lost),
-          count($wakeups?->projected ?? [])));
+      $idle = true;
+      foreach ($reports as [$report, $wakeups]) {
+        $totals['claimed'] += count($report->claimed);
+        $totals['accepted'] += count($report->accepted);
+        $totals['retried'] += count($report->retried);
+        $totals['dlq'] += count($report->dead_lettered);
+        $totals['lost'] += count($report->lost);
+        $totals['wakeups'] += count($wakeups?->projected ?? []);
+        $totals['requeued'] += count($wakeups?->requeued ?? []);
+        if ($output->isVerbose() && ($report->claimed !== [] || $wakeups?->did_work())) {
+          $output->writeln(sprintf('claimed %d, accepted %d, retried %d, dead-lettered %d, lease lost %d, wakeups projected %d',
+            count($report->claimed), count($report->accepted), count($report->retried), count($report->dead_lettered), count($report->lost),
+            count($wakeups?->projected ?? [])));
+        }
+        $idle = $idle && $report->claimed === [] && !($wakeups?->did_work() ?? false);
       }
       if ($once || $this->stop || ($deadline !== null && microtime(true) >= $deadline)) {
         break;
       }
-      if ($report->claimed === [] && !($wakeups?->did_work() ?? false) && $sleep > 0) {
+      if ($idle && $sleep > 0) {
         if ($this->waiter !== null) {
           $this->waiter->wait((float) $sleep);
         } else {

@@ -10,7 +10,7 @@ use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
 use TangibleDDD\Runtime\Ops\IOperatorItemSource;
 use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
-use TangibleDDD\Runtime\PrefixedTableNames;
+use TangibleDDD\Symfony\Persistence\TableNames;
 use TangibleDDD\Symfony\Persistence\Time;
 
 /**
@@ -23,6 +23,9 @@ use TangibleDDD\Symfony\Persistence\Time;
  * No repair labels: a failing pair is still being retried by Messenger, and
  * an exhausted one has had its compensation (on_exhausted / failure_command);
  * its fact message, if Messenger gave up too, is in layer `transport`.
+ * E3: an exhausted pair whose compensation sent a D1 failure command says
+ * which and when (`exhausted: <error>; failure command <class> ran at <time>`,
+ * noted by DeliveryNotes).
  * The sf ledger is per consumer database, so every row is $consumer's.
  * Oldest first (updated_at); storage errors propagate.
  */
@@ -36,7 +39,7 @@ final class DbalLedgerOperatorSource implements IOperatorItemSource {
     string $tablePrefix = '',
     private readonly int $budget = IntegrationDelivery::DEFAULT_BUDGET,
   ) {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_delivery_ledger');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_delivery_ledger');
   }
 
   public function items(?Layer $layer, int $limit): array {
@@ -44,7 +47,7 @@ final class DbalLedgerOperatorSource implements IOperatorItemSource {
       return [];
     }
     $rows = $this->connection->fetchAllAssociative(
-      "SELECT subscriber_id, event_id, attempts, last_error, exhausted_at, updated_at FROM {$this->table}
+      "SELECT subscriber_id, event_id, attempts, last_error, exhausted_at, failure_command, failure_command_at, updated_at FROM {$this->table}
         WHERE delivered_at IS NULL AND (attempts > 0 OR exhausted_at IS NOT NULL)
         ORDER BY updated_at, subscriber_id, event_id LIMIT ?",
       [$limit],
@@ -57,11 +60,23 @@ final class DbalLedgerOperatorSource implements IOperatorItemSource {
       $r['subscriber_id'] . '@' . $r['event_id'],
       (int) $r['attempts'],
       $this->budget,
-      $r['exhausted_at'] === null
-        ? ($r['last_error'] === null ? null : (string) $r['last_error'])
-        : 'exhausted' . ($r['last_error'] === null ? '' : ': ' . $r['last_error']),
+      self::error_of($r),
       Time::from_db((string) $r['updated_at']),
       [],
     ), $rows);
+  }
+
+  /** @param array<string, mixed> $r */
+  private static function error_of(array $r): ?string {
+    if ($r['exhausted_at'] === null) {
+      return $r['last_error'] === null ? null : (string) $r['last_error'];
+    }
+    $error = 'exhausted' . ($r['last_error'] === null ? '' : ': ' . $r['last_error']);
+    if ($r['failure_command'] !== null) {
+      $at = $r['failure_command_at'] === null ? null : Time::from_db((string) $r['failure_command_at']);
+      $error .= sprintf('; failure command %s ran at %s', $r['failure_command'],
+        $at?->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM) ?? '?');
+    }
+    return $error;
   }
 }

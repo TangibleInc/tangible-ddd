@@ -11,7 +11,6 @@ use TangibleDDD\Runtime\Outbox\DeadLetter;
 use TangibleDDD\Runtime\Outbox\IOutboxAdministration;
 use TangibleDDD\Runtime\Outbox\OutboxAdministrationRefused;
 use TangibleDDD\Runtime\Outbox\OutboxRowNotFound;
-use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
@@ -35,7 +34,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
   private readonly IClock $clock;
 
   public function __construct(private readonly Connection $connection, ?IClock $clock = null, string $tablePrefix = '') {
-    $tables = new PrefixedTableNames($tablePrefix);
+    $tables = TableNames::of($tablePrefix);
     $this->outbox = $tables->table('ddd_outbox');
     $this->dlq = $tables->table('ddd_dlq');
     $this->clock = $clock ?? new SystemClock();

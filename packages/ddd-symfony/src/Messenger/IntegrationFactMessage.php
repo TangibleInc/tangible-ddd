@@ -16,7 +16,12 @@ namespace TangibleDDD\Symfony\Messenger;
  */
 final class IntegrationFactMessage {
 
-  /** @param array<string, mixed> $envelope */
+  /**
+   * @param string $consumer the consumer that raised the fact (its outbox)
+   * @param array<string, mixed> $envelope
+   * @param ?string $to the consumer whose subscribers this copy is for; null = the raiser
+   *   (wave 5: a fact raised by one consumer is routed to every other consumer that subscribes to it)
+   */
   public function __construct(
     public readonly string $consumer,
     public readonly string $event_id,
@@ -24,5 +29,11 @@ final class IntegrationFactMessage {
     public readonly string $event_class,
     public readonly string $integration_action,
     public readonly array $envelope,
+    private readonly ?string $to = null,
   ) {}
+
+  /** The consumer this copy is delivered to (a message serialized before wave 5 has none: the raiser). */
+  public function recipient(): string {
+    return isset($this->to) ? $this->to : $this->consumer;
+  }
 }

@@ -13,6 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use TangibleDDD\Runtime\Ops\IOperatorView;
 use TangibleDDD\Runtime\Ops\Layer;
 use TangibleDDD\Runtime\Ops\OperatorItem;
+use TangibleDDD\Symfony\Ops\ConsumersOperatorView;
 
 /**
  * `ddd:ops:list [--layer=<layer>] [--limit=100] [--format=table|json]`: the
@@ -21,7 +22,9 @@ use TangibleDDD\Runtime\Ops\OperatorItem;
  * transport, attempts against each layer's budget, the last error, and the
  * repairs that apply (`ddd:ops:dlq:*`, `ddd:ops:stranded`,
  * `messenger:failed:*`). Read-only. `--format=json` prints
- * OperatorItem::to_array() rows.
+ * OperatorItem::to_array() rows. With several consumers (wave 5) the view
+ * covers all of them, the table gains a consumer column, and
+ * `--consumer=<name>` narrows it to one.
  */
 #[AsCommand(name: 'ddd:ops:list', description: 'List failures across every layer (relay, delivery, wakeup, process, transport)')]
 final class OpsListCommand extends Command {
@@ -45,7 +48,8 @@ final class OpsListCommand extends Command {
     $this
       ->addOption('layer', null, InputOption::VALUE_REQUIRED, "Only this layer ($layers)")
       ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Rows to list', '100')
-      ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table or json', 'table');
+      ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table or json', 'table')
+      ->addOption('consumer', null, InputOption::VALUE_REQUIRED, 'Only this consumer (its name in tangible_ddd.consumers)');
   }
 
   protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -62,7 +66,19 @@ final class OpsListCommand extends Command {
       return Command::INVALID;
     }
 
-    $items = $this->view->list($layer, max(1, (int) $input->getOption('limit')));
+    $limit = max(1, (int) $input->getOption('limit'));
+    $consumer = $input->getOption('consumer');
+    $multi = $this->view instanceof ConsumersOperatorView;
+    try {
+      $items = match (true) {
+        $multi => $this->view->list($layer, $limit, $consumer === null ? null : (string) $consumer),
+        $consumer === null => $this->view->list($layer, $limit),
+        default => array_values(array_filter($this->view->list($layer, $limit), static fn (OperatorItem $i) => $i->consumer === $consumer)),
+      };
+    } catch (\InvalidArgumentException $e) {
+      $output->writeln("<error>{$e->getMessage()}</error>");
+      return Command::INVALID;
+    }
 
     if ($format === 'json') {
       $output->writeln(json_encode(
@@ -78,10 +94,11 @@ final class OpsListCommand extends Command {
     }
 
     $table = new Table($output);
-    $table->setHeaders(['layer', 'key', 'attempts', 'first seen (UTC)', 'last error', 'repairs']);
+    $table->setHeaders([...($multi ? ['consumer'] : []), 'layer', 'key', 'attempts', 'first seen (UTC)', 'last error', 'repairs']);
     $used = [];
     foreach ($items as $i) {
       $table->addRow([
+        ...($multi ? [$i->consumer] : []),
         $i->layer->value,
         $i->key,
         $i->budget === null ? (string) $i->attempts : "{$i->attempts}/{$i->budget}",

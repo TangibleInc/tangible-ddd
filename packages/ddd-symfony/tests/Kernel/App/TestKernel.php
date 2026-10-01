@@ -106,13 +106,23 @@ final class TestKernel extends Kernel {
       ],
     ]);
 
-    $container->extension('tangible_ddd', [
-      'consumer' => [
-        'prefix' => 'sfk',
-        'namespace_root' => __NAMESPACE__,
-        // version_env: the README's env form, with the variable unset (resolves to null, L4).
-        'version' => $this->variant === 'version_env' ? '%env(default::DDD_SF_TEST_UNSET_VERSION)%' : '0.7.0-test',
+    // multi: two consumers (wave 5), the app and the Billing context in Postgres schema `billing`.
+    $consumers = $this->variant === 'multi' ? ['consumers' => [
+      'sfk' => ['namespace_root' => __NAMESPACE__, 'version' => '0.7.0-test'],
+      'bil' => [
+        'namespace_root' => 'TangibleDDD\\Symfony\\Tests\\Kernel\\Billing',
+        'schema' => 'billing',
+        'transport' => 'ddd_facts_bil',
+        'wakeup_transport' => 'ddd_wakeups_bil',
+        'delivery' => ['budget' => 2, 'retry_delay_ms' => 0],
       ],
+    ]] : ['consumer' => [
+      'prefix' => 'sfk',
+      'namespace_root' => __NAMESPACE__,
+      // version_env: the README's env form, with the variable unset (resolves to null, L4).
+      'version' => $this->variant === 'version_env' ? '%env(default::DDD_SF_TEST_UNSET_VERSION)%' : '0.7.0-test',
+    ]];
+    $container->extension('tangible_ddd', $consumers + [
       'connection' => 'default',
       'transaction' => match ($this->variant) {
         'flush' => ['entity_manager' => 'test.flusher'],
@@ -122,6 +132,11 @@ final class TestKernel extends Kernel {
       'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
       // no_listen: D14 off (no NOTIFY, ddd:relay polls), the "NOTIFY suppressed" case.
       'relay' => $this->variant === 'no_listen' ? ['listen' => false] : [],
+      // workflow_settings: W3, the igniter clocks and the facts transport's redeliver_timeout.
+      // W2: a config type listed explicitly (DigestStepConfig is found by resource loading).
+      'workflow' => ['behaviour_types' => [\TangibleDDD\Symfony\Tests\Support\Fixtures\StopBehaviourConfig::class]]
+        + ($this->variant === 'workflow_settings' ? ['stale_start_seconds' => 120, 'stale_claim_seconds' => 300] : []),
+      'messenger' => $this->variant === 'workflow_settings' ? ['redeliver_timeout_seconds' => 240] : [],
       // audit: D12 lists next to #[Audit] (AttributeAuditPolicy), into a readable sink.
       'audit' => $this->variant === 'audit' ? [
         'sink' => 'test.audit_sink',
@@ -146,6 +161,8 @@ final class TestKernel extends Kernel {
     $services->alias('test.workflow_ledger', \TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger::class)->public();
     $services->alias('test.workflow_igniter', 'tangible_ddd.workflow_igniter')->public();
     $services->alias('test.subscriptions', 'tangible_ddd.subscriptions')->public();
+    $services->alias('test.workflow_continuations', 'tangible_ddd.workflow_continuations')->public();
+    $services->alias('test.chunked_digest', Workflows\ChunkedDigestWorkflow::class)->public();
     $services->alias('test.effect_middleware', 'tangible_ddd.middleware.effect')->public();
     $services->alias('test.process_lock', \TangibleDDD\Runtime\Lock\IProcessLock::class)->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Process,Reactions,Workflows}/')
@@ -154,6 +171,9 @@ final class TestKernel extends Kernel {
       ->exclude(__DIR__ . '/Events/');
     if ($this->variant === 'orm') {
       $services->load(__NAMESPACE__ . '\\Orm\\', __DIR__ . '/Orm/{Commands,CommandHandlers}/');
+    }
+    if ($this->variant === 'multi') {
+      $services->load('TangibleDDD\\Symfony\\Tests\\Kernel\\Billing\\', \dirname(__DIR__) . '/Billing/{Commands,CommandHandlers,Listeners,Process}/');
     }
   }
 }

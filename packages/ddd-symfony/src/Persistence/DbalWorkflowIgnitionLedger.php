@@ -10,7 +10,6 @@ use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgnition;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgnitionKey;
 use TangibleDDD\Runtime\IClock;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * The core D10 workflow ignition ledger (IWorkflowIgnitionLedger, ruling
@@ -48,7 +47,7 @@ final class DbalWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
     string $tablePrefix = '',
     private readonly ?IClock $clock = null,
   ) {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_workflow_ignitions');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_workflow_ignitions');
   }
 
   /** uuid5(event_id, kind): the same key as core WorkflowIgnitionKey::for_fact(). */

@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use TangibleDDD\Runtime\Delivery\IRelayWakeup;
 use TangibleDDD\Runtime\NestedTransactionRejected;
-use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\Scheduling\ClaimedWakeup;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
@@ -44,7 +43,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
     string $tablePrefix = '',
     private readonly ?IRelayWakeup $wakeup = null,
   ) {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_wakeups');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_wakeups');
   }
 
   public function connection(): Connection {

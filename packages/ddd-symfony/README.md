@@ -5,16 +5,17 @@ Install and configure: [examples/symfony/README.md](../../examples/symfony/READM
 
 | Namespace | Contents |
 |---|---|
-| `Bundle` | `TangibleDddBundle` (configuration, service wiring, consumer registration and HostDefaults at boot) |
-| `DependencyInjection` | handler and `handle()` locators, compile-time subscription map, domain-listener map, Messenger health check, `#[AsIntegrationListener]`, `#[AsDomainEventListener]` |
-| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `DbalProcessStore`, `DbalWakeupScheduler`, D10 `DbalBehaviourWorkflowRepository` / `DbalWorkItemRepository` / `DbalWorkflowIgnitionLedger`, D1 `DbalEffectJournal` (`IEffectJournal`, with `invalidate`), `EntityManagerSession`, `PersistenceConflict`, `ConnectionTopology`, `PostgresSchema` |
+| `Bundle` | `TangibleDddBundle` (configuration, service wiring, consumer registration and HostDefaults at boot), `ConsumerSettings` (the resolved `consumer:` / `consumers:` config) |
+| `DependencyInjection` | handler and `handle()` locators, compile-time subscription map, domain-listener map, behaviour-type map (W2), consumer assignment (wave 5), Messenger health check, `#[AsIntegrationListener]`, `#[AsDomainEventListener]` |
+| `Persistence` | `DbalTransactionBoundary`, `DbalPostgresOutboxStore`, `DbalRelayPauseStore`, `DbalDeliveryLedger`, `DbalOutboxAdministration`, `DbalProcessStore`, `DbalWakeupScheduler`, D10 `DbalBehaviourWorkflowRepository` / `DbalWorkItemRepository` / `DbalWorkflowIgnitionLedger`, D1 `DbalEffectJournal` (`IEffectJournal`, with `invalidate`), `EntityManagerSession`, `PersistenceConflict`, `ConnectionTopology`, `PostgresSchema`, `TableNames` (`[schema.]prefix`) |
 | `Lock` | `PostgresAdvisoryProcessLock` (session `pg_try_advisory_lock`, register 5.2) |
-| `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler`, `ProcessWakeupMessage`, `ProcessWakeupHandler` |
-| `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step), `Wakeup\WakeupRelay` (due intents → `ddd_wakeups`, stranded scan), `Wakeup\PostgresNotifyRelayWakeup` / `PostgresListenWaiter` (D14), `SymfonySignalDispatcher`, D5 actor providers |
-| `Ops` | D9 operator-view sources: `DbalLedgerOperatorSource` (delivery), `DbalWakeupOperatorSource` (wakeup), `MessengerFailureTransportSource` (transport); the view itself is core `PortOperatorView` (service `tangible_ddd.operator_view`, alias `IOperatorView`) |
+| `Messenger` | `IntegrationFactMessage`, `MessengerFactTransport` (ITransport), `IntegrationFactHandler`, `ProcessWakeupMessage`, `ProcessWakeupHandler`, `ConsumerRouter` and `FactAudience` (several consumers) |
+| `Runtime` | `CompiledSubscriptionRegistry`, `DddRuntimeReset`, `Relay` (the core relay step), `SubscriptionProbe`, `DeliveryNotes`, `UnheardFactNotes`, `Wakeup\WakeupRelay` (due intents → `ddd_wakeups`, stranded scan), `Wakeup\PostgresNotifyRelayWakeup` / `PostgresListenWaiter` (D14), `SymfonySignalDispatcher`, D5 actor providers |
+| `Workflow` | W1: `ReschedulesThroughWakeups` (the `WorkflowHandler::reschedule()` of this host), `IContinuesWorkflows`, `WorkflowContinuations`, `WorkflowWakeTarget` |
+| `Ops` | D9 operator-view sources: `DbalLedgerOperatorSource` (delivery), `DbalWakeupOperatorSource` (wakeup), `DbalUnheardFactSource` (relay, unheard facts), `DbalWorkflowOperatorSource` (workflow), `MessengerFailureTransportSource` (transport); the view itself is core `PortOperatorView` (service `tangible_ddd.operator_view`, alias `IOperatorView`), or `ConsumersOperatorView` over one per consumer |
 | `Console` | `ddd:relay`, `ddd:schema:dump`, `ddd:ops:list`, `ddd:ops:dlq:list`, `ddd:ops:dlq:replay`, `ddd:ops:dlq:retry`, `ddd:ops:dlq:discard`, `ddd:ops:stranded`, `ddd:ops:pause`, `ddd:ops:resume` |
 
-Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd.table_prefix`).
+Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = the consumer's tables, `tangible_ddd.table_prefix` by default).
 
 ## Schema evolution (append-only, L5)
 
@@ -65,12 +66,16 @@ apply:
 | Layer | Source | Budget | Repairs |
 |---|---|---|---|
 | `relay` | outbox DLQ (`IOutboxAdministration`) | the row's `max_attempts` | `ddd:ops:dlq:retry` / `replay` / `discard` |
-| `delivery` | `ddd_delivery_ledger` pairs that failed or are exhausted | `delivery.budget` | none (Messenger is retrying, or the compensation ran) |
-| `wakeup` | `ddd_wakeups` intents that failed | 10 | `rearm` when exhausted (`ddd:ops:stranded --rearm`) |
+| `relay` | accepted facts no consumer subscribes to (`ddd_outbox.unheard_at`, AW3) | - | none (delivered; a renamed fact or a listener never wired up) |
+| `delivery` | `ddd_delivery_ledger` pairs that failed or are exhausted; an exhausted D1 pair names the failure command that ran and when (E3) | `delivery.budget` | none (Messenger is retrying, or the compensation ran) |
+| `wakeup` | `ddd_wakeups` intents that failed (process wakeups and workflow continuations) | 10 | `rearm` when exhausted (`ddd:ops:stranded --rearm`) |
 | `process` | stranded `running` processes (`IProcessStore::find_stranded`) | - | `ddd:ops:stranded --resume` / `--fail` |
+| `workflow` | failed work items, failed workflows, start markers older than `workflow.stale_start_seconds` (W5) | `WorkflowHandler::$max_retries` for items | none yet |
 | `transport` | the Messenger failure transport (`messenger.failure_transport`) | - (the ledger counts it) | `messenger:failed:retry` / `remove` |
 
 The same view is the `IOperatorView` service for a host's own admin page.
+With several consumers it covers all of them, the table has a consumer
+column, and `--consumer=<name>` narrows it.
 
 ## Processes and wakeups
 
@@ -130,6 +135,57 @@ The same view is the `IOperatorView` service for a host's own admin page.
 
 Usage, including D13 (cause, process id, step index): [examples/symfony/README.md](../../examples/symfony/README.md).
 The E section 10 reference scenario is `tests/Kernel/ReferenceScenarioTest.php`.
+
+## Wave 5: TXP process-kernel demands and several consumers
+
+- **AW3** a resume subscriber keeps the runner's `ResumeReport`. A keyed answer
+  no process waits for is logged at info level (event id, class, key) and
+  noted on its ledger pair (`unheard_at`), with no failure and no signal (it
+  may be an answer a precheck absorbed). A fact no consumer subscribes to is
+  still delivered, raises `FactDeliveredUnheard` (a `DddSignal`), and is
+  listed in layer `relay`.
+- **E3** an exhausted D1 pair's ledger row records the failure command class
+  and time (`failure_command`, `failure_command_at`).
+- **W1** a `WorkflowHandler` that implements `IContinuesWorkflows` and uses
+  `ReschedulesThroughWakeups` continues through `ddd_wakeups` (resource
+  limits, step retries, forked failed items): a `continue` intent keyed
+  `workflow:{handler}:{id}:{idx}:{phase}#{n}`, projected by `ddd:relay` and run
+  by `messenger:consume ddd_wakeups` under a per-workflow lock.
+- **W2** `BaseBehaviourConfig` subclasses found by resource loading, plus
+  `workflow.behaviour_types`, are registered at boot.
+- **W3** `workflow.stale_start_seconds` / `stale_claim_seconds` reach the
+  `WorkflowIgniter`; `messenger.redeliver_timeout_seconds` (default 3600) is set
+  on the facts transport. A dead workflow start is retried after
+  `max(redeliver_timeout_seconds, stale_start_seconds)`.
+- **W5** layer `workflow` (table above).
+- **Several consumers** (`tangible_ddd.consumers`, a reusable bounded-context
+  bundle next to the app, like a WordPress plugin's own consumer):
+
+  ```yaml
+  tangible_ddd:
+    consumers:
+      txp: { namespace_root: App }                        # primary: today's ids and tables
+      billing:
+        bundle: Acme\Billing\AcmeBillingBundle            # or namespace_root: Acme\Billing
+        schema: billing                                   # or table_prefix: bil_
+        transport: ddd_facts_billing                      # default ddd_facts_{prefix}
+        delivery: { budget: 3 }
+  ```
+
+  Each consumer has its own outbox, relay, ledger, process store, wakeups,
+  effect journal, workflow stores, buses and operator view; lock keys and
+  NOTIFY channels carry its prefix. Services (handlers, listeners, processes,
+  workflows, repositories) belong to the consumer whose namespace root
+  contains their class, and their port interfaces autowire to that
+  consumer's services. A fact raised by one consumer is copied to every other
+  consumer that subscribes to it (its own transport, its own ledger), so each
+  subscriber gets it exactly once and a poison copy retries alone. Workers:
+  `ddd:relay` (every consumer; `--consumer=<name>` for one) and
+  `messenger:consume` on each consumer's facts and wakeup transports. Schema:
+  `ddd:schema:dump --consumer=<name> [--since=NNN]`, one history per consumer.
+  The `ddd:ops:dlq:*`, `pause`, `resume` and `stranded` repairs act on the
+  primary consumer. `consumer:` remains the one-consumer shorthand, with an
+  unchanged container.
 
 ## Tests
 

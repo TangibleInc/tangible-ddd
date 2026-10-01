@@ -10,7 +10,6 @@ use TangibleDDD\Domain\Repositories\IWorkItemRepository;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItem;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemList;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IWorkItemRepository on Postgres 16 (D10, ruling #78): the WordPress
@@ -28,7 +27,7 @@ final class DbalWorkItemRepository implements IWorkItemRepository {
   private readonly string $table;
 
   public function __construct(private readonly Connection $connection, string $tablePrefix = '') {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_behaviour_workflow_items');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_behaviour_workflow_items');
   }
 
   public function get_by_id(int $id): WorkItem {

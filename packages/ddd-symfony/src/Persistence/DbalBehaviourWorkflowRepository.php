@@ -15,7 +15,6 @@ use TangibleDDD\Domain\Shared\Aggregate;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionResult;
 use TangibleDDD\Infra\Persistence\Shared\PersistsAggregatesRepository;
-use TangibleDDD\Runtime\PrefixedTableNames;
 
 /**
  * IBehaviourWorkflowRepository on Postgres 16 (D10, ruling #78): the
@@ -41,13 +40,19 @@ final class DbalBehaviourWorkflowRepository extends PersistsAggregatesRepository
     string $tablePrefix = '',
   ) {
     parent::__construct($events);
-    $tables = new PrefixedTableNames($tablePrefix);
+    $tables = TableNames::of($tablePrefix);
     $this->table = $tables->table('ddd_behaviour_workflows');
     $this->meta = $tables->table('ddd_behaviour_workflow_meta');
   }
 
   protected function get_aggregate_class(): string {
     return BehaviourWorkflow::class;
+  }
+
+  /** get_by_id() that answers null for an unknown id (decode errors still throw). */
+  public function find(int $id): ?BehaviourWorkflow {
+    $row = $this->connection->fetchAssociative("SELECT * FROM {$this->table} WHERE id = ?", [$id], [ParameterType::INTEGER]);
+    return $row === false ? null : $this->fromRow($row, $this->metaFor([$id])[$id] ?? []);
   }
 
   public function get_by_id(int $id): BehaviourWorkflow {

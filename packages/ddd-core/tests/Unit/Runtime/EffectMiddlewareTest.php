@@ -239,7 +239,9 @@ final class EffectMiddlewareTest extends TestCase {
     (new PurgeZone('example.com'))->send();
 
     self::assertSame(1, PurgeZone::$performs);
-    self::assertCount(2, PurgeZone::$recorded);
+    // Wave 5 (E2): the mem journal tracks state, so a Recorded entry is not
+    // recorded again (a plain IEffectJournal re-records: EffectHandlerAndStateTest).
+    self::assertCount(1, PurgeZone::$recorded);
     self::assertNotSame($this->audit->opened[0]->command_id, $this->audit->opened[1]->command_id);
   }
 

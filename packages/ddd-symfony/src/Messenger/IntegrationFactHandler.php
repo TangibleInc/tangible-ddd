@@ -37,9 +37,9 @@ final class IntegrationFactHandler {
   ) {}
 
   public function __invoke(IntegrationFactMessage $fact): DeliveryOutcome {
-    if ($fact->consumer !== $this->consumer) {
+    if ($fact->recipient() !== $this->consumer) {
       throw new UnrecoverableMessageHandlingException(sprintf(
-        'Fact %s belongs to consumer "%s"; this worker serves "%s".', $fact->event_id, $fact->consumer, $this->consumer
+        'Fact %s is for consumer "%s"; this worker serves "%s".', $fact->event_id, $fact->recipient(), $this->consumer
       ));
     }
     if (!class_exists($fact->event_class) || !is_a($fact->event_class, IIntegrationEvent::class, true)) {

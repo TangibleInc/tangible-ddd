@@ -21,8 +21,14 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * otherwise); enlist it in that boundary so an intent rolls back with the
  * process save. Tests that deliberately skip the rule must say so with
  * lenient().
+ *
+ * It keeps the WakeupIntent objects themselves, so WakeupIntent::$fact
+ * survives the round trip, but it does NOT declare ICarriesFacts: the
+ * ProcessRunner keeps the wave-3 rule on it (a contended fact resume fails
+ * the subscriber and the delivery retries it). A host or test that wants
+ * the wave-5 parked-resume path (AW2) opts in with InMemoryParkingScheduler.
  */
-final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
+class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
 
   /** @var array<string, array{intent: WakeupIntent, seq: int, attempts: int, next_at: ?\DateTimeImmutable, token: ?string, lease_until: ?\DateTimeImmutable, error: ?string}> */
   private array $intents = [];
@@ -38,8 +44,8 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
    * transaction. Never use it in conformance or runner tests, where it
    * would hide an intent written outside the process transaction (C8/C9).
    */
-  public static function lenient(): self {
-    $s = new self(new InMemoryTransactionBoundary());
+  public static function lenient(): static {
+    $s = new static(new InMemoryTransactionBoundary());
     $s->checkTransaction = false;
     return $s;
   }

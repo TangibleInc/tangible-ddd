@@ -9,7 +9,6 @@ use Doctrine\DBAL\ParameterType;
 use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Runtime\IClock;
-use TangibleDDD\Runtime\PrefixedTableNames;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
@@ -35,7 +34,7 @@ final class DbalEffectJournal implements IEffectJournal {
   private readonly IClock $clock;
 
   public function __construct(private readonly Connection $connection, ?IClock $clock = null, string $tablePrefix = '') {
-    $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_effect_journal');
+    $this->table = TableNames::of($tablePrefix)->table('ddd_effect_journal');
     $this->clock = $clock ?? new SystemClock();
   }
 

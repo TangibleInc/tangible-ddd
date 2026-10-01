@@ -38,7 +38,7 @@ final class OperatorViewTest extends TestCase {
 
   public function test_the_layer_vocabulary_and_labels_are_fixed(): void {
     self::assertSame(
-      ['relay', 'delivery', 'wakeup', 'process', 'workflow', 'transport'],
+      ['relay', 'delivery', 'wakeup', 'process', 'workflow', 'effect', 'transport'],
       array_map(static fn (Layer $l) => $l->value, Layer::cases())
     );
     foreach (Layer::cases() as $layer) {
