@@ -38,7 +38,11 @@ No ratified interface, frozen FQCN, persisted name, hook signature or schema cha
 
 `HostFixture::setUp()` says SQL hosts derive a per-test schema from `ScenarioContext::uniqueName()`. On wp, the integration hook of a fact is `{IntegrationBehaviour::prefix()}_integration_{name}`. `WpLedgeredDelivery` derives the ledger and the consumer config from that hook prefix (`ddd_conformance` for every conformance fact). A per-test consumer prefix would put the outbox, processes and intents under one prefix and the ledger the gate uses under another.
 
-The wp fixture therefore uses `ddd_conformance` as the consumer prefix. `setUp()` and `tearDown()` wipe everything under it: tables, options, Action Scheduler actions with their logs and groups, and hook callbacks. `setUp()` then installs schema v8 fresh. The effect is the same per-test freshness, and nothing is wrapped in a transaction. No request; recorded so reviewers do not read it as a skipped isolation rule.
+The wp fixture therefore uses `ddd_conformance` as the consumer prefix. `setUp()` and `tearDown()` wipe everything under it: tables, options, Action Scheduler actions with their logs and groups, and hook callbacks. `setUp()` then installs schema v8 fresh. The effect is the same per-test freshness, and nothing is wrapped in a transaction.
+
+The fresh process table also starts at a random `AUTO_INCREMENT` base (`WpHostFixture::firstProcessId()`). `GetLockProcessLock` takes the legacy `ddd_process_<id>` name too, and that name is global to the MySQL server. In a trial run, a wp-integration suite running at the same time on the same server (process tables counting from 1) contended with this suite's process locks. This is the same server-wide cost that makes `lock.namespace` `-` on wp.
+
+No request; recorded so reviewers do not read it as a skipped isolation rule.
 
 ## W3-WPC3-5 (fixture, recorded; information for wp): worker 2 on wp
 
