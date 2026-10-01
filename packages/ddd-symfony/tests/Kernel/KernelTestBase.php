@@ -53,6 +53,7 @@ abstract class KernelTestBase extends KernelTestCase {
     ConsumerRegistry::reset();
     RuntimeReset::forgetRegistrationsForTests();
     Correlation::reset();
+    \TangibleDDD\Runtime\HostDefaults::resetForTests();
   }
 
   /** @param array<string, mixed> $input */

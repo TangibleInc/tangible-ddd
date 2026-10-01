@@ -86,6 +86,24 @@ final class TangibleDddBundle extends AbstractBundle {
             ->floatNode('retry_multiplier')->defaultValue(2.0)->min(1.0)->end()
             ->integerNode('max_retry_delay_seconds')->defaultValue(3600)->min(0)->end()
             ->integerNode('idle_sleep_seconds')->defaultValue(1)->min(0)->end()
+            ->booleanNode('listen')->defaultTrue()
+              ->info('D14: outbox appends and wakeup intents NOTIFY in their transaction; ddd:relay LISTENs instead of sleeping (poll fallback = idle_sleep_seconds).')->end()
+          ->end()
+        ->end()
+        ->arrayNode('process')
+          ->addDefaultsIfNotSet()
+          ->info('Long-running processes (register 3.6-3.8, 5.2, 5.3).')
+          ->children()
+            ->booleanNode('inband_start')->defaultFalse()
+              ->info('The register\'s ddd.process.inband_start. false: ProcessRunner::start() persists the process and a Continue intent in the caller\'s transaction and the first step runs in a worker. true: the first step runs in-band, which takes a process lock and so needs a direct (non-pooled) connection; refused at boot on a pooled DSN.')->end()
+            ->enumNode('pooled_connection')->values(['warn', 'refuse'])->defaultValue('warn')
+              ->info('What the advisory lock and the LISTEN waiter do on a connection that looks pooled (-pooler host, port 6432).')->end()
+            ->integerNode('stranded_after_seconds')->defaultValue(900)->min(1)
+              ->info('A running/scheduled process with no live intent for this long is stranded (5.3 step 5).')->end()
+            ->integerNode('wakeup_lease_seconds')->defaultValue(300)->min(1)
+              ->info('How long a projected wakeup stays leased before the relay re-projects it.')->end()
+            ->integerNode('stranded_scan_seconds')->defaultValue(60)->min(0)
+              ->info('Minimum interval between stranded scans in ddd:relay.')->end()
           ->end()
         ->end()
         ->arrayNode('delivery')
@@ -102,6 +120,9 @@ final class TangibleDddBundle extends AbstractBundle {
           ->addDefaultsIfNotSet()
           ->children()
             ->scalarNode('transport')->defaultValue('ddd_facts')->end()
+            ->scalarNode('wakeup_transport')->defaultValue('ddd_wakeups')
+              ->info('Messenger transport the due wakeup intents are projected to; run messenger:consume on it.')->end()
+            ->scalarNode('wakeup_dsn')->defaultNull()->end()
             ->scalarNode('failure_transport')->defaultValue('ddd_failed')->end()
             ->scalarNode('bus')->defaultValue('messenger.bus.default')
               ->info('Bus the delivery handler lives on; it must not carry doctrine_transaction.')->end()
@@ -168,6 +189,16 @@ final class TangibleDddBundle extends AbstractBundle {
       ];
     }
     $transports[$m['transport']] = $facts;
+    // Wakeups: the intent row owns retries (5.1 layer `wakeup`), so the handler
+    // never throws for a failed wake and Messenger must not retry on its own.
+    $wakeups = [
+      'dsn' => $m['wakeup_dsn'] ?? "doctrine://{$connection}?queue_name={$m['wakeup_transport']}&auto_setup=false",
+      'retry_strategy' => ['max_retries' => 0],
+    ];
+    if (isset($facts['failure_transport'])) {
+      $wakeups['failure_transport'] = $facts['failure_transport'];
+    }
+    $transports[$m['wakeup_transport']] = $wakeups;
 
     $builder->prependExtensionConfig('framework', ['messenger' => ['transports' => $transports]]);
   }
@@ -232,5 +263,7 @@ final class TangibleDddBundle extends AbstractBundle {
       trim($consumer['namespace_root'], '\\'),
     );
     $c->get('tangible_ddd.runtime_reset')->install();
+    // Pooled-DSN refusal for inband_start, and HostDefaults (signals, clock, logger).
+    $c->get('tangible_ddd.host_defaults')->install();
   }
 }

@@ -87,8 +87,9 @@ use TangibleDDD\Symfony\Runtime\DddRuntimeReset;
 use TangibleDDD\Symfony\Runtime\Factory;
 use TangibleDDD\Symfony\Runtime\Relay;
 use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
-use TangibleDDD\Symfony\Runtime\Transitional\ActBracketMiddleware;
-use TangibleDDD\Symfony\Runtime\Transitional\PortOutboxEventBus;
+use TangibleDDD\Application\Correlation\CorrelationMiddleware;
+use TangibleDDD\Application\Logging\Redactor;
+use TangibleDDD\Symfony\Lock\PostgresAdvisoryProcessLock;
 use TangibleDDD\Symfony\Tests\Conformance\Support\DbalScenarioRows;
 use TangibleDDD\Symfony\Tests\Conformance\Support\FaultInjectingSender;
 use TangibleDDD\Symfony\Tests\Conformance\Support\LeakRecordingLogger;
@@ -96,7 +97,6 @@ use TangibleDDD\Symfony\Tests\Conformance\Support\ScenarioSchemaMiddleware;
 use TangibleDDD\Symfony\Tests\Conformance\Support\WorkerTask;
 use TangibleDDD\Symfony\Tests\Support\PostgresDatabase;
 use TangibleDDD\Testing\InMemoryAuditSink;
-use TangibleDDD\Testing\InMemoryProcessLock;
 use TangibleDDD\Testing\RecordingSignalDispatcher;
 
 /**
@@ -127,8 +127,11 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  * - Worker: a real Messenger Worker with DddRuntimeReset subscribed.
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
- * - The process lock is the core ReentrantProcessLock over the in-memory
- *   lock: the Postgres advisory lock is a wave-3 adapter (register 5.2).
+ * - The process lock is the core ReentrantProcessLock over the Postgres
+ *   session advisory lock on the scenario connection (register 5.2).
+ * - The act bracket and integration bus are the core CorrelationMiddleware
+ *   and OutboxIntegrationEventBus (behind the sf class-recording decorator),
+ *   as the bundle wires them since wave 3.
  */
 final class SfHostFixture implements HostFixture {
 
@@ -203,7 +206,7 @@ final class SfHostFixture implements HostFixture {
     $this->administration = new DbalOutboxAdministration($this->connection, $this->clock);
     $this->ledger = new DbalDeliveryLedger($this->connection);
     $this->subscriptions = new SubscriptionRegistry();
-    $this->lock = new ReentrantProcessLock(new InMemoryProcessLock(), $logger);
+    $this->lock = new ReentrantProcessLock(new PostgresAdvisoryProcessLock($this->connection, $logger), $logger);
     $this->events = new EventsUnitOfWork();
     $this->rows = new DbalScenarioRows($this->connection);
     $this->dispatcher = new OrderedListenerDispatcher();
@@ -321,18 +324,19 @@ final class SfHostFixture implements HostFixture {
     };
 
     return new CommandBus(
-      new ActBracketMiddleware(
+      new CorrelationMiddleware(
+        $this->consumer,
         $this->events,
+        new Redactor(),
         $this->audit,
-        $policy,
         new SymfonyActorProvider($this->actors, new SecurityUserActorProvider(null)),
+        $policy,
         new PhpEnvironmentProvider(['host' => 'sf']),
-        $this->clock,
       ),
       new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
-        new EventRouter($this->dispatcher, new PortOutboxEventBus($this->outbox, $this->clock, $this->outboxConfig)),
+        new EventRouter($this->dispatcher, Factory::integrationBus($this->outbox, $this->clock, $this->consumer, $this->outboxConfig)),
       ),
       new HandlerMapMiddleware($handlers),
     );
