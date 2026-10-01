@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace TangibleDDD\Runtime\Effects;
 
+use League\Tactician\Handler\Mapping\CommandToHandlerMapping;
 use League\Tactician\Middleware;
+use Psr\Container\ContainerInterface;
+use TangibleDDD\Application\CQRS\HandlerClassNameInflector;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\ITransactionBoundary;
 
@@ -59,23 +62,44 @@ use TangibleDDD\Runtime\ITransactionBoundary;
  *
  * Other commands pass through untouched. Hosts without a SelfExecuting
  * stage must route RecordEffect to RecordEffect::apply().
+ *
+ * Wave 5 (TXP demands E1, E2):
+ *
+ * - A handler-class effect (E1): an IEffectCommand that is not an
+ *   IExternalEffectCommand is performed and recorded by its
+ *   IExternalEffectHandler. The handler comes from the bus's handler
+ *   locator ($handlers, the container CommandHandlerMiddleware uses) under
+ *   the name $mapping gives (default: the HandlerClassNameInflector
+ *   convention, Commands\XCommand → CommandHandlers\XHandler). It is
+ *   located before perform(); NoEffectHandler (\LogicException) when there
+ *   is no locator, no such service, or a service of another kind. A
+ *   self-contained IExternalEffectCommand never consults the locator.
+ * - Entry states (E2): with an ITracksEffectState journal the retry rule is
+ *   state-aware. No entry → perform, store (Performed), record; Performed →
+ *   reuse the result and record again; Recorded → return the journaled
+ *   result without calling record() again and without a transaction.
+ *   RecordEffect marks the entry Recorded inside record()'s transaction. A
+ *   plain IEffectJournal keeps the wave-4 rule (a found entry is recorded
+ *   again).
  */
 final class EffectMiddleware implements Middleware {
 
   public function __construct(
     private readonly ?IEffectJournal $journal = null,
     private readonly ?ITransactionBoundary $boundary = null,
+    private readonly ?ContainerInterface $handlers = null,
+    private readonly ?CommandToHandlerMapping $mapping = null,
   ) {}
 
   public function execute($command, callable $next) {
-    if (!$command instanceof IExternalEffectCommand) {
+    if (!$command instanceof IEffectCommand) {
       return $next($command);
     }
 
     $journal = $this->journal ?? HostDefaults::get(IEffectJournal::class);
     if (!$journal instanceof IEffectJournal) {
       throw new NoEffectJournal(sprintf(
-        '%s is an IExternalEffectCommand but no IEffectJournal is configured (constructor or HostDefaults).',
+        '%s is an effect command but no IEffectJournal is configured (constructor or HostDefaults).',
         get_class($command)
       ));
     }
@@ -85,7 +109,19 @@ final class EffectMiddleware implements Middleware {
       throw new \InvalidArgumentException(get_class($command) . '::idempotency_key() returned an empty key');
     }
 
-    $result = $journal->find($key);
+    $handler = $command instanceof IExternalEffectCommand ? null : $this->handler_for($command);
+    $tracked = $journal instanceof ITracksEffectState ? $journal : null;
+
+    if ($tracked !== null) {
+      $entry = $tracked->find_entry($key);
+      if ($entry !== null && $entry->is_recorded()) {
+        return $entry->result; // effectively once: the domain already knows
+      }
+      $result = $entry?->result;
+    } else {
+      $result = $journal->find($key);
+    }
+
     if ($result === null) {
       if ($this->boundary()?->is_active()) {
         throw new EffectInsideTransaction(sprintf(
@@ -93,11 +129,33 @@ final class EffectMiddleware implements Middleware {
           get_class($command)
         ));
       }
-      $result = $command->perform();
+      $result = $handler !== null ? $handler->perform($command) : $command->perform();
       $journal->store($key, $result);
     }
 
-    return $next(new RecordEffect($command, $result));
+    return $next(new RecordEffect($command, $result, $handler, $tracked));
+  }
+
+  /** @return IExternalEffectHandler<IEffectCommand> */
+  private function handler_for(IEffectCommand $command): IExternalEffectHandler {
+    $class = get_class($command);
+    if ($this->handlers === null) {
+      throw new NoEffectHandler("$class needs an IExternalEffectHandler but EffectMiddleware has no handler locator.");
+    }
+
+    try {
+      $id = $this->mapping !== null
+        ? $this->mapping->getClassName($class)
+        : (new HandlerClassNameInflector())->getClassName($class);
+      $handler = $this->handlers->get($id);
+    } catch (\Throwable $e) {
+      throw new NoEffectHandler(sprintf('%s needs an IExternalEffectHandler; none could be located (%s).', $class, $e->getMessage()), 0, $e);
+    }
+
+    if (!$handler instanceof IExternalEffectHandler) {
+      throw new NoEffectHandler(sprintf('%s needs an IExternalEffectHandler; %s is a %s.', $class, $id, get_debug_type($handler)));
+    }
+    return $handler;
   }
 
   private function boundary(): ?ITransactionBoundary {

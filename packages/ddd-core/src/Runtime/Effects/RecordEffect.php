@@ -15,6 +15,11 @@ use TangibleDDD\Application\Commands\SelfHandlingCommand;
  * handler class. A host whose terminal is a handler map routes it to
  * apply().
  *
+ * Wave 5: $effect is any IEffectCommand. With $handler (E1) the handler's
+ * record() runs, otherwise the IExternalEffectCommand's own. With $journal
+ * (E2) apply() marks the entry recorded after record() returned, inside the
+ * same transaction.
+ *
  * Never sent by hand: send() throws. The act bracket sits outside
  * EffectMiddleware, so the audit row and the command id are the effect
  * command's own.
@@ -22,18 +27,30 @@ use TangibleDDD\Application\Commands\SelfHandlingCommand;
 final class RecordEffect extends SelfHandlingCommand implements ITransactionalCommand {
 
   public function __construct(
-    public readonly IExternalEffectCommand $effect,
+    public readonly IEffectCommand $effect,
     public readonly EffectResult $result,
-  ) {}
+    public readonly ?IExternalEffectHandler $handler = null,
+    public readonly ?ITracksEffectState $journal = null,
+  ) {
+    if ($handler === null && !$effect instanceof IExternalEffectCommand) {
+      throw new \InvalidArgumentException(get_class($effect) . ' records through an IExternalEffectHandler; none was given');
+    }
+  }
 
-  /** Calls record() with the (possibly journaled) result and returns it. */
+  /** Calls record() with the (possibly journaled) result, marks it recorded, and returns it. */
   public function apply(): EffectResult {
-    $this->effect->record($this->result);
+    if ($this->handler !== null) {
+      $this->handler->record($this->effect, $this->result);
+    } else {
+      \assert($this->effect instanceof IExternalEffectCommand);
+      $this->effect->record($this->result);
+    }
+    $this->journal?->mark_recorded($this->effect->idempotency_key());
     return $this->result;
   }
 
   public function send(): mixed {
-    throw new \LogicException('RecordEffect is dispatched by EffectMiddleware only; send the IExternalEffectCommand itself.');
+    throw new \LogicException('RecordEffect is dispatched by EffectMiddleware only; send the effect command itself.');
   }
 
   protected function handle(): EffectResult {

@@ -13,7 +13,7 @@ use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\StartsOn;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
-use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
+use TangibleDDD\Runtime\Effects\IEffectCommand;
 use TangibleDDD\Runtime\Process\IProcessEntry;
 
 /**
@@ -31,7 +31,8 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  *   #[SubscriberPriority]. Id: `listener:<class>`. The translated command is
  *   sent with the deterministic id uuid5(event_id, subscriber_id)
  *   (DeterministicCommandId; register 3.8). On budget exhaustion, an
- *   IExternalEffectCommand's failure_command() is sent.
+ *   effect command's (IEffectCommand: self-contained or handler-class)
+ *   failure_command() is sent.
  *
  * register_process(class-string<LongProcess>):
  *   Each #[StartsOn(E)] → `ignition:<process>@<E>` at Subscriber::IGNITION,
@@ -93,7 +94,7 @@ final class SubscriptionRegistrar {
       },
       static function (IIntegrationEvent $event, \Throwable $last) use ($translate, $id): void {
         $command = $translate($event);
-        if (!$command instanceof IExternalEffectCommand) {
+        if (!$command instanceof IEffectCommand) {
           return;
         }
         $failure = $command->failure_command($last);
