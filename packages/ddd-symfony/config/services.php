@@ -45,6 +45,7 @@ use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
 use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
 use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
 use TangibleDDD\Symfony\Ops\DbalUnheardFactSource;
+use TangibleDDD\Symfony\Ops\DbalWorkflowOperatorSource;
 use TangibleDDD\Symfony\Runtime\DddSignal;
 use TangibleDDD\Symfony\Runtime\DeliveryNotes;
 use TangibleDDD\Symfony\Runtime\SubscriptionProbe;
@@ -251,7 +252,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   // Claim + save + attach in one boundary run; IStartsFromFact services
   // (tag tangible_ddd.workflow) get one ignition subscriber per #[StartsOn] fact.
   $s->set('tangible_ddd.workflow_igniter', WorkflowIgniter::class)
-    ->args([service('tangible_ddd.workflow_ignitions'), service('tangible_ddd.transaction_boundary'), $logger, service('tangible_ddd.clock')]);
+    ->args([service('tangible_ddd.workflow_ignitions'), service('tangible_ddd.transaction_boundary'), $logger, service('tangible_ddd.clock'),
+      $config['workflow']['stale_claim_seconds'], $config['workflow']['stale_start_seconds']]); // W3
   $s->alias(WorkflowIgniter::class, 'tangible_ddd.workflow_igniter');
 
   // ── subscriptions and delivery (register 3.5, D2) ────────────────────────
@@ -324,6 +326,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
           ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
         inline_service(DbalUnheardFactSource::class)
           ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
+        inline_service(DbalWorkflowOperatorSource::class) // W5
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix, $config['workflow']['stale_start_seconds'], null, service('tangible_ddd.clock')]),
         inline_service(MessengerFailureTransportSource::class)
           ->args([
             $failureTransport === null || $failureTransport === '' ? null : service('messenger.transport.' . $failureTransport)->nullOnInvalid(),

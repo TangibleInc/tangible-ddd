@@ -142,6 +142,18 @@ final class TangibleDddBundle extends AbstractBundle {
               ->info('Prepend framework.messenger transports (doctrine://<connection>, retry strategy = delivery budget).')->end()
             ->scalarNode('dsn')->defaultNull()->end()
             ->scalarNode('failure_dsn')->defaultNull()->end()
+            ->integerNode('redeliver_timeout_seconds')->defaultValue(3600)->min(1)
+              ->info('W3: the facts transport\'s Doctrine redeliver_timeout (set explicitly; Messenger\'s default is 3600). A worker that died mid-delivery gets its fact back after this long; a workflow whose start died restarts on that redelivery once its start marker is older than workflow.stale_start_seconds, so recovery takes max(redeliver_timeout_seconds, stale_start_seconds).')->end()
+          ->end()
+        ->end()
+        ->arrayNode('workflow')
+          ->addDefaultsIfNotSet()
+          ->info('D10 behaviour workflows (WorkflowIgniter, W3).')
+          ->children()
+            ->integerNode('stale_start_seconds')->defaultValue(900)->min(1)
+              ->info('A start marker with no workflow younger than this is a start in flight: another fact with the key fails with WorkflowStartPending (and spends a delivery attempt); older, the next fact with the key restarts the workflow. Also the age at which the operator view lists the marker (layer workflow).')->end()
+            ->integerNode('stale_claim_seconds')->defaultValue(900)->min(1)
+              ->info('Without a transaction boundary only: an ignition claim with no workflow older than this is released and claimed again.')->end()
           ->end()
         ->end()
         ->arrayNode('facts')
@@ -201,6 +213,9 @@ final class TangibleDddBundle extends AbstractBundle {
         'max_delay' => $d['max_retry_delay_ms'],
       ],
     ];
+    if (str_starts_with($facts['dsn'], 'doctrine://')) {
+      $facts['options'] = ['redeliver_timeout' => $m['redeliver_timeout_seconds']]; // W3
+    }
     $transports = [];
     if ($m['failure_transport'] !== null && $m['failure_transport'] !== '') {
       $facts['failure_transport'] = $m['failure_transport'];
