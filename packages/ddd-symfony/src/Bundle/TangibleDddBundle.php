@@ -22,6 +22,8 @@ use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DependencyInjection\DDDCompilerPasses;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsDomainEventListener;
 use TangibleDDD\Symfony\DependencyInjection\Attribute\AsIntegrationListener;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
+use TangibleDDD\Symfony\DependencyInjection\Compiler\BehaviourTypePass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\ConsumerAssignmentPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\DomainListenerPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\HandlerLocatorPass;
@@ -192,6 +194,10 @@ final class TangibleDddBundle extends AbstractBundle {
               ->info('A start marker with no workflow younger than this is a start in flight: another fact with the key fails with WorkflowStartPending (and spends a delivery attempt); older, the next fact with the key restarts the workflow. Also the age at which the operator view lists the marker (layer workflow).')->end()
             ->integerNode('stale_claim_seconds')->defaultValue(900)->min(1)
               ->info('Without a transaction boundary only: an ignition claim with no workflow older than this is released and claimed again.')->end()
+            ->arrayNode('behaviour_types')
+              ->scalarPrototype()->end()
+              ->info('W2: BaseBehaviourConfig classes to register at boot besides those the app\'s resource loading finds (autoconfigured); their get_behaviour_type() is the stored type.')
+            ->end()
           ->end()
         ->end()
         ->arrayNode('facts')
@@ -299,6 +305,8 @@ final class TangibleDddBundle extends AbstractBundle {
     $builder->registerForAutoconfiguration(IReturningCommandHandler::class)->addTag(DddTags::COMMAND_HANDLER); // L1
     $builder->registerForAutoconfiguration(IStartsFromFact::class)->addTag(DddTags::WORKFLOW);
     $builder->registerForAutoconfiguration(IContinuesWorkflows::class)->addTag(DddTags::CONTINUES_WORKFLOW); // W1
+    $builder->registerForAutoconfiguration(BaseBehaviourConfig::class)->addTag(DddTags::BEHAVIOUR_CONFIG); // W2
+    $builder->setParameter('tangible_ddd.behaviour_config_classes', array_values($config['workflow']['behaviour_types']));
     // Process classes found by the app's resource loading are processes, not services:
     // the tag feeds the compile-time map; the unused definitions are removed afterwards.
     $builder->registerForAutoconfiguration(LongProcess::class)->addTag(DddTags::LONG_PROCESS);
@@ -374,6 +382,7 @@ final class TangibleDddBundle extends AbstractBundle {
     DDDCompilerPasses::register($container);
     $container->addCompilerPass(new HandlerLocatorPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     $container->addCompilerPass(new SubscriptionMapPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
+    $container->addCompilerPass(new BehaviourTypePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10); // W2
     $container->addCompilerPass(new DomainListenerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     $container->addCompilerPass(new MessengerHealthPass(), PassConfig::TYPE_BEFORE_REMOVING);
     $container->addCompilerPass(new ConsumerAssignmentPass(), PassConfig::TYPE_BEFORE_REMOVING, 10); // wave 5

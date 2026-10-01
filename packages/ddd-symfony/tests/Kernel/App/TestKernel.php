@@ -133,7 +133,9 @@ final class TestKernel extends Kernel {
       // no_listen: D14 off (no NOTIFY, ddd:relay polls), the "NOTIFY suppressed" case.
       'relay' => $this->variant === 'no_listen' ? ['listen' => false] : [],
       // workflow_settings: W3, the igniter clocks and the facts transport's redeliver_timeout.
-      'workflow' => $this->variant === 'workflow_settings' ? ['stale_start_seconds' => 120, 'stale_claim_seconds' => 300] : [],
+      // W2: a config type listed explicitly (DigestStepConfig is found by resource loading).
+      'workflow' => ['behaviour_types' => [\TangibleDDD\Symfony\Tests\Support\Fixtures\StopBehaviourConfig::class]]
+        + ($this->variant === 'workflow_settings' ? ['stale_start_seconds' => 120, 'stale_claim_seconds' => 300] : []),
       'messenger' => $this->variant === 'workflow_settings' ? ['redeliver_timeout_seconds' => 240] : [],
       // audit: D12 lists next to #[Audit] (AttributeAuditPolicy), into a readable sink.
       'audit' => $this->variant === 'audit' ? [

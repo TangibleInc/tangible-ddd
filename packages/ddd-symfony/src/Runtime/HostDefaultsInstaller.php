@@ -6,6 +6,7 @@ namespace TangibleDDD\Symfony\Runtime;
 
 use Doctrine\DBAL\Connection;
 use Psr\Log\LoggerInterface;
+use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Runtime\HostDefaults;
 use TangibleDDD\Runtime\IClock;
 use TangibleDDD\Runtime\IInfrastructureSignalDispatcher;
@@ -23,18 +24,23 @@ use TangibleDDD\Symfony\Persistence\ConnectionTopology;
  * - provides HostDefaults for core code that resolves ports itself: the sf
  *   IInfrastructureSignalDispatcher (signals reach the PSR logger and the
  *   event dispatcher, never error_log), the app clock, and the app logger
- *   for core diagnostics.
+ *   for core diagnostics;
+ * - registers the compiled behaviour config types (W2,
+ *   `tangible_ddd.behaviour_types`), so a stored workflow decodes before any
+ *   workflow handler was built.
  *
  * @internal
  */
 final class HostDefaultsInstaller {
 
+  /** @param array<string, class-string<BaseBehaviourConfig>> $behaviourTypes type => config class */
   public function __construct(
     private readonly IInfrastructureSignalDispatcher $signals,
     private readonly IClock $clock,
     private readonly Connection $connection,
     private readonly bool $inbandStart,
     private readonly ?LoggerInterface $logger = null,
+    private readonly array $behaviourTypes = [],
   ) {}
 
   public function install(): void {
@@ -52,6 +58,11 @@ final class HostDefaultsInstaller {
     HostDefaults::provide(IClock::class, $this->clock);
     if ($this->logger !== null) {
       HostDefaults::provide(LoggerInterface::class, $this->logger);
+    }
+    // W2: the compiled behaviour types, through core's static facade (which
+    // writes to the host's registry once core provides one).
+    foreach ($this->behaviourTypes as $type => $class) {
+      BaseBehaviourConfig::register_type((string) $type, $class);
     }
   }
 }

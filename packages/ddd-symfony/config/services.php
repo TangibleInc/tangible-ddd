@@ -547,6 +547,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.connection'),
       $process['inband_start'],
       $logger,
+      param('tangible_ddd.behaviour_types'), // W2, set by BehaviourTypePass
     ])
     ->public();
 
