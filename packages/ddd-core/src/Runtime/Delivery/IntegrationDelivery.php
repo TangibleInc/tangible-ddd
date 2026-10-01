@@ -41,9 +41,14 @@ use TangibleDDD\Runtime\Support\Log;
  * Transaction middleware); the invoker opens none.
  *
  * Error behaviour: \InvalidArgumentException for a non-IIntegrationEvent
- * class or a fact without an event id (the ledger needs it). Hydration
- * errors (from_payload) and ledger storage errors propagate: the fact is
- * retried as a whole by the host's delivery runner.
+ * class or a fact without an event id (the ledger needs it). A hydration
+ * error (from_payload) first counts one failed attempt against every
+ * pending subscriber, then propagates while any of them has budget left;
+ * once none has, they are exhausted and the fact stops (see poisoned()).
+ * Ledger storage errors propagate: the fact is retried as a whole by the
+ * host's delivery runner, and that runner's own retry limit (Messenger
+ * retry_strategy, a failed Action Scheduler action) bounds it, since a
+ * ledger that cannot be written cannot count.
  *
  * Compatibility edge (0.6 hosts): 0.6 hook closures, e.g. the ProcessRunner
  * ignition closure, still run for payloads WITHOUT `__event_id` (a consumer
@@ -109,8 +114,12 @@ final class IntegrationDelivery {
       return new DeliveryOutcome([], [], [], []);
     }
 
-    /** @var IIntegrationEvent $event */
-    $event = $eventClass::from_payload($payload);
+    try {
+      /** @var IIntegrationEvent $event */
+      $event = $eventClass::from_payload($payload);
+    } catch (\Throwable $decode) {
+      return $this->poisoned($subscribers, $eventClass, $eventId, $decode);
+    }
 
     foreach ($subscribers as $s) {
       if ($this->ledger->delivered($s->id, $eventId)) {
@@ -159,6 +168,53 @@ final class IntegrationDelivery {
     }
 
     return new DeliveryOutcome($delivered, $skipped, $failed, $exhausted);
+  }
+
+  /**
+   * A poison fact (from_payload() throws): count one failed attempt against
+   * every subscriber still pending for it, so the 5.1 budget bounds it
+   * (wave1-notes core minor 1). A subscriber that reaches the budget is
+   * marked exhausted WITHOUT its onExhausted callback, because there is no
+   * event to hand it; that is logged. While any subscriber has budget left
+   * the decode error is rethrown and the host retries the fact; once none
+   * has, the outcome is returned (nothing pending) and the fact stops.
+   *
+   * @param list<Subscriber> $subscribers
+   */
+  private function poisoned(array $subscribers, string $eventClass, string $eventId, \Throwable $decode): DeliveryOutcome {
+    $skipped = $failed = $exhausted = [];
+    $error = 'decode failed: ' . $decode->getMessage();
+
+    foreach ($subscribers as $s) {
+      if ($this->ledger->delivered($s->id, $eventId)) {
+        $skipped[] = $s->id;
+        continue;
+      }
+      if ($this->ledger->exhausted($s->id, $eventId)) {
+        $exhausted[] = $s->id;
+        continue;
+      }
+
+      $attempt = $this->ledger->attempts($s->id, $eventId) + 1;
+      $this->ledger->markFailed($s->id, $eventId, $error, $attempt);
+
+      if ($attempt >= $this->budget) {
+        $this->ledger->markExhausted($s->id, $eventId);
+        $exhausted[] = $s->id;
+        Log::write($this->log, sprintf(
+          '[ddd delivery] %s event %s cannot be decoded; subscriber %s exhausted its budget (%d) without compensation: %s',
+          $eventClass, $eventId, $s->id, $this->budget, $decode->getMessage()
+        ), 'error');
+      } else {
+        $failed[] = $s->id;
+      }
+    }
+
+    if ($failed !== []) {
+      throw $decode;
+    }
+
+    return new DeliveryOutcome([], $skipped, [], $exhausted);
   }
 
   /**

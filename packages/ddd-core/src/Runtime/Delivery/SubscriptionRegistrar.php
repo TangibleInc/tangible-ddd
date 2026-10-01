@@ -6,6 +6,8 @@ namespace TangibleDDD\Runtime\Delivery;
 
 use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\Commands\ICommand;
+use TangibleDDD\Application\EventHandlers\IntegrationTranslator;
+use TangibleDDD\Runtime\Ids\DeterministicCommandId;
 use TangibleDDD\Application\Process\Awaits;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessRunner;
@@ -23,9 +25,13 @@ use TangibleDDD\Runtime\Process\IProcessEntry;
  *   translate(IIntegrationEvent): ?ICommand) and 0.6 IntegrationListener
  *   subclasses (read through their protected get_event_class()/get_command()).
  *   A class string is resolved through the container when it has it, else
- *   constructed without arguments. Priority is Subscriber::LISTENER unless
- *   the class declares #[SubscriberPriority]. Id: `listener:<class>`.
- *   On budget exhaustion, an IExternalEffectCommand's failureCommand() is sent.
+ *   constructed without arguments; a 0.6 IntegrationListener subclass is
+ *   built WITHOUT its self-registering constructor (see resolve()).
+ *   Priority is Subscriber::LISTENER unless the class declares
+ *   #[SubscriberPriority]. Id: `listener:<class>`. The translated command is
+ *   sent with the deterministic id uuid5(event_id, subscriber_id)
+ *   (DeterministicCommandId; register 3.8). On budget exhaustion, an
+ *   IExternalEffectCommand's failureCommand() is sent.
  *
  * registerProcess(class-string<LongProcess>):
  *   Each #[StartsOn(E)] → `ignition:<process>@<E>` at Subscriber::IGNITION,
@@ -80,12 +86,22 @@ final class SubscriptionRegistrar {
       $priority = $attrs[0]->newInstance()->priority;
     }
 
+    $id = 'listener:' . get_class($instance);
     $this->registry->add(new Subscriber(
-      'listener:' . get_class($instance),
+      $id,
       $priority,
       $eventClass,
-      static function (IIntegrationEvent $event) use ($translate): void {
-        $translate($event)?->send();
+      static function (IIntegrationEvent $event, string $eventId = '') use ($translate, $id): void {
+        $command = $translate($event);
+        if ($command === null) {
+          return;
+        }
+        // Register 3.8: inside a fact cause the command id is
+        // uuid5(event_id, subscriber_id), so a redelivery repeats it.
+        DeterministicCommandId::within(
+          $eventId !== '' ? DeterministicCommandId::forFact($eventId, $id) : null,
+          static fn () => $command->send()
+        );
       },
       static function (IIntegrationEvent $event, \Throwable $last) use ($translate): void {
         $command = $translate($event);
@@ -139,6 +155,14 @@ final class SubscriptionRegistrar {
     }
   }
 
+  /**
+   * Container first. Otherwise a translator whose constructor is INHERITED
+   * from a framework base (the 0.6 IntegrationListener, whose constructor
+   * self-registers on a WordPress hook) is built without running that
+   * constructor: the registrar is the registration, and running it too would
+   * subscribe twice on WordPress and fatal elsewhere (wave1-notes core
+   * minor 3). Any other class is constructed without arguments.
+   */
   private function resolve(string $class): object {
     if ($this->services?->has($class)) {
       return $this->services->get($class);
@@ -146,6 +170,18 @@ final class SubscriptionRegistrar {
     if (!class_exists($class)) {
       throw new \InvalidArgumentException("Listener class $class does not exist");
     }
+
+    $reflection = new \ReflectionClass($class);
+    $constructor = $reflection->getConstructor();
+    if (
+      $constructor !== null
+      && $reflection->isSubclassOf(IntegrationTranslator::class)
+      && $constructor->getDeclaringClass()->getName() !== $class
+      && str_starts_with($constructor->getDeclaringClass()->getName(), 'TangibleDDD\\')
+    ) {
+      return $reflection->newInstanceWithoutConstructor();
+    }
+
     return new $class();
   }
 

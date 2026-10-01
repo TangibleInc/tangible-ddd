@@ -10,6 +10,7 @@ use TangibleDDD\Application\Correlation\Kind;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
 use TangibleDDD\Core\Tests\Unit\Fixtures\BillingFact;
 use TangibleDDD\Core\Tests\Unit\Fixtures\OrderPlaced;
+use TangibleDDD\Core\Tests\Unit\Fixtures\PoisonFact;
 use TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Runtime\Delivery\IntegrationDelivery;
@@ -349,5 +350,57 @@ final class IntegrationDeliveryTest extends TestCase {
     self::assertSame(240, IntegrationDelivery::backoffSeconds(4));
     self::assertSame(3600, IntegrationDelivery::backoffSeconds(12));
     self::assertSame(5, IntegrationDelivery::DEFAULT_BUDGET);
+  }
+
+  public function test_a_poison_fact_counts_an_attempt_against_every_pending_subscriber(): void {
+    // wave1-notes core minor 1: from_payload() throwing must still advance
+    // the per-subscriber budget, or the fact retries forever.
+    $this->registry->add($this->stub('a', Subscriber::LISTENER, PoisonFact::class));
+    $this->registry->add($this->stub('b', Subscriber::RESUME, PoisonFact::class));
+
+    try {
+      $this->delivery(2)->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
+      self::fail('a poison fact still surfaces while budget remains');
+    } catch (\UnexpectedValueException) {
+    }
+
+    self::assertSame(1, $this->ledger->attempts('a', self::EVENT_ID));
+    self::assertSame(1, $this->ledger->attempts('b', self::EVENT_ID));
+    self::assertStringContainsString('payload no longer decodes', (string) $this->ledger->lastError('a', self::EVENT_ID));
+  }
+
+  public function test_a_poison_fact_stops_once_every_subscriber_reaches_the_budget(): void {
+    $this->registry->add($this->stub('a', Subscriber::LISTENER, PoisonFact::class, null, function () {
+      $this->ran[] = 'compensated';
+    }));
+    $delivery = $this->delivery(2);
+
+    try {
+      $delivery->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
+    } catch (\UnexpectedValueException) {
+    }
+    $outcome = $delivery->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
+
+    self::assertSame(['a'], $outcome->exhausted, 'budget bounds the poison fact');
+    self::assertFalse($outcome->needsRetry());
+    self::assertTrue($this->ledger->exhausted('a', self::EVENT_ID));
+    self::assertSame([], $this->ran, 'no handler and no compensation: there is no event to give them');
+
+    $again = $delivery->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
+    self::assertSame(['a'], $again->exhausted);
+  }
+
+  public function test_a_poison_fact_leaves_delivered_subscribers_alone(): void {
+    $this->registry->add($this->stub('done', Subscriber::LISTENER, PoisonFact::class));
+    $this->registry->add($this->stub('pending', Subscriber::RESUME, PoisonFact::class));
+    $this->ledger->markDelivered('done', self::EVENT_ID);
+
+    try {
+      $this->delivery(5)->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
+    } catch (\UnexpectedValueException) {
+    }
+
+    self::assertSame(0, $this->ledger->attempts('done', self::EVENT_ID));
+    self::assertSame(1, $this->ledger->attempts('pending', self::EVENT_ID));
   }
 }

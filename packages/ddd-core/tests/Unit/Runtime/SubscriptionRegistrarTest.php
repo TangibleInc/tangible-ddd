@@ -40,6 +40,7 @@ final class SubscriptionRegistrarTest extends TestCase {
     $this->registry = new SubscriptionRegistry();
     $this->entry = new RecordingProcessEntry();
     RecordingCommand::$sent = [];
+    RecordingCommand::$hints = [];
     RecordingProcessEntry::$journal = [];
     ChargeCard::$sends = 0;
   }
@@ -215,6 +216,50 @@ final class SubscriptionRegistrarTest extends TestCase {
     $delivery->deliver(OrderPlaced::class, $wrapped);
     self::assertSame(['charge-failed'], RecordingCommand::labels(), 'fired once');
     self::assertSame(2, ChargeCard::$sends);
+  }
+
+  public function test_a_listener_command_gets_the_deterministic_id_uuid5_of_event_and_subscriber(): void {
+    // wave1-notes core minor 2 / register 3.8.
+    $this->registrar()->registerListener(new ShipOrderListener());
+
+    $this->deliver(OrderPlaced::class, ['order_id' => 42, 'sku' => 's']);
+
+    $expected = str_replace('-', '', \TangibleDDD\Runtime\Ids\NameBasedUuid::v5(self::EVENT_ID, 'listener:' . ShipOrderListener::class));
+    self::assertSame([$expected], RecordingCommand::$hints);
+    self::assertNull(\TangibleDDD\Runtime\Ids\DeterministicCommandId::peek(), 'the hint does not outlive the send');
+  }
+
+  public function test_a_listener_command_for_a_non_uuid_event_id_gets_no_hint(): void {
+    $this->registrar()->registerListener(new ShipOrderListener());
+
+    (new IntegrationDelivery($this->registry, new InMemoryDeliveryLedger(), 5, static fn () => null))
+      ->deliver(OrderPlaced::class, IntegrationEnvelope::wrap(['order_id' => 1, 'sku' => 's'], 'corr', 1, 'evt-not-a-uuid'));
+
+    self::assertSame([null], RecordingCommand::$hints);
+  }
+
+  public function test_a_legacy_listener_class_string_is_never_constructed(): void {
+    // wave1-notes core minor 3: the 0.6 IntegrationListener constructor
+    // self-registers on a WordPress hook; the registrar must not run it.
+    // This suite has no WordPress, so running it would fatal.
+    $this->registrar()->registerListener(LegacyWelcomeListener::class);
+
+    $this->deliver(UserJoined::class, ['user_id' => 5]);
+    self::assertSame(['welcome'], RecordingCommand::labels());
+  }
+
+  public function test_a_legacy_listener_class_string_from_the_container_is_used_as_is(): void {
+    $instance = (new \ReflectionClass(LegacyWelcomeListener::class))->newInstanceWithoutConstructor();
+    $container = new class($instance) implements ContainerInterface {
+      public function __construct(private object $instance) {}
+      public function get(string $id): mixed { return $this->instance; }
+      public function has(string $id): bool { return true; }
+    };
+
+    $this->registrar($container)->registerListener(LegacyWelcomeListener::class);
+    $this->deliver(UserJoined::class, ['user_id' => 6]);
+
+    self::assertSame(6, RecordingCommand::$sent[0]->data);
   }
 
   public function test_ignition_subscriber_is_registered_per_process_and_event_class(): void {
