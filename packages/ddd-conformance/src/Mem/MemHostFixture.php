@@ -108,7 +108,9 @@ final class MemHostFixture implements HostFixture {
     $this->boundary = new InMemoryTransactionBoundary(NestedPolicy::Reject, $log);
     $this->pauses = new InMemoryRelayPauseStore();
     $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->boundary);
-    $this->transport = new InMemoryTransport($this->transportSharesConnection);
+    // CONF-5: a shared-connection transport enlists in the boundary, so a
+    // rolled-back relay transaction takes its submission with it.
+    $this->transport = new InMemoryTransport($this->transportSharesConnection, $this->boundary);
     $this->ledger = new InMemoryDeliveryLedger();
     $this->subscriptions = new SubscriptionRegistry();
     $this->rawLock = new InMemoryProcessLock();
