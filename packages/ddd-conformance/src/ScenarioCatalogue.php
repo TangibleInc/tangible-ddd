@@ -125,6 +125,7 @@ final class ScenarioCatalogue {
     'process.await-any-cancellation'          => self::S . 'AwaitScenarios',
     'process.await-all-dynamic'               => self::S . 'AwaitScenarios',
     'decode.unknown-class'                    => self::S . 'DecodeScenarios',
+    'codec.large-payload'                     => self::S . 'CodecScenarios',
   ];
 
   /** The abstract scenario case declaring $id, or null when none does yet (wave 4). */
