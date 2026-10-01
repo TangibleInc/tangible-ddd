@@ -47,6 +47,7 @@ use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\FreshProcesses;
 use TangibleDDD\Conformance\FreshRun;
 use TangibleDDD\Conformance\HostFixture;
+use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
 use TangibleDDD\Conformance\ProcessRow;
 use TangibleDDD\Conformance\ProcessWorker;
@@ -187,7 +188,7 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults {
 
   public const CONSUMER = 'sfc';
 
@@ -241,6 +242,15 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   /** @var list<string> subscriber failures of the last drain's delivery stage */
   private array $lastDeliveryFailures = [];
+
+  /**
+   * @param StartMode $startMode the bundle default (Deferred), or InBand
+   *   (`tangible_ddd.process.inband_start: true`) for a scenario that
+   *   assumes the first step runs inside start()
+   */
+  public function __construct(StartMode $startMode = StartMode::Deferred) {
+    $this->startMode = $startMode;
+  }
 
   public function hostName(): string {
     return 'sf';
@@ -643,6 +653,23 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   public function failNextWakeHandoff(string $reason): void {
     $this->wakeFaults->failNext($reason);
+  }
+
+  // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
+
+  public function forgetProcessClass(int $processId, string $missingClass): void {
+    // sf stores the class in process_class only (business_data is the promoted constructor parameters).
+    $this->connection->executeStatement('UPDATE ddd_processes SET process_class = ? WHERE id = ?', [$missingClass, $processId], [ParameterType::STRING, ParameterType::INTEGER]);
+  }
+
+  public function storedProcessStatus(int $processId): ?string {
+    $status = $this->connection->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
+    return $status === false ? null : (string) $status;
+  }
+
+  public function quarantineReason(int $processId): ?string {
+    $reason = $this->connection->fetchOne('SELECT quarantine_reason FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
+    return $reason === false || $reason === null ? null : (string) $reason;
   }
 
   // ── FreshProcesses (CR-W3CP-4) ───────────────────────────────────────────
