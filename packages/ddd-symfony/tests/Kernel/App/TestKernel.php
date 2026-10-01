@@ -122,12 +122,19 @@ final class TestKernel extends Kernel {
       'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
       // no_listen: D14 off (no NOTIFY, ddd:relay polls), the "NOTIFY suppressed" case.
       'relay' => $this->variant === 'no_listen' ? ['listen' => false] : [],
+      // audit: D12 lists next to #[Audit] (AttributeAuditPolicy), into a readable sink.
+      'audit' => $this->variant === 'audit' ? [
+        'sink' => 'test.audit_sink',
+        'not_audited' => [Commands\RenameWidgetCommand::class],
+        'without_parameters' => [Commands\ProgressCommand::class],
+      ] : [],
     ]);
 
     $services = $container->services();
     $services->defaults()->autowire()->autoconfigure();
     $services->set('logger', NullLogger::class);
     $services->set('test.flusher', RecordingFlusher::class)->public();
+    $services->set('test.audit_sink', \TangibleDDD\Testing\InMemoryAuditSink::class)->autowire(false)->public();
     // An app service that injects the D10 stores (unused private services are removed).
     $services->set('test.d10_stores', \ArrayObject::class)->args([[
       \Symfony\Component\DependencyInjection\Loader\Configurator\service(\TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository::class),

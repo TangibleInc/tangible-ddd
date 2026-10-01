@@ -67,7 +67,7 @@ use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 use TangibleDDD\Domain\Shared\Uuid;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
-use TangibleDDD\Runtime\Audit\AuditEverything;
+use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IAuditPolicy;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
 use TangibleDDD\Runtime\Delivery\DeliveryOutcome;
@@ -366,7 +366,8 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── command pipeline ─────────────────────────────────────────────────────
 
   public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
-    $policy = $options->audit ? new AuditEverything() : new class implements IAuditPolicy {
+    // The bundle's default policy (D12); no conformance command carries #[Audit].
+    $policy = $options->audit ? new AttributeAuditPolicy() : new class implements IAuditPolicy {
       public function audits(object $command): bool {
         return false;
       }

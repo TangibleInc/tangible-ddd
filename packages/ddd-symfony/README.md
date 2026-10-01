@@ -39,6 +39,21 @@ Schema: `schema/postgres/*.sql` (plain, idempotent; `{{prefix}}` = `tangible_ddd
   `APP_VERSION` unset) all mean `'0.0.0'`, both for the registered consumer and
   for the audit environment's `app` key (L4). Before wave 4 a null version was a
   `TypeError` at the first command.
+- `audit` (D12): the default `tangible_ddd.audit.policy` is core
+  `AttributeAuditPolicy` (it was `AuditEverything`), so `#[Audit(false)]` and
+  `#[Audit(parameters: false)]` on a command are honoured. `audit.not_audited`
+  and `audit.without_parameters` take class names, parents or marker
+  interfaces (matched with `instanceof`), for command families that cannot
+  carry the attribute. `audit.policy: <service id>` still replaces the policy;
+  bind it to `TangibleDDD\Runtime\Audit\AuditEverything` for the old behaviour.
+
+  ```yaml
+  tangible_ddd:
+    audit:
+      sink: App\Audit\DbalAuditSink
+      not_audited: [App\Jobs\Commands\HeartbeatCommand]
+      without_parameters: [App\Jobs\Commands\ProgressCommand]
+  ```
 
 ## Operator view (D9)
 

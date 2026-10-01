@@ -19,7 +19,7 @@ use TangibleDDD\Application\Events\IIntegrationEventBus;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Outbox\OutboxConfig;
 use TangibleDDD\Application\Persistence\TransactionalCommandMiddleware;
-use TangibleDDD\Runtime\Audit\AuditEverything;
+use TangibleDDD\Runtime\Audit\AttributeAuditPolicy;
 use TangibleDDD\Runtime\Audit\IActorProvider;
 use TangibleDDD\Runtime\Audit\NullAuditSink;
 use TangibleDDD\Runtime\Audit\PhpEnvironmentProvider;
@@ -343,7 +343,13 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->args([service('tangible_ddd.domain_dispatcher'), service('tangible_ddd.integration_bus')]);
 
   $s->set('tangible_ddd.audit.sink', NullAuditSink::class);
-  $s->set('tangible_ddd.audit.policy', AuditEverything::class);
+  // D12 (CR-W4CE-3): #[Audit(false)] / #[Audit(parameters: false)] plus the
+  // configured class lists. Bind audit.policy to AuditEverything for the old behaviour.
+  $s->set('tangible_ddd.audit.policy', AttributeAuditPolicy::class)
+    ->args([
+      array_values($config['audit']['not_audited'] ?? []),
+      array_values($config['audit']['without_parameters'] ?? []),
+    ]);
   $s->set('tangible_ddd.audit.environment', PhpEnvironmentProvider::class)
     ->factory([Factory::class, 'auditEnvironment'])
     ->args([param('kernel.environment'), $consumer['version']]);
