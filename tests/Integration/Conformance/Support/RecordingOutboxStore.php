@@ -13,18 +13,23 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
  * Pass-through IOutboxStore around the wpdb store that the relay step is
  * given, recording what one OutboxProcessor::process_batch() did by event
  * id, so HostFixture::relayOnce() can answer a RelayReport (the core relay
- * returns counts only). Changes no behaviour.
+ * returns counts only). The only behaviour it adds: start($limit) caps the
+ * rows one claim() may take, so relayOnce($limit) is honoured although the
+ * relay step claims OutboxConfig::$batch_size.
  */
 final class RecordingOutboxStore implements IOutboxStore {
 
   /** @var array{claimed: list<string>, accepted: list<string>, retried: list<string>, deadLettered: list<string>, leaseLost: list<string>} */
   private array $seen;
 
+  private int $limit = PHP_INT_MAX;
+
   public function __construct(public readonly IOutboxStore $inner) {
     $this->start();
   }
 
-  public function start(): void {
+  public function start(int $limit = PHP_INT_MAX): void {
+    $this->limit = max(1, $limit);
     $this->seen = ['claimed' => [], 'accepted' => [], 'retried' => [], 'deadLettered' => [], 'leaseLost' => []];
   }
 
@@ -37,7 +42,7 @@ final class RecordingOutboxStore implements IOutboxStore {
   }
 
   public function claim(int $limit, \DateTimeImmutable $now, int $leaseSeconds): array {
-    $claims = $this->inner->claim($limit, $now, $leaseSeconds);
+    $claims = $this->inner->claim(min($limit, $this->limit), $now, $leaseSeconds);
     foreach ($claims as $c) {
       $this->seen['claimed'][] = $c->event_id;
     }

@@ -368,7 +368,9 @@ final class WpHostFixture implements HostFixture {
   // ── relay ────────────────────────────────────────────────────────────────
 
   public function relayOnce(int $limit = 50): RelayReport {
-    $this->relayStore->start();
+    // The core relay step claims OutboxConfig::$batch_size; the recording
+    // store caps that claim at $limit.
+    $this->relayStore->start($limit);
     $this->relay->process_batch();
     return $this->relayStore->report();
   }
@@ -440,9 +442,12 @@ final class WpHostFixture implements HostFixture {
   }
 
   public function deliverTransported(string $eventClass): array {
+    // Only $eventClass's actions: the AS hook is the fact's integration_action.
+    $hook = IntegrationHookName::resolve($eventClass)
+      ?? throw new \LogicException("$eventClass has no integration hook on this host");
     $outcomes = [];
     foreach ($this->actions() as $a) {
-      if (isset($this->deliveredActions[$a['action_id']])) {
+      if ($a['hook'] !== $hook || isset($this->deliveredActions[$a['action_id']])) {
         continue;
       }
       $this->deliveredActions[$a['action_id']] = true;
@@ -553,7 +558,7 @@ final class WpHostFixture implements HostFixture {
     $this->signalHooks[] = ['all', $callback];
   }
 
-  /** @return list<array{action_id: int, event_id: string, due_at: \DateTimeImmutable}> this consumer's Action Scheduler actions, oldest first */
+  /** @return list<array{action_id: int, hook: string, event_id: string, due_at: \DateTimeImmutable}> this consumer's Action Scheduler actions, oldest first */
   private function actions(): array {
     global $wpdb;
     $ids = $wpdb->get_col($wpdb->prepare(
@@ -571,6 +576,7 @@ final class WpHostFixture implements HostFixture {
       $date = $action->get_schedule()->get_date();
       $out[] = [
         'action_id' => (int) $id,
+        'hook' => (string) $action->get_hook(),
         'event_id' => (string) IntegrationEnvelope::unwrap($wrapped)->event_id,
         'due_at' => \DateTimeImmutable::createFromInterface($date ?? new \DateTime('@0'))->setTimezone(new \DateTimeZone('UTC')),
       ];
