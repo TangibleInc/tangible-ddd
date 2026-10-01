@@ -57,7 +57,18 @@ re-create their tables; each conformance test gets a fresh Postgres schema
 per-test transaction.
 
 The conformance host is `tests/Conformance/SfHostFixture.php`; the scenarios
-come from `tangible/ddd-conformance` (require-dev).
+come from `tangible/ddd-conformance` (require-dev). Since wave 3 it runs every
+id due on sf by wave 3 (15 + 23, pinned by `SfCatalogueTest`):
+
+- workers: worker 1 is the fixture's connection, worker 2 a second DBAL
+  connection (another advisory-lock session); `drainOnce()` is one pass of
+  `ddd:relay` plus `messenger:consume ddd_facts ddd_wakeups`;
+- fresh processes: `tests/Conformance/bin/fresh-process.php`, a separate `php`
+  process attached to the test's schema (killed with SIGKILL where a scenario
+  says so);
+- web requests: process-lock acquires go to a pooled-DSN lock with
+  `pooled_connection: refuse`, and the in-band boot refusal is the real
+  `TestKernel` boot.
 
 ### Sibling packages are copied, not linked
 

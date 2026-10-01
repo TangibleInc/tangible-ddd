@@ -761,7 +761,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->reset->install();
   }
 
-  /** What the bundle provides at boot (HostDefaultsInstaller): the sf signal dispatcher and the app clock. */
+  /** What the bundle provides at boot (HostDefaultsInstaller): the sf signal dispatcher, the app clock and logger. */
   private function provideHostDefaults(): void {
     $events = new EventDispatcher();
     $events->addListener(DddSignal::class, function (DddSignal $s): void {
@@ -769,6 +769,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     });
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, new SymfonySignalDispatcher(new NullLogger(), $events));
     HostDefaults::provide(IClock::class, $this->clock);
+    HostDefaults::provide(LoggerInterface::class, $this->logger);
   }
 
   private function openConnection(ScenarioSchemaMiddleware $middleware): Connection {
