@@ -38,7 +38,17 @@ use TangibleDDD\Runtime\SystemClock;
  *   (redeliver()); raw callbacks never run twice;
  * - at the budget (5): its onExhausted compensation (when it has one) and
  *   then the terminal marker; a throwing compensation stays pending and is
- *   re-fired on a later delivery.
+ *   re-fired on a later delivery; a fact that no longer decodes is marked
+ *   exhausted without it ('compensation skipped: undecodable', as core
+ *   IntegrationDelivery::poisoned());
+ * - a `failed` pair whose subscriber is not bound when the redelivery runs
+ *   (removed, context-only, closure id changed: WP8-9) spends one attempt
+ *   per redelivery and is exhausted at the budget without a compensation;
+ *   `wp ddd ops --abandon=<subscriber@event>` ends one at once;
+ * - a ledger read or write that throws is contained per subscriber: logged,
+ *   covered by a whole-fact redelivery, and the later subscribers still
+ *   run; only when that redelivery cannot be scheduled is it rethrown (the
+ *   fact's Action Scheduler action fails, as in 0.6).
  *
  * The ledger is `{prefix}_ddd_delivery_ledger` of the fact's consumer (the
  * prefix that owns the hook), and the gate is active only once that
@@ -156,7 +166,7 @@ final class WpLedgeredDelivery {
         ($entry['invoke'])(...$params);
         return;
       }
-      self::gate($ledger, $hook, $entry, $eventId, $params[0]);
+      self::gateSafely($ledger, $hook, $entry, $eventId, $params[0]);
     };
   }
 
@@ -195,7 +205,47 @@ final class WpLedgeredDelivery {
     $entries = array_values(self::$bound[$hook] ?? []);
     usort($entries, static fn (array $a, array $b) => [$a['priority'], $a['seq']] <=> [$b['priority'], $b['seq']]);
     foreach ($entries as $entry) {
-      self::gate($ledger, $hook, $entry, $eventId, $payload);
+      self::gateSafely($ledger, $hook, $entry, $eventId, $payload);
+    }
+
+    if ($ledger instanceof WpDeliveryLedger) {
+      self::spendUnbound($ledger, $hook, $event_class, $eventId, $payload);
+    }
+  }
+
+  /**
+   * A `failed` pair of this fact whose subscriber is not bound on $hook in
+   * this request (the listener was removed, it is registered only in some
+   * contexts, or its closure id changed on a deploy, WP8-9) cannot run, but
+   * it still spends one attempt per redelivery, so the delivery budget
+   * bounds it: at the budget it is exhausted without a compensation (there
+   * is no callback to take one from). Without this, such a row would stay
+   * `failed` with an unchanged updated_at and every relay tick and drain
+   * round would re-schedule a redelivery that does nothing.
+   *
+   * @param array<string, mixed> $wrapped
+   */
+  private static function spendUnbound(WpDeliveryLedger $ledger, string $hook, string $eventClass, string $eventId, array $wrapped): void {
+    foreach ($ledger->failedSubscribers($eventId) as $id => $attempts) {
+      if (isset(self::$bound[$hook][$id])) {
+        continue;
+      }
+      $attempt = $attempts + 1;
+      $reason = sprintf('subscriber %s is not bound on %s in this request (removed, registered only in some contexts, or its closure id changed)', $id, $hook);
+      try {
+        if ($attempt >= self::BUDGET) {
+          $ledger->markFailedFor($id, $eventId, $reason, $attempt, null);
+          $ledger->markExhaustedBecause($id, $eventId, "$reason; exhausted without a compensation");
+          Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s while unbound; no compensation ran', $id, self::BUDGET, $hook, $eventId), 'error');
+          continue;
+        }
+        $ledger->markFailedFor($id, $eventId, $reason, $attempt, self::redeliveryArgs($hook, $eventClass, $wrapped));
+      } catch (\Throwable $e) {
+        Log::write(null, sprintf('[ddd delivery] could not count the unbound subscriber %s on event %s: %s', $id, $eventId, $e->getMessage()), 'error');
+        continue;
+      }
+      Log::write(null, sprintf('[ddd delivery] %s (attempt %d/%d)', $reason, $attempt, self::BUDGET), 'warning');
+      self::scheduleRedelivery($hook, $eventClass, $eventId, $wrapped, $attempt);
     }
   }
 
@@ -216,6 +266,32 @@ final class WpLedgeredDelivery {
     self::$idlessNoted = [];
     self::$redeliveryScheduled = [];
     self::$configs = [];
+  }
+
+  /**
+   * gate() with ledger storage failures contained per subscriber: a ledger
+   * read or write that throws (the subscriber's own throw never escapes
+   * gate()) is logged and covered by a whole-fact redelivery, so the
+   * subscribers after it on the hook still run. Only when that redelivery
+   * cannot be scheduled either is the failure rethrown, which fails the
+   * Action Scheduler action of the fact (the 0.6 behaviour: an operator
+   * retries it).
+   *
+   * @param array{id: string, priority: int, seq: int, event: string, invoke: \Closure, onExhausted: ?\Closure} $entry
+   * @param array<string, mixed> $wrapped
+   */
+  private static function gateSafely(IDeliveryLedger $ledger, string $hook, array $entry, string $eventId, array $wrapped): void {
+    try {
+      self::gate($ledger, $hook, $entry, $eventId, $wrapped);
+    } catch (\Throwable $e) {
+      Log::write(null, sprintf(
+        '[ddd delivery] ledger failure for subscriber %s on %s event %s; the fact is redelivered: %s',
+        $entry['id'], $hook, $eventId, $e->getMessage()
+      ), 'error');
+      if (!self::scheduleRedelivery($hook, $entry['event'], $eventId, $wrapped, 1)) {
+        throw $e;
+      }
+    }
   }
 
   /**
@@ -269,6 +345,17 @@ final class WpLedgeredDelivery {
       try {
         $class = $entry['event'];
         $event = $class::from_payload(\TangibleDDD\Application\Events\IntegrationEnvelope::unwrap($wrapped)->payload);
+      } catch (\Throwable $e) {
+        // The fact no longer decodes: the compensation can never be built.
+        // Terminal without it, as core IntegrationDelivery::poisoned() does.
+        $reason = sprintf('compensation skipped: undecodable payload (%s: %s)', get_class($e), $e->getMessage());
+        $ledger instanceof WpDeliveryLedger
+          ? $ledger->markExhaustedBecause($entry['id'], $eventId, $reason)
+          : $ledger->markExhausted($entry['id'], $eventId);
+        Log::write(null, sprintf('[ddd delivery] subscriber %s exhausted its budget (%d) on %s event %s; %s', $entry['id'], self::BUDGET, $hook, $eventId, $reason), 'error');
+        return true;
+      }
+      try {
         ($entry['onExhausted'])($event, $last);
       } catch (\Throwable $e) {
         Log::write(null, sprintf(
@@ -283,29 +370,42 @@ final class WpLedgeredDelivery {
     return true;
   }
 
-  /** @param array<string, mixed> $wrapped */
-  private static function scheduleRedelivery(string $hook, string $eventClass, string $eventId, array $wrapped, int $attempt): void {
-    if (isset(self::$redeliveryScheduled["$hook|$eventId"]) || !function_exists('as_schedule_single_action')) {
-      return;
+  /**
+   * @param array<string, mixed> $wrapped
+   * @return bool whether a redelivery of the fact is now queued (this call, or earlier in the request)
+   */
+  private static function scheduleRedelivery(string $hook, string $eventClass, string $eventId, array $wrapped, int $attempt): bool {
+    if (isset(self::$redeliveryScheduled["$hook|$eventId"])) {
+      return true;
+    }
+    if (!function_exists('as_schedule_single_action')) {
+      return false;
     }
     $prefix = self::prefixOf($hook, $eventClass);
     if ($prefix === null) {
-      return;
+      return false;
     }
     $config = self::configFor($prefix);
     self::$redeliveryScheduled["$hook|$eventId"] = true;
-    $id = as_schedule_single_action(
-      self::clock()->now()->getTimestamp() + IntegrationDelivery::backoffSeconds($attempt),
-      $config->hook('ddd_redeliver'),
-      self::redeliveryArgs($hook, $eventClass, $wrapped),
-      $config->as_group('outbox')
-    );
+    try {
+      $id = as_schedule_single_action(
+        self::clock()->now()->getTimestamp() + IntegrationDelivery::backoffSeconds($attempt),
+        $config->hook('ddd_redeliver'),
+        self::redeliveryArgs($hook, $eventClass, $wrapped),
+        $config->as_group('outbox')
+      );
+    } catch (\Throwable $e) {
+      Log::write(null, sprintf('[ddd delivery] scheduling the redelivery of %s event %s threw: %s', $hook, $eventId, $e->getMessage()), 'error');
+      $id = 0;
+    }
     if ((int) $id === 0) {
-      // The ledger row stays `failed` with its redelivery args: the next
-      // relay tick (restoreRedeliveries()) schedules it again.
+      // A `failed` ledger row with its redelivery args is scheduled again
+      // by the next relay tick (restoreRedeliveries()).
       unset(self::$redeliveryScheduled["$hook|$eventId"]);
       Log::write(null, sprintf('[ddd delivery] Action Scheduler did not store the redelivery of %s event %s; the relay tick re-schedules it', $hook, $eventId), 'error');
+      return false;
     }
+    return true;
   }
 
   /**

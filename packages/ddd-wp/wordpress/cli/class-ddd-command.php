@@ -193,13 +193,40 @@ class DDD_Command {
    * : Repair: re-arm the exhausted wakeup intent with this idempotency key
    *   (fresh budget, due now). Needs --consumer.
    *
+   * [--abandon=<subscriber@event>]
+   * : Repair: end the failed delivery pair with this key (as `wp ddd ops`
+   *   lists it, `<subscriber id> @ <event id>`) without a compensation; its
+   *   pending redelivery then skips it. Needs --consumer.
+   *
    * ## EXAMPLES
    *
    *     wp ddd ops
    *     wp ddd ops --layer=delivery --format=json
    *     wp ddd ops --consumer=tgbl_cred --rearm=timeout:42:3
+   *     wp ddd ops --consumer=tgbl_cred --abandon='action:Closure@wp-content/plugins/x/x.php:12 @ 0b6f…'
    */
   public function ops( $args, $assoc_args ) {
+    if ( isset( $assoc_args['abandon'] ) ) {
+      if ( ! isset( $assoc_args['consumer'] ) ) {
+        \WP_CLI::error( '--abandon needs --consumer=<prefix>.' );
+      }
+      [ $handle ] = $this->selected_consumers( $assoc_args );
+      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::isV8( $handle->config() ) ) {
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no delivery ledger (schema v8 not installed)." );
+      }
+      $key = (string) $assoc_args['abandon'];
+      $at = strrpos( $key, '@' ); // subscriber ids may contain '@', event ids never do
+      if ( $at === false ) {
+        \WP_CLI::error( '--abandon takes <subscriber id>@<event id>.' );
+      }
+      $subscriber = trim( substr( $key, 0, $at ) );
+      $event = trim( substr( $key, $at + 1 ) );
+      ( new \TangibleDDD\WordPress\Adapter\WpDeliveryLedger( $handle->prefix() ) )->abandon( $subscriber, $event, 'abandoned by an operator (wp ddd ops --abandon)' )
+        ? \WP_CLI::success( "Abandoned delivery $subscriber @ $event." )
+        : \WP_CLI::error( "No failed delivery $subscriber @ $event for '{$handle->prefix()}'." );
+      return;
+    }
+
     if ( isset( $assoc_args['rearm'] ) ) {
       if ( ! isset( $assoc_args['consumer'] ) ) {
         \WP_CLI::error( '--rearm needs --consumer=<prefix>.' );

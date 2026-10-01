@@ -18,7 +18,8 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * Layers (the core `Runtime\Ops\Layer` values):
  * - relay:    DLQ rows (budget = max_attempts) and pending rows retrying;
- * - delivery: ledger pairs `failed` or `exhausted` (budget 5);
+ * - delivery: ledger pairs `failed` (repair `abandon`) or `exhausted`
+ *             (budget 5);
  * - wakeup:   intents that failed at least once or died while firing, and
  *             exhausted intents (budget 10, repair `rearm`);
  * - process:  stranded `scheduled`/`running` rows and quarantined rows.
@@ -83,8 +84,10 @@ final class WpOperatorView {
       $r['last_error'],
       $r['updated_at'],
       // A failed pair is redelivered on its own (`{prefix}_ddd_redeliver`,
-      // restored by the relay tick when lost); an exhausted one is terminal.
-      [],
+      // restored by the relay tick when lost) until its budget is spent, an
+      // unbound subscriber included; `abandon` ends it at once. An exhausted
+      // pair is terminal.
+      $r['status'] === 'failed' ? ['abandon'] : [],
     ), (new WpDeliveryLedger($this->config->prefix(), $this->clock))->problems($limit));
   }
 
@@ -117,9 +120,11 @@ final class WpOperatorView {
     }
     $out = [];
     $store = new WpdbProcessStore(new ProcessRepository($this->config), $this->config, $this->clock);
+    // No repair labels yet: a stranded `scheduled` row is continued by the
+    // relay tick on its own, and the `running` repairs (ResumeStrandedProcess,
+    // FailStrandedProcess) are pending core (change request WP8-10).
     foreach (array_slice($store->findStranded($this->now()), 0, $limit) as $s) {
-      $out[] = $this->item('process', "#{$s->processId} {$s->processClass} ({$s->status}, step {$s->stepIndex})", 0, 0, 'stranded', $s->updatedAt->format('Y-m-d H:i:s'),
-        $s->status === 'running' ? ['resume-stranded', 'fail-stranded'] : ['continue']);
+      $out[] = $this->item('process', "#{$s->processId} {$s->processClass} ({$s->status}, step {$s->stepIndex})", 0, 0, 'stranded', $s->updatedAt->format('Y-m-d H:i:s'), []);
     }
     $db = self::db();
     foreach ((array) $db->get_results($db->prepare(

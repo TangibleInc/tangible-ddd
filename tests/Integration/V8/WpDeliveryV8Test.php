@@ -10,6 +10,7 @@ use TangibleDDD\Infra\Persistence\ProcessRepository;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
 use TangibleDDD\Runtime\HostDefaults;
+use TangibleDDD\Tests\Integration\V8\Fakes\V8DatedFact;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8Fact;
 use TangibleDDD\Tests\Integration\V8\Fakes\V8IgnitedProcess;
 use TangibleDDD\WordPress\Adapter\WpDeliveryLedger;
@@ -150,6 +151,111 @@ final class WpDeliveryV8Test extends V8TestCase {
     [$a] = WpLedgeredDelivery::subscribers($this->hook);
     self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
     self::assertSame(5, $this->runs['a']);
+  }
+
+  public function test_a_failed_subscriber_that_is_no_longer_bound_spends_its_budget_and_the_drain_ends(): void {
+    $down = 99;
+    $this->listen('a', $down);
+    register_delivery_hooks($this->config);
+    do_action($this->hook, $this->wrapped());
+    [$a] = WpLedgeredDelivery::subscribers($this->hook);
+    self::assertSame(1, $this->ledger()->attempts($a, self::EVENT_ID));
+
+    // A deploy moved the closure (its id changed), or it is bound only in
+    // some contexts: the request that runs the redelivery does not bind it.
+    remove_all_actions($this->hook);
+    WpLedgeredDelivery::unbind($this->hook);
+
+    $restored = $ran = 0;
+    for ($tick = 0; $tick < 2; $tick++) {
+      $restored += WpLedgeredDelivery::restoreRedeliveries($this->config);
+      foreach ($this->pendingActions('ddd8it_ddd_redeliver') as $action) {
+        \ActionScheduler::runner()->process_action($action->id, 'ddd-v8-test');
+        $ran++;
+      }
+    }
+    self::assertSame(0, $restored, 'each redelivery of the unbound pair schedules its successor at the backoff; the tick adds none');
+    self::assertSame(2, $ran);
+    self::assertSame(3, $this->ledger()->attempts($a, self::EVENT_ID), 'an unbound subscriber spends one attempt per redelivery');
+    self::assertStringContainsString('not bound', (string) $this->ledger()->lastError($a, self::EVENT_ID));
+    self::assertCount(1, $this->pendingActions('ddd8it_ddd_redeliver'));
+
+    $result = (new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config))->run();
+    self::assertSame(0, $result['remaining'], 'the drain terminates');
+    self::assertSame(2, $result['ran'], 'attempts 4 and 5');
+    self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
+    self::assertSame(['a' => 1], $this->runs, 'the unbound callback never ran again');
+    self::assertSame(0, WpLedgeredDelivery::restoreRedeliveries($this->config));
+    self::assertSame([], $this->pendingActions('ddd8it_ddd_redeliver'));
+  }
+
+  public function test_an_operator_abandons_a_failed_pair(): void {
+    $down = 99;
+    $this->listen('a', $down);
+    register_delivery_hooks($this->config);
+    do_action($this->hook, $this->wrapped());
+    [$a] = WpLedgeredDelivery::subscribers($this->hook);
+
+    $view = new \TangibleDDD\WordPress\Adapter\WpOperatorView($this->config);
+    [$item] = $view->list('delivery');
+    self::assertSame("$a @ " . self::EVENT_ID, $item['key']);
+    self::assertSame(['abandon'], $item['repair_actions']);
+
+    self::assertFalse($this->ledger()->abandon('nobody', self::EVENT_ID, 'operator'), 'only a failed pair can be abandoned');
+    self::assertTrue($this->ledger()->abandon($a, self::EVENT_ID, 'abandoned by operator'));
+    self::assertTrue($this->ledger()->exhausted($a, self::EVENT_ID));
+    self::assertSame('abandoned by operator', $this->ledger()->lastError($a, self::EVENT_ID));
+    self::assertSame([], $view->list('delivery')[0]['repair_actions'], 'an exhausted pair is terminal');
+
+    // Its pending redelivery now skips it.
+    [$action] = $this->pendingActions('ddd8it_ddd_redeliver');
+    \ActionScheduler::runner()->process_action($action->id, 'ddd-v8-test');
+    self::assertSame(['a' => 1], $this->runs);
+    self::assertSame(0, (new \TangibleDDD\WordPress\Adapter\WpRollbackDrain($this->config))->run()['remaining']);
+  }
+
+  public function test_an_undecodable_fact_exhausts_a_subscriber_without_its_compensation(): void {
+    $compensated = 0;
+    HostDefaults::get(ISubscriptionRegistry::class)->add(new Subscriber(
+      'ddd8it/listener:needs-n',
+      Subscriber::LISTENER,
+      V8DatedFact::class,
+      static function (): void { throw new \RuntimeException('down for good'); },
+      static function () use (&$compensated): void { $compensated++; },
+    ));
+    $bad = IntegrationEnvelope::wrap(['at' => 'no longer a date'], '44444444-4444-4444-8444-444444444444', 1, self::EVENT_ID);
+
+    for ($i = 0; $i < 6; $i++) {
+      WpLedgeredDelivery::redeliver(V8DatedFact::integration_action(), V8DatedFact::class, $bad);
+    }
+
+    $l = $this->ledger();
+    self::assertTrue($l->exhausted('ddd8it/listener:needs-n', self::EVENT_ID), 'terminal: the compensation can never be built');
+    self::assertStringContainsString('compensation skipped: undecodable', (string) $l->lastError('ddd8it/listener:needs-n', self::EVENT_ID));
+    self::assertSame(0, $compensated);
+  }
+
+  public function test_a_ledger_write_failure_does_not_lose_the_later_subscribers(): void {
+    $none = 0;
+    $this->listen('a', $none, 10);
+    $this->listen('b', $none, 20);
+    register_delivery_hooks($this->config);
+    [$a, $b] = WpLedgeredDelivery::subscribers($this->hook);
+
+    // The ledger rejects writes for a (a row that cannot be written).
+    $this->wpdb->query("CREATE TRIGGER `ddd8it_ledger_reject` BEFORE INSERT ON `{$this->table('ddd_delivery_ledger')}` FOR EACH ROW
+      BEGIN IF NEW.subscriber_id = '" . esc_sql($a) . "' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ledger down'; END IF; END");
+    $suppress = $this->wpdb->suppress_errors(true);
+    try {
+      do_action($this->hook, $this->wrapped());
+    } finally {
+      $this->wpdb->suppress_errors($suppress);
+      $this->wpdb->query('DROP TRIGGER IF EXISTS `ddd8it_ledger_reject`');
+    }
+
+    self::assertSame(['a' => 1, 'b' => 1], $this->runs, 'b still ran');
+    self::assertTrue($this->ledger()->delivered($b, self::EVENT_ID));
+    self::assertCount(1, $this->pendingActions('ddd8it_ddd_redeliver'), 'a whole-fact redelivery covers a');
   }
 
   public function test_a_double_delivery_runs_each_subscriber_once(): void {

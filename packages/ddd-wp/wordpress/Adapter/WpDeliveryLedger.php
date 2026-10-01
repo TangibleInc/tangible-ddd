@@ -22,7 +22,12 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * Every write is a single upsert on the WordPress connection, outside any
  * transaction of its own (subscribers commit their commands themselves).
- * Storage failures throw \RuntimeException so the fact is retried whole.
+ * Storage failures throw \RuntimeException. WpLedgeredDelivery contains
+ * them per subscriber: it logs the failure and schedules a whole-fact
+ * `{prefix}_ddd_redeliver`, so the subscribers after it still run; only
+ * when that redelivery cannot be scheduled either does the throw reach
+ * do_action and fail the fact's Action Scheduler action (0.6-equivalent:
+ * an operator retries the action).
  */
 final class WpDeliveryLedger implements IDeliveryLedger {
 
@@ -128,6 +133,63 @@ final class WpDeliveryLedger implements IDeliveryLedger {
 
   public function exhausted(string $subscriberId, string $eventId): bool {
     return $this->status($subscriberId, $eventId) === 'exhausted';
+  }
+
+  /** markExhausted() that also records why in last_error (no compensation ran, or an operator abandoned it). */
+  public function markExhaustedBecause(string $subscriberId, string $eventId, string $reason): void {
+    $now = $this->stamp();
+    $this->write(
+      "INSERT INTO `{$this->table()}` (subscriber_key, subscriber_id, event_id, status, attempts, last_error, exhausted_at, created_at, updated_at)
+       VALUES (%s, %s, %s, 'exhausted', 0, %s, %s, %s, %s)
+       ON DUPLICATE KEY UPDATE
+         last_error = IF(status = 'delivered', last_error, VALUES(last_error)),
+         status = IF(status = 'delivered', status, 'exhausted'),
+         exhausted_at = COALESCE(exhausted_at, VALUES(exhausted_at)), updated_at = VALUES(updated_at)",
+      [sha1($subscriberId), $subscriberId, $eventId, $reason, $now, $now, $now],
+      'markExhausted'
+    );
+  }
+
+  /**
+   * Operator repair (`wp ddd ops --abandon=<subscriber@event>`): a `failed`
+   * pair becomes terminal (`exhausted`, the reason in last_error) without a
+   * compensation; its pending redelivery then skips it.
+   *
+   * @return bool false when the pair is not `failed`
+   */
+  public function abandon(string $subscriberId, string $eventId, string $reason): bool {
+    $db = self::db();
+    $now = $this->stamp();
+    $n = $db->query($db->prepare(
+      "UPDATE `{$this->table()}` SET status = 'exhausted', exhausted_at = %s, last_error = %s, updated_at = %s
+       WHERE subscriber_key = %s AND event_id = %s AND status = 'failed'",
+      $now, $reason, $now, sha1($subscriberId), $eventId
+    ));
+    if ($n === false) {
+      throw new \RuntimeException('Delivery ledger abandon failed: ' . (string) $db->last_error);
+    }
+    return (int) $n === 1;
+  }
+
+  /**
+   * The `failed` subscribers of one fact: subscriber id => attempts.
+   *
+   * @return array<string, int>
+   */
+  public function failedSubscribers(string $eventId): array {
+    $db = self::db();
+    $rows = $db->get_results($db->prepare(
+      "SELECT subscriber_id, attempts FROM `{$this->table()}` WHERE event_id = %s AND status = 'failed' ORDER BY id ASC",
+      $eventId
+    ), ARRAY_A);
+    if ($db->last_error !== '') {
+      throw new \RuntimeException("Delivery ledger read failed: {$db->last_error}");
+    }
+    $out = [];
+    foreach (is_array($rows) ? $rows : [] as $r) {
+      $out[(string) $r['subscriber_id']] = (int) $r['attempts'];
+    }
+    return $out;
   }
 
   /**
