@@ -51,6 +51,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     $manual = SchemaV7::process($this->config, V8ManualProcess::class, 'completed', 1, self::E2);
     $gone = SchemaV7::process($this->config, 'Gone\\Process\\ClassName', 'failed', 0, self::E2);
     $scheduled = SchemaV7::process($this->config, V8ManualProcess::class, 'scheduled', 2, null, 'cli');
+    $fromCli = SchemaV7::process($this->config, V8IgnitedProcess::class, 'completed', 1, self::E2, 'cli');
     update_option($this->config->option('outbox_pauses'), ['ops' => ['selector' => 'v8.fact', 'until' => -1]], false);
 
     $timeoutAt = time() + 7200;
@@ -70,7 +71,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
       $this->rows("SELECT status, claim_token FROM `{$this->table('integration_outbox')}` ORDER BY id")
     );
     $processes = $this->rows("SELECT id, status, version, ignition_key, quarantine_reason, start_path FROM `{$this->table('long_processes')}` ORDER BY id");
-    self::assertCount(5, $processes);
+    self::assertCount(6, $processes);
     self::assertSame([null], array_values(array_unique(array_column($processes, 'start_path'))), '0.6 rows keep start_path NULL');
     self::assertSame(['1'], array_values(array_unique(array_column($processes, 'version'))), 'every row starts at version 1');
 
@@ -80,10 +81,11 @@ final class SchemaV8MigrationTest extends V8TestCase {
     self::assertNull($keys[$manual], 'a class without #[StartsOn] is not on the ignition path');
     self::assertNull($keys[$gone], 'an unknown class is skipped');
     self::assertNull($keys[$scheduled]);
+    self::assertNull($keys[$fromCli], "X7: a #[StartsOn] class started with source <> 'event' is not on the ignition path");
 
     $report = get_option($this->config->option('ddd_v8_migration_report'));
     self::assertSame(1, $report['ignition_backfilled']);
-    self::assertSame(2, $report['ignition_skipped']);
+    self::assertSame(3, $report['ignition_skipped']);
     self::assertSame([['process_class' => V8IgnitedProcess::class, 'event_id' => self::E1, 'kept' => $first, 'duplicate' => $dup]], $report['ignition_duplicates']);
 
     // Pending AS actions became intent rows; the actions themselves are untouched.
@@ -129,6 +131,57 @@ final class SchemaV8MigrationTest extends V8TestCase {
     self::assertSame([0, [], 0], [$report['ignition_backfilled'], $report['ignition_duplicates'], $report['wakeups_backfilled']]);
   }
 
+  public function test_every_column_v8_adds_to_a_0_6_table_is_nullable_or_defaulted(): void {
+    // R5, read off the migrated schema itself: whatever ddd_migrate_v8()
+    // or tables.php add to a table a 0.6 winner writes, its INSERT (which
+    // names none of them) must still succeed.
+    SchemaV7::install($this->config);
+    $before = [];
+    foreach (['integration_outbox', 'integration_dlq', 'long_processes', 'command_audit', 'touches', 'behaviour_workflows', 'behaviour_workflows_meta', 'behaviour_workflow_items'] as $t) {
+      $before[$t] = array_column($this->columns($this->table($t)), 'COLUMN_NAME');
+    }
+
+    ddd_maybe_migrate($this->config);
+    self::assertSame(8, ddd_schema_installed($this->config));
+
+    $added = [];
+    foreach ($before as $t => $columns) {
+      foreach ($this->columns($this->table($t)) as $c) {
+        if (in_array($c['COLUMN_NAME'], $columns, true)) {
+          continue;
+        }
+        $added[] = "$t.{$c['COLUMN_NAME']}";
+        self::assertTrue(
+          $c['IS_NULLABLE'] === 'YES' || $c['COLUMN_DEFAULT'] !== null || str_contains((string) $c['EXTRA'], 'auto_increment'),
+          "$t.{$c['COLUMN_NAME']} is NOT NULL without a default: a 0.6 INSERT would fail"
+        );
+      }
+    }
+    sort($added);
+    self::assertSame(['integration_outbox.claim_token', 'long_processes.ignition_key', 'long_processes.quarantine_reason', 'long_processes.start_path', 'long_processes.version'], $added);
+  }
+
+  public function test_a_missing_unique_ignition_key_fails_the_migration_without_bumping_the_version(): void {
+    SchemaV7::install($this->config);
+    // A half-applied earlier run left two rows with the same key, so the
+    // UNIQUE (process_class, ignition_key) cannot be built.
+    $this->wpdb->query("ALTER TABLE `{$this->table('long_processes')}` ADD COLUMN ignition_key CHAR(36) NULL");
+    foreach ([SchemaV7::process($this->config, V8IgnitedProcess::class, 'completed', 1, self::E1), SchemaV7::process($this->config, V8IgnitedProcess::class, 'completed', 1, self::E1)] as $id) {
+      $this->wpdb->update($this->table('long_processes'), ['ignition_key' => IgnitionKey::for(self::E1, V8IgnitedProcess::class)], ['id' => $id]);
+    }
+
+    $suppress = $this->wpdb->suppress_errors(true);
+    try {
+      ddd_maybe_migrate($this->config);
+    } finally {
+      $this->wpdb->suppress_errors($suppress);
+    }
+
+    self::assertSame(7, ddd_schema_installed($this->config), 'the v8 adapters stay off without their ignition gate');
+    self::assertStringContainsString('uniq_ignition_key', (string) get_option($this->config->option('ddd_migration_error')));
+    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::isV8($this->config));
+  }
+
   public function test_a_0_6_winner_still_writes_after_the_upgrade(): void {
     // Rollback safety (R5, B18): the 0.6 repository's INSERT names none of
     // the v8 columns, and every one of them is nullable or defaulted.
@@ -142,6 +195,15 @@ final class SchemaV8MigrationTest extends V8TestCase {
       ['version' => '1', 'ignition_key' => null, 'quarantine_reason' => null],
       $this->rows("SELECT version, ignition_key, quarantine_reason FROM `{$this->table('long_processes')}` WHERE id = $id")[0]
     );
+  }
+
+  /** @return list<array<string, mixed>> */
+  private function columns(string $table): array {
+    return $this->rows($this->wpdb->prepare(
+      'SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION',
+      $table
+    ));
   }
 
   /** @return list<string> */

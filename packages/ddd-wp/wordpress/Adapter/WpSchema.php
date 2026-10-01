@@ -40,4 +40,17 @@ final class WpSchema {
   public static function isV8(IConsumerIdentity|string $consumer): bool {
     return self::atLeast($consumer, self::V8);
   }
+
+  /**
+   * Whether the last query on $db failed with a duplicate-key error: MySQL
+   * 1062 only, never the SQLSTATE class 23000, which also covers FK and
+   * NOT NULL violations (register 3.8).
+   */
+  public static function lastErrorIsDuplicateKey(\wpdb $db): bool {
+    $dbh = $db->dbh ?? null; // protected, read through wpdb::__get
+    if ($dbh instanceof \mysqli) {
+      return mysqli_errno($dbh) === 1062;
+    }
+    return str_starts_with((string) $db->last_error, 'Duplicate entry');
+  }
 }

@@ -244,13 +244,14 @@ function ddd_migrate_v8(IDDDConfig $config): array {
  * Backfill long_processes.ignition_key = uuid5(event_id, process_class) for
  * rows that came from the #[StartsOn] ignition path, in id order.
  *
- * "Ignition path": ignited_by_event_id is a UUID and the stored class still
- * exists and declares #[StartsOn]. Other rows (manual starts outside a
+ * "Ignition path" (X7): source = 'event', ignited_by_event_id is a UUID, and
+ * the stored class still exists and declares #[StartsOn]. Other rows (manual starts outside a
  * drain, unknown classes, non-UUID ids) are skipped. A manual start made
  * inside a drain of a #[StartsOn] class is indistinguishable from an
  * ignition in 0.6 data; if it shares (class, event) with an earlier row it
  * is reported as a duplicate, which is the conservative outcome (no row is
- * touched beyond keeping its key NULL).
+ * touched beyond keeping its key NULL). Only a duplicate-key error (1062)
+ * on the UPDATE counts as a duplicate; any other error fails the migration.
  *
  * @return array{backfilled: int, skipped: int, duplicates: list<array{process_class: string, event_id: string, kept: int, duplicate: int}>}
  */
@@ -265,7 +266,7 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
 
   do {
     $rows = $wpdb->get_results($wpdb->prepare(
-      "SELECT id, process_class, ignited_by_event_id FROM `{$table}`
+      "SELECT id, process_class, ignited_by_event_id, source FROM `{$table}`
        WHERE id > %d AND ignited_by_event_id IS NOT NULL AND ignition_key IS NULL
        ORDER BY id ASC LIMIT 500",
       $last
@@ -276,6 +277,13 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
       $last = (int) $row->id;
       $class = (string) $row->process_class;
       $event_id = (string) $row->ignited_by_event_id;
+
+      // X7: only rows born through the ignition path, which 0.6 sources
+      // 'event' (ProcessRunner marks every fact-started process so).
+      if ((string) $row->source !== 'event') {
+        $skipped++;
+        continue;
+      }
 
       $starts_on[$class] ??= class_exists($class)
         && (new \ReflectionClass($class))->getAttributes(\TangibleDDD\Application\Process\StartsOn::class) !== [];
@@ -310,6 +318,9 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
       $wpdb->suppress_errors($suppress);
 
       if ($updated === false) {
+        if (!\TangibleDDD\WordPress\Adapter\WpSchema::lastErrorIsDuplicateKey($wpdb)) {
+          throw new \RuntimeException(sprintf('Schema v8 ignition_key backfill of process #%d failed: %s', $last, (string) $wpdb->last_error));
+        }
         // A new ignition took the key between the check and the update.
         $winner = (int) $wpdb->get_var($wpdb->prepare(
           "SELECT id FROM `{$table}` WHERE process_class = %s AND ignition_key = %s LIMIT 1",
@@ -425,6 +436,20 @@ function ddd_add_unique_index_if_missing(string $table, string $index, string $c
   }
 
   $wpdb->query("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$index}` ({$columns})");
+  $error = (string) $wpdb->last_error;
+
+  // A UNIQUE key is a correctness gate (the v8 ignition dedup), not an
+  // optimisation: verify it, and fail the migration (the schema version is
+  // not bumped) when it is missing.
+  $created = (int) $wpdb->get_var($wpdb->prepare(
+    'SELECT COUNT(*) FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s AND NON_UNIQUE = 0',
+    $table,
+    $index
+  ));
+  if ($created === 0) {
+    throw new \RuntimeException(sprintf('Could not add UNIQUE KEY %s (%s) on %s: %s', $index, $columns, $table, $error));
+  }
 }
 
 /**
@@ -489,15 +514,27 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
   // 1. dbDelta: create fresh + heal additive changes from the canonical schema.
   install_tables($config);
 
-  // 2. explicit migrations for the hard cases, in version order.
+  // 2. explicit migrations for the hard cases, in version order. A failed
+  // one leaves the installed version where it was (the v8 adapters stay
+  // off, the 0.6 paths keep working) and is retried on the next trigger;
+  // it is logged and recorded, never fatal to the request.
   $migrations = ddd_explicit_migrations();
   foreach (ddd_pending_migrations($installed, DDD_SCHEMA_VERSION) as $version) {
-    if (isset($migrations[$version])) {
+    if (!isset($migrations[$version])) {
+      continue;
+    }
+    try {
       $migrations[$version]($config);
+    } catch (\Throwable $e) {
+      $message = sprintf('schema v%d migration failed (installed stays v%d): %s', $version, $installed, $e->getMessage());
+      error_log(sprintf('[%s-ddd] %s', $config->prefix(), $message));
+      update_option($config->option('ddd_migration_error'), $message, false);
+      return;
     }
   }
 
   update_option($key, DDD_SCHEMA_VERSION, false);
+  delete_option($config->option('ddd_migration_error'));
 }
 
 /**
