@@ -36,7 +36,15 @@ use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
 use TangibleDDD\Runtime\SystemClock;
 use TangibleDDD\Symfony\Console\RelayCommand;
 use TangibleDDD\Symfony\Console\SchemaDumpCommand;
+use TangibleDDD\Runtime\Ops\IOperatorView;
+use TangibleDDD\Runtime\Ops\PortOperatorView;
+use TangibleDDD\Symfony\Console\Ops\DlqDiscardCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
+use TangibleDDD\Symfony\Console\Ops\OpsListCommand;
+use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
+use TangibleDDD\Symfony\Ops\DbalLedgerOperatorSource;
+use TangibleDDD\Symfony\Ops\DbalWakeupOperatorSource;
+use TangibleDDD\Symfony\Ops\MessengerFailureTransportSource;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
 use TangibleDDD\Symfony\Console\Ops\PauseCommand;
@@ -46,11 +54,14 @@ use TangibleDDD\Symfony\Messenger\IntegrationFactHandler;
 use TangibleDDD\Symfony\Messenger\IntegrationFactMessage;
 use TangibleDDD\Symfony\Messenger\MessengerFactTransport;
 use TangibleDDD\Symfony\Messenger\OutboxFactClassResolver;
+use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalRelayPauseStore;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
+use TangibleDDD\Symfony\Persistence\EntityManagerSession;
 use TangibleDDD\Symfony\Runtime\Actor\ActorContext;
 use TangibleDDD\Symfony\Runtime\Actor\ConsoleOperatorActorProvider;
 use TangibleDDD\Symfony\Runtime\Actor\SecurityUserActorProvider;
@@ -112,12 +123,21 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ->public();
 
   // ── persistence (register 3.2, 3.4, 3.5) ─────────────────────────────────
+  // L6: the configured EntityManager is flushed before COMMIT and cleared (or,
+  // when a failed flush closed it, reset through the `doctrine` registry) after
+  // every rollback. No ORM dependency: any service with flush() works.
+  $entityManager = $config['transaction']['entity_manager'];
+  if ($entityManager !== null) {
+    $s->set('tangible_ddd.entity_manager_session', EntityManagerSession::class)
+      ->args([service($entityManager), service('doctrine')->nullOnInvalid(), $entityManager, $logger]);
+  }
   $s->set('tangible_ddd.transaction_boundary', DbalTransactionBoundary::class)
     ->args([
       service('tangible_ddd.connection'),
       $config['transaction']['nested'] === 'savepoint' ? NestedPolicy::Savepoint : NestedPolicy::Reject,
-      $config['transaction']['entity_manager'] === null ? null : [service($config['transaction']['entity_manager']), 'flush'],
+      $entityManager === null ? null : [service('tangible_ddd.entity_manager_session'), 'flush'],
       $logger,
+      $entityManager === null ? null : [service('tangible_ddd.entity_manager_session'), 'reset'],
     ]);
   $s->alias(ITransactionBoundary::class, 'tangible_ddd.transaction_boundary');
 
@@ -142,6 +162,11 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.delivery_ledger', DbalDeliveryLedger::class)
     ->args([service('tangible_ddd.connection'), $prefix]);
   $s->alias(IDeliveryLedger::class, 'tangible_ddd.delivery_ledger');
+
+  // D1: the effect journal on the domain connection (invalidate commits with the repair command).
+  $s->set('tangible_ddd.effect_journal', DbalEffectJournal::class)
+    ->args([service('tangible_ddd.connection'), service('tangible_ddd.clock'), $prefix]);
+  $s->alias(IEffectJournal::class, 'tangible_ddd.effect_journal');
 
   $s->set('tangible_ddd.outbox_config', OutboxConfig::class)
     ->factory([Factory::class, 'outboxConfig'])
@@ -252,6 +277,30 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       service('tangible_ddd.consumer_config'),
     ]);
 
+  // ── D9 operator view (register 3.10, 5.1): core PortOperatorView over the
+  // outbox DLQ and stranded processes, plus the sf sources ───────────────
+  $failureTransport = $config['messenger']['failure_transport'];
+  $s->set('tangible_ddd.operator_view', PortOperatorView::class)
+    ->args([
+      service('tangible_ddd.consumer_config'),
+      service('tangible_ddd.outbox_administration'),
+      service('tangible_ddd.process_store'),
+      service('tangible_ddd.clock'),
+      [
+        inline_service(DbalLedgerOperatorSource::class)
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix, $config['delivery']['budget']]),
+        inline_service(DbalWakeupOperatorSource::class)
+          ->args([service('tangible_ddd.connection'), $consumer['prefix'], $prefix]),
+        inline_service(MessengerFailureTransportSource::class)
+          ->args([
+            $failureTransport === null || $failureTransport === '' ? null : service('messenger.transport.' . $failureTransport)->nullOnInvalid(),
+            $consumer['prefix'],
+            (string) $failureTransport,
+          ]),
+      ],
+    ]);
+  $s->alias(IOperatorView::class, 'tangible_ddd.operator_view');
+
   // ── actors (D5) ──────────────────────────────────────────────────────────
   $s->set('tangible_ddd.actor_context', ActorContext::class)->public()->tag('kernel.reset', ['method' => 'reset']);
   $s->alias(ActorContext::class, 'tangible_ddd.actor_context')->public();
@@ -286,7 +335,8 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.audit.sink', NullAuditSink::class);
   $s->set('tangible_ddd.audit.policy', AuditEverything::class);
   $s->set('tangible_ddd.audit.environment', PhpEnvironmentProvider::class)
-    ->args([['env' => param('kernel.environment'), 'app' => $consumer['version']]]);
+    ->factory([Factory::class, 'auditEnvironment'])
+    ->args([param('kernel.environment'), $consumer['version']]);
 
   // The act bracket: core CorrelationMiddleware with the audit ports (CONF-1).
   $s->set('tangible_ddd.middleware.act_bracket', CorrelationMiddleware::class)
@@ -376,6 +426,12 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
     ])
     ->tag('console.command', ['command' => 'ddd:relay']);
   // ── ddd:ops:* (register 3.10, 5.1) ───────────────────────────────────────
+  $s->set('tangible_ddd.command.ops.list', OpsListCommand::class)
+    ->args([service('tangible_ddd.operator_view')])
+    ->tag('console.command', ['command' => 'ddd:ops:list']);
+  $s->set('tangible_ddd.command.ops.dlq_discard', DlqDiscardCommand::class)
+    ->args([service('tangible_ddd.outbox_administration')])
+    ->tag('console.command', ['command' => 'ddd:ops:dlq:discard']);
   $s->set('tangible_ddd.command.ops.dlq_list', DlqListCommand::class)
     ->args([service('tangible_ddd.outbox_administration')])
     ->tag('console.command', ['command' => 'ddd:ops:dlq:list']);
@@ -388,7 +444,9 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set('tangible_ddd.command.ops.stranded', StrandedCommand::class)
     ->args([
       service('tangible_ddd.process_store'), service('tangible_ddd.wakeup_scheduler'), service('tangible_ddd.transaction_boundary'),
-      service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'],
+      service('tangible_ddd.process_lock'), service('tangible_ddd.clock'), $consumer['prefix'], 1.0,
+      // WP8-10: core's repair commands on the command bus once they exist (runtime class_exists guard).
+      inline_service(CoreStrandedRepairs::class)->args([[service('tangible_ddd.command_bus'), 'handle']]),
     ])
     ->tag('console.command', ['command' => 'ddd:ops:stranded']);
   $s->set('tangible_ddd.command.ops.pause', PauseCommand::class)

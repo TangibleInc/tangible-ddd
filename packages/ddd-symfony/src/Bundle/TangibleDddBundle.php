@@ -23,7 +23,10 @@ use TangibleDDD\Symfony\DependencyInjection\Compiler\DomainListenerPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\HandlerLocatorPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\MessengerHealthPass;
 use TangibleDDD\Symfony\DependencyInjection\Compiler\SubscriptionMapPass;
+use TangibleDDD\Application\CQRS\HandlerClassNameInflector;
 use TangibleDDD\Symfony\DependencyInjection\DddTags;
+use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
+use TangibleDDD\Symfony\Runtime\SymfonyConsumerConfig;
 
 /**
  * The Symfony host for tangible/ddd-core (register 1.2, 3.2-3.5, 5.1).
@@ -58,7 +61,13 @@ final class TangibleDddBundle extends AbstractBundle {
               ->info('Stable [a-z0-9_]+ consumer prefix; names hooks, integration actions and ledger keys (e.g. "txp").')->end()
             ->scalarNode('namespace_root')->isRequired()->cannotBeEmpty()
               ->info('PHP namespace the consumer owns (e.g. "App"); send() and Event::prefix() resolve by it.')->end()
-            ->scalarNode('version')->defaultValue('0.0.0')->end()
+            ->scalarNode('version')->defaultValue(SymfonyConsumerConfig::DEFAULT_VERSION)
+              ->info('Consumer version (audit environment "app"). Null or empty, also from an unset %env()%, is "0.0.0".')
+              ->beforeNormalization()
+                ->ifTrue(static fn ($v) => $v === null || $v === '')
+                ->then(static fn () => SymfonyConsumerConfig::DEFAULT_VERSION)
+              ->end()
+            ->end()
             ->scalarNode('label')->defaultNull()->end()
           ->end()
         ->end()
@@ -73,7 +82,7 @@ final class TangibleDddBundle extends AbstractBundle {
             ->enumNode('nested')->values(['reject', 'savepoint'])->defaultValue('reject')
               ->info('What a command does when a transaction is already open: reject (production) or savepoint (test wrappers).')->end()
             ->scalarNode('entity_manager')->defaultNull()
-              ->info('ORM EntityManager service id (on the same connection) to flush() before COMMIT, e.g. doctrine.orm.default_entity_manager.')->end()
+              ->info('ORM EntityManager service id (on the same connection), e.g. doctrine.orm.default_entity_manager: flush()ed before COMMIT; after a rollback clear()ed, or reset through the doctrine registry when the failed flush closed it.')->end()
           ->end()
         ->end()
         ->arrayNode('relay')
@@ -215,7 +224,7 @@ final class TangibleDddBundle extends AbstractBundle {
 
     $builder->registerForAutoconfiguration(ICommandHandler::class)->addTag(DddTags::COMMAND_HANDLER);
     $builder->registerForAutoconfiguration(IQueryHandler::class)->addTag(DddTags::QUERY_HANDLER);
-    $builder->setParameter('tangible_ddd.self_handling', $config['self_handling']);
+    $builder->setParameter('tangible_ddd.self_handling', self::withCoreRepairCommands($config['self_handling'], $builder));
     $builder->registerForAutoconfiguration(SelfHandlingCommand::class)->addTag(DddTags::SELF_HANDLING);
     $builder->registerForAutoconfiguration(SelfHandlingQuery::class)->addTag(DddTags::SELF_HANDLING);
     $translator = 'TangibleDDD\\Application\\EventHandlers\\IntegrationTranslator'; // core, wave-2 split
@@ -238,6 +247,39 @@ final class TangibleDddBundle extends AbstractBundle {
         ]);
       }
     );
+  }
+
+  /**
+   * Core's stranded-process repair commands (WP8-10), once they exist, are
+   * dispatchable on the bundle's command bus: a self-handling one joins the
+   * handle() locator's classes, a plain one gets its convention-named
+   * handler registered (autowired, tagged). Nothing happens while core does
+   * not ship them.
+   *
+   * @param array{classes: list<string>, locate_all: bool} $selfHandling
+   * @return array{classes: list<string>, locate_all: bool}
+   */
+  private static function withCoreRepairCommands(array $selfHandling, ContainerBuilder $builder): array {
+    foreach ([CoreStrandedRepairs::RESUME, CoreStrandedRepairs::FAIL] as $class) {
+      if (!class_exists($class)) {
+        continue;
+      }
+      if (is_a($class, SelfHandlingCommand::class, true)) {
+        if (!in_array($class, $selfHandling['classes'], true)) {
+          $selfHandling['classes'][] = $class;
+        }
+        continue;
+      }
+      try {
+        $handler = (new HandlerClassNameInflector())->getClassName($class);
+      } catch (\LogicException) {
+        continue; // not in a Commands namespace: nothing the convention could map
+      }
+      if (class_exists($handler) && !$builder->has($handler)) {
+        $builder->register($handler, $handler)->setAutowired(true)->addTag(DddTags::COMMAND_HANDLER);
+      }
+    }
+    return $selfHandling;
   }
 
   public function build(ContainerBuilder $container): void {

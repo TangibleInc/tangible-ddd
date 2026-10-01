@@ -18,6 +18,7 @@ use TangibleDDD\Runtime\Lock\LockNotAcquired;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Scheduling\WakeKind;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
+use TangibleDDD\Symfony\Ops\CoreStrandedRepairs;
 use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
 
 /**
@@ -41,6 +42,10 @@ use TangibleDDD\Symfony\Persistence\DbalWakeupScheduler;
  *                           a fresh budget.
  *
  * Each option may repeat. The command fails if any repair failed.
+ *
+ * --resume / --fail dispatch core's ResumeStrandedProcess /
+ * FailStrandedProcess through the command bus once core ships them
+ * (CoreStrandedRepairs, WP8-10); until then they repair inline as above.
  */
 #[AsCommand(name: 'ddd:ops:stranded', description: 'List stranded processes and exhausted wakeups; resume, fail or re-arm them')]
 final class StrandedCommand extends Command {
@@ -53,6 +58,7 @@ final class StrandedCommand extends Command {
     private readonly IClock $clock,
     private readonly string $consumer,
     private readonly float $lockTimeoutSeconds = 1.0,
+    private readonly ?CoreStrandedRepairs $repairs = null,
   ) {
     parent::__construct();
   }
@@ -123,6 +129,10 @@ final class StrandedCommand extends Command {
   }
 
   private function resume(int $id): void {
+    if ($this->repairs?->available()) {
+      $this->repairs->resume($id);
+      return;
+    }
     $process = $this->processes->find($id) ?? throw new \RuntimeException('no such process');
     if (in_array($process->status(), ['completed', 'failed'], true)) {
       throw new \RuntimeException("process is {$process->status()}; nothing to resume");
@@ -136,6 +146,10 @@ final class StrandedCommand extends Command {
   }
 
   private function fail(int $id, string $reason): void {
+    if ($this->repairs?->available()) {
+      $this->repairs->fail($id, $reason);
+      return;
+    }
     try {
       $handle = $this->lock->acquire(new LockKey($this->consumer, '', $id), $this->lockTimeoutSeconds);
     } catch (LockNotAcquired $e) {

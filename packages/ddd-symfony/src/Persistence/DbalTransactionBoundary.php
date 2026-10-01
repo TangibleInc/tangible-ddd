@@ -37,7 +37,14 @@ use TangibleDDD\Runtime\TransactionFailed;
  *   transaction belongs to the caller.
  * - $beforeCommit (e.g. `EntityManager::flush`) runs inside the transaction
  *   just before COMMIT; if it throws, the transaction rolls back and its
- *   exception surfaces.
+ *   exception surfaces. A unique violation there (the ORM flush hit a
+ *   unique index) surfaces as PersistenceConflict with the DBAL exception
+ *   as previous (L8), so the host maps it to 409.
+ * - $afterRollback (e.g. EntityManagerSession::reset) runs after every
+ *   rollback this run performs (work or $beforeCommit threw, aborted
+ *   transaction, failed COMMIT), so ORM changes a failed act scheduled are
+ *   never flushed by a later act and a closed EntityManager is replaced
+ *   (L6). Its failure is logged, never substituted for the act's error.
  *
  * It never opens, closes or reconfigures the connection. Messenger's
  * `doctrine_transaction` middleware must not wrap the bus that dispatches DDD
@@ -51,13 +58,18 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
   /** @var (\Closure(): void)|null */
   private readonly ?\Closure $beforeCommit;
 
+  /** @var (\Closure(): void)|null */
+  private readonly ?\Closure $afterRollback;
+
   public function __construct(
     private readonly Connection $connection,
     private readonly NestedPolicy $policy = NestedPolicy::Reject,
     ?callable $beforeCommit = null,
     ?LoggerInterface $logger = null,
+    ?callable $afterRollback = null,
   ) {
     $this->beforeCommit = $beforeCommit === null ? null : \Closure::fromCallable($beforeCommit);
+    $this->afterRollback = $afterRollback === null ? null : \Closure::fromCallable($afterRollback);
     $this->logger = $logger ?? new NullLogger();
   }
 
@@ -88,10 +100,15 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
     try {
       $result = $work();
       if ($this->beforeCommit !== null) {
-        ($this->beforeCommit)();
+        try {
+          ($this->beforeCommit)();
+        } catch (\Throwable $flush) {
+          throw PersistenceConflict::fromUniqueViolationIn($flush) ?? $flush;
+        }
       }
     } catch (\Throwable $original) {
       $this->rollBackTo($outer, $original);
+      $this->discardAfterRollback($original);
       if (self::failedOnAbortedTransaction($original)) {
         // The work swallowed a statement error, then failed on a later
         // statement of the aborted transaction (an outbox append, say).
@@ -116,6 +133,7 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
       $this->connection->executeQuery('SELECT 1');
     } catch (\Throwable $e) {
       $this->rollBackTo($outer, $e);
+      $this->discardAfterRollback($e);
       throw new TransactionFailed(
         'Transaction aborted by an earlier statement error the work caught; nothing was committed: ' . $e->getMessage(),
         0,
@@ -127,6 +145,7 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
       $this->connection->commit();
     } catch (\Throwable $e) {
       $this->recoverAfterFailedCommit($outer, $savepoint, $e);
+      $this->discardAfterRollback($e);
       throw new TransactionFailed('COMMIT failed: ' . $e->getMessage(), 0, $e);
     }
 
@@ -148,6 +167,21 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
       }
     }
     return false;
+  }
+
+  /** Run $afterRollback (L6); a failure there is logged, the act's error stays the one thrown. */
+  private function discardAfterRollback(\Throwable $cause): void {
+    if ($this->afterRollback === null) {
+      return;
+    }
+    try {
+      ($this->afterRollback)();
+    } catch (\Throwable $reset) {
+      $this->logger->error(sprintf(
+        '[ddd tx] after-rollback reset failed: %s (while handling %s: %s)',
+        $reset->getMessage(), get_class($cause), $cause->getMessage()
+      ), ['exception' => $reset]);
+    }
   }
 
   /**

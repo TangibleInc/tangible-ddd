@@ -9,7 +9,9 @@ use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\TransactionFailed;
 use TangibleDDD\Symfony\Persistence\DbalTransactionBoundary;
+use TangibleDDD\Symfony\Persistence\PersistenceConflict;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
+use TangibleDDD\Symfony\Tests\Support\RecordingLogger;
 
 final class DbalTransactionBoundaryTest extends PostgresTestCase {
 
@@ -251,5 +253,90 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
       self::assertSame('flush failed', $e->getMessage());
     }
     self::assertSame(2, (int) $this->db->fetchOne('SELECT count(*) FROM sf_tx_rows'));
+  }
+
+  /** L6: every rollback path runs the after-rollback reset once; a commit never does. */
+  public function test_after_rollback_runs_once_per_rollback_and_never_after_a_commit(): void {
+    $resets = 0;
+    $make = function (?callable $beforeCommit = null) use (&$resets): DbalTransactionBoundary {
+      return new DbalTransactionBoundary($this->db, beforeCommit: $beforeCommit, afterRollback: static function () use (&$resets): void {
+        $resets++;
+      });
+    };
+
+    $make()->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'ok']));
+    self::assertSame(0, $resets, 'nothing to reset after a commit');
+
+    $this->swallow(fn () => $make()->run(static fn () => throw new \DomainException('work failed')));
+    self::assertSame(1, $resets, 'work threw');
+
+    $this->swallow(fn () => $make(static fn () => throw new \LogicException('flush failed'))->run(static fn () => null));
+    self::assertSame(2, $resets, 'beforeCommit threw');
+
+    $this->swallow(fn () => $make()->run(function (): void {
+      try {
+        $this->db->insert('sf_tx_rows', ['id' => 'ok']); // duplicate key: the transaction is aborted
+      } catch (\Throwable) {
+      }
+    }));
+    self::assertSame(3, $resets, 'aborted-transaction probe');
+
+    $this->swallow(fn () => $make()->run(fn () => $this->db->insert('sf_tx_deferred', ['id' => 1, 'parent' => 999])));
+    self::assertSame(4, $resets, 'COMMIT failed');
+    self::assertFalse($this->db->isTransactionActive());
+  }
+
+  public function test_a_failing_after_rollback_is_logged_and_the_act_s_error_surfaces(): void {
+    $logger = new RecordingLogger();
+    $boundary = new DbalTransactionBoundary($this->db, logger: $logger, afterRollback: static function (): void {
+      throw new \RuntimeException('reset exploded');
+    });
+
+    try {
+      $boundary->run(static fn () => throw new \DomainException('work failed'));
+      self::fail('expected the work failure');
+    } catch (\DomainException $e) {
+      self::assertSame('work failed', $e->getMessage());
+    }
+    self::assertCount(1, $logger->at('error'));
+    self::assertStringContainsString('reset exploded', $logger->at('error')[0]);
+  }
+
+  public function test_a_unique_violation_in_before_commit_is_a_persistence_conflict(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+    $boundary = new DbalTransactionBoundary($this->db, beforeCommit: fn () => $this->db->insert('sf_tx_rows', ['id' => 'dup']));
+
+    try {
+      $boundary->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'work']));
+      self::fail('expected a conflict');
+    } catch (PersistenceConflict $e) {
+      self::assertInstanceOf(UniqueConstraintViolationException::class, $e->getPrevious());
+      self::assertSame('sf_tx_rows_pkey', $e->constraint);
+      self::assertStringContainsString('sf_tx_rows_pkey', $e->getMessage());
+    }
+    self::assertSame(['dup'], $this->db->fetchFirstColumn('SELECT id FROM sf_tx_rows ORDER BY id'));
+    self::assertFalse($this->db->isTransactionActive());
+  }
+
+  public function test_a_unique_violation_in_the_work_is_rethrown_unchanged(): void {
+    $this->db->insert('sf_tx_rows', ['id' => 'dup']);
+
+    $this->expectException(UniqueConstraintViolationException::class);
+    (new DbalTransactionBoundary($this->db, beforeCommit: static fn () => null))
+      ->run(fn () => $this->db->insert('sf_tx_rows', ['id' => 'dup']));
+  }
+
+  public function test_other_before_commit_failures_are_not_conflicts(): void {
+    $boundary = new DbalTransactionBoundary($this->db, beforeCommit: static fn () => throw new \LogicException('flush failed'));
+
+    $this->expectException(\LogicException::class);
+    $boundary->run(static fn () => null);
+  }
+
+  private function swallow(callable $act): void {
+    try {
+      $act();
+    } catch (\Throwable) {
+    }
   }
 }

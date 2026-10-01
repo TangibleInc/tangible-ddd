@@ -11,6 +11,7 @@ use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
 use TangibleDDD\Runtime\NestedPolicy;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
+use TangibleDDD\Symfony\Console\Ops\DlqDiscardCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqListCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqReplayCommand;
 use TangibleDDD\Symfony\Console\Ops\DlqRetryCommand;
@@ -99,6 +100,16 @@ final class OpsCommandsTest extends PostgresTestCase {
 
     self::assertStringContainsString('999', $t->getDisplay());
     self::assertSame('pending', $this->outboxStatus('e-1'), 'the valid id is still replayed');
+  }
+
+  public function test_dlq_discard_removes_the_dead_letter(): void {
+    $dlq = $this->deadLetter('e-1');
+
+    $t = new CommandTester(new DlqDiscardCommand($this->admin));
+    self::assertSame(Command::SUCCESS, $t->execute(['dlq-id' => [(string) $dlq]]));
+
+    self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_dlq'));
+    self::assertSame([], $this->admin->deadLetters(10));
   }
 
   public function test_dlq_retry_resets_the_row_and_removes_its_dlq_entry(): void {
