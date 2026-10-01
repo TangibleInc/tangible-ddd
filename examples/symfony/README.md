@@ -255,7 +255,7 @@ operator (`DDD_OPERATOR`, else the OS user), else Cli/System. A machine
 authenticator sets it explicitly:
 
 ```php
-$actorContext->runAs(new Actor(ActorKind::Machine, $runnerHost, 'runner'), fn () => $command->send());
+$actorContext->run_as(new Actor(ActorKind::Machine, $runnerHost, 'runner'), fn () => $command->send());
 ```
 
 ## 5. Run the workers
@@ -296,7 +296,7 @@ A command that calls something outside the database (Stripe, Cloudflare)
 implements `IExternalEffectCommand`. The bus runs it as act bracket →
 `EffectMiddleware` → transaction: `perform()` runs **outside** any
 transaction and its result is stored in `ddd_effect_journal` under
-`idempotencyKey()` at once; `record()` then runs **inside** the command's
+`idempotency_key()` at once; `record()` then runs **inside** the command's
 transaction. A retry under the same key (a redelivered fact, a re-run process
 step, a second dispatch) finds the journaled result and goes straight to
 `record()`: `perform()` is not called again.
@@ -305,7 +305,7 @@ step, a second dispatch) finds the journaled result and goes straight to
 final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffectCommand {
     public function __construct(public readonly string $customerId, public readonly int $amount, public readonly string $key) {}
 
-    public function idempotencyKey(): string { return $this->key; }
+    public function idempotency_key(): string { return $this->key; }
 
     public function perform(): EffectResult {            // no transaction open here
         $charge = $this->stripe()->charges->create([...], ['idempotency_key' => $this->key]);
@@ -313,10 +313,10 @@ final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffec
     }
 
     public function record(EffectResult $r): void {      // inside the transaction
-        $this->event(new CustomerCharged($this->customerId, (string) $r->externalRef));
+        $this->event(new CustomerCharged($this->customerId, (string) $r->external_ref));
     }
 
-    public function failureCommand(\Throwable $last): ?ICommand {
+    public function failure_command(\Throwable $last): ?ICommand {
         return new FlagChargeFailed($this->customerId);  // fired once when a listener's handler budget is spent
     }
 
@@ -326,7 +326,7 @@ final class ChargeCustomer extends SelfHandlingCommand implements IExternalEffec
 
 - Keys: inside a process step use `$this->step_ref('charge')` (stable across
   re-runs of the step); for a listener, derive it from the fact in
-  `translate()` (`Correlation::current_fact()->eventId`, section 9).
+  `translate()` (`Correlation::current_fact()->event_id`, section 9).
 - Failure command: fired by the core delivery invoker when the listener's
   handler budget (`delivery.budget`) is spent, never from a Messenger failure
   event. Inside a process step the step's `#[RetryStep]` policy governs and the
@@ -374,7 +374,7 @@ final class ProvisionApp extends LongProcess {
   the key; a key nobody waits for is "unheard" (`resume_with_outcome()`
   reports it) and is acked without error.
 - Any-of with cancellation:
-  `AwaitAny::of(AwaitEvent::keyed(JobFinished::class, $job))->cancelledBy(new AwaitEvent(AppDestroyed::class, ['app_id' => $id]))`.
+  `AwaitAny::of(AwaitEvent::keyed(JobFinished::class, $job))->cancelled_by(new AwaitEvent(AppDestroyed::class, ['app_id' => $id]))`.
   The first answer resumes the next step with that fact; a cancellation fact
   compensates every process it names. `->within(3600)` / `->until($instant)`
   add an alarm.
@@ -419,7 +419,7 @@ final class NightlyReport extends WorkflowHandler implements IStartsFromFact {
 
     public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
         // default (trait): once per fact, uuid5(event_id, kind); here: once per (workflow, minute)
-        return WorkflowIgnitionKey::perMinute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
+        return WorkflowIgnitionKey::per_minute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
     }
     // get_workflows(), execute_one(), generate_work_items(), reschedule(): as for any WorkflowHandler
 }
@@ -434,10 +434,10 @@ attached workflow (it must tolerate a re-run).
 
 | Where | What you can read |
 |---|---|
-| a listener's `translate()` (the fact scope) | `Correlation::current_fact()` → `FactRef{eventId, eventClass, correlationId}`; put what the handler needs (the event id, a key derived from it) in the command |
-| the translated command's handler | `Correlation::peek()->cause->id` is the command id, deterministic: `DeterministicCommandId::forFact($eventId, $subscriberId)` (`current_fact()` is null inside an act) |
+| a listener's `translate()` (the fact scope) | `Correlation::current_fact()` → `FactRef{event_id, event_class, correlation_id}`; put what the handler needs (the event id, a key derived from it) in the command |
+| the translated command's handler | `Correlation::peek()->cause->id` is the command id, deterministic: `DeterministicCommandId::for_fact($eventId, $subscriberId)` (`current_fact()` is null inside an act) |
 | a process step | `$this->get_id()` (process id), `$this->current_step_index()`, `$this->step_ref('purpose')` (uuid5 over class, id, step index and purpose: the same on a re-run) |
-| a step command's handler | `Correlation::peek()->cause->id` is the command id, `DeterministicCommandId::forStep($prefix, $processId, $stepIndex, $ordinal)`; pass the process id, step index or ref in the command when the handler needs them |
+| a step command's handler | `Correlation::peek()->cause->id` is the command id, `DeterministicCommandId::for_step($prefix, $processId, $stepIndex, $ordinal)`; pass the process id, step index or ref in the command when the handler needs them |
 | anywhere | `Uuid::v5($namespaceUuid, $name)` (`TangibleDDD\Domain\Shared\Uuid`) for your own deterministic ids |
 
 Use these for job ids and notification dedup: a redelivered fact or a re-run

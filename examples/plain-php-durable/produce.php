@@ -35,14 +35,14 @@ applySchema($db);
 $runtime = runtime($db);
 $checks = new Checks();
 
-$trialId = 1 + (int) ($db->fetchOne('SELECT MAX(id) AS id FROM trialdemo_trials')['id'] ?? 0);
+$trialId = 1 + (int) ($db->fetch_one('SELECT MAX(id) AS id FROM trialdemo_trials')['id'] ?? 0);
 $processId = $runtime->bus()->handle(new StartTrial($trialId, $activate));
 echo "trial $trialId: started process $processId" . ($activate ? '' : ' (no activation will be sent)') . "\n";
 
 $trial = latestTrial($db);
 $checks->check($trial['process_status'] === 'scheduled', 'the command committed the trial and its scheduled process together');
 $checks->check(
-  $db->fetchOne("SELECT 1 AS ok FROM trialdemo_ddd_jobs WHERE kind = 'continue' AND process_id = ?", [$processId]) !== null,
+  $db->fetch_one("SELECT 1 AS ok FROM trialdemo_ddd_jobs WHERE kind = 'continue' AND process_id = ?", [$processId]) !== null,
   'with a Continue intent: no step ran inside the request\'s transaction'
 );
 
@@ -51,10 +51,10 @@ $report = $runtime->drain(maxItems: 50, maxSeconds: 10);
 $checks->check($report->errors === [] && $report->leaks === [], 'the drain pass ran cleanly');
 
 $trial = latestTrial($db);
-$timeout = $db->fetchOne("SELECT idempotency_key, due_at FROM trialdemo_ddd_jobs WHERE kind = 'timeout' AND process_id = ?", [$processId]);
+$timeout = $db->fetch_one("SELECT idempotency_key, due_at FROM trialdemo_ddd_jobs WHERE kind = 'timeout' AND process_id = ?", [$processId]);
 $checks->check($trial['process_status'] === 'suspended', 'the first step ran and suspended on the await');
 $checks->check($timeout !== null, 'its timeout intent is scheduled (' . ($timeout['due_at'] ?? 'none') . ' UTC)');
-$pendingFacts = (int) $db->fetchOne("SELECT COUNT(*) AS n FROM trialdemo_ddd_outbox WHERE status = 'pending'")['n'];
+$pendingFacts = (int) $db->fetch_one("SELECT COUNT(*) AS n FROM trialdemo_ddd_outbox WHERE status = 'pending'")['n'];
 $checks->check($pendingFacts === ($activate ? 1 : 0), $activate ? 'TrialActivated waits in the outbox' : 'no fact was announced');
 
 if ($timeout !== null) {
