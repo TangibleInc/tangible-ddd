@@ -611,7 +611,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       $process->advance_step();
       $this->take_resume($updated->resume_argument($event), ResumeSource::of_mechanism($updated, $event, $event_id));
       $this->stamp_resume($process);
-      $process->mark_resumed_by($event_id); // AW1: the post-await step's cause (D13)
+      $process->steps()?->mark_resumed_by($event_id); // AW1: the post-await step's cause (D13)
       $process->advance(status: 'running', payload: $process->payload());
       $this->persist($process, null, $alarm);
       $resumed[] = $id;

@@ -10,6 +10,7 @@ use Psr\Log\NullLogger;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Events\IntegrationEnvelope;
+use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\ProcessLockUnavailable;
 use TangibleDDD\Application\Process\ProcessRunner;
 use TangibleDDD\Application\Process\ResumeSource;
@@ -347,6 +348,17 @@ final class ProcessRunnerWave5Test extends TestCase {
     $this->drain();
 
     self::assertSame(['order:NULL', 'answer:' . self::EVENT_ID, 'finish:NULL'], Journal::$steps);
+  }
+
+  public function test_the_resuming_event_id_has_no_setter_on_the_process_aggregate(): void {
+    // Application subclasses must not overwrite the D13 cause: only the
+    // runner writes it, through the persistence-only ProcessSteps.
+    self::assertFalse(method_exists(LongProcess::class, 'mark_resumed_by'));
+
+    $p = new CauseReadingProcess();
+    $this->runner->start($p);
+    $this->deliver(JobFinished::class, ['job_id' => $this->job_of($p), 'ok' => true]);
+    self::assertSame('answer:' . self::EVENT_ID, Journal::$steps[1]);
   }
 
   public function test_a_resume_inside_a_fact_scope_takes_the_scopes_event_id(): void {

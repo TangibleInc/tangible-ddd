@@ -226,15 +226,6 @@ abstract class LongProcess extends Aggregate {
     return is_string($id) && $id !== '' ? $id : null;
   }
 
-  /** @internal runner machinery: the fact that resumed the current step */
-  public function mark_resumed_by(?string $event_id): void {
-    if ($this->steps !== null) {
-      $this->steps->resumed_by = $event_id === null || $event_id === ''
-        ? null
-        : ['step_index' => $this->current_step_index(), 'event_id' => $event_id];
-    }
-  }
-
   /** The current await's alarm instant (UTC), fixed when the step suspended (D7). */
   public function await_deadline(): ?DateTimeImmutable {
     $at = $this->steps?->await_due_at;

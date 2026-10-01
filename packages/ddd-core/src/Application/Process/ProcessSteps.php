@@ -161,6 +161,18 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
     $this->checkpoints[$step] = JLV::serialize_polymorphic($checkpoint);
   }
 
+  /**
+   * Record the fact that resumed the current step (D13, AW1); null or ''
+   * clears it. Written by the ProcessRunner only, through the
+   * persistence-only LongProcess::steps(); the aggregate exposes just the
+   * reader resumed_by_event_id().
+   */
+  public function mark_resumed_by(?string $event_id): void {
+    $this->resumed_by = $event_id === null || $event_id === ''
+      ? null
+      : ['step_index' => $this->step_index, 'event_id' => $event_id];
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Mutations (compensation)
   // ─────────────────────────────────────────────────────────────────────────
