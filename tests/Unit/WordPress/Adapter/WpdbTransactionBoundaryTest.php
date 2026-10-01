@@ -17,7 +17,7 @@ use TangibleDDD\WordPress\Adapter\WpdbTransactionDepth;
 final class WpdbTransactionBoundaryTest extends TestCase {
 
   protected function setUp(): void {
-    WpdbTransactionDepth::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
   }
 
   /** @param array<string, false> $fail SQL => false */
@@ -43,11 +43,11 @@ final class WpdbTransactionBoundaryTest extends TestCase {
 
     self::assertInstanceOf(ITransactionBoundary::class, $boundary);
     self::assertSame(42, $boundary->run(function () use ($boundary) {
-      self::assertTrue($boundary->isActive());
+      self::assertTrue($boundary->is_active());
       return 42;
     }));
     self::assertSame(['START TRANSACTION', 'COMMIT'], $db->queries);
-    self::assertFalse($boundary->isActive());
+    self::assertFalse($boundary->is_active());
   }
 
   public function test_a_throw_rolls_back_and_rethrows_the_original(): void {
@@ -118,9 +118,9 @@ final class WpdbTransactionBoundaryTest extends TestCase {
     $checked = new WpdbTransactionBoundary(wpdb: $db);
 
     $legacy->run(static function () use ($checked): void {
-      self::assertTrue($checked->isActive(), 'the shared per-request depth sees the 0.6 transaction');
+      self::assertTrue($checked->is_active(), 'the shared per-request depth sees the 0.6 transaction');
     });
-    self::assertFalse($checked->isActive());
+    self::assertFalse($checked->is_active());
   }
 
   public function test_reads_the_global_wpdb_per_call(): void {

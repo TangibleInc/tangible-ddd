@@ -74,15 +74,15 @@ use function TangibleDDD\WordPress\register_process_hooks;
  *
  *   boundary              WpdbTransactionBoundary (checked, NestedPolicy::Reject)
  *   outbox                WpdbOutboxStore (claim_token fencing, requested lease, host clock)
- *   outboxAdministration  WpdbOutboxAdministration (host clock)
- *   relayPauses           WpRelayPauseStore (v8 pause rows + the 0.6 option)
+ *   outbox_admin          WpdbOutboxAdministration (host clock)
+ *   pauses                WpRelayPauseStore (v8 pause rows + the 0.6 option)
  *   transport             ActionSchedulerTransport (+ the two fault seams, FaultingTransport)
  *   ledger                WpDeliveryLedger, the one WpLedgeredDelivery gates every
  *                         DDD-registered callback through
  *   subscriptions         WpHookSubscriptionRegistry (one add_action per subscriber)
- *   processStore          WpdbProcessStore (ignition_key, version fencing, stranded scan)
+ *   process_store         WpdbProcessStore (ignition_key, version fencing, stranded scan)
  *   wakeups               WpdbWakeupScheduler (intent rows + AS projection at schedule time)
- *   processLock           ReentrantProcessLock over GetLockProcessLock (both names)
+ *   lock                  ReentrantProcessLock over GetLockProcessLock (both names)
  *   runner                the core ProcessRunner on those ports, StartMode::InBand
  *   wake path             the ddd-wp Action Scheduler hooks (register_process_hooks:
  *                         process_continue, await_timeout, ddd_wakeup → WpWakeBracket)
@@ -177,7 +177,7 @@ final class WpConformanceRuntime {
    * theirs explicitly, and cmd.no-boundary needs none anywhere.
    */
   public function provideHostDefaults(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(IClock::class, $this->clock);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, new WpHookSignalDispatcher());
     HostDefaults::provide(ISubscriberProbe::class, new HasActionSubscriberProbe());
@@ -208,7 +208,7 @@ final class WpConformanceRuntime {
     };
     register_process_hooks($this->config, static fn () => $container);
     register_delivery_hooks($this->config);
-    WpLedgeredDelivery::registerConsumer($this->config);
+    WpLedgeredDelivery::register_consumer($this->config);
   }
 
   public function wakeRunner(): ProcessRunner {
@@ -223,7 +223,7 @@ final class WpConformanceRuntime {
 
     return new CommandBus(
       new CorrelationMiddleware($this->config, $this->events, new Redactor(), $sink, new WpActorProvider(), null, new WpEnvironmentProvider()),
-      new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
+      new TransactionalCommandMiddleware($options->boundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
         new EventRouter($this->dispatcher, new OutboxIntegrationEventBus(null, $this->config, null, $this->clock, $this->outbox, $this->outboxConfig)),
@@ -310,9 +310,8 @@ final class WpConformanceRuntime {
   }
 
   // ── the wp worker pass ───────────────────────────────────────────────────
-
   /**
-   * One wp worker pass, the Drain::runOnce() of this host: what one Action
+   * One wp worker pass, the Drain::run_once() of this host: what one Action
    * Scheduler queue run does for the consumer.
    *
    * 1. The relay tick (WpRelayTick: the port-form relay, re-projection of
@@ -323,7 +322,7 @@ final class WpConformanceRuntime {
    *    wakes (process_continue, await_timeout, ddd_wakeup, with $runner as
    *    the runner they resolve), relayed facts (the delivery stage) and
    *    redeliveries. "Due" is the HOST clock (async actions are always due),
-   *    so advanceClock() moves Action Scheduler time too. RuntimeReset runs
+   *    so advance_clock() moves Action Scheduler time too. RuntimeReset runs
    *    between actions, as between Messenger messages.
    *
    * The DrainReport is read back from the intent table: keys that became
@@ -365,7 +364,7 @@ final class WpConformanceRuntime {
           $delivered++;
         }
         try {
-          RuntimeReset::betweenMessages();
+          RuntimeReset::between_messages();
         } catch (RuntimeLeakDetected $l) {
           $leaks[] = $l->getMessage();
         }
@@ -398,11 +397,11 @@ final class WpConformanceRuntime {
       'report' => new DrainReport(
         relay: $tick->relay,
         delivered: $delivered,
-        wakesCompleted: $completed,
-        wakesRetried: $retried,
-        wakesExhausted: $exhausted,
+        wakes_completed: $completed,
+        wakes_retried: $retried,
+        wakes_exhausted: $exhausted,
         items: $items,
-        stoppedBy: $items >= $maxItems ? DrainReport::STOPPED_MAX_ITEMS : DrainReport::STOPPED_IDLE,
+        stopped_by: $items >= $maxItems ? DrainReport::STOPPED_MAX_ITEMS : DrainReport::STOPPED_IDLE,
         leaks: $leaks,
         errors: $errors,
       ),

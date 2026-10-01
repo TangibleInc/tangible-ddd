@@ -13,7 +13,7 @@ namespace TangibleDDD\Runtime;
  * explicitly.
  *
  * Lifetime: process-static and BOOT-TIME ONLY. RuntimeReset never clears it
- * (A F-18); only the test seam resetForTests() does.
+ * (A F-18); only the test seam reset_for_tests() does.
  *
  * Error behaviour: provide() throws \InvalidArgumentException when the
  * implementation does not implement the named port; get() returns null when
@@ -25,7 +25,7 @@ namespace TangibleDDD\Runtime;
  *
  * Late hosts: a host whose init can run before its platform is up (ddd-wp
  * is included from vendor/autoload.php, before a test bootstrap loads
- * WordPress or its stubs) registers a miss resolver with onMiss(). get() and
+ * WordPress or its stubs) registers a miss resolver with on_miss(). get() and
  * for() call it when a port has no implementation, at most once at a time
  * (re-entrant misses during resolution return null), then read the port
  * again. The resolver decides whether it can provide anything yet and may
@@ -66,11 +66,11 @@ final class HostDefaults {
   /**
    * Register (or, with null, remove) the host's miss resolver; see the class
    * doc. It receives the missed port and provides whatever it can through
-   * provide(). Boot-time wiring like provide(); resetForTests() removes it.
+   * provide(). Boot-time wiring like provide(); reset_for_tests() removes it.
    *
    * @param (callable(class-string): void)|null $resolver
    */
-  public static function onMiss(?callable $resolver): void {
+  public static function on_miss(?callable $resolver): void {
     self::$missResolver = $resolver === null ? null : \Closure::fromCallable($resolver);
   }
 
@@ -121,7 +121,7 @@ final class HostDefaults {
    * Test seam only; production never clears host defaults. Also removes the
    * miss resolver, so a test that provides a partial set is not topped up.
    */
-  public static function resetForTests(): void {
+  public static function reset_for_tests(): void {
     self::$impls = [];
     self::$missResolver = null;
   }

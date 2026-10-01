@@ -32,7 +32,7 @@ final class FactClassRecordingEventBus implements IIntegrationEventBus {
       $this->inner->publish($event);
       return;
     }
-    $this->store->withFactClass(get_class($event), fn () => $this->inner->publish($event));
+    $this->store->with_event_class(get_class($event), fn () => $this->inner->publish($event));
   }
 
   public function inner(): OutboxIntegrationEventBus {

@@ -24,12 +24,12 @@ use TangibleDDD\Runtime\Delivery\Subscriber;
  * subscriber's handle($event, $eventId)), bound through WpLedgeredDelivery:
  * on a schema v8 consumer each subscriber is isolated and ledgered per
  * (subscriber id, event_id), retried through `{prefix}_ddd_redeliver` and
- * budgeted, with its onExhausted compensation at the budget. Before v8 a
+ * budgeted, with its on_exhausted compensation at the budget. Before v8 a
  * throwing callback aborts the rest of do_action, as in 0.6.
  *
  * Id-less payloads (wave1-notes): an envelope without `__event_id` (a hook
  * fired by hand, a hand-built payload) bypasses the ledger and is delivered
- * directly with eventId '' (the runner then starts without ignition dedup,
+ * directly with event_id '' (the runner then starts without ignition dedup,
  * as 0.6 did); WpLedgeredDelivery notes it once per hook per request.
  *
  * Unresolvable facts: a fact whose owning consumer is absent has no hook
@@ -50,7 +50,7 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
   private int $seq = 0;
 
   public function add(Subscriber $s): void {
-    $class = $s->eventClassOrMarker;
+    $class = $s->event_class;
 
     if (interface_exists($class)) {
       IntegrationHookName::note_absent($class, 'marker subscription (no WordPress hook for a marker interface)');
@@ -84,7 +84,7 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
 
       $ctx !== null ? Correlation::within($ctx, $run) : $run();
     };
-    $callback = WpLedgeredDelivery::bind($hook, $class, $s->id, $s->priority, $invoke, $s->onExhausted);
+    $callback = WpLedgeredDelivery::bind($hook, $class, $s->id, $s->priority, $invoke, $s->on_exhausted);
     add_action($hook, $callback, $s->priority, 1);
 
     $this->bound[$s->id] = ['sub' => $s, 'hook' => $hook, 'callback' => $callback, 'seq' => ++$this->seq];
@@ -93,7 +93,7 @@ final class WpHookSubscriptionRegistry implements ISubscriptionRegistry {
   public function for(string $eventClass): array {
     $matching = array_filter(
       $this->bound,
-      static fn (array $e) => is_a($eventClass, $e['sub']->eventClassOrMarker, true)
+      static fn (array $e) => is_a($eventClass, $e['sub']->event_class, true)
     );
     usort($matching, static fn (array $a, array $b) => [$a['sub']->priority, $a['seq']] <=> [$b['sub']->priority, $b['seq']]);
 

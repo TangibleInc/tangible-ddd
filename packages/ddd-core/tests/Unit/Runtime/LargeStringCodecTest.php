@@ -46,12 +46,12 @@ final class RawBodyFact extends IntegrationEvent {
 final class LargeStringCodecTest extends TestCase {
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
@@ -65,7 +65,7 @@ final class LargeStringCodecTest extends TestCase {
 
     $this->bus($store)->publish(new RunnerJobOrdered('web.deploy-build', new LargeString($bytes)));
 
-    $record = $store->recordOf($store->eventIds()[0]);
+    $record = $store->record_of($store->event_ids()[0]);
     $json = json_encode($record->payload, JSON_THROW_ON_ERROR);
     $fact = RunnerJobOrdered::from_payload(json_decode($json, true, 512, JSON_THROW_ON_ERROR));
 
@@ -80,11 +80,11 @@ final class LargeStringCodecTest extends TestCase {
 
   public function test_a_value_over_its_declared_cap_is_refused_at_construction(): void {
     try {
-      new LargeString(str_repeat('a', 11), maxBytes: 10);
+      new LargeString(str_repeat('a', 11), max_bytes: 10);
       self::fail('expected PayloadTooLarge');
     } catch (PayloadTooLarge $e) {
       self::assertSame(11, $e->bytes);
-      self::assertSame(10, $e->maxBytes);
+      self::assertSame(10, $e->max_bytes);
     }
   }
 
@@ -100,10 +100,10 @@ final class LargeStringCodecTest extends TestCase {
       self::fail('expected PayloadTooLarge');
     } catch (PayloadTooLarge $e) {
       self::assertGreaterThan(64 * 1024, $e->bytes);
-      self::assertSame(64 * 1024, $e->maxBytes);
+      self::assertSame(64 * 1024, $e->max_bytes);
       self::assertStringContainsString('runner_job_ordered', $e->getMessage());
     }
-    self::assertSame([], $store->eventIds());
+    self::assertSame([], $store->event_ids());
   }
 
   public function test_a_raw_binary_string_field_fails_at_append_pointing_at_large_string(): void {
@@ -115,15 +115,15 @@ final class LargeStringCodecTest extends TestCase {
   }
 
   public function test_a_corrupt_stored_value_is_undecodable_with_a_quarantine_reason(): void {
-    $encoded = (new LargeString('hello world'))->toPayload();
+    $encoded = (new LargeString('hello world'))->encode();
 
     $tampered = $encoded;
     $tampered['data'] = base64_encode('hello w0rld');
     try {
-      LargeString::fromPayload($tampered);
+      LargeString::decode($tampered);
       self::fail('expected UndecodableLargeString');
     } catch (UndecodableLargeString $e) {
-      self::assertStringContainsString('sha256', $e->quarantineReason);
+      self::assertStringContainsString('sha256', $e->reason);
     }
 
     foreach ([
@@ -133,10 +133,10 @@ final class LargeStringCodecTest extends TestCase {
       'over its cap' => ['max_bytes' => 4] + $encoded,
     ] as $case => $raw) {
       try {
-        LargeString::fromPayload($raw);
+        LargeString::decode($raw);
         self::fail("expected UndecodableLargeString for $case");
       } catch (UndecodableLargeString $e) {
-        self::assertNotSame('', $e->quarantineReason, $case);
+        self::assertNotSame('', $e->reason, $case);
       }
     }
   }

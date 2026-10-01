@@ -32,7 +32,7 @@ final class DlqListCommand extends Command {
   protected function execute(InputInterface $input, OutputInterface $output): int {
     $limit = max(1, (int) $input->getOption('limit'));
     $after = $input->getOption('after');
-    $letters = $this->admin->deadLetters($limit, $after === null ? null : (string) $after);
+    $letters = $this->admin->dead_letters($limit, $after === null ? null : (string) $after);
 
     if ($letters === []) {
       $output->writeln('No dead letters.');
@@ -43,14 +43,14 @@ final class DlqListCommand extends Command {
     $table->setHeaders(['DLQ id', 'event id', 'event type', 'attempts', 'dead-lettered at (UTC)', 'error']);
     foreach ($letters as $d) {
       $table->addRow([
-        $d->dlqId, $d->event_id, $d->record->event_type, $d->attempts,
-        $d->deadLetteredAt->format('Y-m-d H:i:s'), mb_strimwidth($d->error, 0, 120, '...'),
+        $d->dlq_id, $d->event_id, $d->record->event_type, $d->attempts,
+        $d->dead_lettered_at->format('Y-m-d H:i:s'), mb_strimwidth($d->error, 0, 120, '...'),
       ]);
     }
     $table->render();
 
     if (count($letters) === $limit) {
-      $output->writeln(sprintf('More may follow: ddd:ops:dlq:list --after=%d', end($letters)->dlqId));
+      $output->writeln(sprintf('More may follow: ddd:ops:dlq:list --after=%d', end($letters)->dlq_id));
     }
     $output->writeln('Replay (keeps the event id): ddd:ops:dlq:replay <DLQ id>; retry the outbox row: ddd:ops:dlq:retry <event id>');
     return Command::SUCCESS;

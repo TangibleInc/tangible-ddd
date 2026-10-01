@@ -32,30 +32,30 @@ abstract class RelayScenarios extends ConformanceTestCase {
   protected const PAST_ANY_LEASE = 3601;
 
   #[Group('relay.lease-fencing')]
-  #[TestDox('relay.lease-fencing: A claims, the lease expires, B claims and accepts, A\'s late accept/retryLater/deadLetter change nothing; expired-lease re-claims count as attempts and dead-letter at claim (CR-PDO-6)')]
+  #[TestDox('relay.lease-fencing: A claims, the lease expires, B claims and accepts, A\'s late accept/retry_later/dead_letter change nothing; expired-lease re-claims count as attempts and dead-letter at claim (CR-PDO-6)')]
   public function test_relay_lease_fencing(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
+    $id = $this->publish(new WidgetRegistered('w-1'));
     $outbox = $this->host->outbox();
 
     $a = $outbox->claim(10, $this->host->clock()->now(), 30);
     self::assertCount(1, $a);
     self::assertSame($id, $a[0]->event_id);
     self::assertSame([], $outbox->claim(10, $this->host->clock()->now(), 30), 'a live lease excludes the row');
-    $this->whileLeased($a[0]);
+    $this->while_leased($a[0]);
 
-    $this->host->advanceClock(31);
+    $this->host->advance_clock(31);
     $b = $outbox->claim(10, $this->host->clock()->now(), 30);
     self::assertCount(1, $b, 'an expired lease can be re-claimed');
     self::assertSame($id, $b[0]->event_id);
-    self::assertNotSame($a[0]->claimToken, $b[0]->claimToken);
+    self::assertNotSame($a[0]->token, $b[0]->token);
 
     self::assertTrue($outbox->accept($b[0], 'ref-b'));
 
     self::assertFalse($outbox->accept($a[0], 'ref-a'), 'late accept matches 0 rows');
-    self::assertFalse($outbox->retryLater($a[0], 'late', $this->host->clock()->now()->modify('+60 seconds')), 'late retryLater matches 0 rows');
-    self::assertFalse($outbox->deadLetter($a[0], 'late'), 'late deadLetter matches 0 rows');
+    self::assertFalse($outbox->retry_later($a[0], 'late', $this->host->clock()->now()->modify('+60 seconds')), 'late retryLater matches 0 rows');
+    self::assertFalse($outbox->dead_letter($a[0], 'late'), 'late deadLetter matches 0 rows');
 
-    $stats = $this->host->outboxAdministration()->stats();
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(1, $stats['accepted']);
     self::assertSame(0, $stats['pending']);
     self::assertSame(0, $stats['dlq']);
@@ -77,7 +77,7 @@ abstract class RelayScenarios extends ConformanceTestCase {
    * view, OutboxDeadLettered).
    */
   private function expiredLeaseReclaimsAreCounted(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-3'));
+    $id = $this->publish(new WidgetRegistered('w-3'));
     $outbox = $this->host->outbox();
     $signalsBefore = $this->host instanceof RecordsSignals ? count($this->host->signals()) : 0;
 
@@ -89,34 +89,34 @@ abstract class RelayScenarios extends ConformanceTestCase {
 
     // The submitter dies after every claim (fatal, OOM, SIGKILL): no outcome is written.
     for ($n = 1; $n < $budget; $n++) {
-      $this->host->advanceClock(31);
+      $this->host->advance_clock(31);
       $claim = $this->claimOf($id);
       self::assertNotNull($claim, "re-claim $n is handed out");
       self::assertSame($n, $claim->attempts, "re-claim $n of an expired lease counts as attempt $n");
     }
 
     // The next re-claim reaches the budget: dead-lettered at claim, inside the relay step.
-    $this->host->advanceClock(self::PAST_ANY_LEASE);
-    $report = $this->host->relayOnce();
+    $this->host->advance_clock(self::PAST_ANY_LEASE);
+    $report = $this->host->relay_once();
     self::assertNotContains($id, $report->claimed, 'not handed out again');
     self::assertNotContains($id, $report->accepted);
-    self::assertNotContains($id, $this->transportedIds(), 'never transported');
+    self::assertNotContains($id, $this->transported_ids(), 'never transported');
     self::assertSame([], $outbox->claim(10, $this->host->clock()->now()->modify('+1 day'), 30), 'nothing left to claim');
 
     $letters = array_values(array_filter(
-      $this->host->outboxAdministration()->deadLetters(10),
+      $this->host->outbox_admin()->dead_letters(10),
       static fn ($l) => $l->event_id === $id,
     ));
     self::assertCount(1, $letters, 'in the DLQ');
     self::assertSame($budget, $letters[0]->attempts, 'with attempts equal to the budget');
     self::assertStringContainsString(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, (string) $letters[0]->error);
-    $stats = $this->host->outboxAdministration()->stats();
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(0, $stats['pending']);
     self::assertSame(1, $stats['dlq']);
 
     if ($this->host instanceof ProcessHost) {
       $items = array_values(array_filter(
-        $this->host->operatorView()->list(Layer::Relay),
+        $this->host->operator_view()->list(Layer::Relay),
         static fn ($i) => $i->key === $id,
       ));
       self::assertCount(1, $items, 'the operator view lists the claim-time dead letter');
@@ -149,26 +149,26 @@ abstract class RelayScenarios extends ConformanceTestCase {
    * rolls back with it, so the fact is not transported twice.
    */
   private function lateHolderOfARelayStep(RelayRace $race): void {
-    $id = $this->publishFact(new WidgetRegistered('w-2'));
+    $id = $this->publish(new WidgetRegistered('w-2'));
     $outbox = $this->host->outbox();
-    $shared = $this->host->transport()->sharesConnectionWith($outbox);
-    $before = $this->transportedIds();
+    $shared = $this->host->transport()->shares_connection($outbox);
+    $before = $this->transported_ids();
 
-    $race->raceNextRelayAfterSubmit(function () use ($outbox, $id): void {
-      $this->host->advanceClock(self::PAST_ANY_LEASE);
+    $race->race_next_relay(function () use ($outbox, $id): void {
+      $this->host->advance_clock(self::PAST_ANY_LEASE);
       $b = $outbox->claim(10, $this->host->clock()->now(), 30);
       self::assertSame([$id], array_map(static fn (Claim $c) => $c->event_id, $b), 'the expired lease is re-claimed by B');
       self::assertTrue($outbox->accept($b[0], 'ref-b'), 'B accepts first');
     });
-    $report = $this->host->relayOnce();
+    $report = $this->host->relay_once();
 
     self::assertSame([$id], $report->claimed);
     self::assertSame([], $report->accepted, 'the late holder never counts as accepted');
-    self::assertSame([$id], $report->leaseLost, 'its accept matched 0 rows');
-    $stats = $this->host->outboxAdministration()->stats();
+    self::assertSame([$id], $report->lease_lost, 'its accept matched 0 rows');
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(2, $stats['accepted'], 'B\'s acceptance stands');
     self::assertSame(0, $stats['pending']);
-    $added = array_values(array_diff_key($this->transportedIds(), $before));
+    $added = array_values(array_diff_key($this->transported_ids(), $before));
     if ($shared) {
       self::assertSame([], $added, 'shared connection: the late holder\'s submission rolled back with its 0-row accept');
     } else {
@@ -182,32 +182,32 @@ abstract class RelayScenarios extends ConformanceTestCase {
     $effects = 0;
     $this->host->subscriptions()->add(new Subscriber('conformance.effect', Subscriber::LISTENER, WidgetRegistered::class,
       static function () use (&$effects): void { $effects++; }));
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
-    $shared = $this->host->transport()->sharesConnectionWith($this->host->outbox());
+    $id = $this->publish(new WidgetRegistered('w-1'));
+    $shared = $this->host->transport()->shares_connection($this->host->outbox());
 
-    $this->host->crashNextRelayAfterSubmit();
-    self::assertInstanceOf(SimulatedCrash::class, self::catchThrowable(fn () => $this->host->relayOnce()));
+    $this->host->crash_next_relay();
+    self::assertInstanceOf(SimulatedCrash::class, self::thrown(fn () => $this->host->relay_once()));
 
-    $stats = $this->host->outboxAdministration()->stats();
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(1, $stats['pending'], 'never accepted');
     self::assertSame(0, $stats['accepted']);
     if ($shared) {
-      self::assertSame([], $this->transportedIds(), 'shared connection: the submission rolled back with the accept');
+      self::assertSame([], $this->transported_ids(), 'shared connection: the submission rolled back with the accept');
     }
 
-    $this->host->advanceClock(self::PAST_ANY_LEASE);
-    $report = $this->host->relayOnce();
+    $this->host->advance_clock(self::PAST_ANY_LEASE);
+    $report = $this->host->relay_once();
     self::assertSame([$id], $report->accepted, 'the next run relays it');
-    self::assertSame(1, $this->host->outboxAdministration()->stats()['accepted']);
+    self::assertSame(1, $this->host->outbox_admin()->stats()['accepted']);
 
-    $ids = $this->transportedIds();
+    $ids = $this->transported_ids();
     if ($shared) {
       self::assertSame([$id], $ids, 'shared connection: exactly one delivery');
     } else {
       self::assertSame([$id, $id], $ids, 'separate connection: the same event_id recurs');
     }
 
-    $outcomes = $this->host->deliverTransported(WidgetRegistered::class);
+    $outcomes = $this->host->deliver_transported(WidgetRegistered::class);
     self::assertCount(count($ids), $outcomes);
     self::assertSame(1, $effects, 'subscriber effect applied once');
     if (!$shared) {
@@ -218,62 +218,62 @@ abstract class RelayScenarios extends ConformanceTestCase {
   #[Group('relay.invalid-acceptance')]
   #[TestDox('relay.invalid-acceptance: a throwing transport or a missing reference is retried per the relay budget, then dead-lettered, never accepted')]
   public function test_relay_invalid_acceptance(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
+    $id = $this->publish(new WidgetRegistered('w-1'));
     $failures = ['throw', 'no-ref', 'throw', 'no-ref', 'throw'];
 
     foreach ($failures as $n => $kind) {
       $kind === 'throw'
-        ? $this->host->rejectNextSubmission(new TransportRejected("rejected #$n"))
-        : $this->host->acceptNextSubmissionWithoutRef();
+        ? $this->host->reject_next_submission(new TransportRejected("rejected #$n"))
+        : $this->host->accept_next_without_ref();
 
-      $report = $this->host->relayOnce();
+      $report = $this->host->relay_once();
 
       self::assertSame([$id], $report->claimed, "attempt $n claimed");
       self::assertSame([], $report->accepted, "attempt $n ($kind) is never accepted");
       if ($n < count($failures) - 1) {
         self::assertSame([$id], $report->retried, "attempt $n retried");
-        self::assertSame([], $this->host->relayOnce()->claimed, 'backoff: not due again immediately');
+        self::assertSame([], $this->host->relay_once()->claimed, 'backoff: not due again immediately');
       } else {
-        self::assertSame([$id], $report->deadLettered, 'the last budgeted attempt dead-letters');
+        self::assertSame([$id], $report->dead_lettered, 'the last budgeted attempt dead-letters');
       }
-      $this->host->advanceClock(self::PAST_ANY_LEASE);
+      $this->host->advance_clock(self::PAST_ANY_LEASE);
     }
 
-    $stats = $this->host->outboxAdministration()->stats();
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(0, $stats['accepted']);
     self::assertSame(0, $stats['pending']);
     self::assertSame(1, $stats['dlq']);
     self::assertSame(1, $stats['dead_letters']);
 
-    $letters = $this->host->outboxAdministration()->deadLetters(10);
+    $letters = $this->host->outbox_admin()->dead_letters(10);
     self::assertCount(1, $letters);
     self::assertSame($id, $letters[0]->event_id);
     self::assertSame(count($failures), $letters[0]->attempts);
 
-    self::assertSame([], $this->host->relayOnce()->claimed, 'a dead letter is not relayed again');
-    self::assertSame([], $this->transportedIds(), 'the transport holds nothing deliverable');
+    self::assertSame([], $this->host->relay_once()->claimed, 'a dead letter is not relayed again');
+    self::assertSame([], $this->transported_ids(), 'the transport holds nothing deliverable');
   }
 
   #[Group('relay.pause-holders')]
   #[TestDox('relay.pause-holders: two overlapping holds; releasing one keeps the pause, the other one\'s expiry is honoured')]
   public function test_relay_pause_holders(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
+    $id = $this->publish(new WidgetRegistered('w-1'));
     $type = WidgetRegistered::name();
-    $pauses = $this->host->relayPauses();
+    $pauses = $this->host->pauses();
     $now = $this->host->clock()->now();
 
     $pauses->hold('holder-a', '*', null);
     $pauses->hold('holder-b', 'widget_*', $now->modify('+600 seconds'));
-    self::assertTrue($pauses->isPaused($type, $now));
-    self::assertSame([], $this->host->relayOnce()->claimed, 'paused by both holders');
+    self::assertTrue($pauses->is_paused($type, $now));
+    self::assertSame([], $this->host->relay_once()->claimed, 'paused by both holders');
 
     $pauses->release('holder-a');
-    self::assertTrue($pauses->isPaused($type, $this->host->clock()->now()), 'holder-b still holds');
-    self::assertSame([], $this->host->relayOnce()->claimed, 'the remaining hold still pauses');
+    self::assertTrue($pauses->is_paused($type, $this->host->clock()->now()), 'holder-b still holds');
+    self::assertSame([], $this->host->relay_once()->claimed, 'the remaining hold still pauses');
 
-    $this->host->advanceClock(601);
-    self::assertFalse($pauses->isPaused($type, $this->host->clock()->now()), 'holder-b expired');
-    self::assertSame([$id], $this->host->relayOnce()->accepted, 'expiry honoured: relayed');
+    $this->host->advance_clock(601);
+    self::assertFalse($pauses->is_paused($type, $this->host->clock()->now()), 'holder-b expired');
+    self::assertSame([$id], $this->host->relay_once()->accepted, 'expiry honoured: relayed');
   }
 
   #[Group('relay.replay-keeps-identity')]
@@ -284,30 +284,30 @@ abstract class RelayScenarios extends ConformanceTestCase {
       $this->host->subscriptions()->add(new Subscriber($sid, Subscriber::LISTENER, WidgetRegistered::class,
         static function () use (&$ran, $sid): void { $ran[$sid]++; }));
     }
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
-    $this->host->ledger()->markDelivered('conformance.a', $id); // an earlier delivery reached A
+    $id = $this->publish(new WidgetRegistered('w-1'));
+    $this->host->ledger()->mark_delivered('conformance.a', $id); // an earlier delivery reached A
 
     for ($n = 0; $n < 5; $n++) {
-      $this->host->rejectNextSubmission();
-      $this->host->relayOnce();
-      $this->host->advanceClock(self::PAST_ANY_LEASE);
+      $this->host->reject_next_submission();
+      $this->host->relay_once();
+      $this->host->advance_clock(self::PAST_ANY_LEASE);
     }
-    $admin = $this->host->outboxAdministration();
-    $letters = $admin->deadLetters(10);
+    $admin = $this->host->outbox_admin();
+    $letters = $admin->dead_letters(10);
     self::assertCount(1, $letters, 'dead-lettered after the relay budget');
     self::assertSame($id, $letters[0]->event_id);
 
-    $admin->replay($letters[0]->dlqId);
+    $admin->replay($letters[0]->dlq_id);
 
-    self::assertSame([], $admin->deadLetters(10), 'the DLQ row is deleted');
+    self::assertSame([], $admin->dead_letters(10), 'the DLQ row is deleted');
     $stats = $admin->stats();
     self::assertSame(1, $stats['pending'], 'the original row is reset, not duplicated');
     self::assertSame(0, $stats['dlq']);
 
-    self::assertSame([$id], $this->host->relayOnce()->accepted, 'relayed under the SAME event_id');
-    self::assertSame([$id], $this->transportedIds());
+    self::assertSame([$id], $this->host->relay_once()->accepted, 'relayed under the SAME event_id');
+    self::assertSame([$id], $this->transported_ids());
 
-    $outcomes = $this->host->deliverTransported(WidgetRegistered::class);
+    $outcomes = $this->host->deliver_transported(WidgetRegistered::class);
     self::assertCount(1, $outcomes);
     self::assertSame(['conformance.a'], $outcomes[0]->skipped, 'A was already in the ledger');
     self::assertSame(['conformance.b'], $outcomes[0]->delivered);
@@ -318,10 +318,10 @@ abstract class RelayScenarios extends ConformanceTestCase {
    * Host hook, called while claim $c's lease is live. wp overrides it to
    * assert that a 0.6 fetch_pending() also skips the row (`locked_until` set).
    */
-  protected function whileLeased(Claim $c): void {}
+  protected function while_leased(Claim $c): void {}
 
   /** @return list<string> */
-  protected function transportedIds(): array {
-    return array_map(static fn (TransportedFact $t) => $t->eventId, $this->host->transported());
+  protected function transported_ids(): array {
+    return array_map(static fn (TransportedFact $t) => $t->event_id, $this->host->transported());
   }
 }

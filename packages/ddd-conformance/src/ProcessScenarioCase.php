@@ -34,7 +34,7 @@ abstract class ProcessScenarioCase extends ConformanceTestCase {
 
   protected function processes(): ProcessHost {
     if (!$this->host instanceof ProcessHost) {
-      $this->skipForChangeRequest('CR-W3CP-1', 'the host fixture does not implement ProcessHost yet');
+      $this->skip_for('CR-W3CP-1', 'the host fixture does not implement ProcessHost yet');
     }
     return $this->host;
   }
@@ -45,19 +45,19 @@ abstract class ProcessScenarioCase extends ConformanceTestCase {
    * the scenario continues from the same state on every host.
    */
   protected function start(LongProcess $process, int $worker = 1): int {
-    $this->processes()->worker($worker)->processRunner()->start($process);
+    $this->processes()->worker($worker)->runner()->start($process);
     $id = (int) $process->get_id();
     self::assertGreaterThan(0, $id, 'start() persisted the process');
 
     $row = $this->row($id);
-    if ($row->status === 'scheduled' && $row->stepIndex === 0) {
-      $this->processes()->worker($worker)->drainOnce();
+    if ($row->status === 'scheduled' && $row->step_index === 0) {
+      $this->processes()->worker($worker)->drain_once();
     }
     return $id;
   }
 
   protected function row(int $id): ProcessRow {
-    $row = $this->processes()->processRow($id);
+    $row = $this->processes()->process_row($id);
     self::assertNotNull($row, "process #$id exists");
     return $row;
   }
@@ -65,13 +65,13 @@ abstract class ProcessScenarioCase extends ConformanceTestCase {
   /** @return list<WakeupIntent> live intents of $kind for process $id */
   protected function intents(int $id, ?WakeKind $kind = null): array {
     return array_values(array_filter(
-      $this->processes()->pendingWakeups(),
-      static fn (WakeupIntent $i) => $i->processId === $id && ($kind === null || $i->kind === $kind),
+      $this->processes()->live_intents(),
+      static fn (WakeupIntent $i) => $i->process_id === $id && ($kind === null || $i->kind === $kind),
     ));
   }
 
   /** @return list<string> */
-  protected function intentKeys(int $id, ?WakeKind $kind = null): array {
-    return array_map(static fn (WakeupIntent $i) => $i->idempotencyKey, $this->intents($id, $kind));
+  protected function intent_keys(int $id, ?WakeKind $kind = null): array {
+    return array_map(static fn (WakeupIntent $i) => $i->key, $this->intents($id, $kind));
   }
 }

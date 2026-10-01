@@ -43,7 +43,7 @@ final class FreshProcessBoot {
    *
    * @return array<string, class-string>
    */
-  public static function factClasses(): array {
+  public static function fact_classes(): array {
     $map = [];
     foreach ([WidgetRegistered::class, WidgetOrdered::class, WidgetPacked::class, PartArrived::class] as $class) {
       $map[$class::name()] = $class;
@@ -51,7 +51,7 @@ final class FreshProcessBoot {
     return $map;
   }
 
-  public static function effectRowId(string $widgetId): string {
+  public static function effect_row(string $widgetId): string {
     return "effect:$widgetId";
   }
 
@@ -65,8 +65,8 @@ final class FreshProcessBoot {
 
     $subscriptions->add(new Subscriber(self::EFFECT_SUBSCRIBER, Subscriber::LISTENER, WidgetRegistered::class,
       static function (WidgetRegistered $fact) use ($rows, $boundary): void {
-        $write = static fn () => $rows->insert(self::effectRowId($fact->widget_id), 'effect');
-        $boundary === null || $boundary->isActive() ? $write() : $boundary->run($write);
+        $write = static fn () => $rows->insert(self::effect_row($fact->widget_id), 'effect');
+        $boundary === null || $boundary->is_active() ? $write() : $boundary->run($write);
       }));
 
     ProcessJournal::bind($rows, $boundary);

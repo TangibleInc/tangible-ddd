@@ -36,11 +36,11 @@ final class WpRelayTickV8Test extends V8TestCase {
   protected function setUp(): void {
     parent::setUp();
     $this->installV8();
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
   }
 
   protected function tearDown(): void {
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
     parent::tearDown();
   }
 
@@ -81,7 +81,7 @@ final class WpRelayTickV8Test extends V8TestCase {
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET updated_at = '$old'");
 
     $tick = WpRelayTick::for($this->config, $this->container($this->frameworkServices()));
-    self::assertTrue($tick->isPortForm());
+    self::assertTrue($tick->is_port_form());
     $report = $tick->run();
 
     self::assertTrue($report->ok(), $report->summary());
@@ -99,11 +99,11 @@ final class WpRelayTickV8Test extends V8TestCase {
     $services[IOutboxPublisher::class] = new class implements IOutboxPublisher {
       public function publish(OutboxEntry $entry, array $wrapped_payload): void {}
     };
-    self::assertFalse(WpRelayTick::for($this->config, $this->container($services))->isPortForm(), 'a routing/external publisher keeps its 0.6 path');
+    self::assertFalse(WpRelayTick::for($this->config, $this->container($services))->is_port_form(), 'a routing/external publisher keeps its 0.6 path');
 
     update_option($this->config->option('ddd_schema_version'), 7, false);
     $tick = WpRelayTick::for($this->config, $this->container($this->frameworkServices()));
-    self::assertFalse($tick->isPortForm());
+    self::assertFalse($tick->is_port_form());
     $report = $tick->run();
     self::assertNull($report->reprojected);
     self::assertNull($report->stranded);
@@ -112,7 +112,7 @@ final class WpRelayTickV8Test extends V8TestCase {
   public function test_the_operator_view_lists_every_layer_against_its_budget(): void {
     $this->append('e1000000-0000-4000-8000-000000000002');
     $this->wpdb->query("UPDATE `{$this->table('integration_outbox')}` SET attempts = 2, last_error = 'transport down'");
-    (new \TangibleDDD\WordPress\Adapter\WpDeliveryLedger($this->config->prefix()))->markFailed('ddd8it/listener:x', 'e1000000-0000-4000-8000-000000000002', 'boom', 3);
+    (new \TangibleDDD\WordPress\Adapter\WpDeliveryLedger($this->config->prefix()))->mark_failed('ddd8it/listener:x', 'e1000000-0000-4000-8000-000000000002', 'boom', 3);
     $this->wpdb->insert($this->table('ddd_wakeups'), [
       'idempotency_key' => 'timeout:9:1', 'kind' => 'timeout', 'process_id' => 9, 'step_index' => 1, 'due_at' => gmdate('Y-m-d H:i:s'),
       'status' => 'pending', 'attempts' => 2, 'last_error' => 'lock', 'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s'),
@@ -147,7 +147,7 @@ final class WpRelayTickV8Test extends V8TestCase {
     $report = WpRelayTick::for($this->config, $this->container($this->frameworkServices()))->run();
 
     self::assertTrue($report->ok(), $report->summary());
-    self::assertSame(1, $report->redeliveriesRestored);
+    self::assertSame(1, $report->restored);
     self::assertCount(1, $this->pendingActions('ddd8it_ddd_redeliver'));
     self::assertStringContainsString('1 lost redeliveries re-scheduled', $report->summary());
   }

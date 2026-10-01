@@ -9,7 +9,7 @@ namespace TangibleDDD\Application\Process;
  * for it (a job id, a request ref; see LongProcess::step_ref()). A keyed
  * AwaitEvent / AwaitAll accepts the fact only when await_key() equals its
  * key, and the runner narrows the lookup with
- * IProcessStore::findWaitingFor($class, $key).
+ * IProcessStore::find_waiting_for($class, $key).
  *
  * Return null (or '') when this instance answers no keyed await.
  */

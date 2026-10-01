@@ -55,7 +55,7 @@ final class ProcessRunnerWave4PostgresTest extends PostgresTestCase {
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     parent::tearDown();
   }
 
@@ -87,7 +87,7 @@ final class ProcessRunnerWave4PostgresTest extends PostgresTestCase {
 
     $report = $this->runner()->resume_with_outcome(new JobDone('someone-else'));
 
-    self::assertTrue($report->isUnheard());
+    self::assertTrue($report->is_unheard());
     self::assertSame('suspended', $this->statusOf((int) $p->get_id()));
   }
 
@@ -103,7 +103,7 @@ final class ProcessRunnerWave4PostgresTest extends PostgresTestCase {
     self::assertSame('failed', $this->statusOf($id));
     self::assertSame(['order:1'], Trail::$notes);
     self::assertStringContainsString('Await timed out', (string) $this->db->fetchOne('SELECT last_error FROM ddd_processes WHERE id = ?', [$id]));
-    self::assertTrue($this->runner()->resume_with_outcome(new JobDone($key))->isUnheard(), 'no resurrection after compensation');
+    self::assertTrue($this->runner()->resume_with_outcome(new JobDone($key))->is_unheard(), 'no resurrection after compensation');
   }
 
   // ── D3 any-of over two classes ─────────────────────────────────────────
@@ -172,7 +172,7 @@ final class ProcessRunnerWave4PostgresTest extends PostgresTestCase {
 
     self::assertSame([$id], $this->runner()->resume_with_outcome(new ChildGone('c2'))->accumulated);
     self::assertSame([[ChildGone::class, 'c1'], [ChildGone::class, 'c3']], $this->waitRows($id));
-    self::assertTrue($this->runner()->resume_with_outcome(new ChildGone('c2'))->isUnheard(), 'a repeated key finds no route');
+    self::assertTrue($this->runner()->resume_with_outcome(new ChildGone('c2'))->is_unheard(), 'a repeated key finds no route');
     $this->runner()->resume_with_outcome(new ChildGone('c3'));
     $this->runner()->resume_with_outcome(new ChildGone('c1'));
 
@@ -290,8 +290,8 @@ final class ProcessRunnerWave4PostgresTest extends PostgresTestCase {
     $scheduler = new DbalWakeupScheduler($c);
     $handler = new ProcessWakeupHandler(new ProcessRunnerWakeTarget($runner), $scheduler, $this->clock);
     $outcomes = [];
-    foreach ($scheduler->claimDue($this->clock->now(), 50, 300) as $claim) {
-      $outcomes[] = $handler(ProcessWakeupMessage::fromClaim($claim));
+    foreach ($scheduler->claim_due($this->clock->now(), 50, 300) as $claim) {
+      $outcomes[] = $handler(ProcessWakeupMessage::from_claim($claim));
     }
     return $outcomes;
   }

@@ -35,26 +35,26 @@ final class OutboxAndQuarantineItems implements IOperatorItemSource {
     }
     $items = [];
     if ($layer === null || $layer === Layer::Relay) {
-      foreach ($this->db->fetchAll(
+      foreach ($this->db->fetch_all(
         'SELECT event_id, attempts, max_attempts, last_error, created_at FROM `' . $this->tables->table('ddd_outbox') . "`
          WHERE status = 'pending' AND attempts > 0 ORDER BY created_at, id LIMIT ?",
         [$limit]
       ) as $r) {
         $items[] = new OperatorItem(
           Layer::Relay, $this->consumer, (string) $r['event_id'], (int) $r['attempts'], (int) $r['max_attempts'],
-          $r['last_error'] === null ? null : (string) $r['last_error'], Utc::fromDb((string) $r['created_at']), ['retry'],
+          $r['last_error'] === null ? null : (string) $r['last_error'], Utc::from_db((string) $r['created_at']), ['retry'],
         );
       }
     }
     if ($layer === null || $layer === Layer::Process) {
-      foreach ($this->db->fetchAll(
+      foreach ($this->db->fetch_all(
         'SELECT id, process_class, quarantine_reason, updated_at FROM `' . $this->tables->table('ddd_processes') . '`
          WHERE quarantine_reason IS NOT NULL ORDER BY updated_at, id LIMIT ?',
         [$limit]
       ) as $r) {
         $items[] = new OperatorItem(
           Layer::Process, $this->consumer, (string) $r['id'], 0, null,
-          "quarantined {$r['process_class']}: {$r['quarantine_reason']}", Utc::fromDb((string) $r['updated_at']), [],
+          "quarantined {$r['process_class']}: {$r['quarantine_reason']}", Utc::from_db((string) $r['updated_at']), [],
         );
       }
     }

@@ -49,7 +49,7 @@ final class PdoDueGate {
 
   /** 'passed', or what was wrong per mode, e.g. 'skipped (emulated)'. */
   public function verdict(string $id): string {
-    $method = ScenarioId::methodName($id);
+    $method = ScenarioId::method_name($id);
     $problems = [];
     foreach (array_keys(self::MODES) as $mode) {
       $outcome = $this->outcomes[$method][$mode] ?? 'missing';

@@ -26,13 +26,13 @@ abstract class AggregateRootRepository {
   ) {}
 
   /** @return class-string<IRecordsDomainEvents> the root class this repository persists */
-  abstract protected function get_aggregate_class(): string;
+  abstract protected function aggregate_class(): string;
 
   abstract protected function persist(IRecordsDomainEvents $aggregate): void;
 
-  /** @throws TypeMismatchException when $aggregate is not of get_aggregate_class() */
+  /** @throws TypeMismatchException when $aggregate is not of aggregate_class() */
   final public function save(IRecordsDomainEvents $aggregate): void {
-    $expected = $this->get_aggregate_class();
+    $expected = $this->aggregate_class();
     if (!$aggregate instanceof $expected) {
       throw new TypeMismatchException(sprintf(
         'Repository %s expected %s, got %s',

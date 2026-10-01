@@ -173,11 +173,11 @@ final class DbalWorkflowStoresTest extends PostgresTestCase {
     $ledger->attach($key, 42);
     $entry = $other->find($key);
     self::assertInstanceOf(WorkflowIgnition::class, $entry);
-    self::assertSame($key, $entry->dedupKey);
+    self::assertSame($key, $entry->key);
     self::assertSame('nightly-report', $entry->kind);
-    self::assertSame(42, $entry->workflowId);
-    self::assertSame('evt-1', $entry->eventId);
-    self::assertInstanceOf(\DateTimeImmutable::class, $entry->createdAt);
+    self::assertSame(42, $entry->workflow_id);
+    self::assertSame('evt-1', $entry->event_id);
+    self::assertInstanceOf(\DateTimeImmutable::class, $entry->created_at);
     self::assertNull($other->find('CronEntryDue:nightly-report:2026-10-01T03:01'));
   }
 
@@ -190,8 +190,8 @@ final class DbalWorkflowStoresTest extends PostgresTestCase {
     $ledger->claim('k-marker', 'kind');
 
     $entry = $ledger->find('k-marker');
-    self::assertNull($entry->workflowId);
-    self::assertNull($entry->eventId);
+    self::assertNull($entry->workflow_id);
+    self::assertNull($entry->event_id);
   }
 
   public function test_a_rolled_back_claim_does_not_hold_the_key(): void {
@@ -216,8 +216,8 @@ final class DbalWorkflowStoresTest extends PostgresTestCase {
   public function test_the_fact_dedup_key_is_uuid5_of_event_and_kind(): void {
     $event = '6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b';
 
-    self::assertSame(DbalWorkflowIgnitionLedger::keyForFact($event, 'onboarding'), DbalWorkflowIgnitionLedger::keyForFact($event, 'onboarding'));
-    self::assertNotSame(DbalWorkflowIgnitionLedger::keyForFact($event, 'onboarding'), DbalWorkflowIgnitionLedger::keyForFact($event, 'offboarding'));
-    self::assertMatchesRegularExpression('/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', DbalWorkflowIgnitionLedger::keyForFact($event, 'onboarding'));
+    self::assertSame(DbalWorkflowIgnitionLedger::fact_key($event, 'onboarding'), DbalWorkflowIgnitionLedger::fact_key($event, 'onboarding'));
+    self::assertNotSame(DbalWorkflowIgnitionLedger::fact_key($event, 'onboarding'), DbalWorkflowIgnitionLedger::fact_key($event, 'offboarding'));
+    self::assertMatchesRegularExpression('/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', DbalWorkflowIgnitionLedger::fact_key($event, 'onboarding'));
   }
 }

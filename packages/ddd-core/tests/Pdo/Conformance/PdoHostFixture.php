@@ -131,10 +131,10 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  * and `quarantine_reason` columns); the audit policy is compose()'s
  * fallback, AttributeAuditPolicy.
  *
- * - Fresh schema per test: setUp() creates a database of its own
- *   (ScenarioContext::uniqueName('pdo', 'ddd_w3_conf')), applies
+ * - Fresh schema per test: set_up() creates a database of its own
+ *   (ScenarioContext::unique_name('pdo', 'ddd_w3_conf')), applies
  *   schema/mysql8 with the consumer's table prefix the way a host would
- *   (SchemaSql, then SchemaCheck), and the scenario table. tearDown() kills
+ *   (SchemaSql, then SchemaCheck), and the scenario table. tear_down() kills
  *   every connection the test opened and drops the database. Nothing is
  *   wrapped in a per-test transaction.
  * - One prepare mode per fixture: ATTR_EMULATE_PREPARES false (Native) or
@@ -157,7 +157,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *   wake hand-off in WakeHandoffFaults, the audit close in
  *   FaultInjectingAuditSink. Audit goes to an in-memory sink (pdo has no
  *   audit table; compose() wires none).
- * - Clock: OffsetClock (system time + the advanceClock() offset); a fresh
+ * - Clock: OffsetClock (system time + the advance_clock() offset); a fresh
  *   process gets the offset as DDD_CLOCK_OFFSET (EnvOffsetClock).
  * - Workers: worker 1 is the fixture connection; worker n > 1 opens its own
  *   connection (a second MySQL session) with its own adapter set, runner,
@@ -178,7 +178,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   private string $prefix;
   private string $tablePrefix;
 
-  /** @var list<int> server connection ids this test opened (killed in tearDown) */
+  /** @var list<int> server connection ids this test opened (killed in tear_down) */
   private array $connectionIds = [];
 
   private bool $ready = false;
@@ -225,7 +225,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   /** @var array<int, array{event_id: string, due_at: \DateTimeImmutable, envelope: array}> deliver jobs seen, by job id (a drain deletes delivered ones) */
   private array $seenJobs = [];
 
-  /** @var array<int, true> job ids deliverTransported() already delivered */
+  /** @var array<int, true> job ids deliver_transported() already delivered */
   private array $deliveredJobs = [];
 
   private bool $crashAfterSubmit = false;
@@ -247,7 +247,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     private readonly StartMode $startMode = StartMode::InBand,
   ) {}
 
-  public function hostName(): string {
+  public function name(): string {
     return 'pdo';
   }
 
@@ -255,10 +255,10 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->emulatePrepares;
   }
 
-  public function setUp(ScenarioContext $context): void {
+  public function set_up(ScenarioContext $context): void {
     $this->resetStatics();
 
-    $this->database = $context->uniqueName('pdo', 'ddd_w3_conf');
+    $this->database = $context->unique_name('pdo', 'ddd_w3_conf');
     $this->prefix = 'pc' . substr(sha1($this->database), 0, 10);
     $this->tablePrefix = $this->prefix . '_';
     ConformanceDatabase::create($this->database);
@@ -304,13 +304,13 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     HostDefaults::provide(StartMode::class, $this->startMode);
 
     RuntimeReset::register('conformance.pdo.events', fn () => $this->events->reset());
-    RuntimeReset::guardLock($this->lock);
+    RuntimeReset::guard($this->lock);
 
     // Step commands commit their effect row on this connection.
     ProcessJournal::bind($this->rows, $this->boundary);
   }
 
-  public function tearDown(): void {
+  public function tear_down(): void {
     ProcessJournal::bind(null);
     $this->resetStatics();
     if ($this->ready) {
@@ -327,7 +327,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->clock;
   }
 
-  public function advanceClock(int $seconds): void {
+  public function advance_clock(int $seconds): void {
     $this->clock->advance($seconds);
   }
 
@@ -341,11 +341,11 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->outbox;
   }
 
-  public function outboxAdministration(): IOutboxAdministration {
+  public function outbox_admin(): IOutboxAdministration {
     return $this->administration;
   }
 
-  public function relayPauses(): IRelayPauseStore {
+  public function pauses(): IRelayPauseStore {
     return $this->pauses;
   }
 
@@ -361,7 +361,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->subscriptions;
   }
 
-  public function processLock(): IProcessLock {
+  public function lock(): IProcessLock {
     return $this->lock;
   }
 
@@ -369,13 +369,13 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->events;
   }
 
-  public function scenarioRows(): ScenarioRows {
+  public function rows(): ScenarioRows {
     return $this->rows;
   }
 
   // ── command pipeline ─────────────────────────────────────────────────────
 
-  public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+  public function command_bus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
     return $this->bus($handlers, $options, null);
   }
 
@@ -394,7 +394,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
         return false;
       }
 
-      public function captureParameters(object $command): bool {
+      public function captures_parameters(object $command): bool {
         return false;
       }
     };
@@ -410,7 +410,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
         new PhpEnvironmentProvider(['host' => 'pdo']),
       ),
       $effects,
-      new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
+      new TransactionalCommandMiddleware($options->boundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
         new EventRouter($this->dispatcher, new FactClassRecordingEventBus(
@@ -426,17 +426,17 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     $this->dispatcher->listen($eventClassOrMarker, $listener, $priority);
   }
 
-  public function failNextCommit(string $reason): void {
+  public function fail_next_commit(string $reason): void {
     $this->db->failNextCommit($reason);
   }
 
-  public function auditTrail(): array {
+  public function audit_trail(): array {
     $names = [];
     foreach ($this->audit->opened as $open) {
-      $names[$open->commandId] = $open->commandName;
+      $names[$open->command_id] = $open->command_name;
     }
     return array_map(
-      static fn ($close) => new AuditEntry($close->commandId, $names[$close->commandId] ?? '?', $close->status, $close->error['type'] ?? null),
+      static fn ($close) => new AuditEntry($close->command_id, $names[$close->command_id] ?? '?', $close->status, $close->error['type'] ?? null),
       $this->audit->closed,
     );
   }
@@ -444,7 +444,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── relay ────────────────────────────────────────────────────────────────
 
   /** One step of the core OutboxProcessor over PdoOutboxStore + PdoJobStore, batch size $limit. */
-  public function relayOnce(int $limit = 50): RelayReport {
+  public function relay_once(int $limit = 50): RelayReport {
     $processor = $this->relayProcessor($this->relayStore, $this->transport, $this->boundary, $limit);
 
     if ($this->crashAfterSubmit) {
@@ -474,15 +474,15 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->relayStore->report();
   }
 
-  public function rejectNextSubmission(?\Throwable $e = null): void {
+  public function reject_next_submission(?\Throwable $e = null): void {
     $this->transport->rejectNext($e);
   }
 
-  public function acceptNextSubmissionWithoutRef(): void {
+  public function accept_next_without_ref(): void {
     $this->transport->noRefNext();
   }
 
-  public function crashNextRelayAfterSubmit(): void {
+  public function crash_next_relay(): void {
     $this->crashAfterSubmit = true;
   }
 
@@ -493,10 +493,10 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     ));
   }
 
-  public function seedLegacyDelayedFact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
+  public function seed_legacy_fact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
     // No 0.6 schema on pdo: the port record carries the absolute time.
     $eventId = Uuid::v4();
-    $this->outboxStore->appendFact(new OutboxRecord(
+    $this->outboxStore->append_fact(new OutboxRecord(
       event_id: $eventId,
       event_type: $fact::name(),
       integration_action: $fact::integration_action(),
@@ -513,10 +513,10 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── delivery ─────────────────────────────────────────────────────────────
 
   public function deliver(string $eventClass, array $wrapped): DeliveryOutcome {
-    return $this->worker(1)->deliverFact($eventClass, $wrapped);
+    return $this->worker(1)->deliver($eventClass, $wrapped);
   }
 
-  public function deliverTransported(string $eventClass): array {
+  public function deliver_transported(string $eventClass): array {
     $outcomes = [];
     foreach ($this->deliverJobs() as $id => $job) {
       if (isset($this->deliveredJobs[$id])) {
@@ -530,7 +530,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  public function runWorker(array $messages): WorkerRun {
+  public function run_worker(array $messages): WorkerRun {
     $errors = $leaks = [];
     foreach ($messages as $message) {
       $error = $leak = null;
@@ -540,7 +540,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
         $error = $e;
       } finally {
         try {
-          RuntimeReset::betweenMessages();
+          RuntimeReset::between_messages();
         } catch (RuntimeLeakDetected $l) {
           $leak = $l;
         }
@@ -551,16 +551,16 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return new WorkerRun($errors, $leaks);
   }
 
-  public function runnerTransients(): ?array {
-    $runner = $this->worker(1)->processRunner();
+  public function runner_transients(): ?array {
+    $runner = $this->worker(1)->runner();
     // The runner's one per-message transient (register 3.9), read without widening its API.
     return ['resume_argument' => (fn () => $this->resume_argument)->call($runner)];
   }
 
   // ── AuditSinkFaults, RecordsSignals ──────────────────────────────────────
 
-  public function failNextAuditClose(string $reason): void {
-    $this->auditPort->failNextClose($reason);
+  public function fail_next_audit_close(string $reason): void {
+    $this->auditPort->fail_next_close($reason);
   }
 
   public function signals(): array {
@@ -569,13 +569,13 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   // ── RelayRace, StatementErrors ───────────────────────────────────────────
 
-  public function raceNextRelayAfterSubmit(callable $competitor): void {
+  public function race_next_relay(callable $competitor): void {
     $this->race = \Closure::fromCallable($competitor);
   }
 
-  public function runFailingStatement(): void {
-    if (!$this->db->inTransaction()) {
-      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+  public function fail_statement(): void {
+    if (!$this->db->in_transaction()) {
+      throw new \LogicException('fail_statement() runs inside the open transaction');
     }
     // MySQL rejects the statement (1048, NOT NULL) and keeps the transaction usable.
     $this->db->execute("INSERT INTO `{$this->tablePrefix}scenario_rows` (id, value) VALUES (?, NULL)", ['statement-error']);
@@ -584,7 +584,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── EffectHost (CR-W4C4-2, D1) ───────────────────────────────────────────
 
   /** compose()'s journal: PdoEffectJournal on the fixture connection, so a repair's invalidate() rolls back with it. */
-  public function effectJournal(): IEffectJournal {
+  public function effect_journal(): IEffectJournal {
     return $this->effectJournal;
   }
 
@@ -594,7 +594,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
    * RecordEffect through its SelfExecuting stage; the handler map here
    * routes it to RecordEffect::apply().
    */
-  public function effectBus(array $handlers): CommandBus {
+  public function effect_bus(array $handlers): CommandBus {
     return $this->bus(
       [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
       new BusOptions(),
@@ -605,26 +605,26 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
 
   /** The class lives in `process_class` only (business_data holds constructor arguments, no class). */
-  public function forgetProcessClass(int $processId, string $missingClass): void {
+  public function forget_class(int $processId, string $missingClass): void {
     $this->db->execute(
       "UPDATE `{$this->tablePrefix}ddd_processes` SET process_class = ? WHERE id = ?",
       [$missingClass, $processId],
     );
   }
 
-  public function storedProcessStatus(int $processId): ?string {
-    $row = $this->db->fetchOne("SELECT status FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
+  public function stored_status(int $processId): ?string {
+    $row = $this->db->fetch_one("SELECT status FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
     return $row === null ? null : (string) $row['status'];
   }
 
-  public function quarantineReason(int $processId): ?string {
-    $row = $this->db->fetchOne("SELECT quarantine_reason FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
+  public function quarantine_reason(int $processId): ?string {
+    $row = $this->db->fetch_one("SELECT quarantine_reason FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?", [$processId]);
     return $row === null || $row['quarantine_reason'] === null ? null : (string) $row['quarantine_reason'];
   }
 
   // ── ProcessHost ──────────────────────────────────────────────────────────
 
-  public function wireProcesses(array $starts, array $awaits): void {
+  public function wire_processes(array $starts, array $awaits): void {
     foreach ($starts as $pair) {
       $this->starts[] = $pair;
     }
@@ -632,7 +632,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
       $this->awaits[] = $class;
     }
     foreach ($this->workers as $worker) {
-      $this->wire($worker->processRunner(), $starts, $awaits);
+      $this->wire($worker->runner(), $starts, $awaits);
     }
   }
 
@@ -643,7 +643,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->workers[$n] ??= $n === 1 ? $this->buildPrimaryWorker() : $this->buildWorker();
   }
 
-  public function processStore(): IProcessStore {
+  public function process_store(): IProcessStore {
     return $this->processStore;
   }
 
@@ -651,20 +651,20 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     return $this->jobs;
   }
 
-  public function operatorView(): IOperatorView {
+  public function operator_view(): IOperatorView {
     return new PdoOperatorView($this->db, $this->prefix, $this->tablePrefix, $this->clock);
   }
 
-  public function processConsumer(): string {
+  public function consumer_prefix(): string {
     return $this->prefix;
   }
 
-  public function processLockKey(int $processId): LockKey {
+  public function lock_key(int $processId): LockKey {
     return new LockKey($this->prefix, '', $processId);
   }
 
-  public function processRow(int $id): ?ProcessRow {
-    $row = $this->db->fetchOne(
+  public function process_row(int $id): ?ProcessRow {
+    $row = $this->db->fetch_one(
       "SELECT id, process_class, status, step_index, version, ignition_key, ignited_by_event_id
          FROM `{$this->tablePrefix}ddd_processes` WHERE id = ?",
       [$id]
@@ -683,15 +683,15 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     );
   }
 
-  public function processIds(?string $processClass = null): array {
+  public function process_ids(?string $processClass = null): array {
     $rows = $processClass === null
-      ? $this->db->fetchAll("SELECT id FROM `{$this->tablePrefix}ddd_processes` ORDER BY id")
-      : $this->db->fetchAll("SELECT id FROM `{$this->tablePrefix}ddd_processes` WHERE process_class = ? ORDER BY id", [$processClass]);
+      ? $this->db->fetch_all("SELECT id FROM `{$this->tablePrefix}ddd_processes` ORDER BY id")
+      : $this->db->fetch_all("SELECT id FROM `{$this->tablePrefix}ddd_processes` WHERE process_class = ? ORDER BY id", [$processClass]);
     return array_map(static fn (array $r) => (int) $r['id'], $rows);
   }
 
-  public function pendingWakeups(): array {
-    $rows = $this->db->fetchAll(
+  public function live_intents(): array {
+    $rows = $this->db->fetch_all(
       "SELECT kind, consumer, process_id, step_index, expected_status, due_at, idempotency_key
          FROM `{$this->tablePrefix}ddd_jobs` WHERE kind <> 'deliver' ORDER BY id"
     );
@@ -706,51 +706,51 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
     ), $rows);
   }
 
-  public function holdProcessLockElsewhere(int $processId): void {
+  public function hold_lock_elsewhere(int $processId): void {
     $statement = $this->side()->prepare('SELECT GET_LOCK(?, 0)');
-    $statement->execute([$this->processLockKey($processId)->mysqlName()]);
+    $statement->execute([$this->lock_key($processId)->mysql_name()]);
     if ((string) $statement->fetchColumn() !== '1') {
       throw new \LogicException("the side session could not take process #$processId's lock");
     }
   }
 
-  public function releaseProcessLockElsewhere(int $processId): void {
+  public function release_lock_elsewhere(int $processId): void {
     $statement = $this->side()->prepare('SELECT RELEASE_LOCK(?)');
-    $statement->execute([$this->processLockKey($processId)->mysqlName()]);
+    $statement->execute([$this->lock_key($processId)->mysql_name()]);
   }
 
-  public function failNextProcessLockAcquire(string $reason): void {
+  public function fail_next_lock(string $reason): void {
     $this->probe->failNext($reason);
   }
 
-  public function processLockAcquisitions(): int {
+  public function lock_acquisitions(): int {
     return $this->probe->acquisitions;
   }
 
-  public function beforeNextProcessLockAcquire(callable $fn): void {
+  public function before_next_lock(callable $fn): void {
     $this->probe->beforeNext($fn);
   }
 
-  public function failNextWakeHandoff(string $reason): void {
-    $this->wakeFaults->failNext($reason);
+  public function fail_next_handoff(string $reason): void {
+    $this->wakeFaults->fail_next($reason);
   }
 
   // ── FreshProcesses ───────────────────────────────────────────────────────
 
-  public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
+  public function publish_fresh(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
     $out = $this->fresh()->run('publish', ['fact' => $fact, 'kill' => $killAfterCommit]);
     return (string) ($out['eventId'] ?? throw new \LogicException('the fresh process published nothing: ' . json_encode($out)));
   }
 
-  public function drainInFreshProcess(): FreshRun {
+  public function drain_fresh(): FreshRun {
     return $this->fresh()->freshRun($this->fresh()->run('drain', []));
   }
 
-  public function deliverInFreshProcess(string $eventClass, array $wrapped): FreshRun {
+  public function deliver_fresh(string $eventClass, array $wrapped): FreshRun {
     return $this->fresh()->freshRun($this->fresh()->run('deliver', ['eventClass' => $eventClass, 'wrapped' => $wrapped]));
   }
 
-  public function startInFreshProcess(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
+  public function start_fresh(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
     return $this->fresh()->freshRun($this->fresh()->run('start', ['process' => $process, 'dieAfterCommand' => $dieAfterCommand]));
   }
 
@@ -826,7 +826,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
     $drain = new Drain(
       relay: $this->relayProcessor($outbox, $transport, $boundary, $this->outboxConfig->batch_size),
-      wakeups: $jobs->withClaimKinds(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry),
+      wakeups: $jobs->claiming(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry),
       processWakes: $this->wakeFaults->wrap($runner),
       delivery: new PdoDeliveryWorker($jobs, $delivery, self::factClassMap(), logger: $this->logger),
       stranded: $runner,
@@ -866,7 +866,7 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
 
   /** @return array<int, array{event_id: string, due_at: \DateTimeImmutable, envelope: array}> every deliver job seen so far, by job id */
   private function deliverJobs(): array {
-    $rows = $this->db->fetchAll(
+    $rows = $this->db->fetch_all(
       "SELECT id, event_id, due_at, envelope FROM `{$this->tablePrefix}ddd_jobs` WHERE kind = 'deliver' ORDER BY id"
     );
     foreach ($rows as $r) {
@@ -894,8 +894,8 @@ final class PdoHostFixture implements HostFixture, AuditSinkFaults, RecordsSigna
   }
 
   private function resetStatics(): void {
-    RuntimeReset::forgetRegistrationsForTests();
-    HostDefaults::resetForTests();
+    RuntimeReset::forget_for_tests();
+    HostDefaults::reset_for_tests();
     ConsumerRegistry::reset();
     Correlation::reset();
     Reactions::reset();

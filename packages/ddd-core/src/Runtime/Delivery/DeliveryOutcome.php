@@ -10,12 +10,12 @@ namespace TangibleDDD\Runtime\Delivery;
  * - delivered: ran and succeeded in this call.
  * - skipped:   already delivered earlier (ledger hit), not run.
  * - failed:    threw in this call and is still under budget, OR is over
- *              budget with its compensation still pending (the onExhausted
+ *              budget with its compensation still pending (the on_exhausted
  *              callback threw, now or on an earlier crash): retry the fact.
  * - exhausted: over budget AND compensated (terminal ledger marker written,
  *              now or earlier); neither handler nor callback runs again.
  *
- * The delivery runner retries the fact while needsRetry(); each retry runs
+ * The delivery runner retries the fact while needs_retry(); each retry runs
  * only the subscribers that have not been delivered.
  *
  * UNRATIFIED: four lists where the register has {delivered, failed}; see
@@ -36,12 +36,12 @@ final class DeliveryOutcome {
     public readonly array $exhausted,
   ) {}
 
-  public function needsRetry(): bool {
+  public function needs_retry(): bool {
     return $this->failed !== [];
   }
 
   /** Every subscriber is delivered (none failed, none exhausted). */
-  public function isComplete(): bool {
+  public function is_complete(): bool {
     return $this->failed === [] && $this->exhausted === [];
   }
 }

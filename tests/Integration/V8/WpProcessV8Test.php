@@ -71,10 +71,10 @@ final class WpProcessV8Test extends V8TestCase {
     $p = $this->process(new V8IgnitedProcess(1));
     $p->mark_ignited_by(self::E1);
 
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($p, V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($p, V8IgnitedProcess::class, self::E1));
     $again = $this->process(new V8IgnitedProcess(1));
     $again->mark_ignited_by(self::E1);
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($again, V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($again, V8IgnitedProcess::class, self::E1));
 
     self::assertNull($again->get_id(), 'the loser is not persisted');
     $row = $this->row((int) $p->get_id());
@@ -87,7 +87,7 @@ final class WpProcessV8Test extends V8TestCase {
     SchemaV7::process($this->config, V8IgnitedProcess::class, 'completed', 1, self::E1);
 
     $p = $this->process(new V8IgnitedProcess(1));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($p, V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($p, V8IgnitedProcess::class, self::E1));
     self::assertSame('1', (string) $this->wpdb->get_var("SELECT COUNT(*) FROM `{$this->table('long_processes')}`"));
   }
 
@@ -98,7 +98,7 @@ final class WpProcessV8Test extends V8TestCase {
     $this->wpdb->update($this->table('long_processes'), ['ignition_key' => IgnitionKey::for(self::E1, V8IgnitedProcess::class)], ['id' => $id]);
 
     $p = $this->process(new V8IgnitedProcess(1));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($p, V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($p, V8IgnitedProcess::class, self::E1));
   }
 
   public function test_manual_starts_are_never_deduped(): void {
@@ -117,20 +117,20 @@ final class WpProcessV8Test extends V8TestCase {
     // process.manual-start-in-drain: a later #[StartsOn] ignition of that
     // class by the same fact still ignites, once.
     $later = $this->process(new V8IgnitedProcess(3));
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($later, V8IgnitedProcess::class, self::E1));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($this->process(new V8IgnitedProcess(3)), V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($later, V8IgnitedProcess::class, self::E1));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($this->process(new V8IgnitedProcess(3)), V8IgnitedProcess::class, self::E1));
     self::assertSame('ignition', $this->row((int) $later->get_id())['start_path']);
   }
 
   public function test_save_and_touch_are_version_fenced(): void {
     $p = $this->process(new V8ManualProcess(1));
     $id = $this->store->insert($p);
-    self::assertSame(1, $this->store->versionOf($id));
+    self::assertSame(1, $this->store->version_of($id));
 
     $p->advance(status: 'running', payload: null);
     self::assertSame(2, $this->store->save($p, 1));
     self::assertSame(3, $this->store->touch($id, 2));
-    self::assertSame(3, $this->store->versionOf($id));
+    self::assertSame(3, $this->store->version_of($id));
     self::assertSame('running', $this->row($id)['status']);
 
     try {
@@ -207,7 +207,7 @@ final class WpProcessV8Test extends V8TestCase {
     $b = SchemaV7::process($this->config, V8ManualProcess::class, 'completed', 1, null);
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET waiting_for = 'X\\\\Fact' WHERE id IN ($a, $b)");
 
-    self::assertSame([$a], $this->store->findWaitingFor('X\\Fact'));
+    self::assertSame([$a], $this->store->find_waiting_for('X\\Fact'));
   }
 
   public function test_the_stranded_scan_reports_old_rows_with_no_live_intent(): void {
@@ -223,10 +223,10 @@ final class WpProcessV8Test extends V8TestCase {
       'expected_status' => 'scheduled', 'due_at' => $old, 'status' => 'pending', 'created_at' => $old, 'updated_at' => $old,
     ]);
 
-    $stranded = $this->store->findStranded($this->clock->now());
+    $stranded = $this->store->find_stranded($this->clock->now());
 
-    self::assertSame([[$scheduled, 'scheduled', 2], [$running, 'running', 1]], array_map(static fn ($s) => [$s->processId, $s->status, $s->stepIndex], $stranded));
-    self::assertSame(V8ManualProcess::class, $stranded[0]->processClass);
+    self::assertSame([[$scheduled, 'scheduled', 2], [$running, 'running', 1]], array_map(static fn ($s) => [$s->process_id, $s->status, $s->step_index], $stranded));
+    self::assertSame(V8ManualProcess::class, $stranded[0]->process_class);
     unset($fresh);
   }
 
@@ -236,11 +236,11 @@ final class WpProcessV8Test extends V8TestCase {
     $manual->mark_ignited_by($legacyId);
     $this->store->insert($manual);
 
-    // As ProcessRunner does: mark_ignited_by() before insertIgnited().
+    // As ProcessRunner does: mark_ignited_by() before insert_ignited().
     $ignite = function () use ($legacyId): array {
       $p = $this->process(new V8IgnitedProcess(2));
       $p->mark_ignited_by($legacyId);
-      return [$p, $this->store->insertIgnited($p, V8IgnitedProcess::class, $legacyId)];
+      return [$p, $this->store->insert_ignited($p, V8IgnitedProcess::class, $legacyId)];
     };
     [$first, $result] = $ignite();
     self::assertSame(IgnitionResult::Inserted, $result);
@@ -259,20 +259,20 @@ final class WpProcessV8Test extends V8TestCase {
     try {
       $lock = new GetLockProcessLock();
       $handle = \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1));
-      self::assertSame([], $this->store->findStranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
+      self::assertSame([], $this->store->find_stranded($this->clock->now()), 'a long wake holds the lock: still running, not stranded');
       \TangibleDDD\Tests\Integration\Conformance\Support\ConnectionSwitch::on($other, fn () => $lock->release($handle));
 
-      self::assertWpdbLegacyHolderHides($other, $running, fn () => $this->store->findStranded($this->clock->now()));
+      self::assertWpdbLegacyHolderHides($other, $running, fn () => $this->store->find_stranded($this->clock->now()));
     } finally {
       $other->close();
     }
-    self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+    self::assertSame([$running], array_map(static fn ($s) => $s->process_id, $this->store->find_stranded($this->clock->now())));
 
     // This session's own hold is the WP8-10 repair guard re-reading the row under the lock.
     $lock = new GetLockProcessLock();
     $handle = $lock->acquire(new LockKey($this->config->prefix(), '', $running), 1);
     try {
-      self::assertSame([$running], array_map(static fn ($s) => $s->processId, $this->store->findStranded($this->clock->now())));
+      self::assertSame([$running], array_map(static fn ($s) => $s->process_id, $this->store->find_stranded($this->clock->now())));
     } finally {
       $lock->release($handle);
     }
@@ -294,13 +294,13 @@ final class WpProcessV8Test extends V8TestCase {
 
     $h = $lock->acquire($key, 1.0);
     $other = $this->secondConnection();
-    self::assertSame('0', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysqlName())), 'new name held');
+    self::assertSame('0', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysql_name())), 'new name held');
     self::assertSame('0', (string) $other->get_var("SELECT IS_FREE_LOCK('ddd_process_41')"), 'legacy name held');
 
     $lock->release($h);
-    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysqlName())));
+    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysql_name())));
     self::assertSame('1', (string) $other->get_var("SELECT IS_FREE_LOCK('ddd_process_41')"));
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
   }
 
   public function test_a_0_6_holder_of_the_legacy_name_excludes_the_new_lock_and_nothing_stays_held(): void {
@@ -315,15 +315,15 @@ final class WpProcessV8Test extends V8TestCase {
     } catch (LockNotAcquired $e) {
       self::assertStringContainsString('timed out', $e->getMessage());
     }
-    self::assertSame(0, $lock->heldCount());
-    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysqlName())), 'the new name was released again');
+    self::assertSame(0, $lock->held_count());
+    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT IS_FREE_LOCK(%s)', $key->mysql_name())), 'the new name was released again');
     $other->query("SELECT RELEASE_LOCK('ddd_process_42')");
   }
 
   public function test_a_holder_of_the_new_name_excludes_too(): void {
     $key = new LockKey($this->config->prefix(), '', 43);
     $other = $this->secondConnection();
-    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT GET_LOCK(%s, 0)', $key->mysqlName())));
+    self::assertSame('1', (string) $other->get_var($other->prepare('SELECT GET_LOCK(%s, 0)', $key->mysql_name())));
 
     try {
       (new GetLockProcessLock())->acquire($key, 0.0);
@@ -331,7 +331,7 @@ final class WpProcessV8Test extends V8TestCase {
     } catch (LockNotAcquired) {
     }
     self::assertSame('1', (string) $other->get_var("SELECT IS_FREE_LOCK('ddd_process_43')"), 'the legacy name was never left held');
-    $other->query($other->prepare('SELECT RELEASE_LOCK(%s)', $key->mysqlName()));
+    $other->query($other->prepare('SELECT RELEASE_LOCK(%s)', $key->mysql_name()));
   }
 
   private function secondConnection(): \wpdb {

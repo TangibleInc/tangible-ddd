@@ -51,9 +51,9 @@ abstract class KernelTestBase extends KernelTestCase {
   protected function tearDown(): void {
     parent::tearDown();
     ConsumerRegistry::reset();
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
-    \TangibleDDD\Runtime\HostDefaults::resetForTests();
+    \TangibleDDD\Runtime\HostDefaults::reset_for_tests();
   }
 
   /** @param array<string, mixed> $input */

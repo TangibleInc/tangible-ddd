@@ -29,8 +29,8 @@ namespace TangibleDDD\Runtime\Outbox;
  */
 interface IOutboxAdministration {
 
-  /** @return list<DeadLetter> oldest first; $after is the last dlqId of the previous page */
-  public function deadLetters(int $limit, ?string $after = null): array;
+  /** @return list<DeadLetter> oldest first; $after is the last dlq_id of the previous page */
+  public function dead_letters(int $limit, ?string $after = null): array;
 
   public function retry(string $event_id, bool $force = false): void;
 

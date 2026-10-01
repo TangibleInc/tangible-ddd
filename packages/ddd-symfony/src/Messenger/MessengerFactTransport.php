@@ -28,7 +28,7 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
  *   class cannot be resolved is rejected before anything is sent.
  * - $dueAt is absolute: a due fact gets no DelayStamp (bug 3); a future one
  *   gets exactly the remaining time.
- * - sharesConnectionWith() is true when the sender is a Messenger Doctrine
+ * - shares_connection() is true when the sender is a Messenger Doctrine
  *   transport writing through the very DBAL connection of a
  *   DbalPostgresOutboxStore. The relay then runs submit + accept in ONE
  *   transaction, so the hand-off is exactly-once; the insert into
@@ -51,7 +51,7 @@ final class MessengerFactTransport implements ITransport {
   }
 
   public function submit(Claim $c, array $wrappedEnvelope, \DateTimeImmutable $dueAt): ?string {
-    $class = $this->classes->classFor($c);
+    $class = $this->classes->resolve($c);
     if ($class === null || $class === '') {
       throw new TransportRejected("Fact {$c->event_id} ({$c->record->event_type}) has no resolvable PHP class; it cannot be delivered.");
     }
@@ -82,7 +82,7 @@ final class MessengerFactTransport implements ITransport {
     return $ref;
   }
 
-  public function sharesConnectionWith(IOutboxStore $store): bool {
+  public function shares_connection(IOutboxStore $store): bool {
     if (!$store instanceof DbalPostgresOutboxStore) {
       return false;
     }

@@ -138,7 +138,7 @@ final class CorrelationMiddleware implements Middleware {
   /** @return bool whether the row opened (and so must be closed) */
   private function open_row(IAuditSink $sink, IAuditPolicy $policy, object $command, string $command_id, string $command_name, TraceContext $enclosing): bool {
     $parameters = [];
-    if ($policy->captureParameters($command)) {
+    if ($policy->captures_parameters($command)) {
       [$parameters] = $this->redactor->redact_object($command);
     }
 
@@ -165,7 +165,7 @@ final class CorrelationMiddleware implements Middleware {
     try {
       $sink->close($row);
     } catch (Throwable $e) {
-      $this->sink_failed('close', $row->commandId, $correlation_id, $e);
+      $this->sink_failed('close', $row->command_id, $correlation_id, $e);
     }
   }
 

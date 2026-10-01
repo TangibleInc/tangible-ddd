@@ -39,7 +39,7 @@ final class PdoLedgerOperatorSource implements IOperatorItemSource {
     if ($limit <= 0 || ($layer !== null && $layer !== Layer::Delivery)) {
       return [];
     }
-    $rows = $this->db->fetchAll(
+    $rows = $this->db->fetch_all(
       "SELECT subscriber_id, event_id, attempts, last_error, exhausted_at, updated_at FROM `{$this->ledger}`
        WHERE delivered_at IS NULL AND (attempts > 0 OR exhausted_at IS NOT NULL)
        ORDER BY updated_at, subscriber_id, event_id LIMIT ?",
@@ -53,7 +53,7 @@ final class PdoLedgerOperatorSource implements IOperatorItemSource {
       (int) $r['attempts'],
       $this->budget,
       $r['last_error'] === null ? null : (string) $r['last_error'],
-      Utc::fromDb((string) $r['updated_at']),
+      Utc::from_db((string) $r['updated_at']),
       $r['exhausted_at'] === null ? ['redeliver'] : [],
     ), $rows);
   }

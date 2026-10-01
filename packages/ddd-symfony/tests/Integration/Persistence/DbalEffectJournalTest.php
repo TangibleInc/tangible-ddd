@@ -41,7 +41,7 @@ final class DbalEffectJournalTest extends PostgresTestCase {
     $found = $this->journal->find('stripe:customer:1');
     self::assertNotNull($found);
     self::assertSame(['customer' => 'cus_1', 'amount' => 1200, 'live' => false, 'note' => null, 'lines' => [['sku' => 'a', 'qty' => 2]]], $found->data);
-    self::assertSame('cus_1', $found->externalRef);
+    self::assertSame('cus_1', $found->external_ref);
   }
 
   public function test_an_empty_result_round_trips(): void {
@@ -50,7 +50,7 @@ final class DbalEffectJournalTest extends PostgresTestCase {
     $found = $this->journal->find('k');
     self::assertNotNull($found);
     self::assertSame([], $found->data);
-    self::assertNull($found->externalRef);
+    self::assertNull($found->external_ref);
   }
 
   public function test_storing_an_existing_key_overwrites_it(): void {
@@ -58,7 +58,7 @@ final class DbalEffectJournalTest extends PostgresTestCase {
     $this->journal->store('k', new EffectResult(['v' => 2], 'r2'));
 
     self::assertSame(['v' => 2], $this->journal->find('k')?->data);
-    self::assertSame('r2', $this->journal->find('k')?->externalRef);
+    self::assertSame('r2', $this->journal->find('k')?->external_ref);
     self::assertSame(1, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_effect_journal'));
   }
 

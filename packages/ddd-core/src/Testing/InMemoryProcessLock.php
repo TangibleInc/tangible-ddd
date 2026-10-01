@@ -13,8 +13,8 @@ use TangibleDDD\Runtime\Lock\LockNotAcquired;
  * In-memory IProcessLock that behaves like a raw, NON-re-entrant adapter
  * (wrap it in ReentrantProcessLock as production does).
  *
- * Test controls: holdElsewhere() simulates "connection 2 holds the lock"
- * (acquire times out immediately; no real waiting), failNextAcquire()
+ * Test controls: hold_elsewhere() simulates "connection 2 holds the lock"
+ * (acquire times out immediately; no real waiting), fail_next_acquire()
  * simulates a NULL / false / error backend result (one-shot).
  */
 final class InMemoryProcessLock implements IProcessLock {
@@ -40,10 +40,10 @@ final class InMemoryProcessLock implements IProcessLock {
     if ($this->nextFailure !== null) {
       $reason = $this->nextFailure;
       $this->nextFailure = null;
-      throw new LockNotAcquired("Lock {$k->mysqlName()} not acquired: backend error ($reason)");
+      throw new LockNotAcquired("Lock {$k->mysql_name()} not acquired: backend error ($reason)");
     }
     if (isset($this->elsewhere[$id]) || isset($this->mine[$id])) {
-      throw new LockNotAcquired(sprintf('Lock %s not acquired: timeout after %.2fs (held)', $k->mysqlName(), $timeoutSeconds));
+      throw new LockNotAcquired(sprintf('Lock %s not acquired: timeout after %.2fs (held)', $k->mysql_name(), $timeoutSeconds));
     }
 
     $token = 'mem:' . (++$this->seq);
@@ -62,35 +62,35 @@ final class InMemoryProcessLock implements IProcessLock {
     unset($this->mine[$id]);
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     return count($this->mine);
   }
 
-  public function forceReleaseAll(): int {
+  public function release_all(): int {
     $n = count($this->mine);
     $this->mine = [];
     return $n;
   }
 
-  public function holdElsewhere(LockKey $k): void {
+  public function hold_elsewhere(LockKey $k): void {
     $this->elsewhere[$k->id()] = true;
   }
 
-  public function releaseElsewhere(LockKey $k): void {
+  public function release_elsewhere(LockKey $k): void {
     unset($this->elsewhere[$k->id()]);
   }
 
-  public function failNextAcquire(string $reason): void {
+  public function fail_next_acquire(string $reason): void {
     $this->nextFailure = $reason;
   }
 
   /** Successful backend acquisitions so far. */
-  public function acquireCount(): int {
+  public function acquisitions(): int {
     return $this->acquires;
   }
 
   /** @return list<string> releases that would have been logged as bugs */
-  public function releaseBugs(): array {
+  public function release_bugs(): array {
     return $this->releaseBugs;
   }
 }

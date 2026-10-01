@@ -152,7 +152,7 @@ final class AwaitAll implements IAwaitMechanism, IRoutedAwait {
 
   private function key_of(IIntegrationEvent $event): mixed {
     if ($this->is_keyed()) {
-      return AwaitRoute::keyOf($event);
+      return AwaitRoute::key_of($event);
     }
     return ($this->key_by)($event);
   }

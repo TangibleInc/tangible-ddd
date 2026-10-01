@@ -21,28 +21,28 @@ use TangibleDDD\Runtime\Support\Log;
  * One bounded pass of durable work (register 3.6): what a cron line, a
  * shutdown function, `wp ddd relay --once` or a worker loop calls.
  *
- * runOnce() runs, in order and within ONE item budget and ONE wall-time
+ * run_once() runs, in order and within ONE item budget and ONE wall-time
  * budget:
  *
  *   1. the relay step: OutboxProcessor::process_batch(remaining items);
- *   2. due deliveries: IDeliveryWorker::runDue(now, remaining) (pdo jobs);
- *   3. due wakeups: IWakeupScheduler::claimDue(now, remaining, lease), each
+ *   2. due deliveries: IDeliveryWorker::run_due(now, remaining) (pdo jobs);
+ *   3. due wakeups: IWakeupScheduler::claim_due(now, remaining, lease), each
  *      run by the process IWakeHandler (Continue, Timeout, ResumeRetry) or
  *      the Deliver handler, then complete()d; a wake that throws (lock
- *      contention, a transient error) is retryLater()'d with the wake
+ *      contention, a transient error) is retry_later()'d with the wake
  *      backoff (2 s × 2^n, capped at 300 s, register 5.1) and reported
  *      exhausted once its attempts reach the budget of 10. It is still
  *      kept: a wake is never dropped. A stale wake is a no-op and completes;
  *   4. the stranded scan (IStrandedScanner), unless the time budget ran out.
  *
  * Every stage is optional (null = skipped). It never loops or sleeps; a
- * host that wants a daemon writes `while (true) { $drain->runOnce(); sleep(1); }`.
+ * host that wants a daemon writes `while (true) { $drain->run_once(); sleep(1); }`.
  * Concurrent passes are safe: claims and leases keep them apart.
  *
  * After the relay batch, the delivery batch and each wake it calls
- * RuntimeReset::betweenMessages() in `finally`; a leak is cleaned, logged
+ * RuntimeReset::between_messages() in `finally`; a leak is cleaned, logged
  * and listed in the report. A stage that throws is logged and listed; the
- * pass continues with the next stage. runOnce() must be called outside any
+ * pass continues with the next stage. run_once() must be called outside any
  * open transaction and outside any Correlation scope.
  *
  * Budgets: $maxItems counts relay claims, deliveries and wakes; $maxSeconds
@@ -63,7 +63,7 @@ final class Drain {
     private readonly int $wakeLeaseSeconds = 60,
   ) {}
 
-  public function runOnce(int $maxItems = 200, int $maxSeconds = 50): DrainReport {
+  public function run_once(int $maxItems = 200, int $maxSeconds = 50): DrainReport {
     $started = hrtime(true);
     $outOfTime = static fn (): bool => (hrtime(true) - $started) / 1e9 >= $maxSeconds;
 
@@ -99,13 +99,13 @@ final class Drain {
 
     // 2. due deliveries
     if ($this->delivery !== null && !$stop()) {
-      $delivered = (int) $this->stage('delivery', $errors, $leaks, fn (): int => $this->delivery->runDue($this->now(), $budgetLeft()));
+      $delivered = (int) $this->stage('delivery', $errors, $leaks, fn (): int => $this->delivery->run_due($this->now(), $budgetLeft()));
       $items += $delivered;
     }
 
     // 3. due wakeups
     if ($this->wakeups !== null && !$stop()) {
-      $claimed = $this->stage('wakeups', $errors, $leaks, fn (): array => $this->wakeups->claimDue($this->now(), $budgetLeft(), $this->wakeLeaseSeconds), false) ?? [];
+      $claimed = $this->stage('wakeups', $errors, $leaks, fn (): array => $this->wakeups->claim_due($this->now(), $budgetLeft(), $this->wakeLeaseSeconds), false) ?? [];
       foreach ($claimed as $i => $claim) {
         if ($outOfTime()) {
           // Unrun claims stay leased until their lease expires, then recur.
@@ -122,7 +122,7 @@ final class Drain {
 
     // 4. stranded scan
     if ($this->stranded !== null && !$outOfTime()) {
-      $stranded = $this->stage('stranded scan', $errors, $leaks, fn (): StrandedScanReport => $this->stranded->scanStranded($this->now()), false);
+      $stranded = $this->stage('stranded scan', $errors, $leaks, fn (): StrandedScanReport => $this->stranded->scan_stranded($this->now()), false);
     } elseif ($this->stranded !== null) {
       $stopped = DrainReport::STOPPED_MAX_SECONDS;
     }
@@ -143,7 +143,7 @@ final class Drain {
    * @param list<string> $leaks
    */
   private function runWake(ClaimedWakeup $claim, array &$wakes, array &$leaks): void {
-    $key = $claim->intent->idempotencyKey;
+    $key = $claim->intent->key;
     try {
       $handler = $claim->intent->kind === WakeKind::Deliver ? $this->deliverWakes : $this->processWakes;
       if ($handler === null) {
@@ -159,8 +159,8 @@ final class Drain {
       }
     } catch (\Throwable $e) {
       $attempt = $claim->attempts + 1;
-      $next = $this->now()->modify('+' . WakeRetryPolicy::backoffSeconds($attempt) . ' seconds');
-      if (!$this->wakeups->retryLater($claim, $e->getMessage(), $next)) {
+      $next = $this->now()->modify('+' . WakeRetryPolicy::backoff_seconds($attempt) . ' seconds');
+      if (!$this->wakeups->retry_later($claim, $e->getMessage(), $next)) {
         $wakes['lost'][] = $key;
         Log::write($this->logger, "[ddd drain] lease lost on retry of wake $key: {$e->getMessage()}");
       } elseif ($attempt >= WakeRetryPolicy::BUDGET) {
@@ -205,7 +205,7 @@ final class Drain {
   /** @param list<string> $leaks */
   private function reset(array &$leaks): void {
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
     } catch (RuntimeLeakDetected $e) {
       $leaks[] = $e->getMessage();
       Log::write($this->logger, '[ddd drain] ' . $e->getMessage(), 'error');

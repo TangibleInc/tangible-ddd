@@ -28,19 +28,19 @@ use Throwable;
 /**
  * The transactional-outbox RELAY — transport/persistence mechanics (fetch →
  * publish → mark, locking, retry, DLQ), no domain content. Run periodically
- * (cron, Action Scheduler, a worker loop, runOnce).
+ * (cron, Action Scheduler, a worker loop, run_once).
  *
  * Two forms (register 1.4, 5.1; CONF-3):
  *
- * - Port form, the relay step of runOnce: constructed with an IOutboxStore
+ * - Port form, the relay step of run_once: constructed with an IOutboxStore
  *   and an ITransport (repository and publisher null). process_batch():
  *   claim() due rows OUTSIDE any transaction with the lease from
  *   OutboxConfig::lock_timeout_seconds; submit each at its ABSOLUTE due_at
  *   (no relative delay, bug 3); a transport that shares the store's
  *   connection runs submit + accept in ONE boundary transaction. A throw,
  *   or a reference of null / '' / '0' (CONF-4), is a rejection:
- *   retryLater() with base × multiplier^(n-1) capped at the max delay, or
- *   deadLetter() once attempts reach the record's max_attempts. A fenced
+ *   retry_later() with base × multiplier^(n-1) capped at the max delay, or
+ *   dead_letter() once attempts reach the record's max_attempts. A fenced
  *   write matching 0 rows is a lost lease: logged and discarded. On a
  *   shared connection a 0-row accept() also rolls the submission back
  *   (CR sfc-1), so the new lease holder's submission is the only one.
@@ -49,7 +49,7 @@ use Throwable;
  *   A store implementing IReportsClaimDeadLetters counts a re-claim of an
  *   expired lease as an attempt and dead-letters at claim (CR-PDO-6); the
  *   step signals those rows (OutboxDeadLettered) and lists them in
- *   ProcessingResult::$deadLetteredAtClaim.
+ *   ProcessingResult::$claim_dead_letters.
  *   between_submit_and_accept() is the test seam (a hook that throws aborts
  *   the batch at exactly that point; it is never counted as an attempt).
  * - 0.6 form, unchanged for shipped containers: (config, IOutboxRepository,
@@ -136,10 +136,10 @@ final class OutboxProcessor {
 
     foreach ($claims as $claim) {
       $ids['claimed'][] = $claim->event_id;
-      $unheard = $this->probe()?->hasSubscribers($claim->record->integration_action) === false;
+      $unheard = $this->probe()?->has_subscribers($claim->record->integration_action) === false;
 
       try {
-        if ($this->transport->sharesConnectionWith($this->store) && $this->boundary() !== null) {
+        if ($this->transport->shares_connection($this->store) && $this->boundary() !== null) {
           // CR sfc-1: on a shared connection a 0-row accept must roll the
           // submission back with it, or the new lease holder submits the
           // same fact a second time. Throw inside run(), catch outside.
@@ -164,7 +164,7 @@ final class OutboxProcessor {
         $entry = OutboxEntry::from_claim($claim, 'pending', $e->getMessage());
 
         if ($attempts >= $claim->record->max_attempts) {
-          if (!$this->store->deadLetter($claim, $e->getMessage())) {
+          if (!$this->store->dead_letter($claim, $e->getMessage())) {
             $this->lost_lease($claim, 'dead-letter');
             $ids['lost'][] = $claim->event_id;
             continue;
@@ -175,7 +175,7 @@ final class OutboxProcessor {
           (new OutboxDeadLettered($entry, $e->getMessage()))->dispatch($this->config);
         } else {
           $next = $now->modify('+' . self::backoff_seconds($attempts, $this->outbox_config) . ' seconds');
-          if (!$this->store->retryLater($claim, $e->getMessage(), $next)) {
+          if (!$this->store->retry_later($claim, $e->getMessage(), $next)) {
             $this->lost_lease($claim, 'retry');
             $ids['lost'][] = $claim->event_id;
             continue;
@@ -223,7 +223,7 @@ final class OutboxProcessor {
       return [];
     }
     $ids = [];
-    foreach ($this->store->takeDeadLetteredAtClaim() as [$claim, $error]) {
+    foreach ($this->store->take_claim_dead_letters() as [$claim, $error]) {
       $entry = OutboxEntry::from_claim($claim, 'dlq', $error);
       $this->log_event('dlq', $entry, $error);
       (new OutboxDeadLettered($entry, $error))->dispatch($this->config);
@@ -259,7 +259,7 @@ final class OutboxProcessor {
   private function lost_lease(Claim $claim, string $what): void {
     Log::write($this->logger, sprintf(
       '[%s-outbox] lease lost on %s of %s (claim %s); result discarded',
-      $this->config->prefix(), $what, $claim->event_id, $claim->claimToken
+      $this->config->prefix(), $what, $claim->event_id, $claim->token
     ));
   }
 
@@ -290,7 +290,7 @@ final class OutboxProcessor {
         // Delivered-to-nobody check happens BEFORE firing: the probe reads
         // the listener table as it stands at drain time. The contract is
         // unchanged either way — an unheard fact is still delivered.
-        $unheard = $this->probe()?->hasSubscribers($entry->integration_action) === false;
+        $unheard = $this->probe()?->has_subscribers($entry->integration_action) === false;
 
         $wrapped = $this->wrap_payload_for_transport($entry);
         $this->publisher->publish($entry, $wrapped);

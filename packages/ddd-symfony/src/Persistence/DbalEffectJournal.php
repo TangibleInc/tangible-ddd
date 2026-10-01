@@ -25,7 +25,7 @@ use TangibleDDD\Runtime\SystemClock;
  *   operator. An unknown or already-invalidated key is a no-op.
  *
  * No failure-command trigger of its own: the core invoker fires
- * failureCommand() from the delivery ledger budget (register 5.1).
+ * failure_command() from the delivery ledger budget (register 5.1).
  * Errors: storage failures throw \RuntimeException with the DBAL exception as
  * previous; a corrupt row (result_json not a JSON object) too.
  */
@@ -69,7 +69,7 @@ final class DbalEffectJournal implements IEffectJournal {
        ON CONFLICT (idempotency_key) DO UPDATE
          SET result_json = EXCLUDED.result_json, external_ref = EXCLUDED.external_ref,
              performed_at = EXCLUDED.performed_at, invalidated_at = NULL",
-      [$key, $json, $r->externalRef, Time::toDb($this->clock->now())]
+      [$key, $json, $r->external_ref, Time::to_db($this->clock->now())]
     ));
   }
 
@@ -78,7 +78,7 @@ final class DbalEffectJournal implements IEffectJournal {
       "UPDATE {$this->table}
          SET invalidated_at = ?, invalidation_reason = ?, invalidations = invalidations + 1
        WHERE idempotency_key = ? AND invalidated_at IS NULL",
-      [Time::toDb($this->clock->now()), $reason, $key],
+      [Time::to_db($this->clock->now()), $reason, $key],
       [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING]
     ));
   }

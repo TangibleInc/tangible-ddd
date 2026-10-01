@@ -8,8 +8,8 @@ namespace TangibleDDD\Conformance;
 final class TransportedFact {
 
   public function __construct(
-    public readonly string $eventId,
+    public readonly string $event_id,
     /** the ABSOLUTE UTC time the transport will deliver at */
-    public readonly \DateTimeImmutable $dueAt,
+    public readonly \DateTimeImmutable $due_at,
   ) {}
 }

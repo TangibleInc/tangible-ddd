@@ -20,19 +20,19 @@ use TangibleDDD\Runtime\Outbox\OutboxRecord;
  * sees the inner store's claim-time dead letters as it would undecorated.
  *
  * Every call goes to the inner store unchanged; only the outcome is noted:
- * claim() → claimed; accept() true → accepted; retryLater() true → retried;
- * deadLetter() true → deadLettered; any fenced write returning false →
- * leaseLost.
+ * claim() → claimed; accept() true → accepted; retry_later() true → retried;
+ * dead_letter() true → dead_lettered; any fenced write returning false →
+ * lease_lost.
  *
  * Caveats for hosts: the decorator is not the inner store, so a transport
- * whose sharesConnectionWith() compares store identity or class must be
+ * whose shares_connection() compares store identity or class must be
  * asked about the inner store (the mem transport ignores its argument).
  * An accept() inside a transaction that later fails to commit is still
  * reported as accepted.
  */
 final class RecordingOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
-  /** @var array{claimed: list<string>, accepted: list<string>, retried: list<string>, deadLettered: list<string>, leaseLost: list<string>} */
+  /** @var array{claimed: list<string>, accepted: list<string>, retried: list<string>, dead_lettered: list<string>, lease_lost: list<string>} RelayReport's named arguments */
   private array $seen;
 
   public function __construct(private readonly IOutboxStore $inner) {
@@ -44,7 +44,7 @@ final class RecordingOutboxStore implements IOutboxStore, IReportsClaimDeadLette
   }
 
   public function reset(): void {
-    $this->seen = ['claimed' => [], 'accepted' => [], 'retried' => [], 'deadLettered' => [], 'leaseLost' => []];
+    $this->seen = ['claimed' => [], 'accepted' => [], 'retried' => [], 'dead_lettered' => [], 'lease_lost' => []];
   }
 
   public function report(): RelayReport {
@@ -68,24 +68,24 @@ final class RecordingOutboxStore implements IOutboxStore, IReportsClaimDeadLette
    * relay step (which signals and reports them); [] when the inner store
    * does not implement IReportsClaimDeadLetters.
    */
-  public function takeDeadLetteredAtClaim(): array {
-    return $this->inner instanceof IReportsClaimDeadLetters ? $this->inner->takeDeadLetteredAtClaim() : [];
+  public function take_claim_dead_letters(): array {
+    return $this->inner instanceof IReportsClaimDeadLetters ? $this->inner->take_claim_dead_letters() : [];
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
     return $this->note($this->inner->accept($c, $transportRef), 'accepted', $c);
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
-    return $this->note($this->inner->retryLater($c, $error, $nextAt), 'retried', $c);
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+    return $this->note($this->inner->retry_later($c, $error, $nextAt), 'retried', $c);
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
-    return $this->note($this->inner->deadLetter($c, $error), 'deadLettered', $c);
+  public function dead_letter(Claim $c, string $error): bool {
+    return $this->note($this->inner->dead_letter($c, $error), 'dead_lettered', $c);
   }
 
   private function note(bool $matched, string $outcome, Claim $c): bool {
-    $this->seen[$matched ? $outcome : 'leaseLost'][] = $c->event_id;
+    $this->seen[$matched ? $outcome : 'lease_lost'][] = $c->event_id;
     return $matched;
   }
 }

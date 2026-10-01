@@ -36,16 +36,16 @@ abstract class WorkflowScenarios extends ConformanceTestCase {
   #[TestDox('workflow.fact-ignition-once: the same CronEntryDue delivered twice, and two cron ticks in one minute, make exactly one workflow run; the next minute makes another; a failed start is restarted once')]
   public function test_workflow_fact_ignition_once(): void {
     $workflows = $this->workflows();
-    $igniter = $workflows->workflowIgniter();
-    $workflow = new CronExportWorkflow($workflows->workflowRepository());
+    $igniter = $workflows->igniter();
+    $workflow = new CronExportWorkflow($workflows->workflows());
     $igniter->register($workflow, $this->host->subscriptions(), static::CONSUMER_PREFIX);
 
     // 1. The same fact, delivered twice.
     $tick = new CronEntryDue('nightly', '2026-10-01T12:00:05+00:00');
     $eventId = Uuid::v4();
     $wrapped = self::wrap($tick, $eventId);
-    self::assertTrue($this->host->deliver(CronEntryDue::class, $wrapped)->isComplete());
-    self::assertTrue($this->host->deliver(CronEntryDue::class, $wrapped)->isComplete());
+    self::assertTrue($this->host->deliver(CronEntryDue::class, $wrapped)->is_complete());
+    self::assertTrue($this->host->deliver(CronEntryDue::class, $wrapped)->is_complete());
     [$first] = $this->runsOf('nightly');
     self::assertSame([$first], CronExportWorkflow::$started, 'one workflow, one run');
 
@@ -53,45 +53,45 @@ abstract class WorkflowScenarios extends ConformanceTestCase {
     // worker or consumer igniting the same fact loses the claim.
     $again = $igniter->ignite($workflow, $tick, $eventId);
     self::assertSame(WorkflowIgnitionOutcome::AlreadyIgnited, $again->outcome);
-    self::assertSame($first, $again->workflowId, 'the loser is told the winner\'s workflow');
-    $entry = $workflows->workflowIgnitionLedger()->find($workflow->ignition_key($tick, $eventId));
+    self::assertSame($first, $again->workflow_id, 'the loser is told the winner\'s workflow');
+    $entry = $workflows->ignition_ledger()->find($workflow->ignition_key($tick, $eventId));
     self::assertNotNull($entry);
-    self::assertSame($first, $entry->workflowId);
+    self::assertSame($first, $entry->workflow_id);
 
     // 2. A second cron tick in the same minute (another fact, another event id).
-    self::assertTrue($this->tick('nightly', '2026-10-01T12:00:40+00:00')->isComplete());
+    self::assertTrue($this->tick('nightly', '2026-10-01T12:00:40+00:00')->is_complete());
     self::assertSame([$first], $this->runsOf('nightly'), 'still one workflow for the minute');
     self::assertSame([$first], CronExportWorkflow::$started);
 
     // 3. The next minute ignites the next run.
-    self::assertTrue($this->tick('nightly', '2026-10-01T12:01:00+00:00')->isComplete());
+    self::assertTrue($this->tick('nightly', '2026-10-01T12:01:00+00:00')->is_complete());
     $runs = $this->runsOf('nightly');
     self::assertCount(2, $runs);
     self::assertSame($runs, CronExportWorkflow::$started);
 
     // A declined fact ignites nothing.
-    self::assertTrue($this->tick('skip', '2026-10-01T12:01:00+00:00')->isComplete());
+    self::assertTrue($this->tick('skip', '2026-10-01T12:01:00+00:00')->is_complete());
     self::assertSame([], $this->runsOf('skip'));
 
     // 4. A start that fails: the ignition stands, the delivery retries, and
     //    the retry starts the same workflow exactly once.
-    CronExportWorkflow::$failStarts = 1;
+    CronExportWorkflow::$fail_starts = 1;
     $failing = self::wrap(new CronEntryDue('nightly', '2026-10-01T12:02:00+00:00'), Uuid::v4());
     $outcome = $this->host->deliver(CronEntryDue::class, $failing);
-    self::assertTrue($outcome->needsRetry(), 'the failed start fails the ignition subscriber');
+    self::assertTrue($outcome->needs_retry(), 'the failed start fails the ignition subscriber');
     $runs = $this->runsOf('nightly');
     self::assertCount(3, $runs, 'the workflow ignited once');
     self::assertCount(2, CronExportWorkflow::$started, 'but did not run');
 
-    self::assertTrue($this->host->deliver(CronEntryDue::class, $failing)->isComplete());
-    self::assertTrue($this->tick('nightly', '2026-10-01T12:02:30+00:00')->isComplete());
+    self::assertTrue($this->host->deliver(CronEntryDue::class, $failing)->is_complete());
+    self::assertTrue($this->tick('nightly', '2026-10-01T12:02:30+00:00')->is_complete());
     self::assertSame($runs, $this->runsOf('nightly'), 'no second workflow for 12:02');
     self::assertSame($runs, CronExportWorkflow::$started, 'the 12:02 workflow ran exactly once');
   }
 
   protected function workflows(): WorkflowHost {
     if (!$this->host instanceof WorkflowHost) {
-      $this->skipForChangeRequest('CR-W4C4-4', 'the host fixture does not implement WorkflowHost yet');
+      $this->skip_for('CR-W4C4-4', 'the host fixture does not implement WorkflowHost yet');
     }
     return $this->host;
   }
@@ -104,7 +104,7 @@ abstract class WorkflowScenarios extends ConformanceTestCase {
   private function runsOf(string $entry): array {
     $ids = array_map(
       static fn ($w): int => (int) $w->get_id(),
-      $this->workflows()->workflowRepository()->get_by_ref_id(1, CronExportWorkflow::refType($entry)),
+      $this->workflows()->workflows()->get_by_ref_id(1, CronExportWorkflow::ref_type($entry)),
     );
     sort($ids);
     return $ids;

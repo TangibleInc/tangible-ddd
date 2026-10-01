@@ -25,22 +25,22 @@ final class MysqliConnection implements IHostConnection {
     return (int) $this->run($sql, $params)->affected_rows;
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
+  public function fetch_all(string $sql, array $params = []): array {
     $result = $this->run($sql, $params)->get_result();
     return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
-    return $this->fetchAll($sql, $params)[0] ?? null;
+  public function fetch_one(string $sql, array $params = []): ?array {
+    return $this->fetch_all($sql, $params)[0] ?? null;
   }
 
-  public function lastInsertId(): string { return (string) $this->db->insert_id; }
+  public function last_insert_id(): string { return (string) $this->db->insert_id; }
   public function begin(): void { $this->db->begin_transaction(); $this->inTransaction = true; }
   public function commit(): void { $this->inTransaction = false; $this->db->commit(); }
-  public function rollBack(): void { $this->inTransaction = false; $this->db->rollback(); }
-  public function inTransaction(): bool { return $this->inTransaction; }
+  public function rollback(): void { $this->inTransaction = false; $this->db->rollback(); }
+  public function in_transaction(): bool { return $this->inTransaction; }
 
-  public function isDuplicateKey(\Throwable $e): bool {
+  public function is_duplicate_key(\Throwable $e): bool {
     return $e instanceof \mysqli_sql_exception && $e->getCode() === 1062;
   }
 

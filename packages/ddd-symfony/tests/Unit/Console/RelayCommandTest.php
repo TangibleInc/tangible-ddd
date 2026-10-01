@@ -60,8 +60,8 @@ final class RelayCommandTest extends TestCase {
         return $this->inner->claim($limit, $now, $leaseSeconds);
       }
       public function accept(Claim $c, ?string $transportRef): bool { return $this->inner->accept($c, $transportRef); }
-      public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool { return $this->inner->retryLater($c, $error, $nextAt); }
-      public function deadLetter(Claim $c, string $error): bool { return $this->inner->deadLetter($c, $error); }
+      public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool { return $this->inner->retry_later($c, $error, $nextAt); }
+      public function dead_letter(Claim $c, string $error): bool { return $this->inner->dead_letter($c, $error); }
     };
   }
 
@@ -86,7 +86,7 @@ final class RelayCommandTest extends TestCase {
     $exit = $tester->execute(['--time-limit' => '0.5']);
 
     self::assertSame(Command::SUCCESS, $exit);
-    self::assertSame('accepted', $this->inner->statusOf('a'), 'the loop survived two failed steps');
+    self::assertSame('accepted', $this->inner->status_of('a'), 'the loop survived two failed steps');
     self::assertSame([1, 2], array_slice($this->slept, 0, 2), 'exponential back-off after consecutive failures');
     $errors = array_values(array_filter($this->logger->lines, static fn ($l) => $l[0] === 'error'));
     self::assertCount(2, $errors);
@@ -136,7 +136,7 @@ final class RelayCommandTest extends TestCase {
       public int $runs = 0;
     };
     $wakeupRelay = $this->createStub(\TangibleDDD\Symfony\Runtime\Wakeup\IWakeupRelayStep::class);
-    $wakeupRelay->method('runOnce')->willReturnCallback(function () use ($wakeups) {
+    $wakeupRelay->method('run_once')->willReturnCallback(function () use ($wakeups) {
       $wakeups->runs++;
       return new \TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelayReport(['continue:1:0'], [], [], []);
     });

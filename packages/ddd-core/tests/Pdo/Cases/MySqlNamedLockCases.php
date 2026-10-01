@@ -17,34 +17,34 @@ use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
 abstract class MySqlNamedLockCases extends PdoTestCase {
 
   private function holder(IHostConnection $db, string $name): ?int {
-    $row = $db->fetchOne('SELECT IS_USED_LOCK(?) AS owner, CONNECTION_ID() AS me', [$name]);
+    $row = $db->fetch_one('SELECT IS_USED_LOCK(?) AS owner, CONNECTION_ID() AS me', [$name]);
     return $row['owner'] === null ? null : (int) $row['owner'];
   }
 
   private function connectionId(IHostConnection $db): int {
-    return (int) $db->fetchOne('SELECT CONNECTION_ID() AS id')['id'];
+    return (int) $db->fetch_one('SELECT CONNECTION_ID() AS id')['id'];
   }
 
   public function test_the_lock_name_is_ddd_plus_sha1_of_consumer_tenant_and_process_id(): void {
     $key = new LockKey('acme', '3', 42);
-    self::assertSame('ddd:' . sha1('acme|3|42'), MySqlNamedLock::nameOf($key));
-    self::assertLessThanOrEqual(64, strlen(MySqlNamedLock::nameOf($key)));
+    self::assertSame('ddd:' . sha1('acme|3|42'), MySqlNamedLock::name_of($key));
+    self::assertLessThanOrEqual(64, strlen(MySqlNamedLock::name_of($key)));
   }
 
   public function test_acquire_takes_the_named_lock_on_this_session_and_release_frees_it(): void {
     $lock = new MySqlNamedLock($this->db);
     self::assertInstanceOf(IProcessLock::class, $lock);
     $key = new LockKey('acme', '', 42);
-    $name = MySqlNamedLock::nameOf($key);
+    $name = MySqlNamedLock::name_of($key);
 
     $handle = $lock->acquire($key, 1.0);
     self::assertSame($key, $handle->key);
     self::assertSame($this->connectionId($this->db), $this->holder($this->db, $name));
-    self::assertSame(1, $lock->heldCount());
+    self::assertSame(1, $lock->held_count());
 
     $lock->release($handle);
     self::assertNull($this->holder($this->db, $name));
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
   }
 
   public function test_contention_waits_for_the_timeout_then_fails_closed(): void {
@@ -62,11 +62,11 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
       self::assertStringContainsString('timed out', $e->getMessage());
     }
     self::assertGreaterThanOrEqual(0.9, microtime(true) - $t0, 'waited up to the timeout');
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
 
     $otherLock->release($theirs);
     $mine = $lock->acquire($key, 1.0);
-    self::assertSame(1, $lock->heldCount(), 'later succeeds');
+    self::assertSame(1, $lock->held_count(), 'later succeeds');
     $lock->release($mine);
   }
 
@@ -78,7 +78,7 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
         $lock->acquire(new LockKey('acme', '', 1), 0.0);
         self::fail('expected LockNotAcquired for ' . json_encode($script, JSON_PARTIAL_OUTPUT_ON_ERROR));
       } catch (LockNotAcquired) {
-        self::assertSame(0, $lock->heldCount());
+        self::assertSame(0, $lock->held_count());
       }
     }
 
@@ -93,9 +93,9 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
   public function test_only_a_definite_one_enters(): void {
     $lock = new MySqlNamedLock(new ScriptedConnection([['acquired' => 1], ['released' => 1]]));
     $h = $lock->acquire(new LockKey('acme', '', 1), 0.0);
-    self::assertSame(1, $lock->heldCount());
+    self::assertSame(1, $lock->held_count());
     $lock->release($h);
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
   }
 
   public function test_two_consumers_with_the_same_process_id_do_not_block_each_other(): void {
@@ -109,7 +109,7 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
     $a->release($ha);
     $b->release($hb);
     $b->release($hc);
-    self::assertSame(0, $a->heldCount() + $b->heldCount());
+    self::assertSame(0, $a->held_count() + $b->held_count());
   }
 
   public function test_release_never_throws_and_logs_a_failed_or_unknown_release(): void {
@@ -120,7 +120,7 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
     $lock->release($h);
     $lock->release($h);
 
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
     self::assertCount(2, $logger->records);
     self::assertStringContainsString('gone', $logger->messages()[0]);
     self::assertStringContainsString('unknown', $logger->messages()[1]);
@@ -132,18 +132,18 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
     $k2 = new LockKey('acme', '', 2);
     $h1 = $lock->acquire($k1, 0.0);
     $lock->acquire($k2, 0.0);
-    $hostOwn = $this->db->fetchOne("SELECT GET_LOCK('host-own-lock', 0) AS r")['r'];
+    $hostOwn = $this->db->fetch_one("SELECT GET_LOCK('host-own-lock', 0) AS r")['r'];
     self::assertSame(1, (int) $hostOwn);
 
-    self::assertSame(2, $lock->forceReleaseAll());
+    self::assertSame(2, $lock->release_all());
 
-    self::assertSame(0, $lock->heldCount());
-    self::assertNull($this->holder($this->db, MySqlNamedLock::nameOf($k1)));
-    self::assertNull($this->holder($this->db, MySqlNamedLock::nameOf($k2)));
+    self::assertSame(0, $lock->held_count());
+    self::assertNull($this->holder($this->db, MySqlNamedLock::name_of($k1)));
+    self::assertNull($this->holder($this->db, MySqlNamedLock::name_of($k2)));
     self::assertNotNull($this->holder($this->db, 'host-own-lock'), 'locks this instance did not take are untouched');
     $lock->release($h1); // stale handle: ignored
-    self::assertSame(0, $lock->forceReleaseAll());
-    $this->db->fetchOne("SELECT RELEASE_LOCK('host-own-lock') AS r");
+    self::assertSame(0, $lock->release_all());
+    $this->db->fetch_one("SELECT RELEASE_LOCK('host-own-lock') AS r");
   }
 
   public function test_the_lock_outlives_transactions_on_the_same_connection(): void {
@@ -153,9 +153,9 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
 
     $this->db->begin();
     $this->db->execute('INSERT INTO tp_widgets (name) VALUES (?)', ['x']);
-    $this->db->rollBack();
+    $this->db->rollback();
 
-    self::assertSame($this->connectionId($this->db), $this->holder($this->db, MySqlNamedLock::nameOf($key)));
+    self::assertSame($this->connectionId($this->db), $this->holder($this->db, MySqlNamedLock::name_of($key)));
     $lock->release($h);
   }
 
@@ -166,13 +166,13 @@ abstract class MySqlNamedLockCases extends PdoTestCase {
 
     $outer = $lock->acquire($key, 0.0);
     $inner = $lock->acquire($key, 0.0);
-    self::assertSame(1, $backend->heldCount());
+    self::assertSame(1, $backend->held_count());
     $lock->release($inner);
-    self::assertNotNull($this->holder($this->db, MySqlNamedLock::nameOf($key)));
+    self::assertNotNull($this->holder($this->db, MySqlNamedLock::name_of($key)));
     $lock->release($outer);
 
-    self::assertSame(0, $lock->heldCount());
-    self::assertSame(0, $backend->heldCount());
-    self::assertNull($this->holder($this->db, MySqlNamedLock::nameOf($key)));
+    self::assertSame(0, $lock->held_count());
+    self::assertSame(0, $backend->held_count());
+    self::assertNull($this->holder($this->db, MySqlNamedLock::name_of($key)));
   }
 }

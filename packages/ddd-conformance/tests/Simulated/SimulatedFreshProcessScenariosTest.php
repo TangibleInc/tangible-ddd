@@ -14,7 +14,7 @@ use TangibleDDD\Conformance\Scenarios\FreshProcessScenarios;
 #[Group('simulated')]
 final class SimulatedFreshProcessScenariosTest extends FreshProcessScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture(StartMode::InBand);
   }
 }

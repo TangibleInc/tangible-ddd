@@ -22,14 +22,14 @@ final class OutboxFactClassResolver implements IFactClassResolver {
   /** @var array<string, string>|null integration_action → class, built on first use */
   private ?array $byAction = null;
 
-  /** @param list<class-string> $knownFactClasses */
+  /** @param list<class-string> $fact_classes */
   public function __construct(
     private readonly DbalPostgresOutboxStore $store,
-    private readonly array $knownFactClasses = [],
+    private readonly array $fact_classes = [],
   ) {}
 
-  public function classFor(Claim $claim): ?string {
-    return $this->store->eventClassOf($claim->event_id)
+  public function resolve(Claim $claim): ?string {
+    return $this->store->event_class_of($claim->event_id)
       ?? $this->byAction()[$claim->record->integration_action]
       ?? null;
   }
@@ -40,7 +40,7 @@ final class OutboxFactClassResolver implements IFactClassResolver {
       return $this->byAction;
     }
     $map = [];
-    foreach ($this->knownFactClasses as $class) {
+    foreach ($this->fact_classes as $class) {
       if (!is_a($class, IIntegrationEvent::class, true) || (new \ReflectionClass($class))->isAbstract()) {
         continue;
       }

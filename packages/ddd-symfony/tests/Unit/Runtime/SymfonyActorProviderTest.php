@@ -63,7 +63,7 @@ final class SymfonyActorProviderTest extends TestCase {
     $this->tokens->setToken(new UsernamePasswordToken(new InMemoryUser('ana', null), 'main'));
     $machine = new Actor(ActorKind::Machine, 'runner-7.example', 'runner');
 
-    $seen = $this->context->runAs($machine, fn () => $this->provider->current());
+    $seen = $this->context->run_as($machine, fn () => $this->provider->current());
     self::assertSame($machine, $seen);
     self::assertSame(ActorKind::User, $this->provider->current()->kind, 'runAs restores');
 

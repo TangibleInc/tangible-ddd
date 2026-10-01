@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\DecodeScenarios;
 #[Group('wp')]
 final class WpDecodeConformance extends DecodeScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

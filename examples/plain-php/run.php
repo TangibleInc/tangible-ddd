@@ -177,8 +177,8 @@ $check((new OrdersPlacedFor('tea'))->send() === 2, 'the domain event updated the
 $check((new OrdersPlacedFor('coffee'))->send() === 0, 'a query for nothing reads zero');
 $check($boundary->commits() === 3, 'each transactional command committed once');
 
-$ids = $outbox->eventIds();
-$first = $ids === [] ? null : $outbox->recordOf($ids[0]);
+$ids = $outbox->event_ids();
+$first = $ids === [] ? null : $outbox->record_of($ids[0]);
 $check(count($ids) === 3, 'each announcement reached the outbox');
 $check($first !== null && $first->payload === ['order_id' => 1, 'sku' => 'tea'], 'the fact carries its payload');
 $check($first !== null && $first->due_at == $clock->now(), 'with an absolute due time from the clock');
@@ -197,12 +197,12 @@ $drain = new \TangibleDDD\Runtime\Drain(
   ),
   clock: $clock,
 );
-$report = $drain->runOnce(maxItems: 2, maxSeconds: 5);
-$rest = $drain->runOnce();
+$report = $drain->run_once(maxItems: 2, maxSeconds: 5);
+$rest = $drain->run_once();
 
-$check(count($report->relay?->accepted ?? []) === 2 && $report->stoppedBy === 'max_items', 'runOnce is bounded by its item budget');
-$check(count($rest->relay?->accepted ?? []) === 1 && $rest->stoppedBy === 'idle', 'the next pass drains the rest');
-$check(count($transport->submissions) === 3 && $outbox->statusOf($ids[0]) === 'accepted', 'every fact reached the transport once');
+$check(count($report->relay?->accepted ?? []) === 2 && $report->stopped_by === 'max_items', 'runOnce is bounded by its item budget');
+$check(count($rest->relay?->accepted ?? []) === 1 && $rest->stopped_by === 'idle', 'the next pass drains the rest');
+$check(count($transport->submissions) === 3 && $outbox->status_of($ids[0]) === 'accepted', 'every fact reached the transport once');
 
 if ($failures !== []) {
   fwrite(STDERR, count($failures) . " check(s) failed\n");

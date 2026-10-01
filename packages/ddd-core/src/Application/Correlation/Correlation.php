@@ -58,7 +58,7 @@ final class Correlation {
   /**
    * The fact being delivered, when the ambient cause is Kind::Fact (D13);
    * null in a flat context and inside an act or a trajectory. Never mints.
-   * eventClass is the scope's label (the delivery bracket passes the fact
+   * event_class is the scope's label (the delivery bracket passes the fact
    * class), '' when the scope was opened without one.
    */
   public static function current_fact(): ?FactRef {

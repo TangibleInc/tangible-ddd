@@ -69,20 +69,20 @@ final class SfCatalogueTest extends TestCase {
     SfPostCommitWakeupScenariosTest::class,
   ];
 
-  /** The wave-3 host classes (the first ten): they must still cover exactly casesFor('sf', 3). */
+  /** The wave-3 host classes (the first ten): they must still cover exactly cases_for('sf', 3). */
   private const WAVE_3_HOST_CLASSES = 10;
 
   public function test_sf_waves_2_and_3_match_register_section_8(): void {
-    self::assertSame([], ScenarioCatalogue::dueBy('sf', 1));
-    self::assertEqualsCanonicalizing(self::SF_WAVE_2, ScenarioCatalogue::dueBy('sf', 2));
+    self::assertSame([], ScenarioCatalogue::due_by('sf', 1));
+    self::assertEqualsCanonicalizing(self::SF_WAVE_2, ScenarioCatalogue::due_by('sf', 2));
     self::assertCount(23, self::SF_WAVE_3);
-    self::assertEqualsCanonicalizing([...self::SF_WAVE_2, ...self::SF_WAVE_3], ScenarioCatalogue::dueBy('sf', 3));
+    self::assertEqualsCanonicalizing([...self::SF_WAVE_2, ...self::SF_WAVE_3], ScenarioCatalogue::due_by('sf', 3));
   }
 
   public function test_sf_wave_4_matches_register_section_8(): void {
     self::assertCount(9, self::SF_WAVE_4);
-    self::assertEqualsCanonicalizing(self::SF_WAVE_4, ScenarioCatalogue::firstDueAt('sf', 4));
-    self::assertEqualsCanonicalizing([...self::SF_WAVE_2, ...self::SF_WAVE_3, ...self::SF_WAVE_4], ScenarioCatalogue::dueBy('sf', 4));
+    self::assertEqualsCanonicalizing(self::SF_WAVE_4, ScenarioCatalogue::first_due_at('sf', 4));
+    self::assertEqualsCanonicalizing([...self::SF_WAVE_2, ...self::SF_WAVE_3, ...self::SF_WAVE_4], ScenarioCatalogue::due_by('sf', 4));
   }
 
   public function test_every_case_due_on_sf_by_wave_3_has_an_sf_host_class(): void {
@@ -90,7 +90,7 @@ final class SfCatalogueTest extends TestCase {
     foreach (array_slice(self::HOST_CLASSES, 0, self::WAVE_3_HOST_CLASSES) as $class) {
       $extended[] = (string) get_parent_class($class);
     }
-    self::assertEqualsCanonicalizing(ScenarioCatalogue::casesFor('sf', 3), $extended);
+    self::assertEqualsCanonicalizing(ScenarioCatalogue::cases_for('sf', 3), $extended);
   }
 
   public function test_every_case_due_on_sf_by_wave_4_has_an_sf_host_class(): void {
@@ -98,7 +98,7 @@ final class SfCatalogueTest extends TestCase {
     foreach (self::HOST_CLASSES as $class) {
       $extended[] = (string) get_parent_class($class);
     }
-    self::assertEqualsCanonicalizing(ScenarioCatalogue::casesFor('sf', 4), $extended);
+    self::assertEqualsCanonicalizing(ScenarioCatalogue::cases_for('sf', 4), $extended);
   }
 
   public function test_every_id_due_on_sf_by_wave_3_runs_the_shared_scenario(): void {
@@ -111,7 +111,7 @@ final class SfCatalogueTest extends TestCase {
 
   /** @param list<string> $due */
   private function assertRunsUnchanged(array $due, int $wave): void {
-    $implemented = ScenarioId::implementedBy(self::HOST_CLASSES);
+    $implemented = ScenarioId::implemented_by(self::HOST_CLASSES);
 
     self::assertSame([], array_values(array_diff($due, array_keys($implemented))), 'due on sf but no scenario method');
 

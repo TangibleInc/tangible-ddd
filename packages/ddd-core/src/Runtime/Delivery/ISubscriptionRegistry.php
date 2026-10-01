@@ -9,7 +9,7 @@ namespace TangibleDDD\Runtime\Delivery;
  *
  * - add(): boot time only. A second Subscriber with an id already present
  *   is ignored (first wins), so a double boot does not double-deliver.
- * - for(): subscribers whose eventClassOrMarker the fact class is_a (so
+ * - for(): subscribers whose event_class the fact class is_a (so
  *   marker interfaces work, D2), ordered by priority ascending, then
  *   registration order.
  *

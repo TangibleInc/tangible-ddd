@@ -62,7 +62,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
    *
    * @return array{id: string, kind: string, event: string, priority: int, service: string, class: string, prefix: string}
    */
-  public static function workflowSpec(string $serviceId, string $class, string $eventClass, string $consumerPrefix): array {
+  public static function workflow_spec(string $serviceId, string $class, string $eventClass, string $consumerPrefix): array {
     return [
       'id' => $consumerPrefix . '/workflow-ignition:' . $class . '@' . $eventClass,
       'kind' => 'workflow', 'event' => $eventClass, 'priority' => Subscriber::IGNITION,
@@ -71,7 +71,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
   }
 
   /** @return array{id: string, kind: string, event: string, priority: int, service: string, class: string} */
-  public static function listenerSpec(string $serviceId, string $class, string $eventClassOrMarker, int $priority): array {
+  public static function listener_spec(string $serviceId, string $class, string $eventClassOrMarker, int $priority): array {
     return ['id' => 'listener:' . $class, 'kind' => 'listener', 'event' => $eventClassOrMarker, 'priority' => $priority, 'service' => $serviceId, 'class' => $class];
   }
 
@@ -79,7 +79,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
    * @param 'ignition'|'resume' $role
    * @return array{id: string, kind: string, event: string, priority: int, class: string, role: string}
    */
-  public static function processSpec(string $processClass, string $role, string $eventClass): array {
+  public static function process_spec(string $processClass, string $role, string $eventClass): array {
     return $role === 'ignition'
       ? ['id' => 'ignition:' . $processClass . '@' . $eventClass, 'kind' => 'process', 'event' => $eventClass, 'priority' => Subscriber::IGNITION, 'class' => $processClass, 'role' => $role]
       : ['id' => 'resume:' . $eventClass, 'kind' => 'process', 'event' => $eventClass, 'priority' => Subscriber::RESUME, 'class' => $processClass, 'role' => $role];
@@ -101,7 +101,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
     }
     $offset = count($this->specs);
     foreach (array_values($this->added) as $j => $s) {
-      if (is_a($eventClass, $s->eventClassOrMarker, true)) {
+      if (is_a($eventClass, $s->event_class, true)) {
         $matching[] = ['p' => $s->priority, 'i' => $offset + $j, 'sub' => $s];
       }
     }
@@ -116,7 +116,7 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
   }
 
   /** @return list<class-string> concrete (non-interface) fact classes the map names */
-  public function knownFactClasses(): array {
+  public function fact_classes(): array {
     $classes = [];
     foreach ($this->specs as $spec) {
       if (class_exists($spec['event'])) {
@@ -134,14 +134,14 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
 
     $capture = new CapturingRegistry();
     if ($spec['kind'] === 'listener') {
-      (new SubscriptionRegistrar($capture))->registerListener($this->listeners->get($spec['service']));
+      (new SubscriptionRegistrar($capture))->register_listener($this->listeners->get($spec['service']));
     } elseif ($spec['kind'] === 'workflow') {
       if ($this->workflows === null) {
         throw new \LogicException("Workflow subscription {$spec['id']} needs a WorkflowIgniter (tangible_ddd.workflow_igniter); none is configured.");
       }
       $this->workflows->register($this->listeners->get($spec['service']), $capture, (string) $spec['prefix']);
     } else {
-      (new SubscriptionRegistrar($capture, $this->processes))->registerProcess($spec['class']);
+      (new SubscriptionRegistrar($capture, $this->processes))->register_process($spec['class']);
     }
 
     foreach ($capture->subscribers as $s) {

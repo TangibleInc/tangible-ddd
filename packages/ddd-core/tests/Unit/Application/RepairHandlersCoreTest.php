@@ -30,20 +30,20 @@ final class RepairHandlersCoreTest extends TestCase {
   private InMemoryOutboxStore $store;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
     $this->store = new InMemoryOutboxStore($this->clock);
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function deadLetter(string $id): int {
     $this->store->append(new OutboxRecord($id, 't', 'a', 'c', 1, null, [], $this->clock->now(), max_attempts: 1));
     [$claim] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($claim, 'boom');
-    return $this->store->deadLetters(10)[0]->dlqId;
+    $this->store->dead_letter($claim, 'boom');
+    return $this->store->dead_letters(10)[0]->dlq_id;
   }
 
   public function test_replay_keeps_the_event_id(): void {
@@ -51,8 +51,8 @@ final class RepairHandlersCoreTest extends TestCase {
 
     (new ReplayDeadLetterHandler($this->store))->handle(new ReplayDeadLetterCommand('acme', $dlq));
 
-    self::assertSame('pending', $this->store->statusOf('evt-1'), 'the original row, same event_id');
-    self::assertSame([], $this->store->deadLetters(10));
+    self::assertSame('pending', $this->store->status_of('evt-1'), 'the original row, same event_id');
+    self::assertSame([], $this->store->dead_letters(10));
   }
 
   public function test_discard_removes_the_dead_letter(): void {
@@ -60,7 +60,7 @@ final class RepairHandlersCoreTest extends TestCase {
 
     (new DiscardDeadLetterHandler($this->store))->handle(new DiscardDeadLetterCommand('acme', $dlq));
 
-    self::assertSame([], $this->store->deadLetters(10));
+    self::assertSame([], $this->store->dead_letters(10));
     $this->expectException(OutboxRowNotFound::class);
     (new DiscardDeadLetterHandler($this->store))->handle(new DiscardDeadLetterCommand('acme', $dlq));
   }
@@ -76,7 +76,7 @@ final class RepairHandlersCoreTest extends TestCase {
 
   public function test_retry_maps_the_integer_id_to_the_event_id(): void {
     $admin = $this->createMockForIntersectionOfInterfaces([IOutboxAdministration::class, IOutboxRowIds::class]);
-    $admin->method('eventIdOf')->with(17)->willReturn('evt-17');
+    $admin->method('event_id_of')->with(17)->willReturn('evt-17');
     $admin->expects(self::once())->method('retry')->with('evt-17', false);
 
     (new RetryDeliveryHandler($admin))->handle(new RetryDeliveryCommand('acme', 17));
@@ -84,7 +84,7 @@ final class RepairHandlersCoreTest extends TestCase {
 
   public function test_retry_of_an_unknown_integer_id_is_not_found(): void {
     $admin = $this->createMockForIntersectionOfInterfaces([IOutboxAdministration::class, IOutboxRowIds::class]);
-    $admin->method('eventIdOf')->willReturn(null);
+    $admin->method('event_id_of')->willReturn(null);
 
     $this->expectException(OutboxRowNotFound::class);
     (new RetryDeliveryHandler($admin))->handle(new RetryDeliveryCommand('acme', 99));
@@ -109,7 +109,7 @@ final class RepairHandlersCoreTest extends TestCase {
 
     (new DiscardDeadLetterHandler())->handle(new DiscardDeadLetterCommand('ghost_plugin', $dlq));
 
-    self::assertSame([], $this->store->deadLetters(10));
+    self::assertSame([], $this->store->dead_letters(10));
   }
 
   public function test_without_an_administration_the_handler_fails_loudly(): void {

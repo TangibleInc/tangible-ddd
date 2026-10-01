@@ -37,7 +37,7 @@ final class PostgresListenWaiter implements IRelayWaiter {
   private bool $degraded = false;
 
   /** @var list<string> */
-  private array $lastPayloads = [];
+  private array $payloads = [];
 
   private readonly LoggerInterface $logger;
 
@@ -52,7 +52,7 @@ final class PostgresListenWaiter implements IRelayWaiter {
     $this->logger = $logger ?? new NullLogger();
     $this->channel = PostgresNotifyRelayWakeup::channel($consumerPrefix);
 
-    $why = ConnectionTopology::describePooler($connection->getParams());
+    $why = ConnectionTopology::pooler($connection->getParams());
     if ($why !== null) {
       $message = "[ddd relay] the LISTEN connection looks pooled ($why); LISTEN needs a direct (non-pooled) connection (register 5.2, D14)";
       if ($pooler === PoolerPolicy::Refuse) {
@@ -73,7 +73,7 @@ final class PostgresListenWaiter implements IRelayWaiter {
   }
 
   public function wait(float $seconds): bool {
-    $this->lastPayloads = [];
+    $this->payloads = [];
     $seconds = max(0.0, $seconds);
 
     try {
@@ -102,13 +102,13 @@ final class PostgresListenWaiter implements IRelayWaiter {
   }
 
   /** @return list<string> payloads of the notifications the last wait() consumed */
-  public function lastPayloads(): array {
-    return $this->lastPayloads;
+  public function payloads(): array {
+    return $this->payloads;
   }
 
   /** @param array<string, mixed> $notification */
   private function record(array $notification): void {
-    $this->lastPayloads[] = (string) ($notification['payload'] ?? '');
+    $this->payloads[] = (string) ($notification['payload'] ?? '');
   }
 
   private function degrade(string $why): void {

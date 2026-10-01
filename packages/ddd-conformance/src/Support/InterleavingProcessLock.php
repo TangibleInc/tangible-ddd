@@ -11,7 +11,7 @@ use TangibleDDD\Runtime\Lock\LockKey;
 /**
  * Pass-through raw IProcessLock with one interleaving point: a one-shot
  * hook that runs right before the next backend acquire
- * (ProcessHost::beforeNextProcessLockAcquire()). Put it UNDER the core
+ * (ProcessHost::before_next_lock()). Put it UNDER the core
  * ReentrantProcessLock, so the hook fires only where the backend is asked,
  * once per wake, never on a re-entrant acquisition.
  */
@@ -27,7 +27,7 @@ final class InterleavingProcessLock implements IProcessLock {
   }
 
   /** @param callable(LockKey): void $fn */
-  public function beforeNextAcquire(callable $fn): void {
+  public function before_next_acquire(callable $fn): void {
     $this->before[] = $fn;
   }
 
@@ -43,11 +43,11 @@ final class InterleavingProcessLock implements IProcessLock {
     $this->inner->release($h);
   }
 
-  public function heldCount(): int {
-    return $this->inner->heldCount();
+  public function held_count(): int {
+    return $this->inner->held_count();
   }
 
-  public function forceReleaseAll(): int {
-    return $this->inner->forceReleaseAll();
+  public function release_all(): int {
+    return $this->inner->release_all();
   }
 }

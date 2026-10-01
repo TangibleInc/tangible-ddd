@@ -57,13 +57,13 @@ if ($alreadyCompleted && $before['timeout_key'] !== null) {
   [, , $step] = explode(':', (string) $before['timeout_key']);
   $copy = WakeupIntent::timeout(TrialConsumer::PREFIX, $processId, (int) $step, $timeoutDue);
   $runtime->boundary()->run(static fn () => $runtime->jobs()->schedule($copy));
-  echo "planted a surviving copy of {$copy->idempotencyKey} (due {$before['timeout_due_at']})\n";
+  echo "planted a surviving copy of {$copy->key} (due {$before['timeout_due_at']})\n";
 }
 
 // ── one bounded pass ───────────────────────────────────────────────────────
 $report = $runtime->drain(maxItems: 50, maxSeconds: 10);
 echo sprintf("drain: relayed %d, delivered %d, wakes completed [%s], stopped by %s\n",
-  count($report->relay?->accepted ?? []), $report->delivered, implode(', ', $report->wakesCompleted), $report->stoppedBy);
+  count($report->relay?->accepted ?? []), $report->delivered, implode(', ', $report->wakes_completed), $report->stopped_by);
 
 $after = latestTrial($db);
 $checks->check($report->errors === [] && $report->leaks === [], 'the pass ran cleanly (no stage error, nothing leaked)');
@@ -79,21 +79,21 @@ $checks->check(true, 'the process is completed');
 $checks->check($after['outcome'] === $expected, "the trial finished as $expected");
 $checks->check((int) $after['finished_count'] === 1, 'FinishTrial ran exactly once');
 $checks->check(
-  $db->fetchOne('SELECT 1 AS live FROM trialdemo_ddd_jobs WHERE process_id = ?', [$processId]) === null,
+  $db->fetch_one('SELECT 1 AS live FROM trialdemo_ddd_jobs WHERE process_id = ?', [$processId]) === null,
   'no intent of the process is left'
 );
-$checks->check((int) $db->fetchOne("SELECT COUNT(*) AS n FROM trialdemo_ddd_outbox WHERE status = 'pending'")['n'] === 0, 'no fact is waiting');
-$checks->check($runtime->operatorView()->list() === [], 'the operator view is empty');
+$checks->check((int) $db->fetch_one("SELECT COUNT(*) AS n FROM trialdemo_ddd_outbox WHERE status = 'pending'")['n'] === 0, 'no fact is waiting');
+$checks->check($runtime->operator_view()->list() === [], 'the operator view is empty');
 
 if ($copy !== null) {
-  $checks->check(in_array($copy->idempotencyKey, $report->wakesCompleted, true), 'the stale timeout copy was claimed and completed');
+  $checks->check(in_array($copy->key, $report->wakes_completed, true), 'the stale timeout copy was claimed and completed');
   $checks->check(
     [$after['process_version'], $after['process_updated_at'], $after['outcome']] === [$before['process_version'], $before['process_updated_at'], $before['outcome']],
     'as a no-op: the process row and the outcome are untouched'
   );
 } elseif (!$alreadyCompleted) {
   $checks->check(
-    $expected === 'activated' ? !in_array($before['timeout_key'], $report->wakesCompleted, true) : in_array($before['timeout_key'], $report->wakesCompleted, true),
+    $expected === 'activated' ? !in_array($before['timeout_key'], $report->wakes_completed, true) : in_array($before['timeout_key'], $report->wakes_completed, true),
     $expected === 'activated' ? 'the fact won: the timeout was cancelled with the resuming save' : 'the timeout fired and the process proceeded'
   );
 }

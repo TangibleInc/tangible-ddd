@@ -10,7 +10,7 @@ final class LockCounter {
   /** Successful backend acquisitions, all workers (re-entrant ones never reach the backend). */
   public int $acquisitions = 0;
 
-  /** Inside WebRequests::inWebRequest(). */
+  /** Inside WebRequests::in_web_request(). */
   public bool $inWebRequest = false;
 
   /** Lock attempts made inside a web request (each was refused). */

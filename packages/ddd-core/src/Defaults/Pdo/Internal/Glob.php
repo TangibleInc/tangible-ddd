@@ -15,7 +15,7 @@ namespace TangibleDDD\Defaults\Pdo\Internal;
  */
 final class Glob {
 
-  public static function toRegex(string $glob): string {
+  public static function to_regex(string $glob): string {
     $out = '^';
     $len = strlen($glob);
     for ($i = 0; $i < $len; $i++) {

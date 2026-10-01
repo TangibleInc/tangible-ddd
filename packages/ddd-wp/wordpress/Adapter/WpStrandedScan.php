@@ -16,7 +16,7 @@ use TangibleDDD\Runtime\SystemClock;
 /**
  * The stranded scan of a wp relay tick (register 5.3 step 5, wp form).
  *
- * For every `IProcessStore::findStranded()` row:
+ * For every `IProcessStore::find_stranded()` row:
  * - `scheduled`: if Action Scheduler already holds a pending or running
  *   `{prefix}_process_continue` action with the legacy args
  *   ['process_id' => id] (queued by a 0.6 copy, or by N before a
@@ -44,24 +44,24 @@ final class WpStrandedScan {
     $now = ($this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock())->now();
     $minted = $queued = $running = $exhausted = [];
 
-    foreach ($this->store->findStranded($now) as $s) {
+    foreach ($this->store->find_stranded($now) as $s) {
       if ($s->status === 'running') {
         $running[] = $s;
         continue;
       }
-      if ($this->wakeups instanceof WpdbWakeupScheduler && $this->wakeups->hasExhaustedIntent($s->processId)) {
-        $exhausted[] = $s->processId; // the wake budget is spent: the operator re-arms it, the scan does not
+      if ($this->wakeups instanceof WpdbWakeupScheduler && $this->wakeups->has_exhausted_intent($s->process_id)) {
+        $exhausted[] = $s->process_id; // the wake budget is spent: the operator re-arms it, the scan does not
         continue;
       }
       if (function_exists('as_has_scheduled_action')
-        && as_has_scheduled_action($this->config->hook('process_continue'), ['process_id' => $s->processId])) {
-        $queued[] = $s->processId;
+        && as_has_scheduled_action($this->config->hook('process_continue'), ['process_id' => $s->process_id])) {
+        $queued[] = $s->process_id;
         continue;
       }
       (new WpdbTransactionBoundary())->run(fn () => $this->wakeups->schedule(
-        WakeupIntent::continuation($this->config->prefix(), $s->processId, $s->stepIndex, $now)
+        WakeupIntent::continuation($this->config->prefix(), $s->process_id, $s->step_index, $now)
       ));
-      $minted[] = $s->processId;
+      $minted[] = $s->process_id;
     }
 
     return new WpStrandedReport($minted, $queued, $running, $exhausted);

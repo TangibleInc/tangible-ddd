@@ -21,9 +21,9 @@ use TangibleDDD\Runtime\Codec\UndecodableLargeString;
  * rebuild; the store turns that into a quarantine (R5).
  *
  * D6 (CR-W4CE-5): a LargeString business-data field is stored as
- * LargeString::toPayload() and revived by the constructor parameter's type;
+ * LargeString::encode() and revived by the constructor parameter's type;
  * a corrupt one (UndecodableLargeString) quarantines the row with its
- * quarantineReason. Process payloads are not scanned for LargeString.
+ * reason. Process payloads are not scanned for LargeString.
  *
  * @internal
  */
@@ -98,15 +98,15 @@ final class ProcessRowCodec {
         waiting_for: $row['waiting_for'] === null ? null : (string) $row['waiting_for'],
         match_criteria: $criteria,
         last_error: $row['last_error'] === null ? null : (string) $row['last_error'],
-        created_at: Time::fromDbOrNull($row['created_at'] === null ? null : (string) $row['created_at']),
-        updated_at: Time::fromDbOrNull($row['updated_at'] === null ? null : (string) $row['updated_at']),
+        created_at: Time::from_db_or_null($row['created_at'] === null ? null : (string) $row['created_at']),
+        updated_at: Time::from_db_or_null($row['updated_at'] === null ? null : (string) $row['updated_at']),
         await_mechanism: $mechanism,
         ignited_by_event_id: $row['ignited_by_event_id'] === null ? null : (string) $row['ignited_by_event_id'],
         source: $row['source'] === null ? null : (string) $row['source'],
       );
       return $process;
     } catch (UndecodableLargeString $e) {
-      throw new \UnexpectedValueException(sprintf('%s cannot be rebuilt: %s', $class, $e->quarantineReason), 0, $e);
+      throw new \UnexpectedValueException(sprintf('%s cannot be rebuilt: %s', $class, $e->reason), 0, $e);
     } catch (\UnexpectedValueException $e) {
       throw $e;
     } catch (\Throwable $e) {
@@ -122,7 +122,7 @@ final class ProcessRowCodec {
       if ($param->isPromoted()) {
         $value = $reflection->getProperty($param->getName())->getValue($p);
         // D6: a LargeString is stored in its wire form (base64, length, sha256).
-        $data[$param->getName()] = $value instanceof LargeString ? $value->toPayload() : $value;
+        $data[$param->getName()] = $value instanceof LargeString ? $value->encode() : $value;
       }
     }
     return $data;
@@ -131,14 +131,14 @@ final class ProcessRowCodec {
   /**
    * D6: a constructor parameter typed LargeString (nullable or not) is
    * revived from its wire form. A corrupt one throws UndecodableLargeString;
-   * decode() turns its quarantineReason into the quarantine reason.
+   * decode() turns its reason into the quarantine reason.
    *
    * @throws UndecodableLargeString
    */
   private static function revive(\ReflectionParameter $param, mixed $value): mixed {
     $type = $param->getType();
     if ($value !== null && $type instanceof \ReflectionNamedType && $type->getName() === LargeString::class) {
-      return LargeString::fromPayload($value);
+      return LargeString::decode($value);
     }
     return $value;
   }

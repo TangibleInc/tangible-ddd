@@ -29,10 +29,10 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * - release(): the explicit repair path (an operator re-runs an ignition).
  *
  * WorkflowIgniter also keeps its start markers here
- * (WorkflowIgnitionKey::startMarker(), a 36-character uuid5): ordinary rows,
- * nothing extra is needed. Key choice is the caller's: keyForFact() (=
- * WorkflowIgnitionKey::forFact) for "once per fact", a cron tick uses
- * WorkflowIgnitionKey::perMinute(). Storage errors propagate as DBAL
+ * (WorkflowIgnitionKey::start_marker(), a 36-character uuid5): ordinary rows,
+ * nothing extra is needed. Key choice is the caller's: fact_key() (=
+ * WorkflowIgnitionKey::for_fact) for "once per fact", a cron tick uses
+ * WorkflowIgnitionKey::per_minute(). Storage errors propagate as DBAL
  * exceptions; claim() never returns false for a failure.
  */
 final class DbalWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
@@ -51,9 +51,9 @@ final class DbalWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
     $this->table = (new PrefixedTableNames($tablePrefix))->table('ddd_workflow_ignitions');
   }
 
-  /** uuid5(event_id, kind): the same key as core WorkflowIgnitionKey::forFact(). */
-  public static function keyForFact(string $eventId, string $kind): string {
-    return WorkflowIgnitionKey::forFact($eventId, $kind);
+  /** uuid5(event_id, kind): the same key as core WorkflowIgnitionKey::for_fact(). */
+  public static function fact_key(string $eventId, string $kind): string {
+    return WorkflowIgnitionKey::for_fact($eventId, $kind);
   }
 
   public function claim(string $dedupKey, string $kind, ?string $eventId = null): bool {
@@ -65,7 +65,7 @@ final class DbalWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
     }
     return $this->connection->executeStatement(
       "INSERT INTO {$this->table} (dedup_key, kind, event_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (dedup_key) DO NOTHING",
-      [$dedupKey, $kind, $eventId, Time::toDb($this->clock->now())]
+      [$dedupKey, $kind, $eventId, Time::to_db($this->clock->now())]
     ) === 1;
   }
 
@@ -87,7 +87,7 @@ final class DbalWorkflowIgnitionLedger implements IWorkflowIgnitionLedger {
       (string) $row['kind'],
       $row['workflow_id'] === null ? null : (int) $row['workflow_id'],
       $row['event_id'] === null ? null : (string) $row['event_id'],
-      Time::fromDb((string) $row['created_at']),
+      Time::from_db((string) $row['created_at']),
     );
   }
 

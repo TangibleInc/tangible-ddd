@@ -20,7 +20,7 @@ use TangibleDDD\WordPress\Adapter\ActionSchedulerTransport;
  *   exactly what the real transport returns when Action Scheduler could not
  *   store the action (the relay treats it as a rejection, CONF-4).
  *
- * sharesConnectionWith() asks the real transport about the store under a
+ * shares_connection() asks the real transport about the store under a
  * conformance RecordingOutboxStore, so the relay still runs submit + accept
  * in one wpdb transaction.
  */
@@ -48,11 +48,11 @@ final class FaultingTransport implements ITransport {
     return $this->inner->submit($c, $wrappedEnvelope, $dueAt);
   }
 
-  public function sharesConnectionWith(IOutboxStore $store): bool {
+  public function shares_connection(IOutboxStore $store): bool {
     while ($store instanceof RecordingOutboxStore) {
       $store = $store->inner();
     }
-    return $this->inner->sharesConnectionWith($store);
+    return $this->inner->shares_connection($store);
   }
 
   public function rejectNext(?\Throwable $e = null): void {

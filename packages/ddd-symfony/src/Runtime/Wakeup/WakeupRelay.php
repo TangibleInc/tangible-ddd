@@ -20,9 +20,9 @@ use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
 /**
  * The wakeup half of the sf relay tick (register 3.6, 5.3): projects due
  * intent rows to the `ddd_wakeups` Messenger transport and runs the
- * stranded scan. `ddd:relay` calls runOnce() after each outbox step.
+ * stranded scan. `ddd:relay` calls run_once() after each outbox step.
  *
- * - Projection: claimDue(now, limit, lease) leases due intents; each lease
+ * - Projection: claim_due(now, limit, lease) leases due intents; each lease
  *   is sent as one ProcessWakeupMessage with no DelayStamp (the intent is
  *   already due; no multi-day delays live in the transport, E section 7).
  *   A send failure retries the intent later (2 s x 2^n); a lost message or a
@@ -34,7 +34,7 @@ use TangibleDDD\Symfony\Messenger\ProcessWakeupMessage;
  *   a `running` row is logged and reported only, because re-running it
  *   would repeat step effects (repairs are operator commands).
  *
- * Must run outside an open transaction (claimDue refuses to join one).
+ * Must run outside an open transaction (claim_due refuses to join one).
  */
 final class WakeupRelay implements IWakeupRelayStep {
 
@@ -57,25 +57,25 @@ final class WakeupRelay implements IWakeupRelayStep {
     $this->logger = $logger ?? new NullLogger();
   }
 
-  public function runOnce(int $limit = 50): WakeupRelayReport {
+  public function run_once(int $limit = 50): WakeupRelayReport {
     [$requeued, $reported] = $this->scanStrandedIfDue();
 
     $projected = [];
     $failed = [];
     $now = $this->clock->now();
-    foreach ($this->scheduler->claimDue($now, $limit, $this->leaseSeconds) as $claim) {
-      $key = $claim->intent->idempotencyKey;
+    foreach ($this->scheduler->claim_due($now, $limit, $this->leaseSeconds) as $claim) {
+      $key = $claim->intent->key;
       try {
         $this->sender->send(new Envelope(
-          ProcessWakeupMessage::fromClaim($claim),
+          ProcessWakeupMessage::from_claim($claim),
           $this->busName === null ? [] : [new BusNameStamp($this->busName)],
         ));
         $projected[] = $key;
       } catch (\Throwable $e) {
         $failed[] = $key;
-        $delay = ProcessWakeupHandler::backoffSeconds($claim->attempts);
+        $delay = ProcessWakeupHandler::backoff_seconds($claim->attempts);
         $this->logger->warning("[ddd wakeup] sending $key to the wakeup transport failed, retrying in {$delay}s: {$e->getMessage()}");
-        $this->scheduler->retryLater($claim, 'send failed: ' . $e->getMessage(), $now->modify("+{$delay} seconds"));
+        $this->scheduler->retry_later($claim, 'send failed: ' . $e->getMessage(), $now->modify("+{$delay} seconds"));
       }
     }
 
@@ -92,19 +92,19 @@ final class WakeupRelay implements IWakeupRelayStep {
 
     $requeued = [];
     $reported = [];
-    foreach ($this->store->findStranded($now) as $s) {
+    foreach ($this->store->find_stranded($now) as $s) {
       if ($s->status === 'scheduled') {
         $this->boundary->run(fn () => $this->scheduler->schedule(
-          WakeupIntent::continuation($this->consumer, $s->processId, $s->stepIndex, $now)
+          WakeupIntent::continuation($this->consumer, $s->process_id, $s->step_index, $now)
         ));
-        $requeued[] = $s->processId;
-        $this->logger->warning("[ddd wakeup] process #{$s->processId} ({$s->processClass}) was scheduled with no live intent; re-queued a Continue intent");
+        $requeued[] = $s->process_id;
+        $this->logger->warning("[ddd wakeup] process #{$s->process_id} ({$s->process_class}) was scheduled with no live intent; re-queued a Continue intent");
         continue;
       }
-      $reported[] = $s->processId;
+      $reported[] = $s->process_id;
       $this->logger->warning(sprintf(
         '[ddd wakeup] process #%d (%s) has been running since %s with no live intent; repair it with ddd:ops:stranded',
-        $s->processId, $s->processClass, $s->updatedAt->format(DATE_ATOM)
+        $s->process_id, $s->process_class, $s->updated_at->format(DATE_ATOM)
       ));
     }
     return [$requeued, $reported];

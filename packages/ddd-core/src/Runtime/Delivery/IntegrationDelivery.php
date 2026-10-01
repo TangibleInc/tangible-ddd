@@ -19,20 +19,20 @@ use TangibleDDD\Runtime\Support\Log;
  *   unwrap → Correlation::within(for_fact(event_id)) → each subscriber in
  *   priority order, skipping those already in the ledger.
  *
- * Per subscriber: success → markDelivered; a throw → markFailed with the
+ * Per subscriber: success → mark_delivered; a throw → mark_failed with the
  * next attempt number, logged, and delivery CONTINUES with the next
  * subscriber. When a subscriber's attempts reach the budget its handler is
- * never run again for that fact, and its onExhausted compensation (D1: the
- * failureCommand() of an IExternalEffectCommand) fires. Only after the
- * callback returns is the terminal marker (IDeliveryLedger::markExhausted)
+ * never run again for that fact, and its on_exhausted compensation (D1: the
+ * failure_command() of an IExternalEffectCommand) fires. Only after the
+ * callback returns is the terminal marker (IDeliveryLedger::mark_exhausted)
  * written and the subscriber reported `exhausted`.
  *
- * Compensation is durable and retryable: a throwing onExhausted is logged
+ * Compensation is durable and retryable: a throwing on_exhausted is logged
  * (not propagated), the marker is NOT written, and the subscriber is
- * reported `failed` so needsRetry() stays true. A crash between the final
- * markFailed() and the marker leaves the same state. On every later
+ * reported `failed` so needs_retry() stays true. A crash between the final
+ * mark_failed() and the marker leaves the same state. On every later
  * delivery a pair with attempts >= budget and no marker re-fires the
- * callback (with a DeliveryBudgetExhausted carrying the ledger's lastError)
+ * callback (with a DeliveryBudgetExhausted carrying the ledger's last_error)
  * until it succeeds. The guarantee is at-least-once, effectively once after
  * success: the callback must be idempotent (deterministic command id), since
  * a crash after it returned but before the marker commits re-fires it.
@@ -83,7 +83,7 @@ final class IntegrationDelivery {
    * Handler-execution backoff (5.1): 30 s × 2^(n-1), capped at 3600 s, where
    * $attempt is the failed attempt count (>= 1). Hosts schedule retries with it.
    */
-  public static function backoffSeconds(int $attempt): int {
+  public static function backoff_seconds(int $attempt): int {
     $n = max(1, $attempt) - 1;
     return $n >= 7 ? 3600 : min(3600, 30 * (2 ** $n));
   }
@@ -135,8 +135,8 @@ final class IntegrationDelivery {
       $attempts = $this->ledger->attempts($s->id, $eventId);
       if ($attempts >= $this->budget) {
         // Budget reached but no terminal marker: the compensation never
-        // completed (callback threw, or the process died after markFailed).
-        $last = new DeliveryBudgetExhausted($s->id, $eventId, $attempts, $this->ledger->lastError($s->id, $eventId));
+        // completed (callback threw, or the process died after mark_failed).
+        $last = new DeliveryBudgetExhausted($s->id, $eventId, $attempts, $this->ledger->last_error($s->id, $eventId));
         if ($this->exhaust($s, $event, $eventId, $last)) {
           $exhausted[] = $s->id;
         } else {
@@ -149,7 +149,7 @@ final class IntegrationDelivery {
         ($s->handle)($event, $eventId);
       } catch (\Throwable $e) {
         $attempt = $attempts + 1;
-        $this->ledger->markFailed($s->id, $eventId, $e->getMessage(), $attempt);
+        $this->ledger->mark_failed($s->id, $eventId, $e->getMessage(), $attempt);
         Log::write($this->log, sprintf(
           '[ddd delivery] subscriber %s failed on %s event %s (attempt %d/%d): %s',
           $s->id, $eventClass, $eventId, $attempt, $this->budget, $e->getMessage()
@@ -163,7 +163,7 @@ final class IntegrationDelivery {
         continue;
       }
 
-      $this->ledger->markDelivered($s->id, $eventId);
+      $this->ledger->mark_delivered($s->id, $eventId);
       $delivered[] = $s->id;
     }
 
@@ -174,7 +174,7 @@ final class IntegrationDelivery {
    * A poison fact (from_payload() throws): count one failed attempt against
    * every subscriber still pending for it, so the 5.1 budget bounds it
    * (wave1-notes core minor 1). A subscriber that reaches the budget is
-   * marked exhausted WITHOUT its onExhausted callback, because there is no
+   * marked exhausted WITHOUT its on_exhausted callback, because there is no
    * event to hand it; that is logged. While any subscriber has budget left
    * the decode error is rethrown and the host retries the fact; once none
    * has, the outcome is returned (nothing pending) and the fact stops.
@@ -196,10 +196,10 @@ final class IntegrationDelivery {
       }
 
       $attempt = $this->ledger->attempts($s->id, $eventId) + 1;
-      $this->ledger->markFailed($s->id, $eventId, $error, $attempt);
+      $this->ledger->mark_failed($s->id, $eventId, $error, $attempt);
 
       if ($attempt >= $this->budget) {
-        $this->ledger->markExhausted($s->id, $eventId);
+        $this->ledger->mark_exhausted($s->id, $eventId);
         $exhausted[] = $s->id;
         Log::write($this->log, sprintf(
           '[ddd delivery] %s event %s cannot be decoded; subscriber %s exhausted its budget (%d) without compensation: %s',
@@ -224,9 +224,9 @@ final class IntegrationDelivery {
    * subscribers still run. Ledger errors propagate.
    */
   private function exhaust(Subscriber $s, IIntegrationEvent $event, string $eventId, \Throwable $last): bool {
-    if ($s->onExhausted !== null) {
+    if ($s->on_exhausted !== null) {
       try {
-        ($s->onExhausted)($event, $last);
+        ($s->on_exhausted)($event, $last);
       } catch (\Throwable $e) {
         Log::write($this->log, sprintf(
           '[ddd delivery] failure callback of %s for event %s threw; compensation stays pending and is retried: %s',
@@ -235,7 +235,7 @@ final class IntegrationDelivery {
         return false;
       }
     }
-    $this->ledger->markExhausted($s->id, $eventId);
+    $this->ledger->mark_exhausted($s->id, $eventId);
     return true;
   }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TangibleDDD\Runtime\Delivery;
 
 /**
- * The delivery stage of Drain::runOnce() (register 3.6, 5.1): run up to
+ * The delivery stage of Drain::run_once() (register 3.6, 5.1): run up to
  * $limit due fact deliveries (each through IntegrationDelivery, retrying
  * the failed subscribers of a fact with the handler-execution backoff) and
  * return how many were processed. pdo implements it over the `deliver` job
@@ -18,5 +18,5 @@ namespace TangibleDDD\Runtime\Delivery;
  */
 interface IDeliveryWorker {
 
-  public function runDue(\DateTimeImmutable $now, int $limit): int;
+  public function run_due(\DateTimeImmutable $now, int $limit): int;
 }

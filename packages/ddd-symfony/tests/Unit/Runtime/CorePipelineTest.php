@@ -54,7 +54,7 @@ final class CorePipelineTest extends TestCase {
 
   protected function tearDown(): void {
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function bracket(IAuditSink $sink, ?IAuditPolicy $policy = null): CorrelationMiddleware {
@@ -90,7 +90,7 @@ final class CorePipelineTest extends TestCase {
       public function audits(object $command): bool {
         return false;
       }
-      public function captureParameters(object $command): bool {
+      public function captures_parameters(object $command): bool {
         return false;
       }
     };
@@ -117,7 +117,7 @@ final class CorePipelineTest extends TestCase {
 
   public function test_the_outbox_bus_stamps_the_record_with_an_absolute_due_time(): void {
     $store = new InMemoryOutboxStore($this->clock);
-    $bus = Factory::integrationBus($store, $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
+    $bus = Factory::integration_bus($store, $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
 
     Correlation::within(TraceContext::root()->for_act('cmd-9', 'Cmd'), fn () => $bus->publish(new PingFact(3)));
 
@@ -130,14 +130,14 @@ final class CorePipelineTest extends TestCase {
   }
 
   public function test_the_bus_is_the_core_bus_behind_the_class_recording_decorator(): void {
-    $bus = Factory::integrationBus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
+    $bus = Factory::integration_bus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
 
     self::assertInstanceOf(FactClassRecordingEventBus::class, $bus);
     self::assertInstanceOf(OutboxIntegrationEventBus::class, $bus->inner());
   }
 
   public function test_the_outbox_bus_refuses_a_fact_published_from_a_process_step(): void {
-    $bus = Factory::integrationBus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
+    $bus = Factory::integration_bus(new InMemoryOutboxStore($this->clock), $this->clock, $this->consumer, new \TangibleDDD\Application\Outbox\OutboxConfig());
 
     $this->expectException(FactPublishedInsideProcess::class);
     Correlation::within(TraceContext::root()->for_trajectory('7', 'P'), fn () => $bus->publish(new PingFact()));

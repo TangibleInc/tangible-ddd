@@ -30,16 +30,16 @@ final class ConsoleOperatorActorProvider implements EventSubscriberInterface {
 
   public static function getSubscribedEvents(): array {
     return [
-      ConsoleEvents::COMMAND => ['onCommand', 1024],
-      ConsoleEvents::TERMINATE => ['onTerminate', -1024],
+      ConsoleEvents::COMMAND => ['on_command', 1024],
+      ConsoleEvents::TERMINATE => ['on_terminate', -1024],
     ];
   }
 
-  public function onCommand(ConsoleCommandEvent $event): void {
+  public function on_command(ConsoleCommandEvent $event): void {
     $this->command = $event->getCommand()?->getName() ?? 'console';
   }
 
-  public function onTerminate(ConsoleTerminateEvent $event): void {
+  public function on_terminate(ConsoleTerminateEvent $event): void {
     $this->command = null;
   }
 

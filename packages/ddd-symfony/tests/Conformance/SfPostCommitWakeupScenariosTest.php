@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\PostCommitWakeupScenarios;
 #[Group('conformance')]
 final class SfPostCommitWakeupScenariosTest extends PostCommitWakeupScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new SfHostFixture();
   }
 }

@@ -13,7 +13,7 @@ use TangibleDDD\Conformance\Scenarios\PostCommitWakeupScenarios;
 #[Group('simulated')]
 final class SimulatedPostCommitWakeupScenariosTest extends PostCommitWakeupScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemSimulatedHostFixture();
   }
 }

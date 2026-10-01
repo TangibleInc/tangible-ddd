@@ -37,8 +37,8 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 final class Factory {
 
   /** The audit environment: kernel env plus the consumer version, an unset env version as '0.0.0' (L4). */
-  public static function auditEnvironment(string $env, ?string $version): PhpEnvironmentProvider {
-    return new PhpEnvironmentProvider(['env' => $env, 'app' => SymfonyConsumerConfig::normaliseVersion($version)]);
+  public static function environment(string $env, ?string $version): PhpEnvironmentProvider {
+    return new PhpEnvironmentProvider(['env' => $env, 'app' => SymfonyConsumerConfig::normalise_version($version)]);
   }
 
   public static function delivery(ISubscriptionRegistry $registry, IDeliveryLedger $ledger, int $budget, ?LoggerInterface $logger = null): IntegrationDelivery {
@@ -51,7 +51,7 @@ final class Factory {
    * (CR sf-1). The fact observer resolves from HostDefaults per consumer,
    * else NullFactObserver (O4).
    */
-  public static function integrationBus(IOutboxStore $store, IClock $clock, IDDDConfig $consumer, OutboxConfig $config): FactClassRecordingEventBus {
+  public static function integration_bus(IOutboxStore $store, IClock $clock, IDDDConfig $consumer, OutboxConfig $config): FactClassRecordingEventBus {
     return new FactClassRecordingEventBus(
       new OutboxIntegrationEventBus(null, $consumer, null, $clock, $store, $config),
       $store instanceof DbalPostgresOutboxStore ? $store : null,
@@ -63,12 +63,12 @@ final class Factory {
    * advisory lock (5.2), registered with the RuntimeReset lock guard so a
    * lock held across a message boundary is reported and force-released.
    */
-  public static function processLock(Connection $connection, string $poolerPolicy = 'warn', ?LoggerInterface $logger = null): ReentrantProcessLock {
+  public static function process_lock(Connection $connection, string $poolerPolicy = 'warn', ?LoggerInterface $logger = null): ReentrantProcessLock {
     $lock = new ReentrantProcessLock(
       new PostgresAdvisoryProcessLock($connection, $logger, PoolerPolicy::from($poolerPolicy)),
       $logger,
     );
-    RuntimeReset::guardLock($lock);
+    RuntimeReset::guard($lock);
     return $lock;
   }
 
@@ -80,7 +80,7 @@ final class Factory {
    * pooled connection; the first step runs in a worker. $inbandStart
    * (`tangible_ddd.process.inband_start: true`) maps to StartMode::InBand.
    */
-  public static function processRunner(
+  public static function process_runner(
     IDDDConfig $consumer,
     IProcessLock $lock,
     IProcessStore $store,
@@ -93,18 +93,18 @@ final class Factory {
   ): ProcessRunner {
     return new ProcessRunner(
       $consumer, null, $lock, $store, $wakeups, $subscriptions, $boundary, $clock,
-      self::startMode($inbandStart),
+      self::start_mode($inbandStart),
       $logger,
     );
   }
 
   /** The bundle's start mode: Deferred unless `tangible_ddd.process.inband_start` is true. */
-  public static function startMode(bool $inbandStart): StartMode {
+  public static function start_mode(bool $inbandStart): StartMode {
     return $inbandStart ? StartMode::InBand : StartMode::Deferred;
   }
 
   /** @param array<string, int|float> $relay */
-  public static function outboxConfig(array $relay): OutboxConfig {
+  public static function outbox_config(array $relay): OutboxConfig {
     return new OutboxConfig(
       batch_size: (int) $relay['batch_size'],
       max_attempts: (int) $relay['max_attempts'],
@@ -119,7 +119,7 @@ final class Factory {
   /**
    * @param list<array{0: string, 1: int, 2: string, 3: string}> $listeners [event, priority, service id, method]
    */
-  public static function domainDispatcher(array $listeners, ContainerInterface $locator): OrderedListenerDispatcher {
+  public static function dispatcher(array $listeners, ContainerInterface $locator): OrderedListenerDispatcher {
     $dispatcher = new OrderedListenerDispatcher();
     foreach ($listeners as [$event, $priority, $id, $method]) {
       $dispatcher->listen(

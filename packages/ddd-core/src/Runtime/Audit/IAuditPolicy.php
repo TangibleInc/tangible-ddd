@@ -17,5 +17,5 @@ interface IAuditPolicy {
 
   public function audits(object $command): bool;
 
-  public function captureParameters(object $command): bool;
+  public function captures_parameters(object $command): bool;
 }

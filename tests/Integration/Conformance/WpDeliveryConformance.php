@@ -11,7 +11,7 @@ use TangibleDDD\Conformance\Scenarios\DeliveryScenarios;
 #[Group('wp')]
 final class WpDeliveryConformance extends DeliveryScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 }

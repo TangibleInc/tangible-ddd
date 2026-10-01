@@ -26,7 +26,7 @@ final class PostgresNotifyWakeupTest extends PostgresTestCase {
     (new PostgresNotifyRelayWakeup($this->db))->poke('acme');
 
     self::assertTrue($waiter->wait(2.0));
-    self::assertSame(['acme'], $waiter->lastPayloads());
+    self::assertSame(['acme'], $waiter->payloads());
   }
 
   public function test_a_poke_inside_a_transaction_is_delivered_at_commit_only(): void {

@@ -14,7 +14,7 @@ use TangibleDDD\Runtime\Lock\LockNotAcquired;
 /**
  * IProcessLock on MySQL named locks (register 3.7, bug 1, CR-4).
  *
- * - Name: `ddd:` + sha1(consumer|tenant|process_id) (LockKey::mysqlName),
+ * - Name: `ddd:` + sha1(consumer|tenant|process_id) (LockKey::mysql_name),
  *   within the 64-character GET_LOCK limit, so two consumers (or tenants)
  *   with the same process id never block each other (`lock.namespace`).
  * - Fail-closed: only GET_LOCK returning exactly 1 enters. 0 (timeout or
@@ -27,7 +27,7 @@ use TangibleDDD\Runtime\Lock\LockNotAcquired;
  *   with RELEASE_LOCK in `finally`. A reconnect silently drops it, which is
  *   why every process save is version-fenced.
  * - release() never throws: a failed or unknown release is logged as a bug.
- * - forceReleaseAll() releases only the locks this instance took (never
+ * - release_all() releases only the locks this instance took (never
  *   RELEASE_ALL_LOCKS(), which would also drop the host's own named locks).
  *
  * Not re-entrant by itself: wrap it in ReentrantProcessLock, so the backend
@@ -46,16 +46,16 @@ final class MySqlNamedLock implements IProcessLock {
     $this->logger = $logger ?? new NullLogger();
   }
 
-  public static function nameOf(LockKey $key): string {
-    return $key->mysqlName();
+  public static function name_of(LockKey $key): string {
+    return $key->mysql_name();
   }
 
   public function acquire(LockKey $k, float $timeoutSeconds): LockHandle {
-    $name = self::nameOf($k);
+    $name = self::name_of($k);
     $timeout = max(0, (int) ceil($timeoutSeconds));
 
     try {
-      $row = $this->db->fetchOne('SELECT GET_LOCK(?, ?) AS acquired', [$name, $timeout]);
+      $row = $this->db->fetch_one('SELECT GET_LOCK(?, ?) AS acquired', [$name, $timeout]);
     } catch (\Throwable $e) {
       throw new LockNotAcquired("GET_LOCK('$name') failed for {$k->id()}: " . $e->getMessage(), 0, $e);
     }
@@ -83,11 +83,11 @@ final class MySqlNamedLock implements IProcessLock {
     $this->releaseName($name, $h->key->id());
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     return count($this->held);
   }
 
-  public function forceReleaseAll(): int {
+  public function release_all(): int {
     $held = $this->held;
     $this->held = [];
     foreach ($held as $name) {
@@ -98,7 +98,7 @@ final class MySqlNamedLock implements IProcessLock {
 
   private function releaseName(string $name, string $what): void {
     try {
-      $released = $this->db->fetchOne('SELECT RELEASE_LOCK(?) AS released', [$name])['released'] ?? null;
+      $released = $this->db->fetch_one('SELECT RELEASE_LOCK(?) AS released', [$name])['released'] ?? null;
       if ($released === null || (int) $released !== 1) {
         $this->logger->error(sprintf('[ddd lock] RELEASE_LOCK(%s) for %s returned %s: the lock was not held by this session (bug)', $name, $what, var_export($released, true)));
       }

@@ -53,7 +53,7 @@ final class WpNamedLock {
    *
    * @throws LockNotAcquired with the same reason texts as acquire()
    */
-  public static function acquireBoth(string $first, string $second, int $timeoutSeconds = 5): void {
+  public static function acquire_both(string $first, string $second, int $timeoutSeconds = 5): void {
     $db = self::db();
     $acquired = $db->get_var($db->prepare(
       'SELECT IF(b.first = 1, IF(b.second = 1, 1, IF(RELEASE_LOCK(b.name) IS NULL, b.second, b.second)), b.first) AS acquired
@@ -75,8 +75,8 @@ final class WpNamedLock {
     }
   }
 
-  /** Release both names (the reverse of acquireBoth()); never throws, a failure is logged as a bug. */
-  public static function releaseBoth(string $first, string $second): void {
+  /** Release both names (the reverse of acquire_both()); never throws, a failure is logged as a bug. */
+  public static function release_both(string $first, string $second): void {
     try {
       $db = self::db();
       $db->get_var($db->prepare('SELECT COALESCE(RELEASE_LOCK(%s), 0) + COALESCE(RELEASE_LOCK(%s), 0)', $second, $first));
@@ -90,7 +90,7 @@ final class WpNamedLock {
    * connection included, is not free). A query error answers false: a
    * probe that cannot see the lock must not report the holder as gone.
    */
-  public static function isFree(string ...$names): bool {
+  public static function is_free(string ...$names): bool {
     if ($names === []) {
       return true;
     }
@@ -105,10 +105,10 @@ final class WpNamedLock {
   /**
    * Whether no OTHER session holds any of the names: each is free, or held
    * by this connection (IS_USED_LOCK = CONNECTION_ID()). The stranded scan
-   * uses it, because the WP8-10 repair guard re-reads findStranded() while
+   * uses it, because the WP8-10 repair guard re-reads find_stranded() while
    * it holds the process lock itself. A query error answers false.
    */
-  public static function isFreeOrHeldHere(string ...$names): bool {
+  public static function is_free_or_mine(string ...$names): bool {
     if ($names === []) {
       return true;
     }

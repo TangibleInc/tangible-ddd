@@ -17,7 +17,7 @@ use TangibleDDD\Runtime\IClock;
  * Doctrine transport.
  *
  * - $shared: a fault queue several senders consult (the wake hand-off of
- *   any worker, ProcessHost::failNextWakeHandoff()).
+ *   any worker, ProcessHost::fail_next_handoff()).
  * - $hostClock: records, per transport message id, the host clock minus the
  *   wall clock at the send. The Doctrine transport stores
  *   `available_at = wall now + DelayStamp`, so `available_at + offset` is

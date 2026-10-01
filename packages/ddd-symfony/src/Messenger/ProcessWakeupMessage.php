@@ -21,32 +21,32 @@ final class ProcessWakeupMessage {
   public function __construct(
     public readonly string $kind,
     public readonly string $consumer,
-    public readonly ?int $processId,
-    public readonly ?int $stepIndex,
-    public readonly ?string $expectedStatus,
-    public readonly string $dueAt,
-    public readonly string $idempotencyKey,
-    public readonly string $claimToken,
-    public readonly string $leaseUntil,
+    public readonly ?int $process_id,
+    public readonly ?int $step_index,
+    public readonly ?string $expected_status,
+    public readonly string $due_at,
+    public readonly string $key,
+    public readonly string $claim_token,
+    public readonly string $lease_until,
     public readonly int $attempts,
   ) {}
 
-  public static function fromClaim(ClaimedWakeup $w): self {
+  public static function from_claim(ClaimedWakeup $w): self {
     $i = $w->intent;
     return new self(
-      $i->kind->value, $i->consumer, $i->processId, $i->stepIndex, $i->expectedStatus,
-      self::iso($i->dueAt), $i->idempotencyKey, $w->claimToken, self::iso($w->leaseUntil), $w->attempts,
+      $i->kind->value, $i->consumer, $i->process_id, $i->step_index, $i->expected_status,
+      self::iso($i->due_at), $i->key, $w->token, self::iso($w->lease_until), $w->attempts,
     );
   }
 
-  public function toClaim(): ClaimedWakeup {
+  public function to_claim(): ClaimedWakeup {
     return new ClaimedWakeup(
       new WakeupIntent(
-        WakeKind::from($this->kind), $this->consumer, $this->processId, $this->stepIndex, $this->expectedStatus,
-        new \DateTimeImmutable($this->dueAt), $this->idempotencyKey,
+        WakeKind::from($this->kind), $this->consumer, $this->process_id, $this->step_index, $this->expected_status,
+        new \DateTimeImmutable($this->due_at), $this->key,
       ),
-      $this->claimToken,
-      new \DateTimeImmutable($this->leaseUntil),
+      $this->claim_token,
+      new \DateTimeImmutable($this->lease_until),
       $this->attempts,
     );
   }

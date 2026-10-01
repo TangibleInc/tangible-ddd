@@ -11,7 +11,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
 
 /**
  * In-memory ITransport recording each accepted submission with its absolute
- * due time. Controls: rejectNext() (throws), returnNoRefNext() (accepted
+ * due time. Controls: reject_next() (throws), drop_next_ref() (accepted
  * without a reference, for `relay.invalid-acceptance`).
  *
  * Shared connection (CONF-5): with `sharesConnection: true` the transport
@@ -56,23 +56,23 @@ final class InMemoryTransport implements ITransport, InMemoryTransactional {
     return $ref;
   }
 
-  public function sharesConnectionWith(IOutboxStore $store): bool {
+  public function shares_connection(IOutboxStore $store): bool {
     return $this->sharesConnection;
   }
 
-  public function rejectNext(?\Throwable $e = null): void {
+  public function reject_next(?\Throwable $e = null): void {
     $this->reject = $e ?? new TransportRejected('rejected by InMemoryTransport');
   }
 
-  public function returnNoRefNext(): void {
+  public function drop_next_ref(): void {
     $this->noRef = true;
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->submissions, $this->seq];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->submissions, $this->seq] = $state;
   }
 }

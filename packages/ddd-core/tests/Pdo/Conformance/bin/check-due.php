@@ -31,7 +31,7 @@ if ($xml === false) {
 }
 
 $gate = PdoDueGate::fromJUnit($xml);
-$due = ScenarioCatalogue::dueBy('pdo', $wave);
+$due = ScenarioCatalogue::due_by('pdo', $wave);
 sort($due);
 $bad = 0;
 foreach ($due as $id) {

@@ -13,6 +13,6 @@ final class EffectResult {
   /** @param array<string, scalar|array|null> $data */
   public function __construct(
     public readonly array $data = [],
-    public readonly ?string $externalRef = null,
+    public readonly ?string $external_ref = null,
   ) {}
 }

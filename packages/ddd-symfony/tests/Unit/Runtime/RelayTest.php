@@ -51,11 +51,11 @@ final class RelayTest extends TestCase {
     $this->append('later', delay: 120);
     $transport = new InMemoryTransport();
 
-    $report = $this->relay($transport)->runOnce(10);
+    $report = $this->relay($transport)->run_once(10);
 
     self::assertSame(['a'], $report->accepted);
-    self::assertSame('accepted', $this->outbox->statusOf('a'));
-    self::assertSame('pending', $this->outbox->statusOf('later'));
+    self::assertSame('accepted', $this->outbox->status_of('a'));
+    self::assertSame('pending', $this->outbox->status_of('later'));
     self::assertEquals($this->clock->now(), $transport->submissions[0]['due_at']);
     self::assertSame('a', $transport->submissions[0]['envelope']['__event_id']);
     self::assertSame('c', $transport->submissions[0]['envelope']['__correlation_id']);
@@ -64,17 +64,17 @@ final class RelayTest extends TestCase {
   public function test_a_shared_connection_transport_runs_submit_and_accept_in_one_transaction(): void {
     $this->append('a');
 
-    $this->relay(new InMemoryTransport(sharesConnection: true))->runOnce(10);
+    $this->relay(new InMemoryTransport(sharesConnection: true))->run_once(10);
 
     self::assertSame(1, $this->boundary->commits());
-    self::assertSame('accepted', $this->outbox->statusOf('a'));
+    self::assertSame('accepted', $this->outbox->status_of('a'));
   }
 
   public function test_a_separate_connection_transport_submits_then_accepts_without_a_transaction(): void {
     $this->append('a');
-    $this->relay(new InMemoryTransport(sharesConnection: false))->runOnce(10);
+    $this->relay(new InMemoryTransport(sharesConnection: false))->run_once(10);
     self::assertSame(0, $this->boundary->commits());
-    self::assertSame('accepted', $this->outbox->statusOf('a'));
+    self::assertSame('accepted', $this->outbox->status_of('a'));
   }
 
   public function test_a_rejection_retries_with_backoff_then_dead_letters_at_max_attempts(): void {
@@ -82,28 +82,28 @@ final class RelayTest extends TestCase {
     $transport = new InMemoryTransport();
     $relay = $this->relay($transport);
 
-    $transport->rejectNext();
-    $first = $relay->runOnce(10);
+    $transport->reject_next();
+    $first = $relay->run_once(10);
     self::assertSame(['a'], $first->retried);
-    self::assertSame(1, $this->outbox->attemptsOf('a'));
-    self::assertSame([], $relay->runOnce(10)->claimed, 'backoff: 60 s before the next attempt');
+    self::assertSame(1, $this->outbox->attempts_of('a'));
+    self::assertSame([], $relay->run_once(10)->claimed, 'backoff: 60 s before the next attempt');
 
     $this->clock->advance('+60 seconds');
-    $transport->rejectNext();
-    $second = $relay->runOnce(10);
-    self::assertSame(['a'], $second->deadLettered);
-    self::assertSame('dlq', $this->outbox->statusOf('a'));
+    $transport->reject_next();
+    $second = $relay->run_once(10);
+    self::assertSame(['a'], $second->dead_lettered);
+    self::assertSame('dlq', $this->outbox->status_of('a'));
   }
 
   public function test_a_submission_without_a_reference_is_never_accepted(): void {
     $this->append('a');
     $transport = new InMemoryTransport();
-    $transport->returnNoRefNext();
+    $transport->drop_next_ref();
 
-    $report = $this->relay($transport)->runOnce(10);
+    $report = $this->relay($transport)->run_once(10);
 
     self::assertSame(['a'], $report->retried);
-    self::assertSame('pending', $this->outbox->statusOf('a'));
+    self::assertSame('pending', $this->outbox->status_of('a'));
   }
 
   public function test_a_lost_lease_is_reported_and_discarded(): void {
@@ -119,15 +119,15 @@ final class RelayTest extends TestCase {
       public function accept(Claim $c, ?string $transportRef): bool {
         return false;
       }
-      public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+      public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
         return false;
       }
-      public function deadLetter(Claim $c, string $error): bool {
+      public function dead_letter(Claim $c, string $error): bool {
         return false;
       }
     };
 
-    $report = $this->relay(new InMemoryTransport(), $store)->runOnce(10);
+    $report = $this->relay(new InMemoryTransport(), $store)->run_once(10);
 
     self::assertSame(['a'], $report->lost);
     self::assertSame([], $report->accepted);
@@ -141,17 +141,17 @@ final class RelayTest extends TestCase {
       $transport = new InMemoryTransport();
       $relay = $this->relay($transport);
 
-      $transport->rejectNext();
-      $relay->runOnce(10);
+      $transport->reject_next();
+      $relay->run_once(10);
       $this->clock->advance('+60 seconds');
-      $transport->rejectNext();
-      $relay->runOnce(10);
+      $transport->reject_next();
+      $relay->run_once(10);
 
       $kinds = array_map(static fn (array $s) => get_class($s['event']), $signals->emitted);
       self::assertSame([OutboxAttemptFailed::class, OutboxDeadLettered::class], $kinds, 'the core OutboxProcessor signals, not a private loop');
       self::assertSame('sfr', $signals->emitted[0]['consumer']->prefix());
     } finally {
-      HostDefaults::resetForTests();
+      HostDefaults::reset_for_tests();
     }
   }
 
@@ -160,7 +160,7 @@ final class RelayTest extends TestCase {
     $this->append('b');
     $this->append('c');
 
-    $report = $this->relay(new InMemoryTransport())->runOnce(2);
+    $report = $this->relay(new InMemoryTransport())->run_once(2);
 
     self::assertSame(['a', 'b'], $report->claimed);
     self::assertSame(['a', 'b'], $report->accepted);
@@ -171,23 +171,23 @@ final class RelayTest extends TestCase {
     $transport = new InMemoryTransport();
     $relay = $this->relay($transport);
     $crash = new \RuntimeException('process died');
-    $relay->betweenSubmitAndAccept(static function () use ($crash): void { throw $crash; });
+    $relay->between_submit_and_accept(static function () use ($crash): void { throw $crash; });
 
     $thrown = null;
     try {
-      $relay->runOnce(10);
+      $relay->run_once(10);
     } catch (\Throwable $e) {
       $thrown = $e;
     }
 
     self::assertSame($crash, $thrown, 'the seam\'s throwable propagates unchanged');
     self::assertCount(1, $transport->submissions, 'the transport took it');
-    self::assertSame('pending', $this->outbox->statusOf('a'), 'never accepted');
-    self::assertSame(0, $this->outbox->attemptsOf('a'), 'a simulated crash is not an attempt');
+    self::assertSame('pending', $this->outbox->status_of('a'), 'never accepted');
+    self::assertSame(0, $this->outbox->attempts_of('a'), 'a simulated crash is not an attempt');
 
-    $relay->betweenSubmitAndAccept(null);
+    $relay->between_submit_and_accept(null);
     $this->clock->advance('+301 seconds');
-    self::assertSame(['a'], $relay->runOnce(10)->accepted, 'the lease expired; the next step relays it');
+    self::assertSame(['a'], $relay->run_once(10)->accepted, 'the lease expired; the next step relays it');
   }
 
   public function test_a_lost_lease_on_a_shared_connection_rolls_the_submission_back(): void {
@@ -205,15 +205,15 @@ final class RelayTest extends TestCase {
       public function accept(Claim $c, ?string $transportRef): bool {
         return false;
       }
-      public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+      public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
         return false;
       }
-      public function deadLetter(Claim $c, string $error): bool {
+      public function dead_letter(Claim $c, string $error): bool {
         return false;
       }
     };
 
-    $report = $this->relay($transport, $store)->runOnce(10);
+    $report = $this->relay($transport, $store)->run_once(10);
 
     self::assertSame(['a'], $report->lost);
     self::assertSame([], $report->retried, 'a lost lease is not a failed attempt');
@@ -225,15 +225,15 @@ final class RelayTest extends TestCase {
     $this->append('ok');
     $transport = new InMemoryTransport();
     $relay = $this->relay($transport);
-    $transport->rejectNext(); // the first submission: 'rejected'
+    $transport->reject_next(); // the first submission: 'rejected'
 
-    $report = $relay->runOnce(10);
+    $report = $relay->run_once(10);
 
     self::assertInstanceOf(ProcessingResult::class, $report->result, 'the core process_batch($limit) result (CR sfc-3, sfc-4)');
     self::assertSame($report->result->claimed, $report->claimed);
     self::assertSame($report->result->accepted, $report->accepted);
     self::assertSame($report->result->retried, $report->retried);
-    self::assertSame($report->result->leaseLost, $report->lost);
+    self::assertSame($report->result->lease_lost, $report->lost);
     self::assertSame(['ok'], $report->accepted);
     self::assertSame(['rejected'], $report->retried);
   }
@@ -243,16 +243,16 @@ final class RelayTest extends TestCase {
     $this->append('b');
     $relay = new Relay($this->outbox, new InMemoryTransport(), $this->boundary, $this->clock, new OutboxConfig(batch_size: 1), new NullLogger());
 
-    self::assertSame(['a', 'b'], $relay->runOnce(5)->claimed, 'runOnce(5) claims up to 5 whatever batch_size says');
+    self::assertSame(['a', 'b'], $relay->run_once(5)->claimed, 'runOnce(5) claims up to 5 whatever batch_size says');
     $this->append('c');
     $this->append('d');
-    self::assertSame(['c'], $relay->runOnce()->claimed, 'no limit: OutboxConfig::batch_size');
+    self::assertSame(['c'], $relay->run_once()->claimed, 'no limit: OutboxConfig::batch_size');
   }
 
   public function test_backoff_is_60s_doubling_capped_at_an_hour(): void {
     $config = new OutboxConfig();
-    self::assertSame(60, Relay::backoffSeconds(1, $config));
-    self::assertSame(120, Relay::backoffSeconds(2, $config));
-    self::assertSame(3600, Relay::backoffSeconds(12, $config));
+    self::assertSame(60, Relay::backoff_seconds(1, $config));
+    self::assertSame(120, Relay::backoff_seconds(2, $config));
+    self::assertSame(3600, Relay::backoff_seconds(12, $config));
   }
 }

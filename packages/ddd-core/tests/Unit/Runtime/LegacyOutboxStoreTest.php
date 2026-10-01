@@ -30,13 +30,13 @@ final class LegacyOutboxStoreTest extends TestCase {
   private FrozenClock $clock;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(\Psr\Log\LoggerInterface::class, new RecordingLogger());
-    $this->clock =new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
+    $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function repo(OutboxEntry ...$entries): LegacyRepoFake {
@@ -71,7 +71,7 @@ final class LegacyOutboxStoreTest extends TestCase {
     $c = $claims[0];
     self::assertSame('e1', $c->event_id);
     self::assertSame(0, $c->attempts);
-    self::assertEquals($this->clock->now()->modify('+120 seconds'), $c->leaseUntil);
+    self::assertEquals($this->clock->now()->modify('+120 seconds'), $c->lease_until);
     self::assertSame(['order_id' => 5], $c->record->payload);
     self::assertSame('acme_integration_order_placed', $c->record->integration_action);
     self::assertSame(4, $c->record->max_attempts);
@@ -92,8 +92,8 @@ final class LegacyOutboxStoreTest extends TestCase {
     [$a, $b, $c] = $store->claim(10, $this->clock->now(), 60);
 
     self::assertTrue($store->accept($a, 'ref-1'));
-    self::assertTrue($store->retryLater($b, 'down', $this->clock->now()->modify('+60 seconds')));
-    self::assertTrue($store->deadLetter($c, 'poison'));
+    self::assertTrue($store->retry_later($b, 'down', $this->clock->now()->modify('+60 seconds')));
+    self::assertTrue($store->dead_letter($c, 'poison'));
 
     self::assertSame(['completed:a', 'failed:b:down', 'dlq:c:poison'], $repo->writes);
   }

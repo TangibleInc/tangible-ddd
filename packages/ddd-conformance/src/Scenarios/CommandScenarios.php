@@ -37,13 +37,13 @@ abstract class CommandScenarios extends ConformanceTestCase {
   #[Group('cmd.commit-atomic')]
   #[TestDox('cmd.commit-atomic: handler writes a domain row, a reaction stages a fact, commit keeps both')]
   public function test_cmd_commit_atomic(): void {
-    $this->reactWithFact();
-    $bus = $this->host->commandBus([CreateWidget::class => $this->createWidget()]);
+    $this->react();
+    $bus = $this->host->command_bus([CreateWidget::class => $this->create_widget()]);
 
     $bus->handle(new CreateWidget('w-1'));
 
-    self::assertTrue($this->host->scenarioRows()->has('w-1'), 'domain row committed');
-    self::assertSame(1, $this->host->outboxAdministration()->stats()['pending'], 'outbox row committed');
+    self::assertTrue($this->host->rows()->has('w-1'), 'domain row committed');
+    self::assertSame(1, $this->host->outbox_admin()->stats()['pending'], 'outbox row committed');
 
     $claims = $this->host->outbox()->claim(10, $this->host->clock()->now(), 60);
     self::assertCount(1, $claims);
@@ -52,32 +52,32 @@ abstract class CommandScenarios extends ConformanceTestCase {
     self::assertSame('w-1', $claims[0]->record->payload['widget_id']);
     self::assertNotNull($claims[0]->record->command_id, 'the fact carries its raiser edge (the act)');
 
-    $audit = $this->host->auditTrail();
+    $audit = $this->host->audit_trail();
     self::assertCount(1, $audit);
-    self::assertSame(CreateWidget::class, $audit[0]->commandName);
+    self::assertSame(CreateWidget::class, $audit[0]->command_name);
     self::assertSame('success', $audit[0]->status);
-    self::assertSame($claims[0]->record->command_id, $audit[0]->commandId);
+    self::assertSame($claims[0]->record->command_id, $audit[0]->command_id);
   }
 
   #[Group('cmd.commit-failure')]
   #[TestDox('cmd.commit-failure: a failed COMMIT leaves no domain row and no outbox row; the error surfaces and is audited')]
   public function test_cmd_commit_failure(): void {
-    $this->reactWithFact();
-    $bus = $this->host->commandBus([CreateWidget::class => $this->createWidget()]);
-    $this->host->failNextCommit('injected COMMIT failure');
+    $this->react();
+    $bus = $this->host->command_bus([CreateWidget::class => $this->create_widget()]);
+    $this->host->fail_next_commit('injected COMMIT failure');
 
-    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-1')));
+    $thrown = self::thrown(static fn () => $bus->handle(new CreateWidget('w-1')));
 
     self::assertInstanceOf(TransactionFailed::class, $thrown, 'the COMMIT failure surfaces to the caller');
     self::assertNotNull($thrown->getPrevious(), 'the driver error is kept as previous');
-    self::assertFalse($this->host->scenarioRows()->has('w-1'), 'no domain row');
-    self::assertSame(0, $this->host->scenarioRows()->count());
-    self::assertSame(0, $this->outboxRowCount(), 'no outbox row');
+    self::assertFalse($this->host->rows()->has('w-1'), 'no domain row');
+    self::assertSame(0, $this->host->rows()->count());
+    self::assertSame(0, $this->outbox_count(), 'no outbox row');
 
-    $audit = $this->host->auditTrail();
+    $audit = $this->host->audit_trail();
     self::assertCount(1, $audit);
     self::assertSame('error', $audit[0]->status);
-    self::assertSame(TransactionFailed::class, $audit[0]->errorType);
+    self::assertSame(TransactionFailed::class, $audit[0]->error_type);
 
     if ($this->host instanceof StatementErrors) {
       $this->workSwallowsAStatementError($this->host);
@@ -94,28 +94,28 @@ abstract class CommandScenarios extends ConformanceTestCase {
    */
   private function workSwallowsAStatementError(StatementErrors $statements): void {
     $swallowed = null;
-    $bus = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use ($statements, &$swallowed): void {
-      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+    $bus = $this->host->command_bus([CreateWidget::class => function (CreateWidget $c) use ($statements, &$swallowed): void {
+      $this->host->rows()->insert($c->widget_id, 'created');
       $this->host->events()->record(new WidgetCreated($c->widget_id));
       try {
-        $statements->runFailingStatement();
+        $statements->fail_statement();
       } catch (\Throwable $e) {
         $swallowed = $e;
       }
     }]);
 
-    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-swallowed')));
+    $thrown = self::thrown(static fn () => $bus->handle(new CreateWidget('w-swallowed')));
 
     self::assertNotNull($swallowed, 'the statement failed inside the handler');
-    $audit = $this->host->auditTrail();
+    $audit = $this->host->audit_trail();
     if ($thrown === null) {
-      self::assertTrue($this->host->scenarioRows()->has('w-swallowed'), 'reported success: the domain row committed');
-      self::assertSame(1, $this->outboxRowCount(), 'reported success: the outbox row committed');
+      self::assertTrue($this->host->rows()->has('w-swallowed'), 'reported success: the domain row committed');
+      self::assertSame(1, $this->outbox_count(), 'reported success: the outbox row committed');
       self::assertSame('success', end($audit)->status);
     } else {
       self::assertInstanceOf(TransactionFailed::class, $thrown, 'an aborted transaction surfaces as TransactionFailed');
-      self::assertFalse($this->host->scenarioRows()->has('w-swallowed'), 'no domain row');
-      self::assertSame(0, $this->outboxRowCount(), 'no outbox row');
+      self::assertFalse($this->host->rows()->has('w-swallowed'), 'no domain row');
+      self::assertSame(0, $this->outbox_count(), 'no outbox row');
       self::assertSame('error', end($audit)->status);
     }
   }
@@ -123,18 +123,18 @@ abstract class CommandScenarios extends ConformanceTestCase {
   #[Group('cmd.reaction-throws')]
   #[TestDox('cmd.reaction-throws: an in-transaction reaction that throws rolls everything back; nothing is relayed')]
   public function test_cmd_reaction_throws(): void {
-    $this->reactWithFact();
+    $this->react();
     $boom = new \DomainException('reaction failed');
     $this->host->listen(WidgetCreated::class, static function () use ($boom): void { throw $boom; }, 20);
-    $bus = $this->host->commandBus([CreateWidget::class => $this->createWidget()]);
+    $bus = $this->host->command_bus([CreateWidget::class => $this->create_widget()]);
 
-    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-1')));
+    $thrown = self::thrown(static fn () => $bus->handle(new CreateWidget('w-1')));
 
     self::assertSame($boom, $thrown, 'the reaction\'s own exception surfaces unchanged');
-    self::assertSame(0, $this->host->scenarioRows()->count(), 'domain row rolled back');
-    self::assertSame(0, $this->outboxRowCount(), 'staged fact rolled back');
+    self::assertSame(0, $this->host->rows()->count(), 'domain row rolled back');
+    self::assertSame(0, $this->outbox_count(), 'staged fact rolled back');
 
-    $report = $this->host->relayOnce();
+    $report = $this->host->relay_once();
     self::assertSame([], $report->claimed);
     self::assertSame([], $this->host->transported(), 'nothing relayed');
   }
@@ -143,47 +143,47 @@ abstract class CommandScenarios extends ConformanceTestCase {
   #[TestDox('cmd.no-boundary: an ITransactionalCommand with no boundary fails with NoTransactionBoundary before the handler runs')]
   public function test_cmd_no_boundary(): void {
     $ran = false;
-    $bus = $this->host->commandBus(
+    $bus = $this->host->command_bus(
       [CreateWidget::class => function (CreateWidget $c) use (&$ran): void {
         $ran = true;
-        $this->host->scenarioRows()->insert($c->widget_id, 'created');
+        $this->host->rows()->insert($c->widget_id, 'created');
       }],
-      new BusOptions(withBoundary: false),
+      new BusOptions(boundary: false),
     );
 
-    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-1')));
+    $thrown = self::thrown(static fn () => $bus->handle(new CreateWidget('w-1')));
 
     self::assertInstanceOf(NoTransactionBoundary::class, $thrown);
     self::assertFalse($ran, 'handler never ran');
-    self::assertSame(0, $this->host->scenarioRows()->count());
+    self::assertSame(0, $this->host->rows()->count());
   }
 
   #[Group('cmd.nested-rejected')]
   #[TestDox('cmd.nested-rejected: with an outer transaction open and policy Reject, the command is refused and the outer transaction is untouched')]
   public function test_cmd_nested_rejected(): void {
     $ran = false;
-    $bus = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use (&$ran): void {
+    $bus = $this->host->command_bus([CreateWidget::class => function (CreateWidget $c) use (&$ran): void {
       $ran = true;
-      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+      $this->host->rows()->insert($c->widget_id, 'created');
     }]);
     $caught = null;
 
     $this->host->boundary()->run(function () use ($bus, &$caught): void {
-      $this->host->scenarioRows()->insert('outer', 'outer');
+      $this->host->rows()->insert('outer', 'outer');
       try {
         $bus->handle(new CreateWidget('inner'));
       } catch (NestedTransactionRejected $e) {
         $caught = $e;
       }
-      $this->host->scenarioRows()->insert('outer-after', 'outer');
+      $this->host->rows()->insert('outer-after', 'outer');
     });
 
     self::assertInstanceOf(NestedTransactionRejected::class, $caught);
     self::assertFalse($ran, 'the nested handler never ran');
-    self::assertTrue($this->host->scenarioRows()->has('outer'), 'outer work before the attempt committed');
-    self::assertTrue($this->host->scenarioRows()->has('outer-after'), 'the outer transaction stayed usable');
-    self::assertFalse($this->host->scenarioRows()->has('inner'));
-    self::assertFalse($this->host->boundary()->isActive());
+    self::assertTrue($this->host->rows()->has('outer'), 'outer work before the attempt committed');
+    self::assertTrue($this->host->rows()->has('outer-after'), 'the outer transaction stayed usable');
+    self::assertFalse($this->host->rows()->has('inner'));
+    self::assertFalse($this->host->boundary()->is_active());
   }
 
   #[Group('cmd.guards-without-audit')]
@@ -192,20 +192,20 @@ abstract class CommandScenarios extends ConformanceTestCase {
     $options = new BusOptions(audit: false);
     $bus = null;
     $handlers = [
-      CreateWidget::class => $this->createWidget(),
+      CreateWidget::class => $this->create_widget(),
       DispatchNested::class => static function (DispatchNested $c) use (&$bus): void {
         $bus->handle(new CreateWidget($c->widget_id));
       },
     ];
-    $bus = $this->host->commandBus($handlers, $options);
+    $bus = $this->host->command_bus($handlers, $options);
 
     // 1. No command inside a command.
-    $nested = self::catchThrowable(static fn () => $bus->handle(new DispatchNested('nested')));
+    $nested = self::thrown(static fn () => $bus->handle(new DispatchNested('nested')));
     self::assertInstanceOf(CommandDispatchedInsideCommand::class, $nested);
-    self::assertFalse($this->host->scenarioRows()->has('nested'));
+    self::assertFalse($this->host->rows()->has('nested'));
 
     // 2. A published fact instance cannot be raised again.
-    $this->reactWithFact();
+    $this->react();
     $published = null;
     $this->host->listen(WidgetRegistered::class, static function (WidgetRegistered $e) use (&$published): void {
       $published = $e;
@@ -213,12 +213,12 @@ abstract class CommandScenarios extends ConformanceTestCase {
     $bus->handle(new CreateWidget('w-1'));
     self::assertInstanceOf(WidgetRegistered::class, $published);
 
-    $reraise = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use (&$published): void {
-      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+    $reraise = $this->host->command_bus([CreateWidget::class => function (CreateWidget $c) use (&$published): void {
+      $this->host->rows()->insert($c->widget_id, 'created');
       $this->host->events()->record($published);
     }], $options);
-    self::assertInstanceOf(AlreadyIntegrated::class, self::catchThrowable(static fn () => $reraise->handle(new CreateWidget('w-2'))));
-    self::assertFalse($this->host->scenarioRows()->has('w-2'));
+    self::assertInstanceOf(AlreadyIntegrated::class, self::thrown(static fn () => $reraise->handle(new CreateWidget('w-2'))));
+    self::assertFalse($this->host->rows()->has('w-2'));
 
     // 3. No plain domain event past the seal.
     $this->host->listen(WidgetCreated::class, function (WidgetCreated $e): void {
@@ -226,19 +226,19 @@ abstract class CommandScenarios extends ConformanceTestCase {
         $this->host->events()->record(new WidgetCreated('recorded-after-seal'));
       }
     });
-    self::assertInstanceOf(DomainEventAfterSealException::class, self::catchThrowable(static fn () => $bus->handle(new CreateWidget('seal-probe'))));
-    self::assertFalse($this->host->scenarioRows()->has('seal-probe'));
+    self::assertInstanceOf(DomainEventAfterSealException::class, self::thrown(static fn () => $bus->handle(new CreateWidget('seal-probe'))));
+    self::assertFalse($this->host->rows()->has('seal-probe'));
 
     self::assertSame(['w-1'], $this->rowIds(['nested', 'w-1', 'w-2', 'seal-probe']), 'only the clean command committed');
-    self::assertSame([], $this->host->auditTrail(), 'audit is off: nothing written, guards still held');
+    self::assertSame([], $this->host->audit_trail(), 'audit is off: nothing written, guards still held');
   }
 
   #[Group('cmd.return-value')]
   #[TestDox('cmd.return-value: a command returns its DTO unchanged through every middleware (D11)')]
   public function test_cmd_return_value(): void {
     $receipt = new Receipt('w-1', 'R-0001');
-    $bus = $this->host->commandBus([IssueReceipt::class => function (IssueReceipt $c) use ($receipt): Receipt {
-      $this->host->scenarioRows()->insert($c->widget_id, 'receipted');
+    $bus = $this->host->command_bus([IssueReceipt::class => function (IssueReceipt $c) use ($receipt): Receipt {
+      $this->host->rows()->insert($c->widget_id, 'receipted');
       $this->host->events()->record(new WidgetCreated($c->widget_id));
       return $receipt;
     }]);
@@ -246,20 +246,20 @@ abstract class CommandScenarios extends ConformanceTestCase {
     $result = $bus->handle(new IssueReceipt('w-1'));
 
     self::assertSame($receipt, $result);
-    self::assertTrue($this->host->scenarioRows()->has('w-1'));
+    self::assertTrue($this->host->rows()->has('w-1'));
   }
 
   #[Group('audit.sink-fails')]
   #[TestDox('audit.sink-fails: the audit sink throws after the domain commit; the business result stands and AuditSinkFailed is emitted')]
   public function test_audit_sink_fails(): void {
     if (!$this->host instanceof AuditSinkFaults || !$this->host instanceof RecordsSignals) {
-      $this->skipForChangeRequest('CR-CC-1', 'the host fixture implements neither AuditSinkFaults nor RecordsSignals yet');
+      $this->skip_for('CR-CC-1', 'the host fixture implements neither AuditSinkFaults nor RecordsSignals yet');
     }
-    $this->reactWithFact();
+    $this->react();
     $receipt = new Receipt('w-1', 'R-0001');
-    $bus = $this->host->commandBus([
+    $bus = $this->host->command_bus([
       IssueReceipt::class => function (IssueReceipt $c) use ($receipt): Receipt {
-        $this->host->scenarioRows()->insert($c->widget_id, 'receipted');
+        $this->host->rows()->insert($c->widget_id, 'receipted');
         $this->host->events()->record(new WidgetCreated($c->widget_id));
         return $receipt;
       },
@@ -269,16 +269,16 @@ abstract class CommandScenarios extends ConformanceTestCase {
     ]);
 
     // 1. Success: the close fails after commit; nothing the caller sees changes.
-    $this->host->failNextAuditClose('audit store down');
+    $this->host->fail_next_audit_close('audit store down');
     $result = $bus->handle(new IssueReceipt('w-1'));
 
     self::assertSame($receipt, $result, 'the command result passes through');
-    self::assertTrue($this->host->scenarioRows()->has('w-1'), 'domain row committed');
+    self::assertTrue($this->host->rows()->has('w-1'), 'domain row committed');
     $claims = $this->host->outbox()->claim(10, $this->host->clock()->now(), 60);
     self::assertCount(1, $claims, 'outbox row committed');
     $commandId = $claims[0]->record->command_id;
     self::assertNotNull($commandId);
-    self::assertSame([], $this->host->auditTrail(), 'the row was never closed');
+    self::assertSame([], $this->host->audit_trail(), 'the row was never closed');
 
     $failed = $this->auditSinkFailures();
     self::assertCount(1, $failed, 'one AuditSinkFailed signal');
@@ -288,8 +288,8 @@ abstract class CommandScenarios extends ConformanceTestCase {
     self::assertStringContainsString('audit store down', $failed[0]->error);
 
     // 2. Failure: the business exception, not the sink's, reaches the caller.
-    $this->host->failNextAuditClose('audit store still down');
-    $thrown = self::catchThrowable(static fn () => $bus->handle(new CreateWidget('w-2')));
+    $this->host->fail_next_audit_close('audit store still down');
+    $thrown = self::thrown(static fn () => $bus->handle(new CreateWidget('w-2')));
 
     self::assertInstanceOf(\DomainException::class, $thrown);
     self::assertSame('business failure', $thrown->getMessage());
@@ -305,15 +305,15 @@ abstract class CommandScenarios extends ConformanceTestCase {
   }
 
   /** The standard handler: write the domain row, record the domain event. */
-  protected function createWidget(): \Closure {
+  protected function create_widget(): \Closure {
     return function (CreateWidget $c): void {
-      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+      $this->host->rows()->insert($c->widget_id, 'created');
       $this->host->events()->record(new WidgetCreated($c->widget_id));
     };
   }
 
   /** The standard reaction: WidgetCreated stages the WidgetRegistered fact (past the seal). */
-  protected function reactWithFact(int $delaySeconds = 0): void {
+  protected function react(int $delaySeconds = 0): void {
     $this->host->listen(WidgetCreated::class, function (WidgetCreated $e) use ($delaySeconds): void {
       if ($e->widget_id !== 'seal-probe') {
         $this->host->events()->record(new WidgetRegistered($e->widget_id, $delaySeconds));
@@ -321,14 +321,14 @@ abstract class CommandScenarios extends ConformanceTestCase {
     });
   }
 
-  protected function outboxRowCount(): int {
-    $stats = $this->host->outboxAdministration()->stats();
+  protected function outbox_count(): int {
+    $stats = $this->host->outbox_admin()->stats();
     unset($stats['dead_letters']);
     return array_sum($stats);
   }
 
   /** @param list<string> $candidates @return list<string> the candidates present, in order */
   private function rowIds(array $candidates): array {
-    return array_values(array_filter($candidates, fn (string $id) => $this->host->scenarioRows()->has($id)));
+    return array_values(array_filter($candidates, fn (string $id) => $this->host->rows()->has($id)));
   }
 }

@@ -16,7 +16,7 @@ use TangibleDDD\Runtime\Support\Log;
  * IProcessStore over a consumer's own 0.6 IProcessRepository (register 3.8,
  * R3: cred's repository gains no methods). DEGRADED:
  *
- * - insertIgnited(): the hotfix approach. Under the named lock
+ * - insert_ignited(): the hotfix approach. Under the named lock
  *   `ddd_ign_` + md5(prefix|class|event_id) it re-checks
  *   has_ignition(class, event_id) and inserts; a second delivery returns
  *   AlreadyIgnited and persists nothing. There is no ignition_key column, so
@@ -26,10 +26,10 @@ use TangibleDDD\Runtime\Support\Log;
  *   throws \LogicException (an unguarded check-then-insert would reopen
  *   bug 2).
  * - save()/touch() are NOT version-fenced (no version column): they return
- *   expectedVersion + 1 without checking, and versionOf() is tracked per
+ *   expectedVersion + 1 without checking, and version_of() is tracked per
  *   instance (1 for a row it has not written). The missing fence is logged
  *   once per instance as a warning.
- * - findWaitingFor() returns the ids of find_waiting_for(); findStranded()
+ * - find_waiting_for() returns the ids of find_waiting_for(); find_stranded()
  *   returns [] (the 0.6 interface cannot enumerate rows by status and age).
  *
  * Errors from the repository propagate unchanged; an insert that yields no
@@ -55,7 +55,7 @@ final class LegacyProcessStore implements IProcessStore {
     return $this->repository;
   }
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     $lock = $this->lock ?? HostDefaults::get(INamedLock::class) ?? throw new \LogicException(
       'LegacyProcessStore needs an ' . INamedLock::class . ' to gate #[StartsOn] ignition: pass one, or provide one in HostDefaults.'
     );
@@ -103,11 +103,11 @@ final class LegacyProcessStore implements IProcessStore {
     return $this->versions[$id] = max($expectedVersion, $this->versions[$id] ?? 1) + 1;
   }
 
-  public function versionOf(int $id): ?int {
+  public function version_of(int $id): ?int {
     return $this->versions[$id] ?? 1;
   }
 
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array {
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array {
     $ids = [];
     foreach ($this->repository->find_waiting_for($eventClass) as $p) {
       if ($p->get_id() !== null) {
@@ -117,7 +117,7 @@ final class LegacyProcessStore implements IProcessStore {
     return $ids;
   }
 
-  public function findStranded(\DateTimeImmutable $now): array {
+  public function find_stranded(\DateTimeImmutable $now): array {
     return [];
   }
 

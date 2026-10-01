@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\WorkflowScenarios;
 #[Group('conformance')]
 final class SfWorkflowScenariosTest extends WorkflowScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new SfHostFixture();
   }
 }

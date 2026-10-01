@@ -30,7 +30,7 @@ use TangibleDDD\Runtime\Scheduling\WakeKind;
  *
  * Every fact is delivered through the host's delivery runner
  * (HostFixture::deliver), so the host's resume subscriber, its
- * findWaitingFor() lookup (column store or route index) and accepts() all
+ * find_waiting_for() lookup (column store or route index) and accepts() all
  * take part.
  */
 abstract class AwaitScenarios extends ProcessScenarioCase {
@@ -39,20 +39,20 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
   #[TestDox('process.await-keyed-precheck: a keyed await on a minted ref is persisted with its checkpoint before dispatch, only its key resumes it, and a precheck absorbs a fact that committed before suspension')]
   public function test_process_await_keyed_precheck(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [JobFinished::class]);
+    $processes->wire_processes([], [JobFinished::class]);
 
     // At dispatch of the job order: the await and the checkpoint are
     // already committed, keyed on the ref the order carries.
     $atDispatch = [];
-    ProcessJournal::$onSend = function (StepCommand $c) use ($processes, &$atDispatch): void {
+    ProcessJournal::$on_send = function (StepCommand $c) use ($processes, &$atDispatch): void {
       if ($c->label !== 'order') {
         return;
       }
-      $ids = $processes->processIds(KeyedJobProcess::class);
+      $ids = $processes->process_ids(KeyedJobProcess::class);
       $id = end($ids);
-      $stored = $processes->processStore()->find($id);
+      $stored = $processes->process_store()->find($id);
       $atDispatch[$c->widget_id] = [
-        'status' => $processes->processRow($id)?->status,
+        'status' => $processes->process_row($id)?->status,
         'routes' => $stored?->await_routes(),
         'checkpoint' => $stored?->checkpoint_for('order'),
         'alarms' => count($this->intents($id, WakeKind::Timeout)),
@@ -60,7 +60,7 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
       if (end(ProcessJournal::$steps) === 'order:w-3') {
         // The job finishes synchronously: its owner commits the result
         // before the step returns (the late fact is delivered later).
-        ProcessJournal::markRow(KeyedJobProcess::doneRow($c->widget_id));
+        ProcessJournal::mark_row(KeyedJobProcess::done_row($c->widget_id));
       }
     };
 
@@ -79,17 +79,17 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
 
     // 2. Only the fact carrying the minted key resumes; it resumes only its process.
     $versionA = $this->row($a)->version;
-    self::assertTrue($this->deliverFact(new JobFinished('job-nobody-minted'))->isComplete());
+    self::assertTrue($this->deliver(new JobFinished('job-nobody-minted'))->is_complete());
     self::assertSame('suspended', $this->row($a)->status);
     self::assertSame($versionA, $this->row($a)->version, 'a foreign key wrote nothing');
 
-    self::assertTrue($this->deliverFact(new JobFinished($refA))->isComplete());
+    self::assertTrue($this->deliver(new JobFinished($refA))->is_complete());
     self::assertSame('completed', $this->row($a)->status);
     self::assertSame('suspended', $this->row($b)->status, 'the other key\'s process is untouched');
     self::assertSame(1, ProcessJournal::runs('record:w-1:fact'));
     self::assertSame([], $this->intents($a), 'the alarm is cancelled with the resume');
 
-    self::assertTrue($this->deliverFact(new JobFinished($refB))->isComplete());
+    self::assertTrue($this->deliver(new JobFinished($refB))->is_complete());
     self::assertSame('completed', $this->row($b)->status);
 
     // 3. Register-then-check: the result committed during the dispatch; the
@@ -103,9 +103,9 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
     $versionC = $this->row($c)->version;
 
     // The fact the precheck stood in for arrives late: absorbed quietly.
-    $late = $this->deliverFact(new JobFinished($refC));
-    self::assertTrue($late->isComplete(), 'no error, no retry');
-    self::assertFalse($late->needsRetry());
+    $late = $this->deliver(new JobFinished($refC));
+    self::assertTrue($late->is_complete(), 'no error, no retry');
+    self::assertFalse($late->needs_retry());
     self::assertSame($versionC, $this->row($c)->version, 'the late fact wrote nothing');
     self::assertSame(0, ProcessJournal::runs('record:w-3:fact'));
     self::assertSame(1, ProcessJournal::runs('record:w-3:precheck'));
@@ -115,7 +115,7 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
   #[TestDox('process.await-any-cancellation: an any-of await resumes on its keyed answer; a cancellation fact compensates every process it cancels and no other; late facts are no-ops')]
   public function test_process_await_any_cancellation(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [JobFinished::class, WidgetScrapped::class]);
+    $processes->wire_processes([], [JobFinished::class, WidgetScrapped::class]);
 
     $a = $this->start(new CancellableJobProcess('w-1'));
     $b = $this->start(new CancellableJobProcess('w-1'));
@@ -127,7 +127,7 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
     }
 
     // The cancellation reaches every process of its widget.
-    self::assertTrue($this->deliverFact(new WidgetScrapped('w-1'))->isComplete());
+    self::assertTrue($this->deliver(new WidgetScrapped('w-1'))->is_complete());
 
     foreach ([$a, $b] as $id) {
       self::assertSame('failed', $this->row($id)->status, "#$id cancelled");
@@ -141,19 +141,19 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
 
     // A late answer to a cancelled process changes nothing.
     $versionA = $this->row($a)->version;
-    self::assertTrue($this->deliverFact(new JobFinished($refA))->isComplete());
+    self::assertTrue($this->deliver(new JobFinished($refA))->is_complete());
     self::assertSame('failed', $this->row($a)->status, 'no resurrection after cancellation');
     self::assertSame($versionA, $this->row($a)->version);
 
     // The surviving process resumes on its own answer.
-    self::assertTrue($this->deliverFact(new JobFinished($refC))->isComplete());
+    self::assertTrue($this->deliver(new JobFinished($refC))->is_complete());
     self::assertSame('completed', $this->row($c)->status);
     self::assertSame(1, ProcessJournal::runs('finish_sync:w-2'));
     self::assertSame([], $this->intents($c));
 
     // A cancellation after completion is a no-op.
     $versionC = $this->row($c)->version;
-    self::assertTrue($this->deliverFact(new WidgetScrapped('w-2'))->isComplete());
+    self::assertTrue($this->deliver(new WidgetScrapped('w-2'))->is_complete());
     self::assertSame('completed', $this->row($c)->status);
     self::assertSame($versionC, $this->row($c)->version);
     self::assertSame(0, ProcessJournal::runs('undo_prepare:w-2'), 'nothing compensated');
@@ -163,41 +163,41 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
   #[TestDox('process.await-all-dynamic: an AwaitAll over a key set computed and checkpointed at step time resumes once every key arrived; foreign, unknown and duplicate keys write nothing; an empty set does not suspend')]
   public function test_process_await_all_dynamic(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([], [ChildPurged::class]);
+    $processes->wire_processes([], [ChildPurged::class]);
 
     $p = $this->start(new ChildrenFirstProcess('w-1', ['c1', 'c2', 'c3']));
     $q = $this->start(new ChildrenFirstProcess('w-2', ['c1']));
 
     $keys = ['w-1:c1', 'w-1:c2', 'w-1:c3'];
     self::assertSame('suspended', $this->row($p)->status);
-    $stored = $processes->processStore()->find($p);
+    $stored = $processes->process_store()->find($p);
     $checkpoint = $stored?->checkpoint_for('children_first');
     self::assertInstanceOf(StepNote::class, $checkpoint, 'the computed key set is checkpointed with the await');
     self::assertSame($keys, $checkpoint->items);
     self::assertEquals(array_map(static fn (string $k) => new AwaitRoute(ChildPurged::class, $k), $keys), $stored->await_routes());
     self::assertCount(1, $this->intents($p, WakeKind::Timeout));
 
-    self::assertTrue($this->deliverFact(new ChildPurged('w-1:c2'))->isComplete());
+    self::assertTrue($this->deliver(new ChildPurged('w-1:c2'))->is_complete());
     self::assertSame('suspended', $this->row($p)->status, 'a partial arrival keeps waiting');
     self::assertEquals(
       [new AwaitRoute(ChildPurged::class, 'w-1:c1'), new AwaitRoute(ChildPurged::class, 'w-1:c3')],
-      $processes->processStore()->find($p)?->await_routes(),
+      $processes->process_store()->find($p)?->await_routes(),
       'the outstanding keys shrink as children arrive',
     );
     self::assertCount(1, $this->intents($p, WakeKind::Timeout), 'the alarm is not re-delayed by a partial arrival');
     $version = $this->row($p)->version;
 
-    self::assertTrue($this->deliverFact(new ChildPurged('w-1:c2'))->isComplete(), 'a duplicate child');
-    self::assertTrue($this->deliverFact(new ChildPurged('w-1:c9'))->isComplete(), 'a child outside the set');
+    self::assertTrue($this->deliver(new ChildPurged('w-1:c2'))->is_complete(), 'a duplicate child');
+    self::assertTrue($this->deliver(new ChildPurged('w-1:c9'))->is_complete(), 'a child outside the set');
     self::assertSame($version, $this->row($p)->version, 'neither wrote anything');
 
-    self::assertTrue($this->deliverFact(new ChildPurged('w-2:c1'))->isComplete());
+    self::assertTrue($this->deliver(new ChildPurged('w-2:c1'))->is_complete());
     self::assertSame('completed', $this->row($q)->status, 'the other process\'s set is its own');
     self::assertSame('suspended', $this->row($p)->status);
     self::assertSame($version, $this->row($p)->version);
 
-    $this->deliverFact(new ChildPurged('w-1:c1'));
-    $this->deliverFact(new ChildPurged('w-1:c3'));
+    $this->deliver(new ChildPurged('w-1:c1'));
+    $this->deliver(new ChildPurged('w-1:c3'));
     self::assertSame('completed', $this->row($p)->status);
     self::assertSame(['purge_self:w-1:w-1:c2,w-1:c1,w-1:c3'], array_values(array_filter(
       ProcessJournal::$steps,
@@ -213,7 +213,7 @@ abstract class AwaitScenarios extends ProcessScenarioCase {
   }
 
   /** One delivery of $fact under a fresh event id, through the host's delivery runner. */
-  protected function deliverFact(IIntegrationEvent $fact): DeliveryOutcome {
+  protected function deliver(IIntegrationEvent $fact): DeliveryOutcome {
     return $this->host->deliver(get_class($fact), self::wrap($fact, Uuid::v4()));
   }
 }

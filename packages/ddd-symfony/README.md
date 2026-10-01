@@ -67,7 +67,7 @@ apply:
 | `relay` | outbox DLQ (`IOutboxAdministration`) | the row's `max_attempts` | `ddd:ops:dlq:retry` / `replay` / `discard` |
 | `delivery` | `ddd_delivery_ledger` pairs that failed or are exhausted | `delivery.budget` | none (Messenger is retrying, or the compensation ran) |
 | `wakeup` | `ddd_wakeups` intents that failed | 10 | `rearm` when exhausted (`ddd:ops:stranded --rearm`) |
-| `process` | stranded `running` processes (`IProcessStore::findStranded`) | - | `ddd:ops:stranded --resume` / `--fail` |
+| `process` | stranded `running` processes (`IProcessStore::find_stranded`) | - | `ddd:ops:stranded --resume` / `--fail` |
 | `transport` | the Messenger failure transport (`messenger.failure_transport`) | - (the ledger counts it) | `messenger:failed:retry` / `remove` |
 
 The same view is the `IOperatorView` service for a host's own admin page.
@@ -120,7 +120,7 @@ The same view is the `IOperatorView` service for a host's own admin page.
 - **D6** a `LargeString` constructor parameter of a process is stored in its
   wire form (base64, length, sha256) in `business_data` and revived by type; a
   corrupt one quarantines the row (`failed`, `quarantine_reason` =
-  `UndecodableLargeString::$quarantineReason`). Fact payloads use core's
+  `UndecodableLargeString::$reason`). Fact payloads use core's
   `IntegrationBehaviour` encoding and the 8 MiB outbox cap (`text`/`jsonb` fit).
 - **CR-PDO-6** `DbalPostgresOutboxStore` implements core
   `IReportsClaimDeadLetters`: expired-lease re-claims count as attempts and
@@ -155,7 +155,7 @@ come from `tangible/ddd-conformance` (require-dev). Since wave 4 it runs every
 id due on sf by wave 4 (15 + 23 + 9, pinned by `SfCatalogueTest`):
 
 - workers: worker 1 is the fixture's connection, worker 2 a second DBAL
-  connection (another advisory-lock session); `drainOnce()` is one pass of
+  connection (another advisory-lock session); `drain_once()` is one pass of
   `ddd:relay` plus `messenger:consume ddd_facts ddd_wakeups`;
 - fresh processes: `tests/Conformance/bin/fresh-process.php`, a separate `php`
   process attached to the test's schema (killed with SIGKILL where a scenario

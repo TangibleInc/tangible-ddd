@@ -50,8 +50,8 @@ final class WorkflowIgnitionTest extends KernelTestBase {
     $key = NightlyReportWorkflow::class . ':nightly:2026-10-01T03:00Z';
     $entry = self::getContainer()->get('test.workflow_ledger')->find($key);
     self::assertNotNull($entry, 'the (workflow, minute) key is in the ledger');
-    self::assertSame($workflowId, $entry->workflowId);
-    self::assertSame($first['event_id'], $entry->eventId);
+    self::assertSame($workflowId, $entry->workflow_id);
+    self::assertSame($first['event_id'], $entry->event_id);
 
     // 2. The same fact delivered again (a duplicate message).
     $this->redeliver($first);

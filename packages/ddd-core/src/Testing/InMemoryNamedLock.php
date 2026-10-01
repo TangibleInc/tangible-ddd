@@ -9,8 +9,8 @@ use TangibleDDD\Runtime\Lock\LockNotAcquired;
 
 /**
  * In-memory INamedLock, non-re-entrant like a raw adapter. Controls:
- * holdElsewhere() ("connection 2 holds it": acquire times out at once),
- * failNextAcquire() (a NULL / error backend result, one-shot).
+ * hold_elsewhere() ("connection 2 holds it": acquire times out at once),
+ * fail_next_acquire() (a NULL / error backend result, one-shot).
  */
 final class InMemoryNamedLock implements INamedLock {
 
@@ -42,15 +42,15 @@ final class InMemoryNamedLock implements INamedLock {
     unset($this->mine[$name]);
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     return count($this->mine);
   }
 
-  public function holdElsewhere(string $name): void {
+  public function hold_elsewhere(string $name): void {
     $this->elsewhere[$name] = true;
   }
 
-  public function failNextAcquire(string $reason): void {
+  public function fail_next_acquire(string $reason): void {
     $this->nextFailure = $reason;
   }
 }

@@ -68,8 +68,8 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
     $this->clock = new FrozenClock(self::utc('2026-10-01 12:00:00'));
     ConsumerRegistry::reset();
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     HostDefaults::provide(LoggerInterface::class, new NullLogger());
     Trace::reset();
     CreateCustomer::reset();
@@ -78,8 +78,8 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
   protected function tearDown(): void {
     ConsumerRegistry::reset();
-    HostDefaults::resetForTests();
-    RuntimeReset::forgetRegistrationsForTests();
+    HostDefaults::reset_for_tests();
+    RuntimeReset::forget_for_tests();
     parent::tearDown();
   }
 
@@ -94,7 +94,7 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
   /** @return array<string, mixed> */
   private function processOf(string $class): array {
-    $row = $this->db->fetchOne('SELECT * FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id DESC LIMIT 1', [$class]);
+    $row = $this->db->fetch_one('SELECT * FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id DESC LIMIT 1', [$class]);
     self::assertNotNull($row, "a $class row");
     return $row;
   }
@@ -103,7 +103,7 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
   public function test_an_effect_performs_once_and_a_failed_record_reuses_the_journaled_result(): void {
     $rt = $this->runtime();
-    self::assertInstanceOf(PdoEffectJournal::class, $rt->effectJournal());
+    self::assertInstanceOf(PdoEffectJournal::class, $rt->journal());
 
     CreateCustomer::$failRecord = 1;
     try {
@@ -113,12 +113,12 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
       self::assertSame('record failed on purpose', $e->getMessage());
     }
     self::assertSame(1, CreateCustomer::$performed);
-    self::assertSame(['customer' => 'cus_1'], $rt->effectJournal()->find('provider:customer:7')?->data, 'the journal entry survives the rolled-back record()');
+    self::assertSame(['customer' => 'cus_1'], $rt->journal()->find('provider:customer:7')?->data, 'the journal entry survives the rolled-back record()');
 
     $result = $rt->bus()->handle(new CreateCustomer(7));
 
     self::assertInstanceOf(EffectResult::class, $result, 'the bus returns the EffectResult (D11)');
-    self::assertSame('cus_1', $result->externalRef);
+    self::assertSame('cus_1', $result->external_ref);
     self::assertSame(1, CreateCustomer::$performed, 'perform is not called again');
     self::assertSame(['cus_1'], CreateCustomer::$recorded);
   }
@@ -143,7 +143,7 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
   public function test_the_journal_is_a_runtime_service_for_repair_commands(): void {
     $rt = $this->runtime();
-    self::assertSame($rt->effectJournal(), $rt->container()->get(IEffectJournal::class));
+    self::assertSame($rt->journal(), $rt->container()->get(IEffectJournal::class));
   }
 
   // ── D7 ──────────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
 
     $saga = $this->processOf(AlarmSaga::class);
     self::assertSame('suspended', $saga['status']);
-    $job = $this->db->fetchOne("SELECT due_at FROM pdocompose_ddd_jobs WHERE process_id = ? AND kind = 'timeout'", [$saga['id']]);
+    $job = $this->db->fetch_one("SELECT due_at FROM pdocompose_ddd_jobs WHERE process_id = ? AND kind = 'timeout'", [$saga['id']]);
     self::assertSame('2026-10-02 13:00:00.000000', $job['due_at'], 'one absolute intent row, due 25 h later');
 
     $this->clock->advance('PT24H59M59S');
@@ -182,13 +182,13 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
     $rt->bus()->handle(new StartJob('b'));
     self::assertClean($rt->drain());
     self::assertSame(['ordered:a', 'ordered:b'], Trace::$log);
-    self::assertSame(2, (int) $this->db->fetchOne('SELECT COUNT(*) AS n FROM pdocompose_ddd_process_waits WHERE event_class = ?', [\TangibleDDD\Core\Tests\Pdo\Compose\JobDone::class])['n']);
+    self::assertSame(2, (int) $this->db->fetch_one('SELECT COUNT(*) AS n FROM pdocompose_ddd_process_waits WHERE event_class = ?', [\TangibleDDD\Core\Tests\Pdo\Compose\JobDone::class])['n']);
 
     $rt->bus()->handle(new ReportJob(KeyedJobSaga::$refs['b']));
     self::assertClean($rt->drain());
 
     self::assertSame(['ordered:a', 'ordered:b', 'done:b'], Trace::$log);
-    $rows = $this->db->fetchAll('SELECT status FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id', [KeyedJobSaga::class]);
+    $rows = $this->db->fetch_all('SELECT status FROM pdocompose_ddd_processes WHERE process_class = ? ORDER BY id', [KeyedJobSaga::class]);
     self::assertSame(['suspended', 'completed'], array_column($rows, 'status'));
 
     $rt->bus()->handle(new ReportJob('unknown-ref'));
@@ -202,10 +202,10 @@ abstract class DurableRuntimeWave4Cases extends PdoTestCase {
     $rt = $this->runtime();
 
     self::assertInstanceOf(PdoBehaviourWorkflowRepository::class, $rt->workflows());
-    self::assertInstanceOf(PdoWorkItemRepository::class, $rt->workItems());
-    self::assertInstanceOf(PdoWorkflowIgnitionLedger::class, $rt->workflowIgnitions());
-    self::assertTrue($rt->workflowIgnitions()->claim('k1', 'kind'));
-    self::assertSame(1, (int) $this->db->fetchOne('SELECT COUNT(*) AS n FROM pdocompose_ddd_workflow_ignitions')['n']);
+    self::assertInstanceOf(PdoWorkItemRepository::class, $rt->work_items());
+    self::assertInstanceOf(PdoWorkflowIgnitionLedger::class, $rt->ignitions());
+    self::assertTrue($rt->ignitions()->claim('k1', 'kind'));
+    self::assertSame(1, (int) $this->db->fetch_one('SELECT COUNT(*) AS n FROM pdocompose_ddd_workflow_ignitions')['n']);
   }
 
   // ── WP8-10 stranded repairs on the runtime's bus ────────────────────────

@@ -13,18 +13,18 @@ use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
  * external system. perform() is the external call (counted in
  * EffectLedger::$performs; the n-th call returns ref `ch-{widget}-{n}`);
  * record() commits `charged:{widget}:{ref}` inside the transaction,
- * idempotently, unless EffectLedger::failRecord() armed a failure.
+ * idempotently, unless EffectLedger::fail_record() armed a failure.
  */
 final class ChargeWidget implements IExternalEffectCommand {
 
   public function __construct(public readonly string $widget_id) {}
 
-  public static function keyFor(string $widgetId): string {
+  public static function key_for(string $widgetId): string {
     return "charge:$widgetId";
   }
 
-  public function idempotencyKey(): string {
-    return self::keyFor($this->widget_id);
+  public function idempotency_key(): string {
+    return self::key_for($this->widget_id);
   }
 
   public function perform(): EffectResult {
@@ -35,17 +35,17 @@ final class ChargeWidget implements IExternalEffectCommand {
   }
 
   public function record(EffectResult $r): void {
-    if ((EffectLedger::$recordFailures[$this->widget_id] ?? 0) > 0) {
-      EffectLedger::$recordFailures[$this->widget_id]--;
+    if ((EffectLedger::$record_failures[$this->widget_id] ?? 0) > 0) {
+      EffectLedger::$record_failures[$this->widget_id]--;
       throw new \RuntimeException("record of {$this->widget_id} failed");
     }
-    $row = "charged:{$this->widget_id}:{$r->externalRef}";
+    $row = "charged:{$this->widget_id}:{$r->external_ref}";
     if (!EffectLedger::rows()->has($row)) {
-      EffectLedger::rows()->insert($row, (string) $r->externalRef);
+      EffectLedger::rows()->insert($row, (string) $r->external_ref);
     }
   }
 
-  public function failureCommand(\Throwable $last): ?ICommand {
+  public function failure_command(\Throwable $last): ?ICommand {
     return new ChargeFailed($this->widget_id, $last->getMessage());
   }
 

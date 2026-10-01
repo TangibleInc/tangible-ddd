@@ -66,10 +66,10 @@ final class WpOutboxV8Test extends V8TestCase {
     [$claim] = $this->store->claim(10, $this->clock->now(), 120);
 
     $row = $this->row($claim->event_id);
-    self::assertNotSame('', $claim->claimToken);
-    self::assertSame($claim->claimToken, $row['claim_token']);
+    self::assertNotSame('', $claim->token);
+    self::assertSame($claim->token, $row['claim_token']);
     self::assertSame($this->clock->now()->modify('+120 seconds')->format('Y-m-d H:i:s'), $row['locked_until']);
-    self::assertSame($claim->leaseUntil->format('Y-m-d H:i:s'), $row['locked_until']);
+    self::assertSame($claim->lease_until->format('Y-m-d H:i:s'), $row['locked_until']);
     self::assertNotEmpty($row['locked_by'], 'a 0.6 copy sees the lock owner');
     self::assertSame('pending', $row['status']);
     self::assertSame([], $this->store->claim(10, $this->clock->now(), 120), 'a leased row is not claimed again');
@@ -98,10 +98,10 @@ final class WpOutboxV8Test extends V8TestCase {
     [$a] = $this->store->claim(1, $this->clock->now(), 60);
     [$b] = $this->store->claim(1, $this->clock->now()->modify('+61 seconds'), 60);
 
-    self::assertNotSame($a->claimToken, $b->claimToken);
+    self::assertNotSame($a->token, $b->token);
     self::assertFalse($this->store->accept($a, '17'));
-    self::assertFalse($this->store->retryLater($a, 'late', $this->clock->now()));
-    self::assertFalse($this->store->deadLetter($a, 'late'));
+    self::assertFalse($this->store->retry_later($a, 'late', $this->clock->now()));
+    self::assertFalse($this->store->dead_letter($a, 'late'));
     self::assertSame('0', (string) $this->wpdb->get_var("SELECT COUNT(*) FROM `{$this->table('integration_dlq')}`"));
 
     self::assertTrue($this->store->accept($b, '18'));
@@ -115,7 +115,7 @@ final class WpOutboxV8Test extends V8TestCase {
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
     $next = $this->clock->now()->modify('+600 seconds');
 
-    self::assertTrue($this->store->retryLater($c, 'transport down', $next));
+    self::assertTrue($this->store->retry_later($c, 'transport down', $next));
 
     $row = $this->row($c->event_id);
     self::assertSame(['pending', '1', 'transport down', $next->format('Y-m-d H:i:s'), null], [$row['status'], $row['attempts'], $row['last_error'], $row['next_attempt_at'], $row['claim_token']]);
@@ -129,7 +129,7 @@ final class WpOutboxV8Test extends V8TestCase {
     $this->store->append($this->record('e0000000-0000-4000-8000-000000000005'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
 
-    self::assertTrue($this->store->deadLetter($c, 'gave up'));
+    self::assertTrue($this->store->dead_letter($c, 'gave up'));
 
     $row = $this->row($c->event_id);
     self::assertSame(['dlq', '1', null], [$row['status'], $row['attempts'], $row['claim_token']]);
@@ -148,7 +148,7 @@ final class WpOutboxV8Test extends V8TestCase {
 
     $this->pauses->hold('deploy', 'v8.order_*', $this->clock->now()->modify('+300 seconds'));
     $this->pauses->hold('ops', 'v8.other', null);
-    self::assertTrue($this->pauses->isPaused('v8.order_paid', $this->clock->now()));
+    self::assertTrue($this->pauses->is_paused('v8.order_paid', $this->clock->now()));
     self::assertSame([], $this->store->claim(10, $this->clock->now(), 60));
 
     $this->pauses->release('ops');
@@ -179,7 +179,7 @@ final class WpOutboxV8Test extends V8TestCase {
     $this->wpdb->query("DROP TABLE `{$this->table('ddd_relay_pauses')}`");
     $suppress = $this->wpdb->suppress_errors(true);
     try {
-      self::assertTrue($this->pauses->isPaused('v8.fact', $this->clock->now()), 'a pause that cannot be read is assumed held');
+      self::assertTrue($this->pauses->is_paused('v8.fact', $this->clock->now()), 'a pause that cannot be read is assumed held');
       try {
         $this->store->claim(10, $this->clock->now(), 60);
         self::fail('the relay must not claim past an unreadable pause table');
@@ -197,11 +197,11 @@ final class WpOutboxV8Test extends V8TestCase {
     $this->store->append($this->record('e0000000-0000-4000-8000-000000000008'));
     $this->repository()->set_pause('legacy-holder', 'v8.fact');
 
-    self::assertTrue($this->pauses->isPaused('v8.fact', $this->clock->now()));
+    self::assertTrue($this->pauses->is_paused('v8.fact', $this->clock->now()));
     self::assertSame([], $this->store->claim(10, $this->clock->now(), 60));
 
     $this->repository()->set_pause('legacy-holder', '*');
-    self::assertTrue($this->pauses->isPaused('anything', $this->clock->now()));
+    self::assertTrue($this->pauses->is_paused('anything', $this->clock->now()));
 
     $this->repository()->clear_pause('legacy-holder');
     self::assertCount(1, $this->store->claim(10, $this->clock->now(), 60));
@@ -234,7 +234,7 @@ final class WpOutboxV8Test extends V8TestCase {
 
   public function test_the_action_scheduler_transport_relays_on_the_0_6_action_shape(): void {
     $transport = new ActionSchedulerTransport($this->config->as_group('outbox'));
-    self::assertTrue($transport->sharesConnectionWith($this->store));
+    self::assertTrue($transport->shares_connection($this->store));
 
     $due = $this->clock->now()->modify('-30 seconds');
     $this->store->append($this->record('e0000000-0000-4000-8000-00000000000e', $due));
@@ -298,7 +298,7 @@ final class WpOutboxV8Test extends V8TestCase {
 
   public function test_the_store_reports_claim_time_dead_letters(): void {
     self::assertInstanceOf(IReportsClaimDeadLetters::class, $this->store);
-    self::assertSame([], $this->store->takeDeadLetteredAtClaim());
+    self::assertSame([], $this->store->take_claim_dead_letters());
   }
 
   public function test_a_re_claim_of_an_expired_lease_counts_one_attempt(): void {
@@ -317,13 +317,13 @@ final class WpOutboxV8Test extends V8TestCase {
       json_decode((string) $row['error_history'], true),
       'the lost attempt is in the error history like any other',
     );
-    self::assertSame([], $this->store->takeDeadLetteredAtClaim());
+    self::assertSame([], $this->store->take_claim_dead_letters());
   }
 
   public function test_a_row_released_by_an_outcome_is_not_a_re_claim(): void {
     $this->store->append($this->record('e0000000-0000-4000-8000-000000000021'));
     [$c] = $this->store->claim(1, $this->clock->now(), 30);
-    self::assertTrue($this->store->retryLater($c, 'transport down', $this->clock->now()));
+    self::assertTrue($this->store->retry_later($c, 'transport down', $this->clock->now()));
 
     $this->clock->advance('+31 seconds');
     [$again] = $this->store->claim(1, $this->clock->now(), 30);
@@ -361,12 +361,12 @@ final class WpOutboxV8Test extends V8TestCase {
     $claims = $this->store->claim(1, $this->clock->now(), 30);
     self::assertSame([], $claims, 'not handed out; a claim-time dead letter is not replaced within the same limit');
 
-    $taken = $this->store->takeDeadLetteredAtClaim();
+    $taken = $this->store->take_claim_dead_letters();
     self::assertCount(1, $taken);
     [$claim, $error] = $taken[0];
     self::assertSame([$id, 3], [$claim->event_id, $claim->attempts]);
     self::assertStringContainsString(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, $error);
-    self::assertSame([], $this->store->takeDeadLetteredAtClaim(), 'taken once');
+    self::assertSame([], $this->store->take_claim_dead_letters(), 'taken once');
 
     $row = $this->row($id);
     self::assertSame(['dlq', '3', null, null, null], [$row['status'], $row['attempts'], $row['claim_token'], $row['locked_until'], $row['locked_by']]);
@@ -375,7 +375,7 @@ final class WpOutboxV8Test extends V8TestCase {
     [$other] = $this->store->claim(10, $this->clock->now(), 30);
     self::assertSame('e0000000-0000-4000-8000-000000000024', $other->event_id, 'the next claim moves on');
 
-    $letters = (new WpdbOutboxAdministration($this->config->prefix(), $this->clock))->deadLetters(10);
+    $letters = (new WpdbOutboxAdministration($this->config->prefix(), $this->clock))->dead_letters(10);
     self::assertSame([$id], array_map(static fn ($l) => $l->event_id, $letters));
     self::assertSame(3, $letters[0]->attempts);
   }
@@ -398,7 +398,7 @@ final class WpOutboxV8Test extends V8TestCase {
     );
     $result = $relay->process_batch(10);
 
-    self::assertSame([$id], $result->deadLetteredAtClaim);
+    self::assertSame([$id], $result->claim_dead_letters);
     self::assertSame([], $this->pendingActions($this->config->integration_action('v8_fact')), 'never transported');
   }
 }

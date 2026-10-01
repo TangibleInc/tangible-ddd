@@ -71,7 +71,7 @@ final class IntegrationDeliveryTest extends TestCase {
 
     self::assertSame(['listener', 'ignition', 'resume', 'after-resume'], $this->ran);
     self::assertSame(['listener', 'ignition', 'resume', 'after-resume'], $outcome->delivered);
-    self::assertTrue($outcome->isComplete());
+    self::assertTrue($outcome->is_complete());
   }
 
   public function test_equal_priorities_keep_registration_order(): void {
@@ -178,9 +178,9 @@ final class IntegrationDeliveryTest extends TestCase {
     self::assertSame(['A', 'B', 'ignition', 'resume'], $this->ran);
     self::assertSame(['A', 'ignition', 'resume'], $first->delivered);
     self::assertSame(['B'], $first->failed);
-    self::assertTrue($first->needsRetry());
+    self::assertTrue($first->needs_retry());
     self::assertSame(1, $this->ledger->attempts('B', self::EVENT_ID));
-    self::assertSame('B flaked', $this->ledger->lastError('B', self::EVENT_ID));
+    self::assertSame('B flaked', $this->ledger->last_error('B', self::EVENT_ID));
 
     $this->ran = [];
     $retry = $this->delivery()->deliver(OrderPlaced::class, $this->wrapped());
@@ -188,7 +188,7 @@ final class IntegrationDeliveryTest extends TestCase {
     self::assertSame(['B'], $this->ran, 'the retry re-runs only the failed subscriber');
     self::assertSame(['B'], $retry->delivered);
     self::assertSame(['A', 'ignition', 'resume'], $retry->skipped);
-    self::assertTrue($retry->isComplete());
+    self::assertTrue($retry->is_complete());
   }
 
   public function test_budget_exhaustion_fires_the_failure_callback_exactly_once(): void {
@@ -212,7 +212,7 @@ final class IntegrationDeliveryTest extends TestCase {
     $o3 = $delivery->deliver(OrderPlaced::class, $this->wrapped());
     self::assertSame([], $o3->failed);
     self::assertSame(['charge'], $o3->exhausted);
-    self::assertFalse($o3->needsRetry());
+    self::assertFalse($o3->needs_retry());
     self::assertSame([[OrderPlaced::class, 'gateway down']], $fired);
 
     $o4 = $delivery->deliver(OrderPlaced::class, $this->wrapped());
@@ -230,7 +230,7 @@ final class IntegrationDeliveryTest extends TestCase {
 
     self::assertSame(['ok'], $outcome->delivered);
     self::assertSame(['bad'], $outcome->exhausted);
-    self::assertFalse($outcome->needsRetry());
+    self::assertFalse($outcome->needs_retry());
   }
 
   public function test_exhaustion_writes_the_terminal_marker_only_after_the_callback_succeeds(): void {
@@ -280,7 +280,7 @@ final class IntegrationDeliveryTest extends TestCase {
 
     self::assertSame(['charge'], $first->failed, 'compensation pending: reported as failed, not exhausted');
     self::assertSame([], $first->exhausted);
-    self::assertTrue($first->needsRetry());
+    self::assertTrue($first->needs_retry());
     self::assertFalse($this->ledger->exhausted('charge', self::EVENT_ID));
     self::assertCount(2, $logged, 'the handler failure, then the callback failure');
     self::assertStringContainsString('failure command broke', $logged[1]);
@@ -288,7 +288,7 @@ final class IntegrationDeliveryTest extends TestCase {
     $second = $delivery->deliver(OrderPlaced::class, $this->wrapped());
 
     self::assertSame(['charge'], $second->exhausted);
-    self::assertFalse($second->needsRetry());
+    self::assertFalse($second->needs_retry());
     self::assertSame(2, $calls);
     self::assertSame(1, $succeeded);
     self::assertCount(1, $this->ran, 'the handler itself is not re-run once over budget');
@@ -301,9 +301,9 @@ final class IntegrationDeliveryTest extends TestCase {
   }
 
   public function test_a_crash_between_mark_failed_and_the_callback_refires_compensation_on_next_delivery(): void {
-    // Simulate the crash: the last attempt's markFailed committed, the process
-    // died before onExhausted ran, so there is no terminal marker.
-    $this->ledger->markFailed('charge', self::EVENT_ID, 'gateway down', 3);
+    // Simulate the crash: the last attempt's mark_failed committed, the process
+    // died before on_exhausted ran, so there is no terminal marker.
+    $this->ledger->mark_failed('charge', self::EVENT_ID, 'gateway down', 3);
 
     $fired = [];
     $this->registry->add($this->stub(
@@ -343,15 +343,15 @@ final class IntegrationDeliveryTest extends TestCase {
   public function test_an_event_with_no_subscribers_is_complete(): void {
     $outcome = $this->delivery()->deliver(OrderPlaced::class, $this->wrapped());
 
-    self::assertTrue($outcome->isComplete());
+    self::assertTrue($outcome->is_complete());
     self::assertSame([], $outcome->delivered);
   }
 
   public function test_handler_backoff_follows_section_5_1(): void {
-    self::assertSame(30, IntegrationDelivery::backoffSeconds(1));
-    self::assertSame(60, IntegrationDelivery::backoffSeconds(2));
-    self::assertSame(240, IntegrationDelivery::backoffSeconds(4));
-    self::assertSame(3600, IntegrationDelivery::backoffSeconds(12));
+    self::assertSame(30, IntegrationDelivery::backoff_seconds(1));
+    self::assertSame(60, IntegrationDelivery::backoff_seconds(2));
+    self::assertSame(240, IntegrationDelivery::backoff_seconds(4));
+    self::assertSame(3600, IntegrationDelivery::backoff_seconds(12));
     self::assertSame(5, IntegrationDelivery::DEFAULT_BUDGET);
   }
 
@@ -369,7 +369,7 @@ final class IntegrationDeliveryTest extends TestCase {
 
     self::assertSame(1, $this->ledger->attempts('a', self::EVENT_ID));
     self::assertSame(1, $this->ledger->attempts('b', self::EVENT_ID));
-    self::assertStringContainsString('payload no longer decodes', (string) $this->ledger->lastError('a', self::EVENT_ID));
+    self::assertStringContainsString('payload no longer decodes', (string) $this->ledger->last_error('a', self::EVENT_ID));
   }
 
   public function test_a_poison_fact_stops_once_every_subscriber_reaches_the_budget(): void {
@@ -385,7 +385,7 @@ final class IntegrationDeliveryTest extends TestCase {
     $outcome = $delivery->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));
 
     self::assertSame(['a'], $outcome->exhausted, 'budget bounds the poison fact');
-    self::assertFalse($outcome->needsRetry());
+    self::assertFalse($outcome->needs_retry());
     self::assertTrue($this->ledger->exhausted('a', self::EVENT_ID));
     self::assertSame([], $this->ran, 'no handler and no compensation: there is no event to give them');
 
@@ -396,7 +396,7 @@ final class IntegrationDeliveryTest extends TestCase {
   public function test_a_poison_fact_leaves_delivered_subscribers_alone(): void {
     $this->registry->add($this->stub('done', Subscriber::LISTENER, PoisonFact::class));
     $this->registry->add($this->stub('pending', Subscriber::RESUME, PoisonFact::class));
-    $this->ledger->markDelivered('done', self::EVENT_ID);
+    $this->ledger->mark_delivered('done', self::EVENT_ID);
 
     try {
       $this->delivery(5)->deliver(PoisonFact::class, $this->wrapped(['id' => 1]));

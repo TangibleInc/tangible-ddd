@@ -26,7 +26,7 @@ use TangibleDDD\Runtime\Delivery\Subscriber;
  *
  * The outbox cap is the core default, OutboxConfig::DEFAULT_MAX_PAYLOAD_BYTES
  * (8 MiB of encoded payload); a host that configures another cap overrides
- * outboxPayloadCap().
+ * payload_cap().
  */
 abstract class CodecScenarios extends ConformanceTestCase {
 
@@ -45,28 +45,28 @@ abstract class CodecScenarios extends ConformanceTestCase {
 
     // 1. Round trip: bus → outbox → relay → transport → delivery.
     self::assertNull($this->commit('w-1', static fn () => new BlobAttached('w-1', new LargeString($bytes))));
-    self::assertTrue($this->host->scenarioRows()->has('widget:w-1'));
-    self::assertSame(1, $this->host->outboxAdministration()->stats()['pending']);
-    $report = $this->host->relayOnce();
+    self::assertTrue($this->host->rows()->has('widget:w-1'));
+    self::assertSame(1, $this->host->outbox_admin()->stats()['pending']);
+    $report = $this->host->relay_once();
     self::assertCount(1, $report->accepted, 'relayed');
-    $outcomes = $this->host->deliverTransported(BlobAttached::class);
+    $outcomes = $this->host->deliver_transported(BlobAttached::class);
     self::assertCount(1, $outcomes);
-    self::assertTrue($outcomes[0]->isComplete());
+    self::assertTrue($outcomes[0]->is_complete());
     self::assertArrayHasKey('w-1', $received);
     self::assertSame(self::MIB, strlen((string) $received['w-1']));
     self::assertSame(hash('sha256', $bytes), hash('sha256', (string) $received['w-1']), 'byte-identical after the round trip');
 
     // 2. Over the LargeString's declared cap: refused while staging.
-    $e = $this->commit('w-2', static fn () => new BlobAttached('w-2', new LargeString($bytes, maxBytes: self::MIB / 2)));
+    $e = $this->commit('w-2', static fn () => new BlobAttached('w-2', new LargeString($bytes, max_bytes: self::MIB / 2)));
     self::assertInstanceOf(PayloadTooLarge::class, $e);
     $this->assertNothingCommitted('w-2');
 
     // 3. Over the outbox payload cap: refused at append, before commit.
-    $cap = $this->outboxPayloadCap();
+    $cap = $this->payload_cap();
     $huge = self::binary($cap);
-    $e = $this->commit('w-3', static fn () => new BlobAttached('w-3', new LargeString($huge, maxBytes: 2 * $cap)));
+    $e = $this->commit('w-3', static fn () => new BlobAttached('w-3', new LargeString($huge, max_bytes: 2 * $cap)));
     self::assertInstanceOf(PayloadTooLarge::class, $e, 'the encoded payload exceeds the outbox cap');
-    self::assertGreaterThan($e->maxBytes, $e->bytes);
+    self::assertGreaterThan($e->max_bytes, $e->bytes);
     $this->assertNothingCommitted('w-3');
     unset($huge);
 
@@ -76,14 +76,14 @@ abstract class CodecScenarios extends ConformanceTestCase {
     self::assertStringContainsString('LargeString', $e->getMessage());
     $this->assertNothingCommitted('w-4');
 
-    $stats = $this->host->outboxAdministration()->stats();
+    $stats = $this->host->outbox_admin()->stats();
     self::assertSame(1, $stats['accepted']);
     self::assertSame(0, $stats['pending']);
     self::assertSame(0, $stats['dlq']);
   }
 
   /** The host's OutboxConfig::$max_payload_bytes. */
-  protected function outboxPayloadCap(): int {
+  protected function payload_cap(): int {
     return OutboxConfig::DEFAULT_MAX_PAYLOAD_BYTES;
   }
 
@@ -95,16 +95,16 @@ abstract class CodecScenarios extends ConformanceTestCase {
    * @param \Closure(): DomainEvent $fact
    */
   private function commit(string $widgetId, \Closure $fact): ?\Throwable {
-    $bus = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use ($fact): void {
-      $this->host->scenarioRows()->insert("widget:{$c->widget_id}", 'created');
+    $bus = $this->host->command_bus([CreateWidget::class => function (CreateWidget $c) use ($fact): void {
+      $this->host->rows()->insert("widget:{$c->widget_id}", 'created');
       $this->host->events()->record($fact());
     }]);
-    return self::catchThrowable(static fn () => $bus->handle(new CreateWidget($widgetId)));
+    return self::thrown(static fn () => $bus->handle(new CreateWidget($widgetId)));
   }
 
   private function assertNothingCommitted(string $widgetId): void {
-    self::assertFalse($this->host->scenarioRows()->has("widget:$widgetId"), "$widgetId: the domain row rolled back");
-    self::assertSame(0, $this->host->outboxAdministration()->stats()['pending'], "$widgetId: no outbox row");
+    self::assertFalse($this->host->rows()->has("widget:$widgetId"), "$widgetId: the domain row rolled back");
+    self::assertSame(0, $this->host->outbox_admin()->stats()['pending'], "$widgetId: no outbox row");
   }
 
   /** $length bytes cycling through 0x00-0xFF (NUL bytes and invalid UTF-8 included). */

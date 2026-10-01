@@ -26,7 +26,7 @@ use TangibleDDD\Symfony\Runtime\Wakeup\IProcessWakeTarget;
  *
  * Failures never reach Messenger's retry (the intent row owns the budget):
  * - retryable (lock contention, a lost version fence, a transient DBAL
- *   error): retryLater() with 2 s x 2^n backoff capped at 300 s, until the
+ *   error): retry_later() with 2 s x 2^n backoff capped at 300 s, until the
  *   10th failed attempt, which exhausts the intent;
  * - anything else: the intent is exhausted at once, kept with its error for
  *   the operator (ddd:ops:stranded), and an ERROR is logged.
@@ -64,8 +64,8 @@ final class ProcessWakeupHandler {
    *   intent (the HandledStamp result; a drain reports it like core DrainReport's wake lists)
    */
   public function __invoke(ProcessWakeupMessage $message): string {
-    $claim = $message->toClaim();
-    $key = $claim->intent->idempotencyKey;
+    $claim = $message->to_claim();
+    $key = $claim->intent->key;
 
     try {
       $this->target->wake($claim->intent);
@@ -80,12 +80,12 @@ final class ProcessWakeupHandler {
     return self::COMPLETED;
   }
 
-  public static function backoffSeconds(int $attempt): int {
+  public static function backoff_seconds(int $attempt): int {
     return (int) min(self::MAX_DELAY_SECONDS, self::BASE_DELAY_SECONDS * (2 ** max(0, $attempt)));
   }
 
   private function failed(\TangibleDDD\Runtime\Scheduling\ClaimedWakeup $claim, \Throwable $e): string {
-    $key = $claim->intent->idempotencyKey;
+    $key = $claim->intent->key;
     $error = get_class($e) . ': ' . $e->getMessage();
     $attempt = $claim->attempts + 1;
     $retryable = self::isRetryable($e);
@@ -98,13 +98,13 @@ final class ProcessWakeupHandler {
         return $kept ? self::EXHAUSTED : self::LEASE_LOST;
       }
       $this->logger->error("[ddd wakeup] $key failed ($why), retrying at the cap: $error", ['exception' => $e]);
-      $kept = $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify('+' . self::MAX_DELAY_SECONDS . ' seconds'));
+      $kept = $this->scheduler->retry_later($claim, $error, $this->clock->now()->modify('+' . self::MAX_DELAY_SECONDS . ' seconds'));
       return $kept ? self::EXHAUSTED : self::LEASE_LOST;
     }
 
-    $delay = self::backoffSeconds($claim->attempts);
+    $delay = self::backoff_seconds($claim->attempts);
     $this->logger->notice("[ddd wakeup] $key attempt $attempt failed, retrying in {$delay}s: $error");
-    $kept = $this->scheduler->retryLater($claim, $error, $this->clock->now()->modify("+{$delay} seconds"));
+    $kept = $this->scheduler->retry_later($claim, $error, $this->clock->now()->modify("+{$delay} seconds"));
     return $kept ? self::RETRIED : self::LEASE_LOST;
   }
 

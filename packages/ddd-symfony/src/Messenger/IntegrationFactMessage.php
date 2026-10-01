@@ -9,20 +9,20 @@ namespace TangibleDDD\Symfony\Messenger;
  * E section 7). One message per fact, however many subscribers it has; the
  * delivery handler walks them through the core invoker and the ledger.
  *
- * `wrappedPayload` is exactly IntegrationEnvelope::wrap() output, so the
+ * `envelope` is exactly IntegrationEnvelope::wrap() output, so the
  * envelope keys (`__correlation_id`, `__sequence`, `__event_id`, R4) are the
- * same as on WordPress. `eventClass` is the fact's PHP class: delivery
+ * same as on WordPress. `event_class` is the fact's PHP class: delivery
  * hydrates it with from_payload() and matches marker subscriptions (D2).
  */
 final class IntegrationFactMessage {
 
-  /** @param array<string, mixed> $wrappedPayload */
+  /** @param array<string, mixed> $envelope */
   public function __construct(
     public readonly string $consumer,
-    public readonly string $eventId,
-    public readonly string $eventType,
-    public readonly string $eventClass,
-    public readonly string $integrationAction,
-    public readonly array $wrappedPayload,
+    public readonly string $event_id,
+    public readonly string $event_type,
+    public readonly string $event_class,
+    public readonly string $integration_action,
+    public readonly array $envelope,
   ) {}
 }

@@ -134,7 +134,7 @@ jobs:
         run: tests/harness/run.sh core-pdo
 
   static:
-    name: static (phpstan, deptrac, manifests, core clean install)
+    name: static (phpstan, deptrac, code style, manifests, core clean install)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -156,6 +156,8 @@ jobs:
         run: vendor/bin/phpstan analyse -c phpstan-core.neon --memory-limit=1G --no-progress
       - name: Deptrac layer rules
         run: vendor/bin/deptrac analyse --no-progress
+      - name: Code style (no drift from .php-cs-fixer.dist.php)
+        run: composer cs
       - name: ddd-core clean install
         run: tests/Compat/core-clean-install.sh
       - name: CR-PK-5 transitional allowances expired

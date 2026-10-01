@@ -21,14 +21,14 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
  *
  * Everything binds to the fixture's per-test schema:
  *
- * - the runner of worker(1) uses HostFixture::processLock(),
+ * - the runner of worker(1) uses HostFixture::lock(),
  *   HostFixture::boundary(), HostFixture::clock() and
- *   HostFixture::subscriptions(), plus processStore() and wakeups();
+ *   HostFixture::subscriptions(), plus process_store() and wakeups();
  * - deliveries on any worker use HostFixture::ledger();
  * - step commands (Fixtures\Process\StepCommand) need no bus: they record
  *   themselves in ProcessJournal and, once the host called
- *   ProcessJournal::bind() in setUp(), commit a row in
- *   HostFixture::scenarioRows().
+ *   ProcessJournal::bind() in set_up(), commit a row in
+ *   HostFixture::rows().
  *
  * The start mode is the host's own (in-band on mem, pdo and wp; deferred on
  * sf, CR-W3C-1): scenarios start processes through a helper that drains
@@ -44,51 +44,51 @@ interface ProcessHost {
    * @param list<array{0: class-string<LongProcess>, 1: class-string<IIntegrationEvent>}> $starts
    * @param list<class-string<IIntegrationEvent>> $awaits
    */
-  public function wireProcesses(array $starts, array $awaits): void;
+  public function wire_processes(array $starts, array $awaits): void;
 
   /** Worker $n (1 = the fixture's connection; see ProcessWorker). */
   public function worker(int $n = 1): ProcessWorker;
 
   // ── ports ────────────────────────────────────────────────────────────────
 
-  public function processStore(): IProcessStore;
+  public function process_store(): IProcessStore;
 
   public function wakeups(): IWakeupScheduler;
 
   /** The host's merged operator view (register 3.10). */
-  public function operatorView(): IOperatorView;
+  public function operator_view(): IOperatorView;
 
   /** The consumer prefix the runners lock and key intents under (LockKey::$consumer, WakeupIntent::$consumer). */
-  public function processConsumer(): string;
+  public function consumer_prefix(): string;
 
   /** The key worker(1)'s runner locks process $processId under (tenant '' outside wp multisite). */
-  public function processLockKey(int $processId): LockKey;
+  public function lock_key(int $processId): LockKey;
 
   // ── read-back (no lock, no transaction) ──────────────────────────────────
 
-  public function processRow(int $id): ?ProcessRow;
+  public function process_row(int $id): ?ProcessRow;
 
   /**
    * @param class-string<LongProcess>|null $processClass
    * @return list<int> ids in insertion order
    */
-  public function processIds(?string $processClass = null): array;
+  public function process_ids(?string $processClass = null): array;
 
   /** @return list<WakeupIntent> intents not yet completed or cancelled, in scheduling order */
-  public function pendingWakeups(): array;
+  public function live_intents(): array;
 
   // ── lock faults (register 3.7) ───────────────────────────────────────────
 
   /** A second connection takes process $processId's lock and keeps it (pdo/wp: GET_LOCK on another session; sf: pg_try_advisory_lock). */
-  public function holdProcessLockElsewhere(int $processId): void;
+  public function hold_lock_elsewhere(int $processId): void;
 
-  public function releaseProcessLockElsewhere(int $processId): void;
+  public function release_lock_elsewhere(int $processId): void;
 
   /** The next backend acquire answers NULL / false / a query error (one-shot). */
-  public function failNextProcessLockAcquire(string $reason): void;
+  public function fail_next_lock(string $reason): void;
 
   /** Successful BACKEND acquisitions so far (all workers): re-entrant acquisitions are not counted. */
-  public function processLockAcquisitions(): int;
+  public function lock_acquisitions(): int;
 
   /**
    * Run $fn once, right before worker(1)'s next BACKEND lock acquire (an
@@ -96,7 +96,7 @@ interface ProcessHost {
    * $fn typically makes worker(2) act; it runs with no transaction open on
    * worker 1's connection.
    */
-  public function beforeNextProcessLockAcquire(callable $fn): void;
+  public function before_next_lock(callable $fn): void;
 
   // ── wake transport fault ─────────────────────────────────────────────────
 
@@ -107,5 +107,5 @@ interface ProcessHost {
    * Messenger send) or when a drain executes a claimed intent (pdo jobs,
    * mem). The intent row must survive it (register 5.3 step 3).
    */
-  public function failNextWakeHandoff(string $reason): void;
+  public function fail_next_handoff(string $reason): void;
 }

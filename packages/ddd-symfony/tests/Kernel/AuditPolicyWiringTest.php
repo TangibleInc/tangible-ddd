@@ -30,7 +30,7 @@ final class AuditPolicyWiringTest extends KernelTestBase {
   private function opened(): array {
     $rows = [];
     foreach ($this->sink()->opened as $open) {
-      $rows[$open->commandName] = $open->parameters;
+      $rows[$open->command_name] = $open->parameters;
     }
     return $rows;
   }

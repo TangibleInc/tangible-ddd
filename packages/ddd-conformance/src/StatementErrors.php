@@ -18,5 +18,5 @@ interface StatementErrors {
    * transaction is then aborted (25P02) and its COMMIT answers ROLLBACK;
    * MySQL and mem keep it usable.
    */
-  public function runFailingStatement(): void;
+  public function fail_statement(): void;
 }

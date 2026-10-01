@@ -25,7 +25,7 @@ final class CancellableProcess extends LongProcess {
   protected function sync(): Result {
     Trail::note("sync:{$this->app_id}");
     return new Result(await: AwaitAny::of(AwaitEvent::keyed(JobDone::class, $this->step_ref('sync')))
-      ->cancelledBy(new AwaitEvent(AppDestroyed::class, ['app_id' => $this->app_id])));
+      ->cancelled_by(new AwaitEvent(AppDestroyed::class, ['app_id' => $this->app_id])));
   }
 
   protected function synced(mixed $payload, JobDone $done): Result {

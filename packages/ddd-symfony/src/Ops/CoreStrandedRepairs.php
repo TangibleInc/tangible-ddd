@@ -10,7 +10,7 @@ namespace TangibleDDD\Symfony\Ops;
  * `Application\Process\Repair\ResumeStrandedProcess` /
  * `FailStrandedProcess` on the bundle's command bus instead of repairing
  * inline. The core handlers guard (zero-wait process lock, the row must be
- * in findStranded(), optional expected version) and refuse with
+ * in find_stranded(), optional expected version) and refuse with
  * ProcessNotStranded.
  *
  * The commands are built from their constructors by parameter name:

@@ -7,7 +7,7 @@ namespace TangibleDDD\Symfony\Tests\Support\Fixtures;
 use TangibleDDD\Application\Process\IAwaitMechanism;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
 
-/** An await on a marker interface (D2-style), for findWaitingFor's is_a match. */
+/** An await on a marker interface (D2-style), for find_waiting_for's is_a match. */
 final class MarkerAwait implements IAwaitMechanism {
 
   public function event_class(): string { return PingMarker::class; }

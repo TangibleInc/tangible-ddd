@@ -42,11 +42,11 @@ final class InMemoryWorkflowRepository implements IBehaviourWorkflowRepository, 
     $this->rows[(int) $workflow->get_id()] = serialize($workflow);
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return [$this->rows, $this->next];
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     [$this->rows, $this->next] = $state;
   }
 }

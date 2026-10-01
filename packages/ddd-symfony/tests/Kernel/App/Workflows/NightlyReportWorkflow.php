@@ -51,7 +51,7 @@ final class NightlyReportWorkflow extends WorkflowHandler implements IStartsFrom
 
   public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
     assert($fact instanceof CronTicked);
-    return WorkflowIgnitionKey::perMinute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
+    return WorkflowIgnitionKey::per_minute($this->workflow_kind() . ':' . $fact->entry, new \DateTimeImmutable($fact->due_at));
   }
 
   public function start_ignited(BehaviourWorkflow $workflow): void {

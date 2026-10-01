@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\Outbox\IOutboxStore;
  * relay budget and never marks the row accepted (`relay.invalid-acceptance`).
  * The `?string` return type is kept for signature stability only.
  *
- * Connection rules: sharesConnectionWith() returns true when submit writes
+ * Connection rules: shares_connection() returns true when submit writes
  * through the same connection as the store (AS on the WordPress connection, pdo jobs table,
  * Doctrine transport on the domain DBAL connection); the relay then runs
  * submit + accept in ONE transaction, so relay failures are DB errors only.
@@ -36,5 +36,5 @@ interface ITransport {
    */
   public function submit(Claim $c, array $wrappedEnvelope, \DateTimeImmutable $dueAt): ?string;
 
-  public function sharesConnectionWith(IOutboxStore $store): bool;
+  public function shares_connection(IOutboxStore $store): bool;
 }

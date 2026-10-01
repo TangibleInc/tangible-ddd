@@ -10,8 +10,8 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
 /**
  * For hosts whose drain executes claimed intents itself (pdo jobs, mem):
  * the "wake transport" is the hand-off from the drain to the wake handler.
- * failNext() makes the next hand-off fail before the handler runs, as an
- * unavailable queue would; Drain then retryLater()s the claimed intent and
+ * fail_next() makes the next hand-off fail before the handler runs, as an
+ * unavailable queue would; Drain then retry_later()s the claimed intent and
  * the intent row survives (process.intent-survives-queue-failure).
  *
  * One instance is shared by every worker of a fixture; wrap() gives each
@@ -22,7 +22,7 @@ final class WakeHandoffFaults {
   /** @var list<string> */
   private array $pending = [];
 
-  public function failNext(string $reason): void {
+  public function fail_next(string $reason): void {
     $this->pending[] = $reason;
   }
 
@@ -31,17 +31,17 @@ final class WakeHandoffFaults {
       public function __construct(private readonly WakeHandoffFaults $faults, private readonly IWakeHandler $inner) {}
 
       public function wake(WakeupIntent $intent): void {
-        $this->faults->throwIfArmed($intent);
+        $this->faults->throw_if_armed($intent);
         $this->inner->wake($intent);
       }
     };
   }
 
   /** @internal */
-  public function throwIfArmed(WakeupIntent $intent): void {
+  public function throw_if_armed(WakeupIntent $intent): void {
     if ($this->pending !== []) {
       $reason = array_shift($this->pending);
-      throw new \RuntimeException("wake transport unavailable for {$intent->idempotencyKey}: $reason");
+      throw new \RuntimeException("wake transport unavailable for {$intent->key}: $reason");
     }
   }
 }

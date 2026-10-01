@@ -36,12 +36,12 @@ use TangibleDDD\Testing\InMemoryTransactionBoundary;
 final class TxpApiDemandsTest extends TestCase {
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 

@@ -22,7 +22,7 @@ use TangibleDDD\WordPress\Adapter\WpdbTransactionDepth;
 final class WpdbOutboxAdaptersTest extends TestCase {
 
   protected function setUp(): void {
-    WpdbTransactionDepth::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
   }
 
   /**
@@ -150,8 +150,8 @@ final class WpdbOutboxAdaptersTest extends TestCase {
     $GLOBALS['wpdb'] = $this->db(['id:12' => (object) ['event_id' => 'evt-12']]);
     $admin = new WpdbOutboxAdministration('acme');
 
-    self::assertSame('evt-12', $admin->eventIdOf(12));
-    self::assertNull($admin->eventIdOf(13));
+    self::assertSame('evt-12', $admin->event_id_of(12));
+    self::assertNull($admin->event_id_of(13));
   }
 
   public function test_append_writes_the_absolute_due_time_and_no_relative_delay(): void {

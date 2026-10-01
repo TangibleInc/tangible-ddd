@@ -42,13 +42,13 @@ final class PdoTransactionBoundary implements ITransactionBoundary {
     ?LoggerInterface $logger = null,
   ) {
     if ($db instanceof PdoConnection) {
-      $db->assertErrmode();
+      $db->assert_errmode();
     }
     $this->logger = $logger ?? new NullLogger();
   }
 
   public function run(callable $work): mixed {
-    if ($this->db->inTransaction()) {
+    if ($this->db->in_transaction()) {
       if ($this->policy === NestedPolicy::Reject) {
         throw new NestedTransactionRejected(
           'A transaction is already open on this connection; PdoTransactionBoundary (policy Reject) refuses to nest.'
@@ -80,8 +80,8 @@ final class PdoTransactionBoundary implements ITransactionBoundary {
     return $result;
   }
 
-  public function isActive(): bool {
-    return $this->db->inTransaction();
+  public function is_active(): bool {
+    return $this->db->in_transaction();
   }
 
   private function inSavepoint(callable $work): mixed {
@@ -108,8 +108,8 @@ final class PdoTransactionBoundary implements ITransactionBoundary {
 
   private function rollBackQuietly(\Throwable $cause): void {
     try {
-      if ($this->db->inTransaction()) {
-        $this->db->rollBack();
+      if ($this->db->in_transaction()) {
+        $this->db->rollback();
       }
     } catch (\Throwable $e) {
       $this->logger->error(sprintf('[ddd tx] rollback failed after: %s; rollback error: %s', $cause->getMessage(), $e->getMessage()));

@@ -41,7 +41,7 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
 
     $all = ['conformance.listener', 'conformance.ignition-stub', 'conformance.resume-stub'];
     self::assertSame($all, $first->delivered);
-    self::assertTrue($first->isComplete());
+    self::assertTrue($first->is_complete());
     self::assertSame([], $second->delivered, 'nothing runs twice');
     self::assertSame($all, $second->skipped, 'every subscriber is a ledger hit');
     self::assertSame(array_fill_keys($all, 1), $this->runs, 'each effect applied once');
@@ -64,14 +64,14 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
 
     self::assertSame(['conformance.a', 'conformance.ignition-stub', 'conformance.resume-stub'], $first->delivered, 'B\'s throw stops nobody');
     self::assertSame(['conformance.b'], $first->failed);
-    self::assertTrue($first->needsRetry());
+    self::assertTrue($first->needs_retry());
     self::assertSame(1, $this->host->ledger()->attempts('conformance.b', $eventId));
 
     $retry = $this->host->deliver(WidgetShipped::class, $wrapped);
 
     self::assertSame(['conformance.b'], $retry->delivered, 'the retry runs only B');
     self::assertSame(['conformance.a', 'conformance.ignition-stub', 'conformance.resume-stub'], $retry->skipped);
-    self::assertTrue($retry->isComplete());
+    self::assertTrue($retry->is_complete());
     self::assertSame(
       ['conformance.a' => 1, 'conformance.b' => 2, 'conformance.ignition-stub' => 1, 'conformance.resume-stub' => 1],
       $this->runs,
@@ -101,42 +101,42 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
     $delay = 7200;
     $this->subscribe('conformance.listener', Subscriber::LISTENER, WidgetRegistered::class);
     $t0 = $this->host->clock()->now();
-    $id = $this->publishFact(new WidgetRegistered('w-1', $delay));
+    $id = $this->publish(new WidgetRegistered('w-1', $delay));
     $dueAt = $t0->modify("+{$delay} seconds");
 
-    self::assertSame([], $this->host->relayOnce()->claimed, 'not due at t0');
-    $this->host->advanceClock($delay - 1);
-    self::assertSame([], $this->host->relayOnce()->claimed, 'not due one second early');
+    self::assertSame([], $this->host->relay_once()->claimed, 'not due at t0');
+    $this->host->advance_clock($delay - 1);
+    self::assertSame([], $this->host->relay_once()->claimed, 'not due one second early');
 
-    $this->host->advanceClock(1);
-    $this->host->rejectNextSubmission();
-    self::assertSame([$id], $this->host->relayOnce()->retried, 'due at t0 + D; first submission rejected');
+    $this->host->advance_clock(1);
+    $this->host->reject_next_submission();
+    self::assertSame([$id], $this->host->relay_once()->retried, 'due at t0 + D; first submission rejected');
 
-    $this->host->advanceClock(3600);
+    $this->host->advance_clock(3600);
     $submittedAt = $this->host->clock()->now();
-    self::assertSame([$id], $this->host->relayOnce()->accepted);
+    self::assertSame([$id], $this->host->relay_once()->accepted);
 
     $held = $this->host->transported();
     self::assertCount(1, $held);
     // CR sfc-2 option (b): a transport that schedules on its own clock may
     // report any due time in [requested, max(requested, submit time)].
-    self::assertDueWithin($dueAt, $submittedAt, $held[0], 'the retry kept the absolute due time (no second delay)');
+    self::assert_due_within($dueAt, $submittedAt, $held[0], 'the retry kept the absolute due time (no second delay)');
 
-    $outcomes = $this->host->deliverTransported(WidgetRegistered::class);
+    $outcomes = $this->host->deliver_transported(WidgetRegistered::class);
     self::assertCount(1, $outcomes);
     self::assertSame(['conformance.listener'], $outcomes[0]->delivered);
-    self::assertSame([], $this->host->relayOnce()->claimed, 'not relayed again');
+    self::assertSame([], $this->host->relay_once()->claimed, 'not relayed again');
     self::assertSame(['conformance.listener' => 1], $this->runs, 'delivered once');
 
     // A 0.6-written row: delay_seconds > 0, scheduled_at already past.
     $scheduledAt = $this->host->clock()->now()->modify('-60 seconds');
-    $legacy = $this->host->seedLegacyDelayedFact(new WidgetRegistered('legacy', 300), 300, $scheduledAt);
+    $legacy = $this->host->seed_legacy_fact(new WidgetRegistered('legacy', 300), 300, $scheduledAt);
 
     $submittedAt = $this->host->clock()->now();
-    self::assertSame([$legacy], $this->host->relayOnce()->accepted, 'claimed on the first tick');
+    self::assertSame([$legacy], $this->host->relay_once()->accepted, 'claimed on the first tick');
     $last = $this->last($this->host->transported());
-    self::assertSame($legacy, $last->eventId);
-    self::assertDueWithin($scheduledAt, $submittedAt, $last, 'enqueued immediately, the delay is not re-applied');
+    self::assertSame($legacy, $last->event_id);
+    self::assert_due_within($scheduledAt, $submittedAt, $last, 'enqueued immediately, the delay is not re-applied');
   }
 
   /**
@@ -145,10 +145,10 @@ abstract class DeliveryScenarios extends ConformanceTestCase {
    * requested time reports it exactly; one that schedules on its own clock
    * (Messenger's DelayStamp) reports the submit time for an overdue fact.
    */
-  protected static function assertDueWithin(\DateTimeImmutable $requested, \DateTimeImmutable $submittedAt, TransportedFact $held, string $message): void {
+  protected static function assert_due_within(\DateTimeImmutable $requested, \DateTimeImmutable $submittedAt, TransportedFact $held, string $message): void {
     $latest = max($requested->getTimestamp(), $submittedAt->getTimestamp());
-    self::assertGreaterThanOrEqual($requested->getTimestamp(), $held->dueAt->getTimestamp(), "$message: not before the requested due time");
-    self::assertLessThanOrEqual($latest, $held->dueAt->getTimestamp(), "$message: not later than max(requested, submit time)");
+    self::assertGreaterThanOrEqual($requested->getTimestamp(), $held->due_at->getTimestamp(), "$message: not before the requested due time");
+    self::assertLessThanOrEqual($latest, $held->due_at->getTimestamp(), "$message: not later than max(requested, submit time)");
   }
 
   /**

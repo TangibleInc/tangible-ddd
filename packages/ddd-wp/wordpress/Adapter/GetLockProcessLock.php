@@ -10,9 +10,9 @@ use TangibleDDD\Runtime\Lock\LockKey;
 
 /**
  * The wp IProcessLock (register 3.7, section 6 bug 1): MySQL GET_LOCK on
- * BOTH the namespaced name `LockKey::mysqlName()` ('ddd:' + sha1(consumer|
+ * BOTH the namespaced name `LockKey::mysql_name()` ('ddd:' + sha1(consumer|
  * tenant|process_id)) and the LEGACY name `ddd_process_<id>`, in that order,
- * in one all-or-nothing statement (WpNamedLock::acquireBoth), fail-closed:
+ * in one all-or-nothing statement (WpNamedLock::acquire_both), fail-closed:
  * only a definite '1' enters; timeout, NULL and query errors throw
  * LockNotAcquired and leave neither name held.
  *
@@ -28,8 +28,8 @@ use TangibleDDD\Runtime\Lock\LockKey;
  * blog id for the namespaced name (each blog has its own process table).
  *
  * Not re-entrant on its own terms (the runner wraps it in
- * ReentrantProcessLock), although MySQL would allow it. heldCount() and
- * forceReleaseAll() track acquisitions made through THIS instance.
+ * ReentrantProcessLock), although MySQL would allow it. held_count() and
+ * release_all() track acquisitions made through THIS instance.
  */
 final class GetLockProcessLock implements IProcessLock {
 
@@ -38,8 +38,8 @@ final class GetLockProcessLock implements IProcessLock {
 
   public function acquire(LockKey $k, float $timeoutSeconds): LockHandle {
     $name = self::name($k);
-    $legacy = self::legacyName($k);
-    WpNamedLock::acquireBoth($name, $legacy, max(0, (int) ceil($timeoutSeconds)));
+    $legacy = self::legacy_name($k);
+    WpNamedLock::acquire_both($name, $legacy, max(0, (int) ceil($timeoutSeconds)));
 
     $token = "$name|$legacy";
     $this->held[$token] = [$name, $legacy, ($this->held[$token][2] ?? 0) + 1];
@@ -58,20 +58,20 @@ final class GetLockProcessLock implements IProcessLock {
     } else {
       $this->held[$h->token][2] = $count - 1;
     }
-    WpNamedLock::releaseBoth($name, $legacy);
+    WpNamedLock::release_both($name, $legacy);
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     return array_sum(array_column($this->held, 2));
   }
 
-  public function forceReleaseAll(): int {
-    $dropped = $this->heldCount();
+  public function release_all(): int {
+    $dropped = $this->held_count();
     $held = $this->held;
     $this->held = [];
     foreach ($held as [$name, $legacy, $count]) {
       for ($i = 0; $i < $count; $i++) {
-        WpNamedLock::releaseBoth($name, $legacy);
+        WpNamedLock::release_both($name, $legacy);
       }
     }
     return $dropped;
@@ -80,13 +80,13 @@ final class GetLockProcessLock implements IProcessLock {
   /** The namespaced name, with the blog id as tenant on multisite when the key carries none. */
   public static function name(LockKey $k): string {
     if ($k->tenant === '' && function_exists('is_multisite') && is_multisite()) {
-      $k = new LockKey($k->consumer, (string) get_current_blog_id(), $k->processId);
+      $k = new LockKey($k->consumer, (string) get_current_blog_id(), $k->process_id);
     }
-    return $k->mysqlName();
+    return $k->mysql_name();
   }
 
   /** The 0.6 per-process lock name (R4: unchanged during the compatibility window). */
-  public static function legacyName(LockKey $k): string {
-    return 'ddd_process_' . $k->processId;
+  public static function legacy_name(LockKey $k): string {
+    return 'ddd_process_' . $k->process_id;
   }
 }

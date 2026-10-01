@@ -34,7 +34,7 @@ use TangibleDDD\Runtime\SystemClock;
  * 2. Re-projection of due wakeup intents whose Action Scheduler action is
  *    gone (WpdbWakeupScheduler::reproject()).
  * 3. Re-scheduling of handler redeliveries Action Scheduler lost
- *    (WpLedgeredDelivery::restoreRedeliveries()), on any schema v8 consumer.
+ *    (WpLedgeredDelivery::restore_redeliveries()), on any schema v8 consumer.
  * 4. The stranded scan (WpStrandedScan) over the framework process table.
  *
  * Steps 2 and 4 run only on a schema v8 consumer with the framework
@@ -55,7 +55,7 @@ final class WpRelayTick {
 
   /** @param object $container the consumer's container (get()/has()) */
   public static function for(IDDDConfig $config, object $container, ?IClock $clock = null): self {
-    $v8 = WpSchema::isV8($config);
+    $v8 = WpSchema::is_v8($config);
     $repository = self::service($container, IOutboxRepository::class);
     $publisher = self::service($container, IOutboxPublisher::class);
 
@@ -113,7 +113,7 @@ final class WpRelayTick {
     $restored = null;
     if ($this->ledger) {
       try {
-        $restored = WpLedgeredDelivery::restoreRedeliveries($this->config, $this->now());
+        $restored = WpLedgeredDelivery::restore_redeliveries($this->config, $this->now());
       } catch (\Throwable $e) {
         $errors['redeliveries'] = $e->getMessage();
       }
@@ -131,7 +131,7 @@ final class WpRelayTick {
     return new WpRelayTickReport($this->config->prefix(), $this->portForm, $relay, $reprojected, $stranded, $errors, $restored);
   }
 
-  public function isPortForm(): bool {
+  public function is_port_form(): bool {
     return $this->portForm;
   }
 

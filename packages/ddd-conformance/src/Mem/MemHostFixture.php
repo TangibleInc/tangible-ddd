@@ -127,9 +127,9 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  * second ProcessRunner + ReentrantProcessLock + subscription registry over
  * the SAME stores and the same raw InMemoryProcessLock, which then sees
  * worker 1's held keys as held (another session). The interleaving point
- * (beforeNextProcessLockAcquire) sits under worker 1's re-entrant lock.
+ * (before_next_lock) sits under worker 1's re-entrant lock.
  *
- * "Fresh schema" on mem is a fresh object graph built in setUp().
+ * "Fresh schema" on mem is a fresh object graph built in set_up().
  */
 class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
 
@@ -142,29 +142,29 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   protected RecordingLogger $logger;
   protected RecordingSignalDispatcher $signals;
   protected InMemoryTransactionBoundary $boundary;
-  protected ConnectionView $outboxConnection;
+  protected ConnectionView $outbox_connection;
   protected InMemoryRelayPauseStore $pauses;
   protected InMemoryOutboxStore $outbox;
-  protected RecordingOutboxStore $relayStore;
+  protected RecordingOutboxStore $relay_store;
   protected InMemoryTransport $transport;
   protected InMemoryDeliveryLedger $ledger;
   protected SubscriptionRegistry $subscriptions;
-  protected InMemoryProcessLock $rawLock;
+  protected InMemoryProcessLock $raw_lock;
   protected InterleavingProcessLock $interleaving;
   protected ReentrantProcessLock $lock;
   protected EventsUnitOfWork $events;
   protected InMemoryScenarioRows $rows;
   protected OrderedListenerDispatcher $dispatcher;
   protected InMemoryAuditSink $audit;
-  protected FaultInjectingAuditSink $auditPort;
+  protected FaultInjectingAuditSink $audit_port;
   protected RecordingFactObserver $facts;
-  protected OutboxConfig $outboxConfig;
-  protected InMemoryProcessStore $processStore;
+  protected OutboxConfig $outbox_config;
+  protected InMemoryProcessStore $process_store;
   protected InMemoryWakeupScheduler $wakeups;
-  protected WakeHandoffFaults $wakeFaults;
-  protected InMemoryEffectJournal $effectJournal;
+  protected WakeHandoffFaults $wake_faults;
+  protected InMemoryEffectJournal $effect_journal;
   protected InMemoryWorkflowIgnitionLedger $ignitions;
-  protected InMemoryWorkflowRepository $workflowRows;
+  protected InMemoryWorkflowRepository $workflows;
 
   /** @var array<int, MemProcessWorker> */
   protected array $workers = [];
@@ -185,48 +185,48 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   private ?\Closure $race = null;
 
   public function __construct(
-    protected readonly bool $transportSharesConnection = false,
-    protected readonly StartMode $startMode = StartMode::InBand,
+    protected readonly bool $shared_connection = false,
+    protected readonly StartMode $start_mode = StartMode::InBand,
   ) {}
 
-  public function hostName(): string {
+  public function name(): string {
     return 'mem';
   }
 
-  public function setUp(ScenarioContext $context): void {
+  public function set_up(ScenarioContext $context): void {
     $this->resetStatics();
 
     $this->config = new ConformanceConfig(self::CONSUMER_PREFIX, self::CONSUMER_VERSION);
     $this->logger = new RecordingLogger(fn (string $m) => $this->logs[] = $m);
     $this->signals = new RecordingSignalDispatcher();
-    $this->outboxConfig = new OutboxConfig();
+    $this->outbox_config = new OutboxConfig();
     $this->clock = new FrozenClock(new \DateTimeImmutable(self::START));
     $this->boundary = new InMemoryTransactionBoundary(NestedPolicy::Reject, $this->logger);
     $this->pauses = new InMemoryRelayPauseStore();
-    $this->outboxConnection = new ConnectionView($this->boundary);
-    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->outboxConnection);
-    $this->relayStore = new RecordingOutboxStore($this->outbox);
+    $this->outbox_connection = new ConnectionView($this->boundary);
+    $this->outbox = new InMemoryOutboxStore($this->clock, $this->pauses, $this->outbox_connection);
+    $this->relay_store = new RecordingOutboxStore($this->outbox);
     // CONF-5: a shared-connection transport enlists in the boundary, so a
     // rolled-back relay transaction takes its submission with it.
-    $this->transport = new InMemoryTransport($this->transportSharesConnection, $this->boundary);
+    $this->transport = new InMemoryTransport($this->shared_connection, $this->boundary);
     $this->ledger = new InMemoryDeliveryLedger(self::CONSUMER_PREFIX);
     $this->subscriptions = new SubscriptionRegistry();
-    $this->rawLock = new InMemoryProcessLock();
-    $this->interleaving = new InterleavingProcessLock($this->rawLock);
+    $this->raw_lock = new InMemoryProcessLock();
+    $this->interleaving = new InterleavingProcessLock($this->raw_lock);
     $this->lock = new ReentrantProcessLock($this->interleaving, $this->logger);
     $this->events = new EventsUnitOfWork();
     $this->rows = new InMemoryScenarioRows();
     $this->dispatcher = new OrderedListenerDispatcher();
     $this->audit = new InMemoryAuditSink();
-    $this->auditPort = new FaultInjectingAuditSink($this->audit);
+    $this->audit_port = new FaultInjectingAuditSink($this->audit);
     $this->facts = new RecordingFactObserver();
-    $this->processStore = new InMemoryProcessStore($this->clock);
+    $this->process_store = new InMemoryProcessStore($this->clock);
     $this->wakeups = new InMemoryWakeupScheduler($this->boundary);
-    $this->processStore->attachIntents($this->wakeups);
-    $this->wakeFaults = new WakeHandoffFaults();
-    $this->effectJournal = new InMemoryEffectJournal();
+    $this->process_store->attach_intents($this->wakeups);
+    $this->wake_faults = new WakeHandoffFaults();
+    $this->effect_journal = new InMemoryEffectJournal();
     $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
-    $this->workflowRows = new InMemoryWorkflowRepository();
+    $this->workflows = new InMemoryWorkflowRepository();
     $this->workers = [];
     $this->starts = [];
     $this->awaits = [];
@@ -234,26 +234,26 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->boundary->enlist($this->outbox);
     $this->boundary->enlist($this->ledger);
     $this->boundary->enlist($this->rows);
-    $this->boundary->enlist($this->processStore);
+    $this->boundary->enlist($this->process_store);
     $this->boundary->enlist($this->wakeups);
     // EffectMiddleware stores outside any transaction; invalidate() inside a
     // repair command's transaction rolls back with it.
-    $this->boundary->enlist($this->effectJournal);
+    $this->boundary->enlist($this->effect_journal);
     $this->boundary->enlist($this->ignitions);
-    $this->boundary->enlist($this->workflowRows);
+    $this->boundary->enlist($this->workflows);
 
     HostDefaults::provide(LoggerInterface::class, $this->logger);
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, $this->signals);
     HostDefaults::provide(IClock::class, $this->clock);
 
     RuntimeReset::register('conformance.events', fn () => $this->events->reset());
-    RuntimeReset::guardLock($this->lock);
+    RuntimeReset::guard($this->lock);
 
     // Step commands commit their effect row on this connection.
     ProcessJournal::bind($this->rows, $this->boundary);
   }
 
-  public function tearDown(): void {
+  public function tear_down(): void {
     $this->resetStatics();
     ProcessJournal::bind(null);
   }
@@ -264,7 +264,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return $this->clock;
   }
 
-  public function advanceClock(int $seconds): void {
+  public function advance_clock(int $seconds): void {
     $this->clock->advance("+{$seconds} seconds");
   }
 
@@ -278,11 +278,11 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return $this->outbox;
   }
 
-  public function outboxAdministration(): IOutboxAdministration {
+  public function outbox_admin(): IOutboxAdministration {
     return $this->outbox;
   }
 
-  public function relayPauses(): IRelayPauseStore {
+  public function pauses(): IRelayPauseStore {
     return $this->pauses;
   }
 
@@ -298,7 +298,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return $this->subscriptions;
   }
 
-  public function processLock(): IProcessLock {
+  public function lock(): IProcessLock {
     return $this->lock;
   }
 
@@ -306,13 +306,13 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return $this->events;
   }
 
-  public function scenarioRows(): ScenarioRows {
+  public function rows(): ScenarioRows {
     return $this->rows;
   }
 
   // ── command pipeline ─────────────────────────────────────────────────────
 
-  public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+  public function command_bus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
     return $this->bus($handlers, $options, null);
   }
 
@@ -326,7 +326,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
         return false;
       }
 
-      public function captureParameters(object $command): bool {
+      public function captures_parameters(object $command): bool {
         return false;
       }
     };
@@ -336,13 +336,13 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
         $this->config,
         $this->events,
         new Redactor(),
-        $this->auditPort,
+        $this->audit_port,
         new FixedActorProvider(),
         $policy,
         new PhpEnvironmentProvider(['host' => 'mem']),
       ),
       $effects,
-      new TransactionalCommandMiddleware($options->withBoundary ? $this->boundary : null),
+      new TransactionalCommandMiddleware($options->boundary ? $this->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
         new EventRouter($this->dispatcher, new OutboxIntegrationEventBus(
@@ -351,7 +351,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
           $this->facts,
           $this->clock,
           $this->outbox,
-          $this->outboxConfig,
+          $this->outbox_config,
         )),
       ),
       new HandlerMapMiddleware($handlers),
@@ -362,17 +362,17 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->dispatcher->listen($eventClassOrMarker, $listener, $priority);
   }
 
-  public function failNextCommit(string $reason): void {
-    $this->boundary->failNextCommit($reason);
+  public function fail_next_commit(string $reason): void {
+    $this->boundary->fail_next_commit($reason);
   }
 
-  public function auditTrail(): array {
+  public function audit_trail(): array {
     $names = [];
     foreach ($this->audit->opened as $open) {
-      $names[$open->commandId] = $open->commandName;
+      $names[$open->command_id] = $open->command_name;
     }
     return array_map(
-      static fn ($close) => new AuditEntry($close->commandId, $names[$close->commandId] ?? '?', $close->status, $close->error['type'] ?? null),
+      static fn ($close) => new AuditEntry($close->command_id, $names[$close->command_id] ?? '?', $close->status, $close->error['type'] ?? null),
       $this->audit->closed,
     );
   }
@@ -383,8 +383,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
    * One step of the core OutboxProcessor (port form), batch size $limit,
    * over a RecordingOutboxStore so the report names event ids.
    */
-  public function relayOnce(int $limit = 50): RelayReport {
-    $processor = $this->relayProcessor($this->relayStore, $limit);
+  public function relay_once(int $limit = 50): RelayReport {
+    $processor = $this->relay_processor($this->relay_store, $limit);
 
     $kept = null;
     if ($this->crashAfterSubmit) {
@@ -396,32 +396,32 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       $competitor = $this->race;
       $this->race = null;
       $processor->between_submit_and_accept(function () use ($competitor, &$kept): void {
-        $this->outboxConnection->asAnotherConnection($competitor);
+        $this->outbox_connection->run_elsewhere($competitor);
         // What the competitor committed on its own connection survives the
         // relay transaction's rollback: keep every participant but the
         // transport (the relay's own write) as the competitor left it.
-        $kept = array_map(static fn (InMemoryTransactional $p) => [$p, $p->snapshotState()], $this->competitorParticipants());
+        $kept = array_map(static fn (InMemoryTransactional $p) => [$p, $p->snapshot()], $this->competitor_participants());
       });
     }
 
-    $this->relayStore->reset();
+    $this->relay_store->reset();
     $processor->process_batch();
 
     foreach ($kept ?? [] as [$participant, $state]) {
-      $participant->restoreState($state);
+      $participant->restore($state);
     }
-    return $this->relayStore->report();
+    return $this->relay_store->report();
   }
 
-  public function rejectNextSubmission(?\Throwable $e = null): void {
-    $this->transport->rejectNext($e);
+  public function reject_next_submission(?\Throwable $e = null): void {
+    $this->transport->reject_next($e);
   }
 
-  public function acceptNextSubmissionWithoutRef(): void {
-    $this->transport->returnNoRefNext();
+  public function accept_next_without_ref(): void {
+    $this->transport->drop_next_ref();
   }
 
-  public function crashNextRelayAfterSubmit(): void {
+  public function crash_next_relay(): void {
     $this->crashAfterSubmit = true;
   }
 
@@ -429,7 +429,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return array_map(static fn (array $s) => new TransportedFact($s['event_id'], $s['due_at']), $this->held());
   }
 
-  public function seedLegacyDelayedFact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
+  public function seed_legacy_fact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
     // No legacy schema on mem: the port record already carries the absolute time.
     $eventId = Uuid::v4();
     $this->outbox->append(new OutboxRecord(
@@ -441,7 +441,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       command_id: null,
       payload: $fact->integration_payload(),
       due_at: $scheduledAt,
-      max_attempts: $this->outboxConfig->max_attempts,
+      max_attempts: $this->outbox_config->max_attempts,
     ));
     return $eventId;
   }
@@ -449,10 +449,10 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   // ── delivery ─────────────────────────────────────────────────────────────
 
   public function deliver(string $eventClass, array $wrapped): DeliveryOutcome {
-    return $this->deliverWith($this->subscriptions, $eventClass, $wrapped);
+    return $this->deliver_with($this->subscriptions, $eventClass, $wrapped);
   }
 
-  public function deliverTransported(string $eventClass): array {
+  public function deliver_transported(string $eventClass): array {
     $held = $this->held();
     $outcomes = [];
     for (; $this->deliveredCursor < count($held); $this->deliveredCursor++) {
@@ -463,7 +463,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  public function runWorker(array $messages): WorkerRun {
+  public function run_worker(array $messages): WorkerRun {
     $errors = $leaks = [];
     foreach ($messages as $message) {
       $error = $leak = null;
@@ -473,7 +473,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
         $error = $e;
       } finally {
         try {
-          RuntimeReset::betweenMessages();
+          RuntimeReset::between_messages();
         } catch (RuntimeLeakDetected $l) {
           $leak = $l;
         }
@@ -484,8 +484,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return new WorkerRun($errors, $leaks);
   }
 
-  public function runnerTransients(): ?array {
-    $runner = $this->worker(1)->processRunner();
+  public function runner_transients(): ?array {
+    $runner = $this->worker(1)->runner();
     // The runner's one per-message transient (register 3.9), read without
     // widening its API.
     return ['resume_argument' => (fn () => $this->resume_argument)->call($runner)];
@@ -493,8 +493,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   // ── optional seams (CR-CC-1) ─────────────────────────────────────────────
 
-  public function failNextAuditClose(string $reason): void {
-    $this->auditPort->failNextClose($reason);
+  public function fail_next_audit_close(string $reason): void {
+    $this->audit_port->fail_next_close($reason);
   }
 
   public function signals(): array {
@@ -503,13 +503,13 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   // ── RelayRace (CR-W3CP-2), StatementErrors (CR-W3CP-3) ──────────────────
 
-  public function raceNextRelayAfterSubmit(callable $competitor): void {
+  public function race_next_relay(callable $competitor): void {
     $this->race = \Closure::fromCallable($competitor);
   }
 
-  public function runFailingStatement(): void {
-    if (!$this->boundary->isActive()) {
-      throw new \LogicException('runFailingStatement() runs inside the open transaction');
+  public function fail_statement(): void {
+    if (!$this->boundary->is_active()) {
+      throw new \LogicException('fail_statement() runs inside the open transaction');
     }
     // mem has no aborted-transaction state, like MySQL: the statement fails
     // and the transaction stays usable.
@@ -518,7 +518,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
 
   // ── ProcessHost (CR-W3CP-1) ──────────────────────────────────────────────
 
-  public function wireProcesses(array $starts, array $awaits): void {
+  public function wire_processes(array $starts, array $awaits): void {
     foreach ($starts as $pair) {
       $this->starts[] = $pair;
     }
@@ -526,7 +526,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       $this->awaits[] = $class;
     }
     foreach ($this->workers as $worker) {
-      $this->wire($worker->processRunner(), $starts, $awaits);
+      $this->wire($worker->runner(), $starts, $awaits);
     }
   }
 
@@ -535,33 +535,33 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       throw new \InvalidArgumentException("No worker $n");
     }
     return $this->workers[$n] ??= $n === 1
-      ? $this->buildWorker($this->subscriptions, $this->lock)
-      : $this->buildWorker(new SubscriptionRegistry(), new ReentrantProcessLock($this->rawLock, $this->logger));
+      ? $this->build_worker($this->subscriptions, $this->lock)
+      : $this->build_worker(new SubscriptionRegistry(), new ReentrantProcessLock($this->raw_lock, $this->logger));
   }
 
-  public function processStore(): IProcessStore {
-    return $this->processStore;
+  public function process_store(): IProcessStore {
+    return $this->process_store;
   }
 
   public function wakeups(): IWakeupScheduler {
     return $this->wakeups;
   }
 
-  public function operatorView(): IOperatorView {
-    return new PortOperatorView($this->config, $this->outbox, $this->processStore, $this->clock, [$this->ledger, $this->wakeups]);
+  public function operator_view(): IOperatorView {
+    return new PortOperatorView($this->config, $this->outbox, $this->process_store, $this->clock, [$this->ledger, $this->wakeups]);
   }
 
-  public function processConsumer(): string {
+  public function consumer_prefix(): string {
     return $this->config->prefix();
   }
 
-  public function processLockKey(int $processId): LockKey {
+  public function lock_key(int $processId): LockKey {
     return new LockKey($this->config->prefix(), '', $processId);
   }
 
-  public function processRow(int $id): ?ProcessRow {
+  public function process_row(int $id): ?ProcessRow {
     try {
-      $p = $this->processStore->find($id);
+      $p = $this->process_store->find($id);
     } catch (QuarantinedProcess) {
       return null;
     }
@@ -571,130 +571,130 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     return new ProcessRow(
       $id,
       get_class($p),
-      (string) $this->processStore->statusOf($id),
+      (string) $this->process_store->status_of($id),
       $p->current_step_index(),
-      (int) $this->processStore->versionOf($id),
-      $this->processStore->ignitionKeyOf($id),
+      (int) $this->process_store->version_of($id),
+      $this->process_store->ignition_key_of($id),
       $p->ignited_by_event_id(),
     );
   }
 
-  public function processIds(?string $processClass = null): array {
+  public function process_ids(?string $processClass = null): array {
     $ids = [];
     // mem ids are sequential from 1 and rows are never deleted
-    for ($id = 1; $id <= $this->processStore->count(); $id++) {
-      $row = $this->processRow($id);
-      if ($row !== null && ($processClass === null || $row->processClass === $processClass)) {
+    for ($id = 1; $id <= $this->process_store->count(); $id++) {
+      $row = $this->process_row($id);
+      if ($row !== null && ($processClass === null || $row->process_class === $processClass)) {
         $ids[] = $id;
       }
     }
     return $ids;
   }
 
-  public function pendingWakeups(): array {
+  public function live_intents(): array {
     return $this->wakeups->pending();
   }
 
-  public function holdProcessLockElsewhere(int $processId): void {
-    $this->rawLock->holdElsewhere($this->processLockKey($processId));
+  public function hold_lock_elsewhere(int $processId): void {
+    $this->raw_lock->hold_elsewhere($this->lock_key($processId));
   }
 
-  public function releaseProcessLockElsewhere(int $processId): void {
-    $this->rawLock->releaseElsewhere($this->processLockKey($processId));
+  public function release_lock_elsewhere(int $processId): void {
+    $this->raw_lock->release_elsewhere($this->lock_key($processId));
   }
 
-  public function failNextProcessLockAcquire(string $reason): void {
-    $this->rawLock->failNextAcquire($reason);
+  public function fail_next_lock(string $reason): void {
+    $this->raw_lock->fail_next_acquire($reason);
   }
 
-  public function processLockAcquisitions(): int {
-    return $this->rawLock->acquireCount();
+  public function lock_acquisitions(): int {
+    return $this->raw_lock->acquisitions();
   }
 
-  public function beforeNextProcessLockAcquire(callable $fn): void {
-    $this->interleaving->beforeNextAcquire(static function () use ($fn): void {
+  public function before_next_lock(callable $fn): void {
+    $this->interleaving->before_next_acquire(static function () use ($fn): void {
       $fn();
     });
   }
 
-  public function failNextWakeHandoff(string $reason): void {
-    $this->wakeFaults->failNext($reason);
+  public function fail_next_handoff(string $reason): void {
+    $this->wake_faults->fail_next($reason);
   }
 
   // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
 
-  public function effectJournal(): IEffectJournal {
-    return $this->effectJournal;
+  public function effect_journal(): IEffectJournal {
+    return $this->effect_journal;
   }
 
-  public function effectBus(array $handlers): CommandBus {
+  public function effect_bus(array $handlers): CommandBus {
     return $this->bus(
       [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
       new BusOptions(),
-      new EffectMiddleware($this->effectJournal, $this->boundary),
+      new EffectMiddleware($this->effect_journal, $this->boundary),
     );
   }
 
   // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
 
-  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+  public function ignition_ledger(): IWorkflowIgnitionLedger {
     return $this->ignitions;
   }
 
-  public function workflowRepository(): IBehaviourWorkflowRepository {
-    return $this->workflowRows;
+  public function workflows(): IBehaviourWorkflowRepository {
+    return $this->workflows;
   }
 
-  public function workflowIgniter(): WorkflowIgniter {
+  public function igniter(): WorkflowIgniter {
     return new WorkflowIgniter($this->ignitions, $this->boundary, $this->logger, $this->clock);
   }
 
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
 
-  public function forgetProcessClass(int $processId, string $missingClass): void {
-    $this->processStore->corruptClassForTests($processId, $missingClass);
+  public function forget_class(int $processId, string $missingClass): void {
+    $this->process_store->corrupt_class($processId, $missingClass);
   }
 
-  public function storedProcessStatus(int $processId): ?string {
-    return $this->processStore->statusOf($processId);
+  public function stored_status(int $processId): ?string {
+    return $this->process_store->status_of($processId);
   }
 
-  public function quarantineReason(int $processId): ?string {
-    return $this->processStore->quarantineReasonOf($processId);
+  public function quarantine_reason(int $processId): ?string {
+    return $this->process_store->quarantine_reason_of($processId);
   }
 
   // ── mem-only read-back (not HostFixture) ─────────────────────────────────
 
-  public function auditSink(): InMemoryAuditSink {
+  public function audit_sink(): InMemoryAuditSink {
     return $this->audit;
   }
 
-  public function factObserver(): RecordingFactObserver {
+  public function fact_observer(): RecordingFactObserver {
     return $this->facts;
   }
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  protected function buildWorker(ISubscriptionRegistry $registry, IProcessLock $lock, ?IDeliveryWorker $delivery = null): MemProcessWorker {
+  protected function build_worker(ISubscriptionRegistry $registry, IProcessLock $lock, ?IDeliveryWorker $delivery = null): MemProcessWorker {
     $runner = new ProcessRunner(
-      $this->config, null, $lock, $this->processStore, $this->wakeups, $registry,
-      $this->boundary, $this->clock, $this->startMode, $this->logger,
+      $this->config, null, $lock, $this->process_store, $this->wakeups, $registry,
+      $this->boundary, $this->clock, $this->start_mode, $this->logger,
     );
     $this->wire($runner, $this->starts, $this->awaits);
 
     return new MemProcessWorker(
       $runner,
       $lock,
-      fn (string $eventClass, array $wrapped): DeliveryOutcome => $this->deliverWith($registry, $eventClass, $wrapped),
+      fn (string $eventClass, array $wrapped): DeliveryOutcome => $this->deliver_with($registry, $eventClass, $wrapped),
       fn (int $maxItems): DrainReport => (new Drain(
-        $this->relayProcessor($this->outbox, $this->outboxConfig->batch_size),
+        $this->relay_processor($this->outbox, $this->outbox_config->batch_size),
         $this->wakeups,
-        $this->wakeFaults->wrap($runner),
+        $this->wake_faults->wrap($runner),
         $delivery,
         $runner,
         $this->clock,
         $this->logger,
-      ))->runOnce($maxItems),
+      ))->run_once($maxItems),
     );
   }
 
@@ -711,16 +711,16 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     }
   }
 
-  protected function deliverWith(ISubscriptionRegistry $registry, string $eventClass, array $wrapped): DeliveryOutcome {
+  protected function deliver_with(ISubscriptionRegistry $registry, string $eventClass, array $wrapped): DeliveryOutcome {
     return (new IntegrationDelivery($registry, $this->ledger, IntegrationDelivery::DEFAULT_BUDGET, $this->logger))
       ->deliver($eventClass, $wrapped);
   }
 
-  protected function relayProcessor(IOutboxStore $store, int $limit): OutboxProcessor {
+  protected function relay_processor(IOutboxStore $store, int $limit): OutboxProcessor {
     return new OutboxProcessor(
       $this->config,
       null,
-      OutboxConfig::from_array(['batch_size' => $limit] + get_object_vars($this->outboxConfig)),
+      OutboxConfig::from_array(['batch_size' => $limit] + get_object_vars($this->outbox_config)),
       null,
       null,
       $this->logger,
@@ -732,8 +732,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   }
 
   /** @return list<InMemoryTransactional> every enlisted participant except the transport */
-  protected function competitorParticipants(): array {
-    return [$this->outbox, $this->ledger, $this->rows, $this->processStore, $this->wakeups];
+  protected function competitor_participants(): array {
+    return [$this->outbox, $this->ledger, $this->rows, $this->process_store, $this->wakeups];
   }
 
   /** @return list<array{event_id: string, envelope: array, due_at: \DateTimeImmutable, ref: ?string}> submissions the transport accepted with a reference */
@@ -742,8 +742,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   }
 
   private function resetStatics(): void {
-    RuntimeReset::forgetRegistrationsForTests();
-    HostDefaults::resetForTests();
+    RuntimeReset::forget_for_tests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     Reactions::reset();
   }

@@ -133,7 +133,7 @@ final class ScenarioCatalogue {
   ];
 
   /** The abstract scenario case declaring $id, or null for an unknown id. */
-  public static function scenarioCase(string $id): ?string {
+  public static function case_of(string $id): ?string {
     return self::CASES[$id] ?? null;
   }
 
@@ -142,9 +142,9 @@ final class ScenarioCatalogue {
    *
    * @return list<class-string>
    */
-  public static function casesFor(string $host, int $wave): array {
+  public static function cases_for(string $host, int $wave): array {
     $cases = [];
-    foreach (self::dueBy($host, $wave) as $id) {
+    foreach (self::due_by($host, $wave) as $id) {
       if (isset(self::CASES[$id])) {
         $cases[self::CASES[$id]] = true;
       }
@@ -153,7 +153,7 @@ final class ScenarioCatalogue {
   }
 
   /** Ids that must pass on $host at the acceptance of $wave (cumulative), in table order. */
-  public static function dueBy(string $host, int $wave): array {
+  public static function due_by(string $host, int $wave): array {
     $col = self::column($host);
     $ids = [];
     foreach (self::WAVES as $id => $waves) {
@@ -165,12 +165,12 @@ final class ScenarioCatalogue {
   }
 
   /** Ids first due on $host exactly at $wave. */
-  public static function firstDueAt(string $host, int $wave): array {
+  public static function first_due_at(string $host, int $wave): array {
     $col = self::column($host);
     return array_keys(array_filter(self::WAVES, static fn (array $w) => $w[$col] === $wave));
   }
 
-  public static function isKnown(string $id): bool {
+  public static function is_known(string $id): bool {
     return isset(self::WAVES[$id]);
   }
 

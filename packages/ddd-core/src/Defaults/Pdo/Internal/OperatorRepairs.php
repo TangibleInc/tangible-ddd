@@ -80,7 +80,7 @@ final class OperatorRepairs {
   }
 
   private function newestDeadLetter(string $eventId): int {
-    $id = $this->db->fetchOne("SELECT id FROM `{$this->dlq}` WHERE event_id = ? ORDER BY id DESC LIMIT 1", [$eventId])['id'] ?? null;
+    $id = $this->db->fetch_one("SELECT id FROM `{$this->dlq}` WHERE event_id = ? ORDER BY id DESC LIMIT 1", [$eventId])['id'] ?? null;
     if ($id === null) {
       throw new OutboxRowNotFound("Event $eventId has no dead letter");
     }
@@ -99,7 +99,7 @@ final class OperatorRepairs {
     }
     $subscriber = substr($key, 0, $at);
     $eventId = substr($key, $at + 1);
-    $row = $this->db->fetchOne(
+    $row = $this->db->fetch_one(
       "SELECT delivered_at, exhausted_at FROM `{$this->ledger}` WHERE subscriber_id = ? AND event_id = ?",
       [$subscriber, $eventId]
     );
@@ -114,14 +114,14 @@ final class OperatorRepairs {
 
   /** Make a queued, unleased job due now; attempts stay (the history the operator saw). */
   private function dueNow(string $idempotencyKey, string $kindSql, string $what): void {
-    $now = Utc::toDb($this->clock->now());
+    $now = Utc::to_db($this->clock->now());
     $n = $this->db->execute(
       "UPDATE `{$this->jobs}` SET next_attempt_at = ?, due_at = LEAST(due_at, ?)
        WHERE idempotency_key = ? AND $kindSql AND (claim_token IS NULL OR lease_until <= ?)",
       [$now, $now, $idempotencyKey, $now]
     );
-    if ($n === 0 && $this->db->fetchOne("SELECT 1 AS x FROM `{$this->jobs}` WHERE idempotency_key = ? AND $kindSql AND next_attempt_at = ?", [$idempotencyKey, $now]) === null) {
-      $exists = $this->db->fetchOne("SELECT 1 AS x FROM `{$this->jobs}` WHERE idempotency_key = ? AND $kindSql", [$idempotencyKey]) !== null;
+    if ($n === 0 && $this->db->fetch_one("SELECT 1 AS x FROM `{$this->jobs}` WHERE idempotency_key = ? AND $kindSql AND next_attempt_at = ?", [$idempotencyKey, $now]) === null) {
+      $exists = $this->db->fetch_one("SELECT 1 AS x FROM `{$this->jobs}` WHERE idempotency_key = ? AND $kindSql", [$idempotencyKey]) !== null;
       throw new PdoRepairRefused($exists ? "$what is leased by a worker; repair refused" : "$what is not queued (completed or gone)");
     }
   }

@@ -38,7 +38,7 @@ final class CancellableJobProcess extends LongProcess {
     return new Result(
       commands: [new StepCommand('sync', $ref)],
       await: AwaitAny::of(AwaitEvent::keyed(JobFinished::class, $ref))
-        ->cancelledBy(new AwaitEvent(WidgetScrapped::class, ['widget_id' => $this->widget_id]))
+        ->cancelled_by(new AwaitEvent(WidgetScrapped::class, ['widget_id' => $this->widget_id]))
         ->within(self::TIMEOUT_SECONDS),
     );
   }

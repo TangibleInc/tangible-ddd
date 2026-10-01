@@ -37,5 +37,5 @@ interface ITransactionBoundary {
    */
   public function run(callable $work): mixed;
 
-  public function isActive(): bool;
+  public function is_active(): bool;
 }

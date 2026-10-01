@@ -28,13 +28,13 @@ abstract class PdoRelayCases extends OutboxTestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     HostDefaults::provide(IInfrastructureSignalDispatcher::class, new RecordingSignalDispatcher());
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     parent::tearDown();
   }
 

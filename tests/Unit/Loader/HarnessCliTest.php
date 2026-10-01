@@ -47,7 +47,8 @@ class HarnessCliTest extends TestCase
         $this->assertStringContainsString('tests/Compat/check-allowances.php', $source);
         $this->assertStringContainsString('tests/Compat/release-artifact.sh', $source);
         $this->assertStringContainsString('tests/Integration/Rollback/phpunit.xml', $source);
-        $this->assertStringContainsString('COMPAT_SECTIONS="allowances artifact 7.2 7.3"', $source);
+        $this->assertStringContainsString('COMPAT_SECTIONS="cs allowances artifact 7.2 7.3"', $source);
+        $this->assertStringContainsString('php-cs-fixer check', $source);
         $this->assertStringNotContainsString('compat           compatibility fixtures (not yet implemented)', $source);
     }
 

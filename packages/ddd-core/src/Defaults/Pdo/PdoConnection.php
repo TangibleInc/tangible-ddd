@@ -16,7 +16,7 @@ namespace TangibleDDD\Defaults\Pdo;
  * - Binding: int (and bool, as 0/1) with PDO::PARAM_INT, so `LIMIT ?` works
  *   under emulated prepares (PDO MySQL's default); null with PARAM_NULL;
  *   string and float as strings. Anything else is refused.
- * - isDuplicateKey(): driver code MySQL 1062 (ER_DUP_ENTRY), or SQLSTATE
+ * - is_duplicate_key(): driver code MySQL 1062 (ER_DUP_ENTRY), or SQLSTATE
  *   23505 on pgsql, anywhere in the previous chain; never SQLSTATE 23000.
  *
  * Tested on MySQL 8.0 in both prepare modes; other drivers are untested.
@@ -26,26 +26,26 @@ final class PdoConnection implements IHostConnection {
   private const MYSQL_DUPLICATE_ENTRY = 1062;
 
   public function __construct(private readonly \PDO $db) {
-    $this->assertErrmode();
+    $this->assert_errmode();
   }
 
   public function execute(string $sql, array $params = []): int {
     return $this->run($sql, $params)->rowCount();
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
+  public function fetch_all(string $sql, array $params = []): array {
     return array_values($this->run($sql, $params)->fetchAll(\PDO::FETCH_ASSOC));
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
+  public function fetch_one(string $sql, array $params = []): ?array {
     $statement = $this->run($sql, $params);
     $row = $statement->fetch(\PDO::FETCH_ASSOC);
     $statement->closeCursor();
     return $row === false ? null : $row;
   }
 
-  public function lastInsertId(): string {
-    $this->assertErrmode();
+  public function last_insert_id(): string {
+    $this->assert_errmode();
     $id = $this->db->lastInsertId();
     if ($id === false) {
       throw new \RuntimeException('PDO::lastInsertId() failed');
@@ -54,31 +54,31 @@ final class PdoConnection implements IHostConnection {
   }
 
   public function begin(): void {
-    $this->assertErrmode();
+    $this->assert_errmode();
     if (!$this->db->beginTransaction()) {
       throw new \RuntimeException('PDO::beginTransaction() returned false');
     }
   }
 
   public function commit(): void {
-    $this->assertErrmode();
+    $this->assert_errmode();
     if (!$this->db->commit()) {
       throw new \RuntimeException('PDO::commit() returned false');
     }
   }
 
-  public function rollBack(): void {
-    $this->assertErrmode();
+  public function rollback(): void {
+    $this->assert_errmode();
     if (!$this->db->rollBack()) {
       throw new \RuntimeException('PDO::rollBack() returned false');
     }
   }
 
-  public function inTransaction(): bool {
+  public function in_transaction(): bool {
     return $this->db->inTransaction();
   }
 
-  public function isDuplicateKey(\Throwable $e): bool {
+  public function is_duplicate_key(\Throwable $e): bool {
     for ($t = $e; $t !== null; $t = $t->getPrevious()) {
       if (!$t instanceof \PDOException || !is_array($t->errorInfo ?? null)) {
         continue;
@@ -96,7 +96,7 @@ final class PdoConnection implements IHostConnection {
 
   /** @param array<int|string, mixed> $params */
   private function run(string $sql, array $params): \PDOStatement {
-    $this->assertErrmode();
+    $this->assert_errmode();
     $statement = $this->db->prepare($sql);
     foreach ($params as $key => $value) {
       $name = is_int($key) ? $key + 1 : (str_starts_with($key, ':') ? $key : ':' . $key);
@@ -136,7 +136,7 @@ final class PdoConnection implements IHostConnection {
    * ERRMODE_EXCEPTION. Every call checks it; PdoTransactionBoundary also
    * calls it at its own construction (register 3.2).
    */
-  public function assertErrmode(): void {
+  public function assert_errmode(): void {
     if ($this->db->getAttribute(\PDO::ATTR_ERRMODE) !== \PDO::ERRMODE_EXCEPTION) {
       throw new PdoConfigurationError(
         'TangibleDDD\Defaults\Pdo needs the host PDO in PDO::ERRMODE_EXCEPTION '

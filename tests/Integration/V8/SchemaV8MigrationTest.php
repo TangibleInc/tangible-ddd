@@ -179,7 +179,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
 
     self::assertSame(7, ddd_schema_installed($this->config), 'the v8 adapters stay off without their ignition gate');
     self::assertStringContainsString('uniq_ignition_key', (string) get_option($this->config->option('ddd_migration_error')));
-    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::isV8($this->config));
+    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::is_v8($this->config));
 
     // Throttled: the next requests do not re-run dbDelta and the failing
     // migration until the retry time passes.

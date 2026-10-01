@@ -61,7 +61,9 @@ for path in "${required[@]}"; do
       echo "FAIL missing: $path"
       fail=1
     fi
-  elif printf '%s\n' "$LIST" | grep -q -x -F "$path"; then
+  elif grep -q -x -F -- "$path" <<< "$LIST"; then
+    # (a here-string, not `printf | grep -q`: grep -q exits at the first
+    # match, printf then dies of SIGPIPE, and pipefail made a hit a miss)
     echo "ok   $path"
   else
     echo "FAIL missing: $path"

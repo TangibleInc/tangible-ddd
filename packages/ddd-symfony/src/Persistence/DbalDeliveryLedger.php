@@ -15,7 +15,7 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * last_error and the terminal exhausted_at marker.
  *
  * Every write is a single upsert in autocommit (or the ambient transaction,
- * if the caller has one). The core invoker writes markDelivered() AFTER the
+ * if the caller has one). The core invoker writes mark_delivered() AFTER the
  * subscriber's own command committed, so a crash in between re-runs that
  * subscriber: listeners stay idempotent (at-least-once per subscriber).
  *
@@ -34,7 +34,7 @@ final class DbalDeliveryLedger implements IDeliveryLedger {
     return $this->column('delivered_at IS NOT NULL', $subscriberId, $eventId) === true;
   }
 
-  public function markDelivered(string $subscriberId, string $eventId): void {
+  public function mark_delivered(string $subscriberId, string $eventId): void {
     $this->connection->executeStatement(
       "INSERT INTO {$this->table} (subscriber_id, event_id, delivered_at, updated_at) VALUES (?, ?, now(), now())
        ON CONFLICT (subscriber_id, event_id) DO UPDATE
@@ -43,7 +43,7 @@ final class DbalDeliveryLedger implements IDeliveryLedger {
     );
   }
 
-  public function markFailed(string $subscriberId, string $eventId, string $error, int $attempt): void {
+  public function mark_failed(string $subscriberId, string $eventId, string $error, int $attempt): void {
     $this->connection->executeStatement(
       "INSERT INTO {$this->table} (subscriber_id, event_id, attempts, last_error, updated_at) VALUES (?, ?, ?, ?, now())
        ON CONFLICT (subscriber_id, event_id) DO UPDATE
@@ -57,12 +57,12 @@ final class DbalDeliveryLedger implements IDeliveryLedger {
     return (int) ($this->column('attempts', $subscriberId, $eventId) ?? 0);
   }
 
-  public function lastError(string $subscriberId, string $eventId): ?string {
+  public function last_error(string $subscriberId, string $eventId): ?string {
     $error = $this->column('last_error', $subscriberId, $eventId);
     return is_string($error) ? $error : null;
   }
 
-  public function markExhausted(string $subscriberId, string $eventId): void {
+  public function mark_exhausted(string $subscriberId, string $eventId): void {
     $this->connection->executeStatement(
       "INSERT INTO {$this->table} (subscriber_id, event_id, exhausted_at, updated_at) VALUES (?, ?, now(), now())
        ON CONFLICT (subscriber_id, event_id) DO UPDATE

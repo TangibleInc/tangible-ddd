@@ -12,7 +12,7 @@ use TangibleDDD\Runtime\Lock\LockKey;
  * Pass-through raw IProcessLock (under the core ReentrantProcessLock, over
  * PostgresAdvisoryProcessLock) that counts SUCCESSFUL backend acquisitions
  * into a counter shared by every worker of the fixture
- * (ProcessHost::processLockAcquisitions()).
+ * (ProcessHost::lock_acquisitions()).
  *
  * While the counter says a web request is running (WebRequests), every
  * acquire goes to $web instead: a PostgresAdvisoryProcessLock over a pooled
@@ -42,11 +42,11 @@ final class CountingProcessLock implements IProcessLock {
     $this->inner->release($h);
   }
 
-  public function heldCount(): int {
-    return $this->inner->heldCount();
+  public function held_count(): int {
+    return $this->inner->held_count();
   }
 
-  public function forceReleaseAll(): int {
-    return $this->inner->forceReleaseAll();
+  public function release_all(): int {
+    return $this->inner->release_all();
   }
 }

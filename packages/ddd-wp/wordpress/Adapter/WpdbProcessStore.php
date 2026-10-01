@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\SystemClock;
  * ruling on #76), over `{prefix}_long_processes` of the framework's own
  * ProcessRepository (whose 0.6 column mapping and hydration it reuses).
  *
- * - insertIgnited(): the #[StartsOn] path only. Inside the ignition lock
+ * - insert_ignited(): the #[StartsOn] path only. Inside the ignition lock
  *   (`ddd_ign_` + md5(prefix|class|event_id), the name the 0.6.7 hotfix also
  *   takes) it first looks for a row of the class that a 0.6 copy ignited
  *   with this event (ignited_by_event_id = event, start_path NULL: written
@@ -45,7 +45,7 @@ use TangibleDDD\Runtime\SystemClock;
  * - find(): an undecodable row (class gone, constructor changed) is
  *   quarantined: status `failed`, quarantine_reason set (R5, no new status),
  *   then QuarantinedProcess is thrown; the worker continues.
- * - findStranded($now): `scheduled` / `running` rows not updated for
+ * - find_stranded($now): `scheduled` / `running` rows not updated for
  *   $strandedAfterSeconds (default 900) with no live (`pending` / `firing`)
  *   intent in `{prefix}_ddd_wakeups`; a `running` row only while no other
  *   session holds its process lock on either name (IS_USED_LOCK; this
@@ -63,7 +63,7 @@ final class WpdbProcessStore implements IProcessStore {
     private readonly int $strandedAfterSeconds = 900,
   ) {}
 
-  public function insertIgnited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
+  public function insert_ignited(LongProcess $p, string $processClass, string $eventId): IgnitionResult {
     try {
       $key = IgnitionKey::for($eventId, $processClass);
     } catch (\InvalidArgumentException) {
@@ -171,13 +171,13 @@ final class WpdbProcessStore implements IProcessStore {
     return $this->fenced($n, $id, $expectedVersion, 'touch');
   }
 
-  public function versionOf(int $id): ?int {
+  public function version_of(int $id): ?int {
     $db = self::db();
     $v = $db->get_var($db->prepare("SELECT version FROM `{$this->table()}` WHERE id = %d", $id));
     return $v === null ? null : (int) $v;
   }
 
-  public function findWaitingFor(string $eventClass, ?string $awaitKey = null): array {
+  public function find_waiting_for(string $eventClass, ?string $awaitKey = null): array {
     $db = self::db();
     $ids = $db->get_col($db->prepare(
       "SELECT id FROM `{$this->table()}` WHERE waiting_for = %s AND status = 'suspended' ORDER BY id ASC",
@@ -186,7 +186,7 @@ final class WpdbProcessStore implements IProcessStore {
     return array_map('intval', is_array($ids) ? $ids : []);
   }
 
-  public function findStranded(\DateTimeImmutable $now): array {
+  public function find_stranded(\DateTimeImmutable $now): array {
     $db = self::db();
     $cutoff = $now->setTimezone(new \DateTimeZone('UTC'))->modify("-{$this->strandedAfterSeconds} seconds")->format('Y-m-d H:i:s');
     $wakeups = $this->config->table('ddd_wakeups');
@@ -206,7 +206,7 @@ final class WpdbProcessStore implements IProcessStore {
       // WP8-10 repair guard re-reading the row under the lock.
       if ($r->status === 'running') {
         $key = new \TangibleDDD\Runtime\Lock\LockKey($this->config->prefix(), '', (int) $r->id);
-        if (!WpNamedLock::isFreeOrHeldHere(GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key))) {
+        if (!WpNamedLock::is_free_or_mine(GetLockProcessLock::name($key), GetLockProcessLock::legacy_name($key))) {
           continue;
         }
       }
@@ -260,7 +260,7 @@ final class WpdbProcessStore implements IProcessStore {
     if ((int) $affected === 1) {
       return $expectedVersion + 1;
     }
-    $current = $this->versionOf($id);
+    $current = $this->version_of($id);
     if ($current === null) {
       throw new ProcessStoreFailed("Process #$id does not exist ($what)");
     }

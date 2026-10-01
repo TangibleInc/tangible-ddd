@@ -173,7 +173,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->alias(IEffectJournal::class, 'tangible_ddd.effect_journal');
 
   $s->set('tangible_ddd.outbox_config', OutboxConfig::class)
-    ->factory([Factory::class, 'outboxConfig'])
+    ->factory([Factory::class, 'outbox_config'])
     ->args([$config['relay']]);
 
   // ── processes (register 3.6-3.8, 5.2, 5.3) ───────────────────────────────
@@ -187,14 +187,14 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->alias(IWakeupScheduler::class, 'tangible_ddd.wakeup_scheduler');
 
   $s->set('tangible_ddd.process_lock', ReentrantProcessLock::class)
-    ->factory([Factory::class, 'processLock'])
+    ->factory([Factory::class, 'process_lock'])
     ->args([service('tangible_ddd.connection'), $process['pooled_connection'], $logger]);
   $s->alias(IProcessLock::class, 'tangible_ddd.process_lock');
 
   // start(): persist + Continue intent in the caller's transaction (X3); the
   // first step runs in a worker unless tangible_ddd.process.inband_start.
   $s->set('tangible_ddd.process_runner', ProcessRunner::class)
-    ->factory([Factory::class, 'processRunner'])
+    ->factory([Factory::class, 'process_runner'])
     ->args([
       service('tangible_ddd.consumer_config'),
       service('tangible_ddd.process_lock'),
@@ -329,13 +329,13 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
   $s->set(EventsUnitOfWork::class)->public();
 
   $s->set('tangible_ddd.domain_dispatcher', IDomainEventDispatcher::class)
-    ->factory([Factory::class, 'domainDispatcher'])
+    ->factory([Factory::class, 'dispatcher'])
     ->args([[], abstract_arg('domain listener locator, set by DomainListenerPass')]);
 
   // The core OutboxIntegrationEventBus (port form, CONF-2) behind the sf
   // decorator that records the fact class on the outbox row (CR sf-1).
   $s->set('tangible_ddd.integration_bus', IIntegrationEventBus::class)
-    ->factory([Factory::class, 'integrationBus'])
+    ->factory([Factory::class, 'integration_bus'])
     ->args([service('tangible_ddd.outbox_store'), service('tangible_ddd.clock'), service('tangible_ddd.consumer_config'), service('tangible_ddd.outbox_config')]);
   $s->alias(IIntegrationEventBus::class, 'tangible_ddd.integration_bus');
 
@@ -351,7 +351,7 @@ return static function (ContainerConfigurator $container, ContainerBuilder $buil
       array_values($config['audit']['without_parameters'] ?? []),
     ]);
   $s->set('tangible_ddd.audit.environment', PhpEnvironmentProvider::class)
-    ->factory([Factory::class, 'auditEnvironment'])
+    ->factory([Factory::class, 'environment'])
     ->args([param('kernel.environment'), $consumer['version']]);
 
   // The act bracket: core CorrelationMiddleware with the audit ports (CONF-1).

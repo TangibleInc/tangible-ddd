@@ -41,7 +41,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
     $this->clock = $clock ?? new SystemClock();
   }
 
-  public function deadLetters(int $limit, ?string $after = null): array {
+  public function dead_letters(int $limit, ?string $after = null): array {
     $rows = $this->connection->fetchAllAssociative(
       "SELECT * FROM {$this->dlq} WHERE id > ? ORDER BY id LIMIT ?",
       [$after === null ? 0 : (int) $after, max(0, $limit)],
@@ -52,8 +52,8 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
       (string) $row['event_id'],
       (string) $row['error'],
       (int) $row['attempts'],
-      Time::fromDb((string) $row['dead_lettered_at']),
-      DbalPostgresOutboxStore::recordFromRow($row),
+      Time::from_db((string) $row['dead_lettered_at']),
+      DbalPostgresOutboxStore::record_from_row($row),
     ), $rows);
   }
 
@@ -62,7 +62,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
       $row = $conn->fetchAssociative("SELECT status, claim_token, lease_until FROM {$this->outbox} WHERE event_id = ? FOR UPDATE", [$event_id])
         ?: throw new OutboxRowNotFound("Outbox row $event_id not found");
 
-      if ($row['claim_token'] !== null && Time::fromDb((string) $row['lease_until']) > $this->clock->now()) {
+      if ($row['claim_token'] !== null && Time::from_db((string) $row['lease_until']) > $this->clock->now()) {
         throw new OutboxAdministrationRefused("Outbox row $event_id is leased; retry refused");
       }
       if (!$force && !in_array($row['status'], ['pending', 'dlq'], true)) {
@@ -82,7 +82,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
 
       $exists = $conn->fetchOne("SELECT 1 FROM {$this->outbox} WHERE event_id = ?", [$letter['event_id']]);
       if ($exists === false) {
-        $now = Time::toDb($this->clock->now());
+        $now = Time::to_db($this->clock->now());
         $conn->executeStatement(
           "INSERT INTO {$this->outbox} (event_id, event_type, event_class, integration_action, correlation_id, sequence, command_id,
               payload, payload_signature, signature_json, is_unique, max_attempts, due_at, next_attempt_at, blog_id)
@@ -111,7 +111,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
   public function purge(\DateTimeImmutable $olderThan): int {
     return (int) $this->connection->executeStatement(
       "DELETE FROM {$this->outbox} WHERE status = 'accepted' AND accepted_at < ?",
-      [Time::toDb($olderThan)]
+      [Time::to_db($olderThan)]
     );
   }
 
@@ -129,7 +129,7 @@ final class DbalOutboxAdministration implements IOutboxAdministration {
       "UPDATE {$this->outbox} SET status = 'pending', attempts = 0, next_attempt_at = ?, last_error = NULL,
          claim_token = NULL, lease_until = NULL, transport_ref = NULL, accepted_at = NULL
        WHERE event_id = ?",
-      [Time::toDb($this->clock->now()), $eventId]
+      [Time::to_db($this->clock->now()), $eventId]
     );
   }
 }

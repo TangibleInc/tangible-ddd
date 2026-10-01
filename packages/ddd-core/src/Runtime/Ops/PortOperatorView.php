@@ -14,9 +14,9 @@ use TangibleDDD\Runtime\SystemClock;
 /**
  * IOperatorView over the core ports (register 3.10, D9), for one consumer:
  *
- * - layer `relay`: IOutboxAdministration::deadLetters(), attempts against
+ * - layer `relay`: IOutboxAdministration::dead_letters(), attempts against
  *   the record's max_attempts; repairs retry, replay, discard;
- * - layer `process`: IProcessStore::findStranded() rows still `running`
+ * - layer `process`: IProcessStore::find_stranded() rows still `running`
  *   (a `scheduled` one is re-queued by the stranded scan, not reported);
  *   repairs resume_stranded, fail_stranded;
  * - every other layer from the IOperatorItemSource list (delivery ledger,
@@ -41,22 +41,22 @@ final class PortOperatorView implements IOperatorView {
     $items = [];
 
     if ($this->outbox !== null && ($layer === null || $layer === Layer::Relay)) {
-      foreach ($this->outbox->deadLetters($limit) as $letter) {
+      foreach ($this->outbox->dead_letters($limit) as $letter) {
         $items[] = new OperatorItem(
           Layer::Relay, $this->consumer->prefix(), $letter->event_id, $letter->attempts,
-          $letter->record->max_attempts, $letter->error, $letter->deadLetteredAt, ['retry', 'replay', 'discard'],
+          $letter->record->max_attempts, $letter->error, $letter->dead_lettered_at, ['retry', 'replay', 'discard'],
         );
       }
     }
 
     if ($this->processes !== null && ($layer === null || $layer === Layer::Process)) {
-      foreach ($this->processes->findStranded($this->now()) as $stranded) {
+      foreach ($this->processes->find_stranded($this->now()) as $stranded) {
         if ($stranded->status !== 'running') {
           continue;
         }
         $items[] = new OperatorItem(
-          Layer::Process, $this->consumer->prefix(), (string) $stranded->processId, 0, null,
-          "{$stranded->processClass} stranded at step {$stranded->stepIndex}", $stranded->updatedAt,
+          Layer::Process, $this->consumer->prefix(), (string) $stranded->process_id, 0, null,
+          "{$stranded->process_class} stranded at step {$stranded->step_index}", $stranded->updated_at,
           ['resume_stranded', 'fail_stranded'],
         );
       }
@@ -72,8 +72,8 @@ final class PortOperatorView implements IOperatorView {
 
     $order = array_flip(array_map(static fn (Layer $l) => $l->value, Layer::cases()));
     usort($items, static function (OperatorItem $a, OperatorItem $b) use ($order): int {
-      return [$order[$a->layer->value], $a->firstSeen === null ? 1 : 0, $a->firstSeen]
-        <=> [$order[$b->layer->value], $b->firstSeen === null ? 1 : 0, $b->firstSeen];
+      return [$order[$a->layer->value], $a->first_seen === null ? 1 : 0, $a->first_seen]
+        <=> [$order[$b->layer->value], $b->first_seen === null ? 1 : 0, $b->first_seen];
     });
 
     return array_slice($items, 0, $limit);

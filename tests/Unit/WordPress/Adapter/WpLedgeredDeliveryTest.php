@@ -16,18 +16,18 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
 final class WpLedgeredDeliveryTest extends TestCase {
 
   protected function setUp(): void {
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
   }
 
   protected function tearDown(): void {
-    WpLedgeredDelivery::resetForTests();
+    WpLedgeredDelivery::reset_for_tests();
   }
 
   public function test_the_owning_prefix_is_read_off_the_hook(): void {
     $hook = FakeIntegrationEvent::integration_action();
-    self::assertSame('test', WpLedgeredDelivery::prefixOf($hook, FakeIntegrationEvent::class));
-    self::assertNull(WpLedgeredDelivery::prefixOf('other_hook', FakeIntegrationEvent::class));
-    self::assertNull(WpLedgeredDelivery::prefixOf($hook, \stdClass::class));
+    self::assertSame('test', WpLedgeredDelivery::prefix_of($hook, FakeIntegrationEvent::class));
+    self::assertNull(WpLedgeredDelivery::prefix_of('other_hook', FakeIntegrationEvent::class));
+    self::assertNull(WpLedgeredDelivery::prefix_of($hook, \stdClass::class));
   }
 
   public function test_subscriber_ids_are_deterministic_and_repeats_are_numbered(): void {
@@ -35,14 +35,14 @@ final class WpLedgeredDeliveryTest extends TestCase {
     $closure = static function (): void {};
     $line = (new \ReflectionFunction($closure))->getStartLine();
 
-    $id = WpLedgeredDelivery::subscriberId($hook, 'action', $closure);
+    $id = WpLedgeredDelivery::subscriber_id($hook, 'action', $closure);
     self::assertStringStartsWith('action:Closure@', $id);
     self::assertStringEndsWith(':' . $line, $id);
 
     WpLedgeredDelivery::bind($hook, FakeIntegrationEvent::class, $id, 10, $closure);
-    self::assertSame("$id#2", WpLedgeredDelivery::subscriberId($hook, 'action', $closure));
-    self::assertSame('action:' . self::class . '::test_an_unbound_callback_is_a_no_op', WpLedgeredDelivery::subscriberId($hook, 'action', [$this, 'test_an_unbound_callback_is_a_no_op']));
-    self::assertSame('listener:Acme\\Listener', WpLedgeredDelivery::subscriberId($hook, 'listener', $closure, 'Acme\\Listener'));
+    self::assertSame("$id#2", WpLedgeredDelivery::subscriber_id($hook, 'action', $closure));
+    self::assertSame('action:' . self::class . '::test_an_unbound_callback_is_a_no_op', WpLedgeredDelivery::subscriber_id($hook, 'action', [$this, 'test_an_unbound_callback_is_a_no_op']));
+    self::assertSame('listener:Acme\\Listener', WpLedgeredDelivery::subscriber_id($hook, 'listener', $closure, 'Acme\\Listener'));
   }
 
   public function test_without_a_v8_ledger_the_callback_keeps_the_0_6_semantics(): void {

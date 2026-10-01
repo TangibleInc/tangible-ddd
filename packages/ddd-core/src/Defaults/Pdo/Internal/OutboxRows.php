@@ -31,7 +31,7 @@ final class OutboxRows {
       sequence: $row['sequence'] === null ? null : (int) $row['sequence'],
       command_id: $row['command_id'] === null ? null : (string) $row['command_id'],
       payload: (array) json_decode((string) $row['payload'], true, 512, JSON_THROW_ON_ERROR),
-      due_at: Utc::fromDb((string) $row['due_at']),
+      due_at: Utc::from_db((string) $row['due_at']),
       is_unique: (bool) (int) $row['is_unique'],
       payload_signature: $signature === null ? null : (array) json_decode((string) $signature, true, 512, JSON_THROW_ON_ERROR),
       max_attempts: (int) $row['max_attempts'],
@@ -55,13 +55,13 @@ final class OutboxRows {
       'signature_json' => $signatureJson,
       'is_unique' => $r->is_unique,
       'max_attempts' => $r->max_attempts,
-      'due_at' => Utc::toDb($r->due_at),
+      'due_at' => Utc::to_db($r->due_at),
       'blog_id' => $r->blog_id,
     ];
   }
 
   /** @param array<string, mixed> $row @return list<mixed> the SHARED values of a stored row, in SHARED order */
-  public static function sharedValues(array $row): array {
+  public static function shared_values(array $row): array {
     $out = [];
     foreach (self::SHARED as $column) {
       $value = $row[$column];
@@ -71,7 +71,7 @@ final class OutboxRows {
   }
 
   /** @param array<string, mixed> $columns */
-  public static function insertSql(string $table, array $columns): string {
+  public static function insert_sql(string $table, array $columns): string {
     $names = implode(', ', array_map(static fn (string $c) => "`$c`", array_keys($columns)));
     $marks = implode(', ', array_fill(0, count($columns), '?'));
     return "INSERT INTO `$table` ($names) VALUES ($marks)";

@@ -58,7 +58,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $id = $this->store()->insert($p);
 
     self::assertSame($id, $p->get_id());
-    self::assertSame(1, $this->store()->versionOf($id));
+    self::assertSame(1, $this->store()->version_of($id));
     $row = $this->db->fetchAssociative('SELECT * FROM ddd_processes WHERE id = ?', [$id]);
     self::assertNull($row['ignition_key']);
     self::assertSame(OrderProcess::class, $row['process_class']);
@@ -96,14 +96,14 @@ final class DbalProcessStoreTest extends PostgresTestCase {
 
   public function test_find_and_version_of_an_unknown_id_are_null(): void {
     self::assertNull($this->store()->find(999));
-    self::assertNull($this->store()->versionOf(999));
+    self::assertNull($this->store()->version_of(999));
   }
 
   public function test_insert_ignited_sets_the_ignition_key_and_a_second_ignition_of_the_same_fact_is_already_ignited(): void {
     $first = OrderProcess::started(1);
     $first->mark_ignited_by(self::EVENT);
 
-    self::assertSame(IgnitionResult::Inserted, $this->store()->insertIgnited($first, OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store()->insert_ignited($first, OrderProcess::class, self::EVENT));
     self::assertNotNull($first->get_id());
     self::assertSame(
       IgnitionKey::for(self::EVENT, OrderProcess::class),
@@ -113,18 +113,18 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     // Another worker (another session) delivers the same fact again.
     $loser = OrderProcess::started(1);
     $loser->mark_ignited_by(self::EVENT);
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store($this->secondConnection())->insertIgnited($loser, OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store($this->secondConnection())->insert_ignited($loser, OrderProcess::class, self::EVENT));
     self::assertNull($loser->get_id(), 'the loser is not persisted');
     self::assertSame(1, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_processes'));
   }
 
   public function test_already_ignited_inside_an_open_transaction_leaves_it_usable(): void {
     $first = OrderProcess::started(1);
-    $this->store()->insertIgnited($first, OrderProcess::class, self::EVENT);
+    $this->store()->insert_ignited($first, OrderProcess::class, self::EVENT);
 
     $this->db->beginTransaction();
     $loser = OrderProcess::started(1);
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store()->insertIgnited($loser, OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store()->insert_ignited($loser, OrderProcess::class, self::EVENT));
     self::assertSame(1, (int) $this->db->fetchOne('SELECT 1'), 'ON CONFLICT DO NOTHING does not abort the transaction');
     $this->db->commit();
   }
@@ -132,11 +132,11 @@ final class DbalProcessStoreTest extends PostgresTestCase {
   public function test_the_ignition_gate_is_transactional(): void {
     $this->db->beginTransaction();
     $p = OrderProcess::started(1);
-    self::assertSame(IgnitionResult::Inserted, $this->store()->insertIgnited($p, OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store()->insert_ignited($p, OrderProcess::class, self::EVENT));
     $this->db->rollBack();
 
     $again = OrderProcess::started(1);
-    self::assertSame(IgnitionResult::Inserted, $this->store($this->secondConnection())->insertIgnited($again, OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store($this->secondConnection())->insert_ignited($again, OrderProcess::class, self::EVENT));
   }
 
   public function test_one_fact_may_ignite_different_process_classes(): void {
@@ -146,7 +146,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
       ['Other\\Process', IgnitionKey::for(self::EVENT, OrderProcess::class)]
     );
 
-    self::assertSame(IgnitionResult::Inserted, $this->store()->insertIgnited(OrderProcess::started(1), OrderProcess::class, self::EVENT));
+    self::assertSame(IgnitionResult::Inserted, $this->store()->insert_ignited(OrderProcess::started(1), OrderProcess::class, self::EVENT));
   }
 
   public function test_manual_starts_are_never_deduped_even_with_the_same_ignited_by_event_id(): void {
@@ -177,7 +177,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $p->advance(status: 'running', payload: new OrderPayload('two'));
 
     self::assertSame(2, $this->store()->save($p, 1));
-    self::assertSame(2, $this->store()->versionOf($id));
+    self::assertSame(2, $this->store()->version_of($id));
     self::assertSame('charge', $this->store()->find($id)->current_step_name());
 
     // A holder whose session lock vanished still believes version 1.
@@ -190,7 +190,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     } catch (ConcurrentProcessModification) {
     }
     self::assertSame('running', $this->store()->find($id)->status());
-    self::assertSame(2, $this->store()->versionOf($id));
+    self::assertSame(2, $this->store()->version_of($id));
   }
 
   public function test_save_of_an_unknown_or_unpersisted_process_fails(): void {
@@ -261,7 +261,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     self::assertNull($found->optional);
     self::assertSame('big', $found->label);
     $stored = json_decode((string) $this->db->fetchOne('SELECT business_data FROM ddd_processes WHERE id = ?', [$id]), true);
-    self::assertTrue(LargeString::isEncoded($stored['blob']), 'stored in the LargeString wire form (base64, length, sha256)');
+    self::assertTrue(LargeString::is_encoded($stored['blob']), 'stored in the LargeString wire form (base64, length, sha256)');
   }
 
   public function test_a_nullable_large_string_round_trips_when_set(): void {
@@ -271,7 +271,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
 
     self::assertInstanceOf(LargeStringProcess::class, $found);
     self::assertSame("\x00\xff", $found->optional?->value);
-    self::assertSame(16, $found->optional?->maxBytes);
+    self::assertSame(16, $found->optional?->max_bytes);
   }
 
   public function test_a_corrupted_large_string_quarantines_the_row_with_its_reason(): void {
@@ -316,11 +316,11 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $running = OrderProcess::started(3);
     $this->store()->insert($running);
 
-    $ids = $this->store()->findWaitingFor(PingFact::class);
+    $ids = $this->store()->find_waiting_for(PingFact::class);
     sort($ids);
     self::assertSame([$byClass->get_id(), $byMarker->get_id()], $ids);
-    self::assertSame([$byMarker->get_id()], $this->store()->findWaitingFor(PingMarker::class));
-    self::assertSame([], $this->store()->findWaitingFor(\stdClass::class));
+    self::assertSame([$byMarker->get_id()], $this->store()->find_waiting_for(PingMarker::class));
+    self::assertSame([], $this->store()->find_waiting_for(\stdClass::class));
 
     $found = $this->store()->find((int) $byClass->get_id());
     self::assertEquals(new AwaitEvent(PingFact::class, ['n' => 1]), $found->await_mechanism());
@@ -329,7 +329,7 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     // Resumed: the wait row goes with the same save.
     $found->advance(status: 'running');
     $this->store()->save($found, 2);
-    self::assertSame([$byMarker->get_id()], $this->store()->findWaitingFor(PingFact::class));
+    self::assertSame([$byMarker->get_id()], $this->store()->find_waiting_for(PingFact::class));
     self::assertSame(1, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_process_waits'));
   }
 
@@ -340,11 +340,11 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $this->db->beginTransaction();
     $p->advance(status: 'suspended', waiting_for: PingFact::class, await_mechanism: new AwaitEvent(PingFact::class));
     $this->store()->save($p, 1);
-    self::assertSame([$id], $this->store()->findWaitingFor(PingFact::class));
+    self::assertSame([$id], $this->store()->find_waiting_for(PingFact::class));
     $this->db->rollBack();
 
-    self::assertSame([], $this->store()->findWaitingFor(PingFact::class));
-    self::assertSame(1, $this->store()->versionOf($id));
+    self::assertSame([], $this->store()->find_waiting_for(PingFact::class));
+    self::assertSame(1, $this->store()->version_of($id));
   }
 
   public function test_find_waiting_for_narrows_by_await_key_when_given(): void {
@@ -352,8 +352,8 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $p->advance(status: 'suspended', waiting_for: PingFact::class, await_mechanism: new AwaitEvent(PingFact::class));
     $this->store()->insert($p);
 
-    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(PingFact::class, null));
-    self::assertSame([], $this->store()->findWaitingFor(PingFact::class, 'order:9'));
+    self::assertSame([$p->get_id()], $this->store()->find_waiting_for(PingFact::class, null));
+    self::assertSame([], $this->store()->find_waiting_for(PingFact::class, 'order:9'));
   }
 
   public function test_the_store_declares_that_its_lookup_matches_fact_ancestry(): void {
@@ -366,15 +366,15 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $this->store()->insert($p);
 
     self::assertSame([[JobDone::class, 'job-1']], $this->waitRows((int) $p->get_id()));
-    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class, 'job-1'));
-    self::assertSame([], $this->store()->findWaitingFor(JobDone::class, 'job-2'));
-    self::assertSame([], $this->store()->findWaitingFor(JobDone::class, ''), 'not an unkeyed row');
-    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class), 'null = any key');
+    self::assertSame([$p->get_id()], $this->store()->find_waiting_for(JobDone::class, 'job-1'));
+    self::assertSame([], $this->store()->find_waiting_for(JobDone::class, 'job-2'));
+    self::assertSame([], $this->store()->find_waiting_for(JobDone::class, ''), 'not an unkeyed row');
+    self::assertSame([$p->get_id()], $this->store()->find_waiting_for(JobDone::class), 'null = any key');
   }
 
   public function test_an_any_of_await_writes_one_row_per_branch_class_and_key(): void {
     $p = OrderProcess::started(1);
-    $any = AwaitAny::of(AwaitEvent::keyed(JobDone::class, 'job-1'))->cancelledBy(new AwaitEvent(AppDestroyed::class, ['app_id' => 4]));
+    $any = AwaitAny::of(AwaitEvent::keyed(JobDone::class, 'job-1'))->cancelled_by(new AwaitEvent(AppDestroyed::class, ['app_id' => 4]));
     $p->advance(status: 'suspended', waiting_for: $any->event_class(), await_mechanism: $any);
     $this->store()->insert($p);
     $other = OrderProcess::started(2);
@@ -384,9 +384,9 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     self::assertSame([[AppDestroyed::class, ''], [JobDone::class, 'job-1']], $this->waitRows((int) $p->get_id()));
     // The index names the branch classes, not the common ancestor in waiting_for:
     // a PingFact (also an IntegrationEvent) does not reach the any-of row.
-    self::assertSame([$other->get_id()], $this->store()->findWaitingFor(PingFact::class));
-    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(AppDestroyed::class));
-    self::assertSame([$p->get_id()], $this->store()->findWaitingFor(JobDone::class, 'job-1'));
+    self::assertSame([$other->get_id()], $this->store()->find_waiting_for(PingFact::class));
+    self::assertSame([$p->get_id()], $this->store()->find_waiting_for(AppDestroyed::class));
+    self::assertSame([$p->get_id()], $this->store()->find_waiting_for(JobDone::class, 'job-1'));
 
     $found = $this->store()->find((int) $p->get_id());
     self::assertInstanceOf(AwaitAny::class, $found->await_mechanism());
@@ -404,8 +404,8 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $this->store()->save($p, 1);
 
     self::assertSame([[ChildGone::class, 'c1'], [ChildGone::class, 'c3']], $this->waitRows($id));
-    self::assertSame([], $this->store()->findWaitingFor(ChildGone::class, 'c2'));
-    self::assertSame([$id], $this->store()->findWaitingFor(ChildGone::class, 'c3'));
+    self::assertSame([], $this->store()->find_waiting_for(ChildGone::class, 'c2'));
+    self::assertSame([$id], $this->store()->find_waiting_for(ChildGone::class, 'c3'));
   }
 
   public function test_an_alarm_writes_no_wait_row(): void {
@@ -459,19 +459,19 @@ final class DbalProcessStoreTest extends PostgresTestCase {
     $fresh = OrderProcess::started(5);
     $this->store()->insert($fresh);
 
-    $stranded = $this->store()->findStranded($this->clock->now());
+    $stranded = $this->store()->find_stranded($this->clock->now());
 
     $byId = [];
     foreach ($stranded as $s) {
-      $byId[$s->processId] = $s;
+      $byId[$s->process_id] = $s;
     }
     ksort($byId);
     self::assertSame([$running->get_id(), $scheduled->get_id(), $exhausted->get_id()], array_keys($byId), 'an exhausted intent is not a live one');
     self::assertSame('running', $byId[$running->get_id()]->status);
     self::assertSame('scheduled', $byId[$scheduled->get_id()]->status);
-    self::assertSame(OrderProcess::class, $byId[$scheduled->get_id()]->processClass);
-    self::assertSame(0, $byId[$scheduled->get_id()]->stepIndex);
-    self::assertEquals($old, $byId[$running->get_id()]->updatedAt);
+    self::assertSame(OrderProcess::class, $byId[$scheduled->get_id()]->process_class);
+    self::assertSame(0, $byId[$scheduled->get_id()]->step_index);
+    self::assertEquals($old, $byId[$running->get_id()]->updated_at);
   }
 
   public function test_updated_at_comes_from_the_clock_on_every_write(): void {

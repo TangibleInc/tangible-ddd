@@ -27,52 +27,52 @@ abstract class WebStartScenarios extends ProcessScenarioCase {
   public function test_process_start_from_web(): void {
     $web = $this->web();
     $processes = $this->processes();
-    $runner = $processes->worker()->processRunner();
+    $runner = $processes->worker()->runner();
     $started = null;
     $failAfterStart = false;
-    $bus = $this->host->commandBus([CreateWidget::class => function (CreateWidget $c) use ($runner, &$started, &$failAfterStart): void {
-      $this->host->scenarioRows()->insert($c->widget_id, 'created');
+    $bus = $this->host->command_bus([CreateWidget::class => function (CreateWidget $c) use ($runner, &$started, &$failAfterStart): void {
+      $this->host->rows()->insert($c->widget_id, 'created');
       $started = new MakeWidgetProcess($c->widget_id);
       $runner->start($started);
       if ($failAfterStart) {
         throw new \DomainException('the command fails after the start');
       }
     }]);
-    $locks = $processes->processLockAcquisitions();
+    $locks = $processes->lock_acquisitions();
 
-    $web->inWebRequest(static fn () => $bus->handle(new CreateWidget('w-1')));
+    $web->in_web_request(static fn () => $bus->handle(new CreateWidget('w-1')));
 
     $id = (int) $started?->get_id();
-    self::assertSame($locks, $processes->processLockAcquisitions(), 'no process lock is taken in the request');
-    self::assertTrue($this->host->scenarioRows()->has('w-1'));
+    self::assertSame($locks, $processes->lock_acquisitions(), 'no process lock is taken in the request');
+    self::assertTrue($this->host->rows()->has('w-1'));
     self::assertSame('scheduled', $this->row($id)->status, 'persisted, first step not run');
-    self::assertSame(["continue:$id:0"], $this->intentKeys($id, WakeKind::Continue), 'with its Continue intent');
+    self::assertSame(["continue:$id:0"], $this->intent_keys($id, WakeKind::Continue), 'with its Continue intent');
     self::assertSame([], ProcessJournal::$steps);
 
     // The row and the intent commit WITH the caller's transaction.
-    $count = count($processes->processIds());
-    $intents = count($processes->pendingWakeups());
+    $count = count($processes->process_ids());
+    $intents = count($processes->live_intents());
     $failAfterStart = true;
-    self::assertInstanceOf(\DomainException::class, self::catchThrowable(
-      static fn () => $web->inWebRequest(static fn () => $bus->handle(new CreateWidget('w-2'))),
+    self::assertInstanceOf(\DomainException::class, self::thrown(
+      static fn () => $web->in_web_request(static fn () => $bus->handle(new CreateWidget('w-2'))),
     ));
-    self::assertCount($count, $processes->processIds(), 'rolled back with the command: no process row');
-    self::assertCount($intents, $processes->pendingWakeups(), 'and no intent');
-    self::assertFalse($this->host->scenarioRows()->has('w-2'));
+    self::assertCount($count, $processes->process_ids(), 'rolled back with the command: no process row');
+    self::assertCount($intents, $processes->live_intents(), 'and no intent');
+    self::assertFalse($this->host->rows()->has('w-2'));
 
     // The first step runs in the worker.
-    $processes->worker()->drainOnce();
+    $processes->worker()->drain_once();
     self::assertSame(['make', 'finish'], ProcessJournal::$steps);
     self::assertSame('completed', $this->row($id)->status);
 
     // In-band starts need the direct connection: refused at boot on a pooled DSN.
-    self::assertInstanceOf(\Throwable::class, $web->bootInBandStartOnPooledDsn(), 'the in-band opt-in on a pooled DSN does not boot');
+    self::assertInstanceOf(\Throwable::class, $web->boot_inband_pooled(), 'the in-band opt-in on a pooled DSN does not boot');
   }
 
   protected function web(): WebRequests {
     $this->processes();
     if (!$this->host instanceof WebRequests) {
-      $this->skipForChangeRequest('CR-W3CP-5', 'the host fixture does not implement WebRequests yet');
+      $this->skip_for('CR-W3CP-5', 'the host fixture does not implement WebRequests yet');
     }
     return $this->host;
   }

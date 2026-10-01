@@ -21,7 +21,7 @@ use TangibleDDD\Application\Process\Result;
  * `record:{widget}:precheck` and sends StepCommand('record', widget).
  *
  * Precheck: the job's owner publishes its state as the scenario row
- * `job-done:{ref}` (ProcessJournal::markRow() / hasRow()); when that row is
+ * `job-done:{ref}` (ProcessJournal::mark_row() / has_row()); when that row is
  * committed by the time the runner checks, the await is satisfied in place.
  */
 final class KeyedJobProcess extends LongProcess implements IPrecheckAwait {
@@ -32,7 +32,7 @@ final class KeyedJobProcess extends LongProcess implements IPrecheckAwait {
     parent::__construct(null);
   }
 
-  public static function doneRow(string $ref): string {
+  public static function done_row(string $ref): string {
     return "job-done:$ref";
   }
 
@@ -53,6 +53,6 @@ final class KeyedJobProcess extends LongProcess implements IPrecheckAwait {
 
   public function already_satisfied(IAwaitMechanism $await): ?PrecheckSatisfied {
     $ref = $await instanceof AwaitEvent ? $await->await_key : null;
-    return $ref !== null && ProcessJournal::hasRow(self::doneRow($ref)) ? PrecheckSatisfied::with('precheck') : null;
+    return $ref !== null && ProcessJournal::has_row(self::done_row($ref)) ? PrecheckSatisfied::with('precheck') : null;
   }
 }

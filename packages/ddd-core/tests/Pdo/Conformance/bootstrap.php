@@ -4,10 +4,9 @@
  * packages/ddd-core/src), the ddd-conformance scenarios from their package
  * source, and this directory. No WordPress symbol may be defined.
  *
- * Each test creates its own database (PdoHostFixture::setUp()), so nothing
+ * Each test creates its own database (PdoHostFixture::set_up()), so nothing
  * is prepared here beyond a reachability check of the MySQL server.
  */
-
 declare(strict_types=1);
 
 use TangibleDDD\Core\Tests\Pdo\Conformance\Support\ConformanceDatabase;

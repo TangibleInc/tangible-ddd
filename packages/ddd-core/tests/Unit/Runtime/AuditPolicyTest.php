@@ -55,12 +55,12 @@ final class CreateTeam {
 final class AuditPolicyTest extends TestCase {
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
@@ -80,9 +80,9 @@ final class AuditPolicyTest extends TestCase {
 
     self::assertFalse($p->audits(new Heartbeat()));
     self::assertTrue($p->audits(new AcquireJob()));
-    self::assertFalse($p->captureParameters(new AcquireJob()));
+    self::assertFalse($p->captures_parameters(new AcquireJob()));
     self::assertTrue($p->audits(new CreateTeam()));
-    self::assertTrue($p->captureParameters(new CreateTeam()));
+    self::assertTrue($p->captures_parameters(new CreateTeam()));
   }
 
   public function test_the_attribute_on_a_parent_class_applies(): void {
@@ -94,7 +94,7 @@ final class AuditPolicyTest extends TestCase {
 
     self::assertFalse($p->audits(new ReportProgress()));
     self::assertTrue($p->audits(new CreateTeam()));
-    self::assertFalse($p->captureParameters(new CreateTeam()));
+    self::assertFalse($p->captures_parameters(new CreateTeam()));
   }
 
   public function test_the_bracket_defaults_to_the_attribute_policy(): void {
@@ -105,7 +105,7 @@ final class AuditPolicyTest extends TestCase {
     $bracket->execute(new AcquireJob(), static fn () => null);
     $bracket->execute(new CreateTeam(), static fn () => null);
 
-    self::assertSame([AcquireJob::class, CreateTeam::class], array_map(static fn ($o) => $o->commandName, $sink->opened));
+    self::assertSame([AcquireJob::class, CreateTeam::class], array_map(static fn ($o) => $o->command_name, $sink->opened));
     self::assertSame([], $sink->opened[0]->parameters);
     self::assertSame(['name' => 'Acme'], $sink->opened[1]->parameters);
     self::assertCount(2, $sink->closed);
@@ -130,7 +130,7 @@ final class AuditPolicyTest extends TestCase {
     } catch (CommandDispatchedInsideCommand) {
       // expected: the guard runs before the policy
     }
-    self::assertSame([CreateTeam::class], array_map(static fn ($o) => $o->commandName, $sink->opened));
+    self::assertSame([CreateTeam::class], array_map(static fn ($o) => $o->command_name, $sink->opened));
     self::assertSame('error', $sink->closed[0]->status);
   }
 }

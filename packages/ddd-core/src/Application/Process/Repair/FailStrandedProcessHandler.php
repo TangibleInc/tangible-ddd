@@ -47,13 +47,13 @@ final class FailStrandedProcessHandler extends StrandedRepair implements IComman
           $process->advance(status: 'scheduled', payload: $process->payload());
           $store->save($process, $version);
           $wakeups->schedule(WakeupIntent::continuation(
-            $prefix, $row->processId, $process->current_step_index(), $now,
+            $prefix, $row->process_id, $process->current_step_index(), $now,
             'undo-repair-' . $now->setTimezone(new \DateTimeZone('UTC'))->format('YmdHis.u'),
           ));
         }
         Log::write(null, sprintf(
           '[%s process] operator failed stranded process #%d (%s at step %d)%s: %s',
-          $prefix, $row->processId, $row->status, $row->stepIndex, $compensate ? ', compensating' : '', $reason
+          $prefix, $row->process_id, $row->status, $row->step_index, $compensate ? ', compensating' : '', $reason
         ), 'warning');
       },
     );

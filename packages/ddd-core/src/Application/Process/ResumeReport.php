@@ -12,7 +12,7 @@ namespace TangibleDDD\Application\Process;
  * - accumulated: a partial arrival (AwaitAll) was recorded;
  * - cancelled: a cancellation branch (ICancellingAwait) compensated it.
  *
- * isUnheard(): no await took the fact: no process waits for it, or it is a
+ * is_unheard(): no await took the fact: no process waits for it, or it is a
  * duplicate, or a register-then-check precheck already stood in for it. A
  * host's "fact delivered unheard" alarm can read this instead of guessing.
  */
@@ -29,7 +29,7 @@ final class ResumeReport {
     public readonly array $cancelled = [],
   ) {}
 
-  public function isUnheard(): bool {
+  public function is_unheard(): bool {
     return $this->resumed === [] && $this->accumulated === [] && $this->cancelled === [];
   }
 }

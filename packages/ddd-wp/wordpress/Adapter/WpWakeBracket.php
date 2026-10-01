@@ -91,12 +91,12 @@ final class WpWakeBracket {
    *
    * @param callable(): object $runner the consumer's ProcessRunner
    */
-  public static function resumeRetry(IDDDConfig $config, string $key, callable $runner): void {
+  public static function resume_retry(IDDDConfig $config, string $key, callable $runner): void {
     $scheduler = HostDefaults::for(IWakeupScheduler::class, $config);
     if (!$scheduler instanceof WpdbWakeupScheduler) {
       return;
     }
-    $intent = $scheduler->beginKey($key);
+    $intent = $scheduler->begin_key($key);
     if ($intent === null) {
       return; // stale: done, cancelled or re-armed elsewhere
     }
@@ -105,19 +105,19 @@ final class WpWakeBracket {
       $r = $runner();
       if (method_exists($r, 'wake')) {
         $r->wake($intent);
-      } elseif ($intent->expectedStatus === 'scheduled' && $intent->processId !== null) {
-        $r->continue_scheduled($intent->processId);
+      } elseif ($intent->expected_status === 'scheduled' && $intent->process_id !== null) {
+        $r->continue_scheduled($intent->process_id);
       } else {
         Log::write(null, sprintf('[%s-process] wakeup %s: this ProcessRunner has no wake() entry for a %s intent; closed without a re-run', $config->prefix(), $key, $intent->kind->value), 'warning');
       }
     } catch (\Throwable $e) {
-      self::settle($config, static fn () => $scheduler->finishKey($key, $e->getMessage(), self::isTerminal($e)), false);
+      self::settle($config, static fn () => $scheduler->finish_key($key, $e->getMessage(), self::isTerminal($e)), false);
       if (self::isTerminal($e)) {
         self::noteQuarantine($config, $e);
         return;
       }
       throw $e;
     }
-    self::settle($config, static fn () => $scheduler->finishKey($key, null));
+    self::settle($config, static fn () => $scheduler->finish_key($key, null));
   }
 }

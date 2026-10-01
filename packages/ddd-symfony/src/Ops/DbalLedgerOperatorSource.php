@@ -21,7 +21,7 @@ use TangibleDDD\Symfony\Persistence\Time;
  * `subscriber@event_id`, as the mem and pdo ledgers.
  *
  * No repair labels: a failing pair is still being retried by Messenger, and
- * an exhausted one has had its compensation (onExhausted / failureCommand);
+ * an exhausted one has had its compensation (on_exhausted / failure_command);
  * its fact message, if Messenger gave up too, is in layer `transport`.
  * The sf ledger is per consumer database, so every row is $consumer's.
  * Oldest first (updated_at); storage errors propagate.
@@ -60,7 +60,7 @@ final class DbalLedgerOperatorSource implements IOperatorItemSource {
       $r['exhausted_at'] === null
         ? ($r['last_error'] === null ? null : (string) $r['last_error'])
         : 'exhausted' . ($r['last_error'] === null ? '' : ': ' . $r['last_error']),
-      Time::fromDb((string) $r['updated_at']),
+      Time::from_db((string) $r['updated_at']),
       [],
     ), $rows);
   }

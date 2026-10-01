@@ -204,7 +204,7 @@ function runtime(IHostConnection $db): DurableRuntime {
 
 /** @return array<string, mixed>|null the newest trial joined with its process row */
 function latestTrial(IHostConnection $db): ?array {
-  return $db->fetchOne(
+  return $db->fetch_one(
     'SELECT t.*, p.status AS process_status, p.version AS process_version, p.updated_at AS process_updated_at, p.step_index
        FROM trialdemo_trials t LEFT JOIN trialdemo_ddd_processes p ON p.id = t.process_id
       ORDER BY t.id DESC LIMIT 1'

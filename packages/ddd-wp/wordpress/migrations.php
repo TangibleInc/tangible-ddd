@@ -318,7 +318,7 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
       $wpdb->suppress_errors($suppress);
 
       if ($updated === false) {
-        if (!\TangibleDDD\WordPress\Adapter\WpSchema::lastErrorIsDuplicateKey($wpdb)) {
+        if (!\TangibleDDD\WordPress\Adapter\WpSchema::is_duplicate_key($wpdb)) {
           throw new \RuntimeException(sprintf('Schema v8 ignition_key backfill of process #%d failed: %s', $last, (string) $wpdb->last_error));
         }
         // A new ignition took the key between the check and the update.

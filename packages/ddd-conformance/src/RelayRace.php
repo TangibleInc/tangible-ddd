@@ -12,7 +12,7 @@ namespace TangibleDDD\Conformance;
 interface RelayRace {
 
   /**
-   * Run $competitor once inside the NEXT relayOnce(), after the transport
+   * Run $competitor once inside the NEXT relay_once(), after the transport
    * took the submission and before IOutboxStore::accept(), AS ANOTHER
    * CONNECTION: what $competitor commits through HostFixture::outbox()
    * stays committed whatever the relay's own transaction does afterwards.
@@ -22,5 +22,5 @@ interface RelayRace {
    * mem: the competitor's outbox writes are kept across the relay's
    * rollback.
    */
-  public function raceNextRelayAfterSubmit(callable $competitor): void;
+  public function race_next_relay(callable $competitor): void;
 }

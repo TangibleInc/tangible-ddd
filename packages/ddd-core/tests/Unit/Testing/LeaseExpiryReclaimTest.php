@@ -42,7 +42,7 @@ final class LeaseExpiryReclaimTest extends TestCase {
   private object $signals;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     $this->signals = new class implements IInfrastructureSignalDispatcher {
       public array $seen = [];
@@ -57,7 +57,7 @@ final class LeaseExpiryReclaimTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function append(string $id, int $max): void {
@@ -90,7 +90,7 @@ final class LeaseExpiryReclaimTest extends TestCase {
     $claims = $this->store->claim(10, $this->clock->now(), self::LEASE);
 
     self::assertSame(0, $claims[0]->attempts);
-    self::assertSame(0, $this->store->attemptsOf('e1'));
+    self::assertSame(0, $this->store->attempts_of('e1'));
   }
 
   public function test_re_claiming_an_expired_lease_counts_an_attempt(): void {
@@ -101,8 +101,8 @@ final class LeaseExpiryReclaimTest extends TestCase {
 
     self::assertCount(1, $claims);
     self::assertSame(1, $claims[0]->attempts);
-    self::assertSame(1, $this->store->attemptsOf('e1'));
-    self::assertSame([], $this->store->takeDeadLetteredAtClaim());
+    self::assertSame(1, $this->store->attempts_of('e1'));
+    self::assertSame([], $this->store->take_claim_dead_letters());
   }
 
   public function test_a_row_reaching_max_attempts_through_re_claims_is_dead_lettered_at_claim(): void {
@@ -113,18 +113,18 @@ final class LeaseExpiryReclaimTest extends TestCase {
     $claims = $this->store->claim(10, $this->clock->now(), self::LEASE);
 
     self::assertSame([], $claims, 'not handed out again');
-    self::assertSame('dlq', $this->store->statusOf('e1'));
-    self::assertSame(2, $this->store->attemptsOf('e1'));
-    $letters = $this->store->deadLetters(10);
+    self::assertSame('dlq', $this->store->status_of('e1'));
+    self::assertSame(2, $this->store->attempts_of('e1'));
+    $letters = $this->store->dead_letters(10);
     self::assertCount(1, $letters);
     self::assertSame('e1', $letters[0]->event_id);
     self::assertStringContainsString(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, $letters[0]->error);
 
-    $taken = $this->store->takeDeadLetteredAtClaim();
+    $taken = $this->store->take_claim_dead_letters();
     self::assertCount(1, $taken);
     self::assertSame('e1', $taken[0][0]->event_id);
     self::assertSame($letters[0]->error, $taken[0][1]);
-    self::assertSame([], $this->store->takeDeadLetteredAtClaim(), 'emptied');
+    self::assertSame([], $this->store->take_claim_dead_letters(), 'emptied');
   }
 
   public function test_the_relay_step_reports_and_signals_a_claim_time_dead_letter_and_the_operator_view_lists_it(): void {
@@ -135,7 +135,7 @@ final class LeaseExpiryReclaimTest extends TestCase {
 
     $result = $this->relay()->process_batch();
 
-    self::assertSame(['e1'], $result->deadLetteredAtClaim);
+    self::assertSame(['e1'], $result->claim_dead_letters);
     self::assertSame(['e2'], $result->accepted, 'the rest of the batch still relays');
     self::assertNotContains('e1', $result->claimed);
     $dead = array_values(array_filter($this->signals->seen, static fn ($s) => $s instanceof OutboxDeadLettered));
@@ -153,7 +153,7 @@ final class LeaseExpiryReclaimTest extends TestCase {
     $this->crashAfterClaim();
 
     $transport = new InMemoryTransport();
-    $transport->rejectNext();
+    $transport->reject_next();
     $relay = new OutboxProcessor(
       new AcmeConfig(), null, new OutboxConfig(lock_timeout_seconds: self::LEASE), null,
       null, null, $this->clock, $this->store, $transport, $this->tx,
@@ -161,6 +161,6 @@ final class LeaseExpiryReclaimTest extends TestCase {
     $result = $relay->process_batch();
 
     self::assertSame(['e1'], $result->retried);
-    self::assertSame(2, $this->store->attemptsOf('e1'), 'one re-claim + one rejection');
+    self::assertSame(2, $this->store->attempts_of('e1'), 'one re-claim + one rejection');
   }
 }

@@ -12,9 +12,9 @@ final class FactRefTest extends TestCase {
   public function test_fact_ref_carries_the_delivered_fact_identity(): void {
     $ref = new FactRef('0192f5d2-7c1e-7000-8000-000000000001', 'App\\Events\\OrderPlaced', 'corr-1');
 
-    self::assertSame('0192f5d2-7c1e-7000-8000-000000000001', $ref->eventId);
-    self::assertSame('App\\Events\\OrderPlaced', $ref->eventClass);
-    self::assertSame('corr-1', $ref->correlationId);
+    self::assertSame('0192f5d2-7c1e-7000-8000-000000000001', $ref->event_id);
+    self::assertSame('App\\Events\\OrderPlaced', $ref->event_class);
+    self::assertSame('corr-1', $ref->correlation_id);
   }
 
   public function test_fact_ref_is_an_immutable_value(): void {

@@ -8,13 +8,13 @@ namespace TangibleDDD\Application\BehaviourWorkflows;
 final class WorkflowIgnition {
 
   public function __construct(
-    public readonly string $dedupKey,
+    public readonly string $key,
     /** the workflow kind (IStartsFromFact::workflow_kind()) */
     public readonly string $kind,
     /** null until attach() (or when the winner's save never attached) */
-    public readonly ?int $workflowId,
+    public readonly ?int $workflow_id,
     /** the igniting fact's event id, when the ignition came from a fact */
-    public readonly ?string $eventId,
-    public readonly \DateTimeImmutable $createdAt,
+    public readonly ?string $event_id,
+    public readonly \DateTimeImmutable $created_at,
   ) {}
 }

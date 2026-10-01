@@ -29,17 +29,17 @@ final class OperatorViewTest extends KernelTestBase {
     $now = new \DateTimeImmutable();
 
     $outbox = $c->get('tangible_ddd.outbox_store');
-    $outbox->appendFact(new OutboxRecord('evt-dlq', 'widget_registered', 'sfk_integration_widget_registered', 'c', 1, null, [], $now), 'App\\W');
+    $outbox->append_fact(new OutboxRecord('evt-dlq', 'widget_registered', 'sfk_integration_widget_registered', 'c', 1, null, [], $now), 'App\\W');
     [$claim] = $outbox->claim(1, $now, 60);
-    $outbox->deadLetter($claim, 'broker refused');
+    $outbox->dead_letter($claim, 'broker refused');
 
     $ledger = $c->get('tangible_ddd.delivery_ledger');
-    $ledger->markFailed('listener:App\\Mailer', 'evt-led', 'smtp down', 5);
-    $ledger->markExhausted('listener:App\\Mailer', 'evt-led');
+    $ledger->mark_failed('listener:App\\Mailer', 'evt-led', 'smtp down', 5);
+    $ledger->mark_exhausted('listener:App\\Mailer', 'evt-led');
 
     $wakeups = $c->get('tangible_ddd.wakeup_scheduler');
     $c->get('tangible_ddd.transaction_boundary')->run(fn () => $wakeups->schedule(WakeupIntent::timeout('sfk', 4242, 1, $now)));
-    [$w] = $wakeups->claimDue($now, 10, 60);
+    [$w] = $wakeups->claim_due($now, 10, 60);
     $wakeups->exhaust($w, 'lock busy x10');
 
     $processId = $c->get('tangible_ddd.process_store')->insert(OrderProcess::started(1));
@@ -66,8 +66,8 @@ final class OperatorViewTest extends KernelTestBase {
     $keys = array_map(static fn ($i) => $i->key, $items);
     self::assertSame(['evt-dlq', 'listener:App\\Mailer@evt-led', 'timeout:4242:1', (string) $processId], array_slice($keys, 0, 4));
     self::assertSame(5, $items[4]->attempts);
-    self::assertStringContainsString('evt-msg', (string) $items[4]->lastError);
-    self::assertSame(['resume_stranded', 'fail_stranded'], $items[3]->repairActions);
+    self::assertStringContainsString('evt-msg', (string) $items[4]->last_error);
+    self::assertSame(['resume_stranded', 'fail_stranded'], $items[3]->repairs);
     self::assertSame([Layer::Transport], array_map(static fn ($i) => $i->layer, $view->list(Layer::Transport)));
   }
 

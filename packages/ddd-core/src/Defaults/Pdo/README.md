@@ -19,9 +19,9 @@ $runtime = DurableRuntime::compose(
   array $listeners, array $processes, ?IClock $clock = null,
 );
 $runtime->bus()->handle($command);        // command bus, core middleware order
-$runtime->queryBus()->handle($query);
+$runtime->query_bus()->handle($query);
 $report = $runtime->drain(200, 50);       // DrainReport; $runtime->drainer() is the core Drain
-$runtime->operatorView()->toArrays();     // IOperatorView, array form for rendering
+$runtime->operator_view()->to_arrays();   // IOperatorView, array form for rendering
 ```
 
 - Tables are `{prefix}_ddd_*`, where prefix is `$consumer->prefix()`. Apply the schema with `SchemaSql::statements($prefix . '_')`.
@@ -32,13 +32,13 @@ $runtime->operatorView()->toArrays();     // IOperatorView, array form for rende
 - `Drain` runs four stages: relay (`OutboxProcessor`, submit and accept in one transaction), then deliveries (`PdoDeliveryWorker` through `IntegrationDelivery` and `PdoDeliveryLedger`), then due wakeups (the runner), then the stranded scan (the runner).
 - `$handlers` is either a PSR-11 container or an array. In the array, a command or query class key maps to its handler, which is a callable or an object with `handle()`. Any other key is a service: a `\Closure` is a lazy factory, and an object is used as the instance. The runtime's own services resolve first: `CommandBus`, `EventsUnitOfWork`, `ProcessRunner`, `IHostConnection`, `ITransactionBoundary`, `IClock`, `IConsumerIdentity`, `IEffectJournal`, `IBehaviourWorkflowRepository`, `IWorkItemRepository` and `IWorkflowIgnitionLedger`.
 - The core repair commands `ResumeStrandedProcess` and `FailStrandedProcess` (WP8-10) are handled on the bus with the runtime's ports, unless `$handlers` maps them.
-- D10 (O8): `workflows()`, `workItems()` and `workflowIgnitions()` give a host's `WorkflowHandler` and a core `WorkflowIgniter` (with `boundary()`) their stores on the same connection. `effectJournal()` is the D1 journal.
+- D10 (O8): `workflows()`, `work_items()` and `ignitions()` give a host's `WorkflowHandler` and a core `WorkflowIgniter` (with `boundary()`) their stores on the same connection. `journal()` is the D1 journal.
 
 `examples/plain-php-durable/` is its acceptance fixture.
 
 ## Operator repairs
 
-`PdoOperatorView::repair(Layer $layer, string $key, string $action, array $options = [])`, or `repairItem(OperatorItem $item, ...)`, which also refuses an action the item does not list. Each runs in one transaction with a status or lease guard (C23).
+`PdoOperatorView::repair(Layer $layer, string $key, string $action, array $options = [])`, or `repair_item(OperatorItem $item, ...)`, which also refuses an action the item does not list. Each runs in one transaction with a status or lease guard (C23).
 
 | Layer | Action | What it does | Refused when |
 |---|---|---|---|
@@ -74,22 +74,22 @@ All times are UTC `DATETIME(6)` written from `IClock`, never `NOW()`.
 
 | Class | Port | Notes |
 |---|---|---|
-| `PdoConnection` | `IHostConnection` | ints bound with `PARAM_INT`; `isDuplicateKey` = MySQL 1062 only |
+| `PdoConnection` | `IHostConnection` | ints bound with `PARAM_INT`; `is_duplicate_key` = MySQL 1062 only |
 | `PdoTransactionBoundary` | `ITransactionBoundary` | rejects nesting by default; `NestedPolicy::Savepoint` opt-in |
 | `PdoOutboxStore` | `IOutboxStore`, `IReportsClaimDeadLetters` | claim = `FOR UPDATE SKIP LOCKED` + `claim_token` lease, outside any transaction; an expired-lease re-claim counts an attempt and dead-letters at `max_attempts` (CR-PDO-6) |
 | `PdoOutboxAdministration` | `IOutboxAdministration`, `IOutboxRowIds` | retry removes the DLQ entry; replay keeps `event_id` |
 | `PdoPauseStore` | `IRelayPauseStore` | fnmatch selectors, applied inside the claim |
 | `PdoDeliveryLedger` | `IDeliveryLedger` | `last_error`, `exhausted_at` |
-| `PdoProcessStore` | `IProcessStore`, `IMatchesFactAncestry` | `UNIQUE (process_class, ignition_key)`, `quarantine_reason`, version fencing; D3 routes per await, `findWaitingFor(class, key)` by key; LargeString business data (D6) |
+| `PdoProcessStore` | `IProcessStore`, `IMatchesFactAncestry` | `UNIQUE (process_class, ignition_key)`, `quarantine_reason`, version fencing; D3 routes per await, `find_waiting_for(class, key)` by key; LargeString business data (D6) |
 | `PdoEffectJournal` | `IEffectJournal` | D1; `invalidate()` in the repair command's transaction |
 | `PdoBehaviourWorkflowRepository` | `IBehaviourWorkflowRepository` | D10; row + meta in one transaction |
 | `PdoWorkItemRepository` | `IWorkItemRepository` | D10; upsert on the natural key |
 | `PdoWorkflowIgnitionLedger` | `IWorkflowIgnitionLedger` | D10; primary key gate, 1062 = lost claim |
-| `PdoJobStore` | `IWakeupScheduler`, `ITransport` | intents in the process transaction; one deliver job per fact; `withClaimKinds()` view |
+| `PdoJobStore` | `IWakeupScheduler`, `ITransport` | intents in the process transaction; one deliver job per fact; `claiming()` view |
 | `PdoDeliveryWorker` | `IDeliveryWorker` | the drain's delivery stage over `deliver` jobs; handler backoff, ledger-counted budget |
 | `FactClassRecordingEventBus` | `IIntegrationEventBus` | core outbox bus plus the fact class on the row |
 | `MySqlNamedLock` | `IProcessLock` | `GET_LOCK('ddd:'+sha1(consumer\|tenant\|id))`, fail-closed; wrap in `ReentrantProcessLock` |
-| `PdoOperatorView` | `IOperatorView` | core `PortOperatorView` plus the sources below; `toArrays()` for rendering; `repair()` / `repairItem()` |
+| `PdoOperatorView` | `IOperatorView` | core `PortOperatorView` plus the sources below; `to_arrays()` for rendering; `repair()` / `repair_item()` |
 | `PdoJobsOperatorSource` | `IOperatorItemSource` | failed wakeups (layer `wakeup`) and deliver jobs (layer `delivery`) |
 | `PdoLedgerOperatorSource` | `IOperatorItemSource` | failing or exhausted subscribers (layer `delivery`, key `subscriber@event_id`) |
 | `DurableRuntime` | (composition root) | see above |

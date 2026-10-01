@@ -19,14 +19,14 @@ use TangibleDDD\Testing\InMemoryTransactional;
 final class TransactionBoundaryTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function table(): InMemoryTransactional {
     return new class implements InMemoryTransactional {
       public array $rows = [];
-      public function snapshotState(): mixed { return $this->rows; }
-      public function restoreState(mixed $state): void { $this->rows = $state; }
+      public function snapshot(): mixed { return $this->rows; }
+      public function restore(mixed $state): void { $this->rows = $state; }
     };
   }
 
@@ -36,17 +36,17 @@ final class TransactionBoundaryTest extends TestCase {
     $tx->enlist($table);
 
     self::assertInstanceOf(ITransactionBoundary::class, $tx);
-    self::assertFalse($tx->isActive());
+    self::assertFalse($tx->is_active());
 
     $result = $tx->run(function () use ($tx, $table) {
-      self::assertTrue($tx->isActive());
+      self::assertTrue($tx->is_active());
       $table->rows[] = 'domain';
       return 'dto';
     });
 
     self::assertSame('dto', $result);
     self::assertSame(['domain'], $table->rows);
-    self::assertFalse($tx->isActive());
+    self::assertFalse($tx->is_active());
     self::assertSame(1, $tx->commits());
   }
 
@@ -68,13 +68,13 @@ final class TransactionBoundaryTest extends TestCase {
 
     self::assertSame([], $table->rows);
     self::assertSame(1, $tx->rollbacks());
-    self::assertFalse($tx->isActive());
+    self::assertFalse($tx->is_active());
   }
 
   public function test_a_failed_rollback_is_logged_as_a_secondary_and_never_replaces_the_original(): void {
     $logger = new \TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger();
     $tx = new InMemoryTransactionBoundary(NestedPolicy::Reject, $logger);
-    $tx->failNextRollback('connection lost');
+    $tx->fail_next_rollback('connection lost');
     $original = new \DomainException('handler');
 
     try {
@@ -92,7 +92,7 @@ final class TransactionBoundaryTest extends TestCase {
     $tx = new InMemoryTransactionBoundary();
     $table = $this->table();
     $tx->enlist($table);
-    $tx->failNextCommit('deadlock');
+    $tx->fail_next_commit('deadlock');
 
     try {
       $tx->run(function () use ($table) { $table->rows[] = 'domain'; return 1; });
@@ -102,7 +102,7 @@ final class TransactionBoundaryTest extends TestCase {
       self::assertNotNull($e->getPrevious());
     }
     self::assertSame([], $table->rows);
-    self::assertFalse($tx->isActive());
+    self::assertFalse($tx->is_active());
   }
 
   public function test_nested_run_is_rejected_by_default_and_the_outer_tx_is_untouched(): void {
@@ -117,7 +117,7 @@ final class TransactionBoundaryTest extends TestCase {
         self::fail('expected NestedTransactionRejected');
       } catch (NestedTransactionRejected) {
       }
-      self::assertTrue($tx->isActive());
+      self::assertTrue($tx->is_active());
     });
 
     self::assertSame(['outer'], $table->rows);
@@ -169,7 +169,7 @@ final class TransactionBoundaryTest extends TestCase {
     $mw = new TransactionalCommandMiddleware($tx);
 
     $value = $mw->execute(new class implements ITransactionalCommand {}, function () use ($tx) {
-      self::assertTrue($tx->isActive());
+      self::assertTrue($tx->is_active());
       return ['receipt' => 42];
     });
 

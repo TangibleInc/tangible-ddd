@@ -36,7 +36,7 @@ final class SymfonyConsumerConfig implements IDDDConfig, IConsumerIdentity {
     ?string $version = self::DEFAULT_VERSION,
     private readonly string $tablePrefix = '',
   ) {
-    $this->version = self::normaliseVersion($version);
+    $this->version = self::normalise_version($version);
     if (!preg_match('/^[a-z0-9_]+$/', $prefix)) {
       throw new \InvalidArgumentException("Consumer prefix '$prefix' must match [a-z0-9_]+");
     }
@@ -45,7 +45,7 @@ final class SymfonyConsumerConfig implements IDDDConfig, IConsumerIdentity {
     }
   }
 
-  public static function normaliseVersion(?string $version): string {
+  public static function normalise_version(?string $version): string {
     return $version === null || $version === '' ? self::DEFAULT_VERSION : $version;
   }
 

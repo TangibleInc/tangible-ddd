@@ -31,38 +31,38 @@ abstract class ProcessDeliveryScenarios extends ProcessScenarioCase {
   #[TestDox('relay.replay-keeps-identity.process: replaying a dead letter whose fact ignites a process keeps the event_id and ignites no second process')]
   public function test_relay_replay_keeps_identity_process(): void {
     $processes = $this->processes();
-    $processes->wireProcesses([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
+    $processes->wire_processes([[OrderedWidgetProcess::class, WidgetOrdered::class]], []);
     $fact = new WidgetOrdered('w-1');
-    $id = $this->publishFact($fact);
+    $id = $this->publish($fact);
 
     // An earlier delivery reached the ignition but its ledger write was
     // lost: only the ignition gate (ignition_key) remembers it.
-    $processes->worker()->processRunner()->ignite(OrderedWidgetProcess::class, $fact, $id);
-    $ignited = $processes->processIds(OrderedWidgetProcess::class);
+    $processes->worker()->runner()->ignite(OrderedWidgetProcess::class, $fact, $id);
+    $ignited = $processes->process_ids(OrderedWidgetProcess::class);
     self::assertCount(1, $ignited);
 
     for ($n = 0; $n < 5; $n++) {
-      $this->host->rejectNextSubmission();
-      $this->host->relayOnce();
-      $this->host->advanceClock(self::PAST_ANY_LEASE);
+      $this->host->reject_next_submission();
+      $this->host->relay_once();
+      $this->host->advance_clock(self::PAST_ANY_LEASE);
     }
-    $admin = $this->host->outboxAdministration();
-    $letters = $admin->deadLetters(10);
+    $admin = $this->host->outbox_admin();
+    $letters = $admin->dead_letters(10);
     self::assertCount(1, $letters, 'dead-lettered after the relay budget');
     self::assertSame($id, $letters[0]->event_id);
 
-    $admin->replay($letters[0]->dlqId);
-    self::assertSame([], $admin->deadLetters(10), 'the DLQ row is deleted');
+    $admin->replay($letters[0]->dlq_id);
+    self::assertSame([], $admin->dead_letters(10), 'the DLQ row is deleted');
 
-    self::assertSame([$id], $this->host->relayOnce()->accepted, 'relayed under the SAME event_id');
-    self::assertSame([$id], array_map(static fn (TransportedFact $t) => $t->eventId, $this->host->transported()));
+    self::assertSame([$id], $this->host->relay_once()->accepted, 'relayed under the SAME event_id');
+    self::assertSame([$id], array_map(static fn (TransportedFact $t) => $t->event_id, $this->host->transported()));
 
-    $outcomes = $this->host->deliverTransported(WidgetOrdered::class);
+    $outcomes = $this->host->deliver_transported(WidgetOrdered::class);
     self::assertCount(1, $outcomes);
-    self::assertTrue($outcomes[0]->isComplete(), 'the ignition subscriber ran and returned quietly');
-    self::assertSame($ignited, $processes->processIds(OrderedWidgetProcess::class), 'no second process');
-    self::assertSame($id, $this->row($ignited[0])->ignitedByEventId);
-    self::assertNotNull($this->row($ignited[0])->ignitionKey);
+    self::assertTrue($outcomes[0]->is_complete(), 'the ignition subscriber ran and returned quietly');
+    self::assertSame($ignited, $processes->process_ids(OrderedWidgetProcess::class), 'no second process');
+    self::assertSame($id, $this->row($ignited[0])->ignited_by);
+    self::assertNotNull($this->row($ignited[0])->ignition_key);
     self::assertSame(1, ProcessJournal::runs('open:w-1'), 'the process ran its step once');
   }
 
@@ -79,17 +79,17 @@ abstract class ProcessDeliveryScenarios extends ProcessScenarioCase {
     $first = $this->host->deliver(WidgetOrdered::class, $wrapped);
     $second = $this->host->deliver(WidgetOrdered::class, $wrapped);
 
-    self::assertTrue($first->isComplete());
+    self::assertTrue($first->is_complete());
     self::assertCount(2, $first->delivered, 'the ignition and the resume subscriber');
     self::assertSame([], $second->delivered, 'nothing runs twice');
     self::assertEqualsCanonicalizing($first->delivered, $second->skipped, 'both are ledger hits');
 
     // Without the ledger (a lost ledger write): the gates themselves hold.
-    $runner = $processes->worker()->processRunner();
+    $runner = $processes->worker()->runner();
     $runner->ignite(OrderedWidgetProcess::class, $fact, $eventId);
     $runner->resume($fact);
 
-    self::assertCount(1, $processes->processIds(OrderedWidgetProcess::class), 'ignition once');
+    self::assertCount(1, $processes->process_ids(OrderedWidgetProcess::class), 'ignition once');
     self::assertSame(1, ProcessJournal::runs('open:w-1'));
     self::assertSame(1, ProcessJournal::runs('after_order:w-1'), 'resume once');
     self::assertSame('completed', $this->row($waiting)->status);
@@ -109,16 +109,16 @@ abstract class ProcessDeliveryScenarios extends ProcessScenarioCase {
     self::assertSame(['conformance.b'], $first->failed, 'B\'s throw stops nobody');
     self::assertContains('conformance.a', $first->delivered);
     self::assertCount(3, $first->delivered, 'A, the ignition and the resume');
-    self::assertCount(1, $processes->processIds(OrderedWidgetProcess::class), 'ignited');
+    self::assertCount(1, $processes->process_ids(OrderedWidgetProcess::class), 'ignited');
     self::assertSame('completed', $this->row($waiting)->status, 'resumed');
 
     $retry = $this->host->deliver(WidgetOrdered::class, $wrapped);
 
     self::assertSame(['conformance.b'], $retry->delivered, 'the retry runs only B');
     self::assertEqualsCanonicalizing($first->delivered, $retry->skipped);
-    self::assertTrue($retry->isComplete());
+    self::assertTrue($retry->is_complete());
     self::assertSame(['conformance.a' => 1, 'conformance.b' => 2], $this->runs);
-    self::assertCount(1, $processes->processIds(OrderedWidgetProcess::class), 'still one ignition');
+    self::assertCount(1, $processes->process_ids(OrderedWidgetProcess::class), 'still one ignition');
     self::assertSame(1, ProcessJournal::runs('open:w-1'));
     self::assertSame(1, ProcessJournal::runs('after_order:w-1'), 'still one resume');
   }
@@ -135,7 +135,7 @@ abstract class ProcessDeliveryScenarios extends ProcessScenarioCase {
 
     $outcome = $this->host->deliver(WidgetOrdered::class, self::wrap(new WidgetOrdered('w-1'), Uuid::v4()));
 
-    self::assertTrue($outcome->isComplete());
+    self::assertTrue($outcome->is_complete());
     self::assertSame(['listener', 'open:w-1', 'after_order:w-1'], ProcessJournal::$steps, 'listener → ignition (B first) → resume (A)');
     self::assertSame('completed', $this->row($waiting)->status);
   }
@@ -145,7 +145,7 @@ abstract class ProcessDeliveryScenarios extends ProcessScenarioCase {
   /** WidgetOrdered ignites OrderedWidgetProcess and resumes AwaitOrderProcess. */
   protected function wire(): ProcessHost {
     $processes = $this->processes();
-    $processes->wireProcesses([[OrderedWidgetProcess::class, WidgetOrdered::class]], [WidgetOrdered::class]);
+    $processes->wire_processes([[OrderedWidgetProcess::class, WidgetOrdered::class]], [WidgetOrdered::class]);
     return $processes;
   }
 

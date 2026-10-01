@@ -31,8 +31,8 @@ interface IStartsFromFact {
   public function workflow_from_fact(IIntegrationEvent $fact): ?BehaviourWorkflow;
 
   /**
-   * The ledger dedup key: WorkflowIgnitionKey::forFact($eventId, kind) for
-   * "once per fact", WorkflowIgnitionKey::perMinute() for "once per cron
+   * The ledger dedup key: WorkflowIgnitionKey::for_fact($eventId, kind) for
+   * "once per fact", WorkflowIgnitionKey::per_minute() for "once per cron
    * minute", or any stable string. '' disables the dedup for this fact.
    */
   public function ignition_key(IIntegrationEvent $fact, string $eventId): string;
@@ -46,7 +46,7 @@ interface IStartsFromFact {
    * called inside an already-open transaction: then it runs inside that
    * transaction, after the ignition writes, and a rollback of the caller's
    * transaction undoes the ignition (see WorkflowIgniter). An exception is logged and
-   * reported in WorkflowIgnitionResult::$startError; the ignition stays,
+   * reported in WorkflowIgnitionResult::$start_error; the ignition stays,
    * and the registered subscriber rethrows it, so the delivery ledger
    * retries the fact. The retry (or any later fact with the same key) finds
    * the workflow ignited but not started, loads it (ILoadsIgnitedWorkflow)

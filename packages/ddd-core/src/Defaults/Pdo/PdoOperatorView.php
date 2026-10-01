@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\SystemClock;
  * PortOperatorView over the pdo ports plus IOperatorItemSource adapters for
  * the pdo tables (W3C-R5, CR-PDO-4):
  *
- * - `relay`: DLQ rows (PdoOutboxAdministration::deadLetters; repairs retry,
+ * - `relay`: DLQ rows (PdoOutboxAdministration::dead_letters; repairs retry,
  *   replay, discard), including rows dead-lettered at claim after their
  *   lease expired max_attempts times (CR-PDO-6), and `pending` rows that
  *   already failed a submission (repair retry). Budget: the row's
@@ -34,14 +34,14 @@ use TangibleDDD\Runtime\SystemClock;
  *   redeliver while retrying.
  * - `wakeup`: intents that failed (PdoJobsOperatorSource). Budget 10.
  *   Repair retry_wake.
- * - `process`: stranded `running` rows (PdoProcessStore::findStranded;
+ * - `process`: stranded `running` rows (PdoProcessStore::find_stranded;
  *   repairs resume_stranded, fail_stranded) and quarantined rows (none).
  *
- * list() returns OperatorItems (IOperatorView); toArrays() their array form
- * (OperatorItem::toArray: snake_case keys, ISO 8601 UTC times).
+ * list() returns OperatorItems (IOperatorView); to_arrays() their array form
+ * (OperatorItem::to_array: snake_case keys, ISO 8601 UTC times).
  *
  * Repairs (register 3.10: transactional, with status and lease guards, C23):
- * repair($layer, $key, $action, $options) or repairItem($item, $action,
+ * repair($layer, $key, $action, $options) or repair_item($item, $action,
  * $options), which also refuses an action the item does not list.
  *
  * - relay retry   → PdoOutboxAdministration::retry($key, $options['force'])
@@ -107,8 +107,8 @@ final class PdoOperatorView implements IOperatorView {
    * @return list<array{layer: string, layer_label: string, consumer: string, key: string, attempts: int, budget: ?int,
    *   last_error: ?string, first_seen: ?string, repair_actions: list<string>}>
    */
-  public function toArrays(?Layer $layer = null, int $limit = 100): array {
-    return array_map(static fn (OperatorItem $item) => $item->toArray(), $this->list($layer, $limit));
+  public function to_arrays(?Layer $layer = null, int $limit = 100): array {
+    return array_map(static fn (OperatorItem $item) => $item->to_array(), $this->list($layer, $limit));
   }
 
   /**
@@ -123,15 +123,15 @@ final class PdoOperatorView implements IOperatorView {
 
   /**
    * repair() for an item list() returned; refuses (PdoRepairRefused) an
-   * action the item does not list in its repairActions.
+   * action the item does not list in its repairs.
    *
    * @param array{force?: bool, reason?: string, compensate?: bool, expected_version?: int} $options
    */
-  public function repairItem(OperatorItem $item, string $action, array $options = []): void {
-    if (!in_array($action, $item->repairActions, true)) {
+  public function repair_item(OperatorItem $item, string $action, array $options = []): void {
+    if (!in_array($action, $item->repairs, true)) {
       throw new PdoRepairRefused(sprintf(
         'The %s item %s offers %s, not %s',
-        $item->layer->value, $item->key, $item->repairActions === [] ? 'no repair' : implode(', ', $item->repairActions), $action
+        $item->layer->value, $item->key, $item->repairs === [] ? 'no repair' : implode(', ', $item->repairs), $action
       ));
     }
     $this->repairs->run($item->layer, $item->key, $action, $options);

@@ -24,9 +24,9 @@ abstract class PdoOutboxAdministrationCases extends OutboxTestCase {
   /** Append, claim and dead-letter one row; returns its DLQ id. */
   private function deadLettered(string $id, string $error = 'boom', ?string $class = null): int {
     $store = $this->store();
-    $store->appendFact(self::record($id), $class);
+    $store->append_fact(self::record($id), $class);
     $claims = array_values(array_filter($store->claim(50, $this->clock->now(), 60), static fn ($c) => $c->event_id === $id));
-    $store->deadLetter($claims[0], $error);
+    $store->dead_letter($claims[0], $error);
     return (int) $this->row('ddd_dlq', 'event_id = ?', [$id])['id'];
   }
 
@@ -38,16 +38,16 @@ abstract class PdoOutboxAdministrationCases extends OutboxTestCase {
     $b = $this->deadLettered('b', 'second');
     $c = $this->deadLettered('c', 'third');
 
-    $page = $admin->deadLetters(2);
-    self::assertSame([$a, $b], array_map(static fn (DeadLetter $d) => $d->dlqId, $page));
+    $page = $admin->dead_letters(2);
+    self::assertSame([$a, $b], array_map(static fn (DeadLetter $d) => $d->dlq_id, $page));
     self::assertSame('a', $page[0]->event_id);
     self::assertSame('first', $page[0]->error);
     self::assertSame(1, $page[0]->attempts);
-    self::assertEquals(self::utc('2026-10-01 12:00:00'), $page[0]->deadLetteredAt);
+    self::assertEquals(self::utc('2026-10-01 12:00:00'), $page[0]->dead_lettered_at);
     self::assertEquals(self::record('a'), $page[0]->record);
 
-    self::assertSame([$c], array_map(static fn (DeadLetter $d) => $d->dlqId, $admin->deadLetters(2, (string) $b)));
-    self::assertSame([], $admin->deadLetters(0));
+    self::assertSame([$c], array_map(static fn (DeadLetter $d) => $d->dlq_id, $admin->dead_letters(2, (string) $b)));
+    self::assertSame([], $admin->dead_letters(0));
   }
 
   public function test_retry_of_a_dead_lettered_row_resets_it_and_removes_its_dlq_entry(): void {
@@ -213,7 +213,7 @@ abstract class PdoOutboxAdministrationCases extends OutboxTestCase {
     $this->store()->append(self::record('e1'));
     $id = (int) $this->row('ddd_outbox', 'event_id = ?', ['e1'])['id'];
 
-    self::assertSame('e1', $admin->eventIdOf($id));
-    self::assertNull($admin->eventIdOf($id + 1000));
+    self::assertSame('e1', $admin->event_id_of($id));
+    self::assertNull($admin->event_id_of($id + 1000));
   }
 }

@@ -19,7 +19,7 @@ final class ScenarioId {
     $ids = [];
     foreach ($method->getAttributes(Group::class) as $attr) {
       $name = $attr->newInstance()->name();
-      if (ScenarioCatalogue::isKnown($name)) {
+      if (ScenarioCatalogue::is_known($name)) {
         $ids[] = $name;
       }
     }
@@ -29,7 +29,7 @@ final class ScenarioId {
     return $ids[0] ?? null;
   }
 
-  public static function methodName(string $id): string {
+  public static function method_name(string $id): string {
     return 'test_' . str_replace(['.', '-'], '_', $id);
   }
 
@@ -37,7 +37,7 @@ final class ScenarioId {
    * @param list<class-string> $classes concrete host test classes
    * @return array<string, list<string>> id => "Class::method" implementing it
    */
-  public static function implementedBy(array $classes): array {
+  public static function implemented_by(array $classes): array {
     $out = [];
     foreach ($classes as $class) {
       $ref = new \ReflectionClass($class);

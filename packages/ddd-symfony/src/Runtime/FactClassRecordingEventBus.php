@@ -13,7 +13,7 @@ use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
  * The core OutboxIntegrationEventBus (port form, CONF-2) plus the fact's
  * PHP class on the sf outbox row (CR sf-1). Core's OutboxRecord does not
  * carry the class yet, so around each publish() this decorator scopes
- * get_class($event) on the DbalPostgresOutboxStore (withFactClass), and the
+ * get_class($event) on the DbalPostgresOutboxStore (with_event_class), and the
  * store writes it to `event_class`. Delivery needs the class to hydrate the
  * fact and match marker-interface subscriptions (D2). With any other store
  * the decorator only delegates. Once core fills OutboxRecord::$event_class
@@ -31,7 +31,7 @@ final class FactClassRecordingEventBus implements IIntegrationEventBus {
       $this->inner->publish($event);
       return;
     }
-    $this->store->withFactClass(get_class($event), fn () => $this->inner->publish($event));
+    $this->store->with_event_class(get_class($event), fn () => $this->inner->publish($event));
   }
 
   public function inner(): OutboxIntegrationEventBus {

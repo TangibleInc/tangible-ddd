@@ -15,7 +15,7 @@ use TangibleDDD\Conformance\Scenarios\ConcurrencyScenarios;
 #[Group('wp')]
 final class WpConcurrencyConformance extends ConcurrencyScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new WpHostFixture();
   }
 
@@ -27,6 +27,6 @@ final class WpConcurrencyConformance extends ConcurrencyScenarios {
    */
   #[Group('lock.namespace')]
   public function test_lock_namespace(): void {
-    $this->skipForChangeRequest('register 3.7 (lock.namespace is - on wp)', 'the wp lock also takes the legacy ddd_process_<id> name, so consumers with the same process id serialize by design while 0.6 copies can share the site');
+    $this->skip_for('register 3.7 (lock.namespace is - on wp)', 'the wp lock also takes the legacy ddd_process_<id> name, so consumers with the same process id serialize by design while 0.6 copies can share the site');
   }
 }

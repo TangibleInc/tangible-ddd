@@ -24,7 +24,7 @@ final class RecordingSubscriptionRegistry implements ISubscriptionRegistry {
 
   public function add(Subscriber $s): void {
     $this->inner->add($s);
-    $this->classes[$s->eventClassOrMarker] = true;
+    $this->classes[$s->event_class] = true;
   }
 
   public function for(string $eventClass): array {
@@ -32,7 +32,7 @@ final class RecordingSubscriptionRegistry implements ISubscriptionRegistry {
   }
 
   /** @return list<string> concrete classes and marker interfaces, in first-subscription order */
-  public function subscribedClasses(): array {
+  public function fact_classes(): array {
     return array_keys($this->classes);
   }
 }

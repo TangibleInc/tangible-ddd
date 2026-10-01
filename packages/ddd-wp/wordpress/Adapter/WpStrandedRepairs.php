@@ -24,7 +24,7 @@ use TangibleDDD\Runtime\SystemClock;
  * core's ResumeStrandedProcess / FailStrandedProcess to their core handlers
  * on the consumer's v8 ports:
  *
- *   IProcessStore     WpdbProcessStore (findStranded: running rows only while
+ *   IProcessStore     WpdbProcessStore (find_stranded: running rows only while
  *                     both lock names are free)
  *   IWakeupScheduler  WpdbWakeupScheduler (a resume's ResumeRetry intent is
  *                     projected to `{prefix}_ddd_wakeup`, a Continue to the
@@ -53,7 +53,7 @@ final class WpStrandedRepairs {
   }
 
   public function dispatch(ICommand $command): void {
-    if (!WpSchema::isV8($this->config)) {
+    if (!WpSchema::is_v8($this->config)) {
       throw new \LogicException("Consumer '{$this->config->prefix()}' has no stranded repairs (schema v8 not installed).");
     }
     $clock = $this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock();

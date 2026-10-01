@@ -36,12 +36,12 @@ use TangibleDDD\Testing\InMemoryAuditSink;
 final class CorrelationMiddlewareCoreTest extends TestCase {
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
@@ -98,19 +98,19 @@ final class CorrelationMiddlewareCoreTest extends TestCase {
 
     self::assertCount(1, $sink->opened);
     $open = $sink->opened[0];
-    self::assertSame('story-1', $open->correlationId);
-    self::assertSame('evt-9', $open->causationId);
-    self::assertSame('integration_event', $open->causationType);
+    self::assertSame('story-1', $open->correlation_id);
+    self::assertSame('evt-9', $open->causation_id);
+    self::assertSame('integration_event', $open->causation_type);
     self::assertSame(ActorKind::User, $open->actor->kind);
     self::assertSame('42', $open->actor->id);
     self::assertSame('a@b.c', $open->parameters['email']);
     self::assertNotSame('hunter2', $open->parameters['password'], 'parameters are redacted');
     self::assertSame(PHP_VERSION, $open->environment['php']);
     self::assertSame('2.1.0', $open->environment['plugin']);
-    self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $open->commandId);
+    self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $open->command_id);
 
     self::assertCount(1, $sink->closed);
-    self::assertSame($open->commandId, $sink->closed[0]->commandId);
+    self::assertSame($open->command_id, $sink->closed[0]->command_id);
     self::assertSame('success', $sink->closed[0]->status);
   }
 
@@ -129,7 +129,7 @@ final class CorrelationMiddlewareCoreTest extends TestCase {
     $sink = new InMemoryAuditSink();
     $skipAll = new class implements IAuditPolicy {
       public function audits(object $command): bool { return false; }
-      public function captureParameters(object $command): bool { return false; }
+      public function captures_parameters(object $command): bool { return false; }
     };
 
     $this->bracket($sink, $skipAll)->execute($this->command(), fn () => null);
@@ -142,7 +142,7 @@ final class CorrelationMiddlewareCoreTest extends TestCase {
     $sink = new InMemoryAuditSink();
     $noParams = new class implements IAuditPolicy {
       public function audits(object $command): bool { return true; }
-      public function captureParameters(object $command): bool { return false; }
+      public function captures_parameters(object $command): bool { return false; }
     };
 
     $this->bracket($sink, $noParams)->execute($this->command(), fn () => null);
@@ -204,6 +204,6 @@ final class CorrelationMiddlewareCoreTest extends TestCase {
     ));
 
     self::assertSame(str_repeat('ab', 16), $seen);
-    self::assertSame(str_repeat('ab', 16), $sink->opened[0]->commandId);
+    self::assertSame(str_repeat('ab', 16), $sink->opened[0]->command_id);
   }
 }

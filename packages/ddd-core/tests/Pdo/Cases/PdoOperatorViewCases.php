@@ -50,14 +50,14 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $store->append(self::record('healthy'));
     $store->append(self::record('fact'));
     [$dead, $retrying, , $fact] = $store->claim(4, $this->clock->now(), 60);
-    $store->deadLetter($dead, 'transport rejected');
-    $store->retryLater($retrying, 'transport down', $this->clock->now()->modify('+1 minute'));
+    $store->dead_letter($dead, 'transport rejected');
+    $store->retry_later($retrying, 'transport down', $this->clock->now()->modify('+1 minute'));
 
     $ledger = new PdoDeliveryLedger($this->db, self::PREFIX, $this->clock);
-    $ledger->markFailed('listener:a', self::EVENT, 'listener threw', 2);
-    $ledger->markFailed('listener:b', self::EVENT, 'gave up', 5);
-    $ledger->markExhausted('listener:b', self::EVENT);
-    $ledger->markDelivered('listener:ok', self::EVENT);
+    $ledger->mark_failed('listener:a', self::EVENT, 'listener threw', 2);
+    $ledger->mark_failed('listener:b', self::EVENT, 'gave up', 5);
+    $ledger->mark_exhausted('listener:b', self::EVENT);
+    $ledger->mark_delivered('listener:ok', self::EVENT);
 
     $jobs = new PdoJobStore($this->db, 'acme', self::PREFIX, $this->clock);
     (new PdoTransactionBoundary($this->db))->run(function () use ($jobs, $store, $fact) {
@@ -66,8 +66,8 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
       $jobs->schedule(WakeupIntent::continuation('acme', 900078, 0, $this->clock->now()->modify('+1 day')));
       $store->accept($fact, $jobs->submit($fact, ['__event_id' => 'fact'], $this->clock->now()));
     });
-    foreach ($jobs->claimDue($this->clock->now(), 2, 60) as $claim) {
-      $jobs->retryLater($claim, $claim->intent->idempotencyKey === 'deliver:fact' ? 'subscribers to retry: listener:x' : 'LockNotAcquired', $this->clock->now()->modify('+2 seconds'));
+    foreach ($jobs->claim_due($this->clock->now(), 2, 60) as $claim) {
+      $jobs->retry_later($claim, $claim->intent->key === 'deliver:fact' ? 'subscribers to retry: listener:x' : 'LockNotAcquired', $this->clock->now()->modify('+2 seconds'));
     }
 
     $processes = new PdoProcessStore($this->db, self::PREFIX, $this->clock);
@@ -113,22 +113,22 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     ], array_keys($byKey), 'ordered by layer, then first seen');
 
     $dead = $byKey['relay:dead'];
-    self::assertSame([1, 5, 'transport rejected'], [$dead->attempts, $dead->budget, $dead->lastError]);
-    self::assertSame(['retry', 'replay', 'discard'], $dead->repairActions);
-    self::assertSame(['retry'], $byKey['relay:retrying']->repairActions);
-    self::assertSame('transport down', $byKey['relay:retrying']->lastError);
+    self::assertSame([1, 5, 'transport rejected'], [$dead->attempts, $dead->budget, $dead->last_error]);
+    self::assertSame(['retry', 'replay', 'discard'], $dead->repairs);
+    self::assertSame(['retry'], $byKey['relay:retrying']->repairs);
+    self::assertSame('transport down', $byKey['relay:retrying']->last_error);
 
     $a = $byKey['delivery:listener:a@' . self::EVENT];
-    self::assertSame([2, 5, 'listener threw', ['redeliver']], [$a->attempts, $a->budget, $a->lastError, $a->repairActions]);
-    self::assertSame([], $byKey['delivery:listener:b@' . self::EVENT]->repairActions, 'exhausted: compensated, nothing to repair');
+    self::assertSame([2, 5, 'listener threw', ['redeliver']], [$a->attempts, $a->budget, $a->last_error, $a->repairs]);
+    self::assertSame([], $byKey['delivery:listener:b@' . self::EVENT]->repairs, 'exhausted: compensated, nothing to repair');
     self::assertSame([1, 5], [$byKey['delivery:deliver:fact']->attempts, $byKey['delivery:deliver:fact']->budget]);
-    self::assertStringContainsString('listener:x', (string) $byKey['delivery:deliver:fact']->lastError);
+    self::assertStringContainsString('listener:x', (string) $byKey['delivery:deliver:fact']->last_error);
 
     $wake = $byKey['wakeup:timeout:900077:0'];
-    self::assertSame([1, 10, 'LockNotAcquired', ['retry_wake']], [$wake->attempts, $wake->budget, $wake->lastError, $wake->repairActions]);
+    self::assertSame([1, 10, 'LockNotAcquired', ['retry_wake']], [$wake->attempts, $wake->budget, $wake->last_error, $wake->repairs]);
 
-    self::assertSame(['resume_stranded', 'fail_stranded'], $byKey["process:{$ids['stranded']}"]->repairActions);
-    self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]->lastError);
+    self::assertSame(['resume_stranded', 'fail_stranded'], $byKey["process:{$ids['stranded']}"]->repairs);
+    self::assertStringContainsString('App\\Gone', (string) $byKey["process:{$ids['quarantined']}"]->last_error);
   }
 
   // ── repairs (register 3.10, C23; wave 4) ────────────────────────────────
@@ -142,7 +142,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $this->seed();
     $dead = $this->items()['relay:dead'];
 
-    $this->view()->repairItem($dead, 'retry');
+    $this->view()->repair_item($dead, 'retry');
 
     $row = $this->row('ddd_outbox', 'event_id = ?', ['dead']);
     self::assertSame(['pending', 0], [$row['status'], (int) $row['attempts']]);
@@ -158,7 +158,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
 
     $store = $this->store();
     [$again] = array_values(array_filter($store->claim(10, $this->clock->now(), 60), static fn ($c) => $c->event_id === 'dead'));
-    $store->deadLetter($again, 'rejected again');
+    $store->dead_letter($again, 'rejected again');
     $this->view()->repair(Layer::Relay, 'dead', 'discard');
     self::assertSame(0, $this->countRows('ddd_dlq'));
     self::assertSame('dlq', $this->row('ddd_outbox', 'event_id = ?', ['dead'])['status'], 'discard deletes the DLQ row only');
@@ -174,7 +174,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $this->seed();
     $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'timeout:900077:0'");
 
-    $this->view()->repairItem($this->items()['wakeup:timeout:900077:0'], 'retry_wake');
+    $this->view()->repair_item($this->items()['wakeup:timeout:900077:0'], 'retry_wake');
 
     $row = $this->row('ddd_jobs', 'idempotency_key = ?', ['timeout:900077:0']);
     self::assertSame('2026-10-01 12:20:00.000000', $row['next_attempt_at']);
@@ -184,13 +184,13 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
   public function test_redeliver_makes_the_facts_deliver_job_due_now(): void {
     $this->seed();
     $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'deliver:fact'");
-    (new PdoDeliveryLedger($this->db, self::PREFIX, $this->clock))->markFailed('listener:x', 'fact', 'boom', 1);
+    (new PdoDeliveryLedger($this->db, self::PREFIX, $this->clock))->mark_failed('listener:x', 'fact', 'boom', 1);
 
     $this->view()->repair(Layer::Delivery, 'listener:x@fact', 'redeliver');
     self::assertSame('2026-10-01 12:20:00.000000', $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:fact'])['next_attempt_at']);
 
     $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 18:00:00' WHERE idempotency_key = 'deliver:fact'");
-    $this->view()->repairItem($this->items()['delivery:deliver:fact'], 'redeliver');
+    $this->view()->repair_item($this->items()['delivery:deliver:fact'], 'redeliver');
     self::assertSame('2026-10-01 12:20:00.000000', $this->row('ddd_jobs', 'idempotency_key = ?', ['deliver:fact'])['next_attempt_at']);
   }
 
@@ -204,7 +204,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $this->seed();
     $jobs = new PdoJobStore($this->db, 'acme', self::PREFIX, $this->clock);
     $this->db->execute("UPDATE tp_ddd_jobs SET next_attempt_at = '2026-10-01 12:00:00' WHERE idempotency_key = 'timeout:900077:0'");
-    $jobs->claimDue($this->clock->now(), 10, 300);
+    $jobs->claim_due($this->clock->now(), 10, 300);
 
     $this->expectException(\TangibleDDD\Defaults\Pdo\PdoRepairRefused::class);
     $this->view()->repair(Layer::Wakeup, 'timeout:900077:0', 'retry_wake');
@@ -213,9 +213,9 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
   public function test_resume_stranded_writes_a_resume_retry_intent_and_drops_out_of_the_view(): void {
     $ids = $this->seed();
 
-    $this->view()->repairItem($this->items()["process:{$ids['stranded']}"], 'resume_stranded');
+    $this->view()->repair_item($this->items()["process:{$ids['stranded']}"], 'resume_stranded');
 
-    $job = $this->db->fetchOne('SELECT kind, expected_status FROM tp_ddd_jobs WHERE process_id = ?', [$ids['stranded']]);
+    $job = $this->db->fetch_one('SELECT kind, expected_status FROM tp_ddd_jobs WHERE process_id = ?', [$ids['stranded']]);
     self::assertSame(['resume_retry', 'running'], [$job['kind'], $job['expected_status']]);
     self::assertArrayNotHasKey("process:{$ids['stranded']}", $this->items(), 'it has a live intent now');
   }
@@ -224,12 +224,12 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
     $ids = $this->seed();
     $item = $this->items()["process:{$ids['stranded']}"];
     try {
-      $this->view()->repairItem($item, 'fail_stranded');
+      $this->view()->repair_item($item, 'fail_stranded');
       self::fail('a reason is required');
     } catch (\InvalidArgumentException) {
     }
 
-    $this->view()->repairItem($item, 'fail_stranded', ['reason' => 'worker lost']);
+    $this->view()->repair_item($item, 'fail_stranded', ['reason' => 'worker lost']);
 
     $row = $this->row('ddd_processes', 'id = ?', [$ids['stranded']]);
     self::assertSame('failed', $row['status']);
@@ -239,13 +239,13 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
   public function test_a_stranded_repair_is_refused_while_another_session_holds_the_process_lock(): void {
     $ids = $this->seed();
     $other = $this->otherConnection();
-    $name = \TangibleDDD\Defaults\Pdo\MySqlNamedLock::nameOf(new \TangibleDDD\Runtime\Lock\LockKey('acme', '', $ids['stranded']));
-    $other->fetchOne('SELECT GET_LOCK(?, 0) AS l', [$name]);
+    $name = \TangibleDDD\Defaults\Pdo\MySqlNamedLock::name_of(new \TangibleDDD\Runtime\Lock\LockKey('acme', '', $ids['stranded']));
+    $other->fetch_one('SELECT GET_LOCK(?, 0) AS l', [$name]);
     try {
       $this->expectException(\TangibleDDD\Application\Process\Repair\ProcessNotStranded::class);
       $this->view()->repair(Layer::Process, (string) $ids['stranded'], 'resume_stranded');
     } finally {
-      $other->fetchOne('SELECT RELEASE_LOCK(?) AS l', [$name]);
+      $other->fetch_one('SELECT RELEASE_LOCK(?) AS l', [$name]);
     }
   }
 
@@ -258,7 +258,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
   public function test_repair_item_refuses_an_action_the_item_does_not_list(): void {
     $this->seed();
     $this->expectException(\TangibleDDD\Defaults\Pdo\PdoRepairRefused::class);
-    $this->view()->repairItem($this->items()['delivery:listener:b@' . self::EVENT], 'redeliver');
+    $this->view()->repair_item($this->items()['delivery:listener:b@' . self::EVENT], 'redeliver');
   }
 
   public function test_it_filters_by_layer_and_honours_the_limit(): void {
@@ -277,7 +277,7 @@ abstract class PdoOperatorViewCases extends OutboxTestCase {
   public function test_the_array_form_is_what_a_host_renders(): void {
     $this->seed();
 
-    $rows = $this->view()->toArrays(Layer::Relay);
+    $rows = $this->view()->to_arrays(Layer::Relay);
 
     self::assertCount(2, $rows);
     self::assertSame(['layer', 'layer_label', 'consumer', 'key', 'attempts', 'budget', 'last_error', 'first_seen', 'repair_actions'], array_keys($rows[0]));

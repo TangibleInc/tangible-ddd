@@ -18,7 +18,7 @@ abstract class WorkerScenarios extends ConformanceTestCase {
   #[Group('worker.no-leak')]
   #[TestDox('worker.no-leak: after a failing message that leaks, the next message sees no scope, an empty unit of work, no resume argument and no held lock')]
   public function test_worker_no_leak(): void {
-    $lock = $this->host->processLock();
+    $lock = $this->host->lock();
     $key = new LockKey('ddd_conformance', '', 42);
     $seen = null;
 
@@ -34,13 +34,13 @@ abstract class WorkerScenarios extends ConformanceTestCase {
         'correlation' => Correlation::peek(),
         'queued' => $queued,
         'published' => $this->host->events()->published(),
-        'held' => $lock->heldCount(),
-        'runner' => $this->host->runnerTransients(),
+        'held' => $lock->held_count(),
+        'runner' => $this->host->runner_transients(),
       ];
       $lock->release($lock->acquire($key, 1.0));                       // the leaked lock is really gone
     };
 
-    $run = $this->host->runWorker([$failing, $observing]);
+    $run = $this->host->run_worker([$failing, $observing]);
 
     self::assertInstanceOf(\RuntimeException::class, $run->errors[0]);
     self::assertNull($run->errors[1], 'the second message ran cleanly');

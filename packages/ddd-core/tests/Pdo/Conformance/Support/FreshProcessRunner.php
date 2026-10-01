@@ -103,7 +103,7 @@ final class FreshProcessRunner {
   public function freshRun(array $answer): FreshRun {
     return new FreshRun(
       died: (bool) $answer['died'],
-      processId: isset($answer['processId']) ? (int) $answer['processId'] : null,
+      process_id: isset($answer['processId']) ? (int) $answer['processId'] : null,
       relayed: array_values($answer['relayed'] ?? []),
       delivered: (int) ($answer['delivered'] ?? 0),
       errors: array_values($answer['errors'] ?? []),

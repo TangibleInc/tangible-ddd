@@ -12,12 +12,12 @@ use TangibleDDD\Runtime\Process\AwaitRoute;
  * Any-of await (D3): suspend until the first fact that one of the branches
  * accepts. Answer branches resume the next step with that fact (type the
  * step's second parameter as the union of the answer classes). Cancellation
- * branches (cancelledBy()) compensate the process instead, with the reason
+ * branches (cancelled_by()) compensate the process instead, with the reason
  * "Cancelled by <class>" (ICancellingAwait), as a failed alarm does.
  *
  *   AwaitAny::of(AwaitEvent::keyed(BackupReplicated::class, $ref),
  *                AwaitEvent::keyed(BackupFailed::class, $ref))
- *     ->cancelledBy(new AwaitEvent(ApplicationDestroyScheduled::class, ['app_id' => $id]))
+ *     ->cancelled_by(new AwaitEvent(ApplicationDestroyScheduled::class, ['app_id' => $id]))
  *     ->until($deadline, AwaitAll::TIMEOUT_FAIL);
  *
  * Optional alarm: until() (absolute UTC, D7) or within() (seconds from the
@@ -80,7 +80,7 @@ final class AwaitAny implements IAwaitMechanism, IRoutedAwait, ICancellingAwait,
   }
 
   /** Add cancellation branches: a fact they accept compensates the process. */
-  public function cancelledBy(AwaitEvent ...$cancellations): self {
+  public function cancelled_by(AwaitEvent ...$cancellations): self {
     return new self($this->answers, [...$this->cancellations, ...$cancellations], $this->timeout_seconds, $this->on_timeout, $this->until, $this->arrived);
   }
 
@@ -157,7 +157,7 @@ final class AwaitAny implements IAwaitMechanism, IRoutedAwait, ICancellingAwait,
     $routes = [];
     foreach ($this->branches() as $branch) {
       foreach ($branch->routes() as $route) {
-        $routes[$route->eventClass . "\0" . $route->awaitKey] = $route;
+        $routes[$route->event_class . "\0" . $route->await_key] = $route;
       }
     }
     return array_values($routes);

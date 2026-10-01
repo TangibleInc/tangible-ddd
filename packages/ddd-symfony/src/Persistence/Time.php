@@ -13,15 +13,15 @@ namespace TangibleDDD\Symfony\Persistence;
  */
 final class Time {
 
-  public static function toDb(\DateTimeImmutable $t): string {
+  public static function to_db(\DateTimeImmutable $t): string {
     return $t->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s.uP');
   }
 
-  public static function fromDb(string $value): \DateTimeImmutable {
+  public static function from_db(string $value): \DateTimeImmutable {
     return (new \DateTimeImmutable($value))->setTimezone(new \DateTimeZone('UTC'));
   }
 
-  public static function fromDbOrNull(?string $value): ?\DateTimeImmutable {
-    return $value === null ? null : self::fromDb($value);
+  public static function from_db_or_null(?string $value): ?\DateTimeImmutable {
+    return $value === null ? null : self::from_db($value);
   }
 }

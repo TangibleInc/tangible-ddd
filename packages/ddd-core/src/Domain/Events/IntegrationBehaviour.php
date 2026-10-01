@@ -73,7 +73,7 @@ trait IntegrationBehaviour {
       $v === null || is_scalar($v)    => $v,
       $v instanceof BackedEnum         => $v->value,
       $v instanceof DateTimeInterface  => $v->format('c'),
-      $v instanceof LargeString        => $v->toPayload(),
+      $v instanceof LargeString        => $v->encode(),
       is_array($v)                    => array_map(
         fn($e) => self::scalarise_value($e, $param), $v
       ),
@@ -93,7 +93,7 @@ trait IntegrationBehaviour {
       $t === 'bool'   => (bool) $raw,
       is_a($t, BackedEnum::class, true)        => $t::from($raw),
       is_a($t, DateTimeInterface::class, true) => new DateTimeImmutable($raw),
-      $t === LargeString::class                => LargeString::fromPayload($raw),
+      $t === LargeString::class                => LargeString::decode($raw),
       default => $raw,
     };
   }

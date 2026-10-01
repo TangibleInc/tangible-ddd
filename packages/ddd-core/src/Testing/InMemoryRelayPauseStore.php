@@ -27,7 +27,7 @@ final class InMemoryRelayPauseStore implements IRelayPauseStore {
     }
   }
 
-  public function isPaused(string $eventType, \DateTimeImmutable $now): bool {
+  public function is_paused(string $eventType, \DateTimeImmutable $now): bool {
     foreach ($this->holds as $selectors) {
       foreach ($selectors as $selector => $until) {
         if ($until !== null && $until <= $now) {

@@ -33,7 +33,7 @@ final class InMemoryWorkflowIgnitionLedger implements IWorkflowIgnitionLedger, I
   public function attach(string $dedupKey, int $workflowId): void {
     $row = $this->rows[$dedupKey] ?? null;
     if ($row !== null) {
-      $this->rows[$dedupKey] = new WorkflowIgnition($row->dedupKey, $row->kind, $workflowId, $row->eventId, $row->createdAt);
+      $this->rows[$dedupKey] = new WorkflowIgnition($row->key, $row->kind, $workflowId, $row->event_id, $row->created_at);
     }
   }
 
@@ -45,11 +45,11 @@ final class InMemoryWorkflowIgnitionLedger implements IWorkflowIgnitionLedger, I
     unset($this->rows[$dedupKey]);
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return $this->rows;
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     $this->rows = $state;
   }
 }

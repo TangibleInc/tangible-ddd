@@ -28,11 +28,11 @@ final class InMemoryScenarioRows implements ScenarioRows, InMemoryTransactional 
     return count($this->rows);
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return $this->rows;
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     $this->rows = $state;
   }
 }

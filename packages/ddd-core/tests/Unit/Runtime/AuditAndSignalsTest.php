@@ -29,15 +29,15 @@ final class AuditAndSignalsTest extends TestCase {
 
   private function open(): AuditOpen {
     return new AuditOpen(
-      commandId: 'c1',
-      correlationId: 'corr',
-      commandName: 'Acme\\PlaceOrder',
+      command_id: 'c1',
+      correlation_id: 'corr',
+      command_name: 'Acme\\PlaceOrder',
       actor: new Actor(ActorKind::User, '7', 'ann'),
-      causationId: null,
-      causationType: null,
+      causation_id: null,
+      causation_type: null,
       parameters: ['sku' => 'x'],
       environment: ['php' => PHP_VERSION],
-      startedAt: new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')),
+      started_at: new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')),
     );
   }
 
@@ -63,7 +63,7 @@ final class AuditAndSignalsTest extends TestCase {
     $p = new AuditEverything();
     self::assertInstanceOf(IAuditPolicy::class, $p);
     self::assertTrue($p->audits(new \stdClass()));
-    self::assertTrue($p->captureParameters(new \stdClass()));
+    self::assertTrue($p->captures_parameters(new \stdClass()));
   }
 
   public function test_null_sink_accepts_everything(): void {
@@ -79,7 +79,7 @@ final class AuditAndSignalsTest extends TestCase {
     $s->open($this->open());
     $s->close($close = new AuditClose('c1', 'error', 3, 1024, [], ['type' => 'X', 'message' => 'm', 'code' => 0]));
 
-    self::assertSame('c1', $s->opened[0]->commandId);
+    self::assertSame('c1', $s->opened[0]->command_id);
     self::assertSame($close, $s->closed[0]);
 
     $failing = new InMemoryAuditSink(failOnClose: new \RuntimeException('audit table gone'));

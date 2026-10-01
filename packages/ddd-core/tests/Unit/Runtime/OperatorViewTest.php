@@ -60,7 +60,7 @@ final class OperatorViewTest extends TestCase {
       'last_error' => 'broker down',
       'first_seen' => '2026-10-01T12:00:00+00:00',
       'repair_actions' => ['retry', 'replay', 'discard'],
-    ], $item->toArray());
+    ], $item->to_array());
   }
 
   public function test_the_port_view_merges_relay_process_delivery_and_wakeup_layers(): void {
@@ -68,7 +68,7 @@ final class OperatorViewTest extends TestCase {
     $outbox = new InMemoryOutboxStore($this->clock, null, $boundary);
     $outbox->append(new OutboxRecord('dead', 'order_placed', 'a', 'c', 1, null, [], $this->clock->now(), max_attempts: 1));
     [$claim] = $outbox->claim(1, $this->clock->now(), 60);
-    $outbox->deadLetter($claim, 'poison');
+    $outbox->dead_letter($claim, 'poison');
 
     $processes = new InMemoryProcessStore($this->clock);
     $running = new TwoStepProcess();
@@ -78,14 +78,14 @@ final class OperatorViewTest extends TestCase {
     $processes->save($copy, 1);
 
     $ledger = new InMemoryDeliveryLedger('acme');
-    $ledger->markFailed('listener:Ship', 'evt-1', 'smtp down', 2);
-    $ledger->markDelivered('listener:Ok', 'evt-1');
+    $ledger->mark_failed('listener:Ship', 'evt-1', 'smtp down', 2);
+    $ledger->mark_delivered('listener:Ok', 'evt-1');
 
     $wakeups = new InMemoryWakeupScheduler($boundary);
     $boundary->enlist($wakeups);
     $boundary->run(fn () => $wakeups->schedule(WakeupIntent::continuation('acme', 7, 0, $this->clock->now())));
-    [$w] = $wakeups->claimDue($this->clock->now(), 1, 60);
-    $wakeups->retryLater($w, 'lock busy', $this->clock->now()->modify('+2 seconds'));
+    [$w] = $wakeups->claim_due($this->clock->now(), 1, 60);
+    $wakeups->retry_later($w, 'lock busy', $this->clock->now()->modify('+2 seconds'));
 
     $this->clock->advance('+16 minutes');
     $view = new PortOperatorView(new StaticConsumerIdentity('acme'), $outbox, $processes, $this->clock, [$ledger, $wakeups]);
@@ -98,14 +98,14 @@ final class OperatorViewTest extends TestCase {
     }
 
     self::assertSame(['relay', 'delivery', 'wakeup', 'process'], array_keys($byLayer));
-    self::assertSame(['dead', 1, 1, 'poison'], [$byLayer['relay']->key, $byLayer['relay']->attempts, $byLayer['relay']->budget, $byLayer['relay']->lastError]);
-    self::assertSame(['retry', 'replay', 'discard'], $byLayer['relay']->repairActions);
+    self::assertSame(['dead', 1, 1, 'poison'], [$byLayer['relay']->key, $byLayer['relay']->attempts, $byLayer['relay']->budget, $byLayer['relay']->last_error]);
+    self::assertSame(['retry', 'replay', 'discard'], $byLayer['relay']->repairs);
     self::assertSame('listener:Ship@evt-1', $byLayer['delivery']->key);
-    self::assertSame([2, 'smtp down'], [$byLayer['delivery']->attempts, $byLayer['delivery']->lastError]);
+    self::assertSame([2, 'smtp down'], [$byLayer['delivery']->attempts, $byLayer['delivery']->last_error]);
     self::assertSame('continue:7:0', $byLayer['wakeup']->key);
-    self::assertSame([1, WakeRetryPolicy::BUDGET, 'lock busy'], [$byLayer['wakeup']->attempts, $byLayer['wakeup']->budget, $byLayer['wakeup']->lastError]);
+    self::assertSame([1, WakeRetryPolicy::BUDGET, 'lock busy'], [$byLayer['wakeup']->attempts, $byLayer['wakeup']->budget, $byLayer['wakeup']->last_error]);
     self::assertSame('1', $byLayer['process']->key);
-    self::assertSame(['resume_stranded', 'fail_stranded'], $byLayer['process']->repairActions);
+    self::assertSame(['resume_stranded', 'fail_stranded'], $byLayer['process']->repairs);
 
     self::assertCount(1, $view->list(Layer::Delivery));
     self::assertCount(2, $view->list(null, 2), 'the limit applies to the merged list');

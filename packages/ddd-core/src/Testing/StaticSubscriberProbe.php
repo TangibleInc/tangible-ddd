@@ -12,7 +12,7 @@ final class StaticSubscriberProbe implements ISubscriberProbe {
   /** @param array<string, bool> $answers integration action → has subscribers */
   public function __construct(private readonly array $answers = []) {}
 
-  public function hasSubscribers(string $integrationAction): ?bool {
+  public function has_subscribers(string $integrationAction): ?bool {
     return $this->answers[$integrationAction] ?? null;
   }
 }

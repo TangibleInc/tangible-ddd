@@ -31,14 +31,14 @@ final class DeliveryDoublesTest extends TestCase {
     self::assertFalse($l->delivered('s', 'e'));
     self::assertSame(0, $l->attempts('s', 'e'));
 
-    $l->markFailed('s', 'e', 'boom', 1);
-    $l->markFailed('s', 'e', 'boom2', 2);
+    $l->mark_failed('s', 'e', 'boom', 1);
+    $l->mark_failed('s', 'e', 'boom2', 2);
     self::assertSame(2, $l->attempts('s', 'e'));
-    self::assertSame('boom2', $l->lastError('s', 'e'));
+    self::assertSame('boom2', $l->last_error('s', 'e'));
     self::assertSame(0, $l->attempts('s', 'other'));
     self::assertSame(0, $l->attempts('other', 'e'));
 
-    $l->markDelivered('s', 'e');
+    $l->mark_delivered('s', 'e');
     self::assertTrue($l->delivered('s', 'e'));
     self::assertSame(2, $l->attempts('s', 'e'), 'attempts survive delivery for the operator view');
     self::assertFalse($l->delivered('other', 'e'));
@@ -48,30 +48,30 @@ final class DeliveryDoublesTest extends TestCase {
     $l = new InMemoryDeliveryLedger();
 
     self::assertFalse($l->exhausted('s', 'e'));
-    self::assertNull($l->lastError('s', 'e'));
+    self::assertNull($l->last_error('s', 'e'));
 
-    $l->markFailed('s', 'e', 'boom', 3);
+    $l->mark_failed('s', 'e', 'boom', 3);
     self::assertFalse($l->exhausted('s', 'e'), 'reaching the budget alone is not the terminal marker');
 
-    $l->markExhausted('s', 'e');
+    $l->mark_exhausted('s', 'e');
     self::assertTrue($l->exhausted('s', 'e'));
     self::assertFalse($l->delivered('s', 'e'));
     self::assertSame(3, $l->attempts('s', 'e'), 'attempts survive the marker');
-    self::assertSame('boom', $l->lastError('s', 'e'), 'the last error survives the marker');
+    self::assertSame('boom', $l->last_error('s', 'e'), 'the last error survives the marker');
     self::assertFalse($l->exhausted('s', 'other'));
     self::assertFalse($l->exhausted('other', 'e'));
 
-    $l->markExhausted('s', 'e'); // idempotent
+    $l->mark_exhausted('s', 'e'); // idempotent
     self::assertTrue($l->exhausted('s', 'e'));
   }
 
   public function test_ledger_exhausted_marker_rolls_back_with_the_boundary_snapshot(): void {
     $l = new InMemoryDeliveryLedger();
-    $l->markFailed('s', 'e', 'boom', 1);
-    $snap = $l->snapshotState();
+    $l->mark_failed('s', 'e', 'boom', 1);
+    $snap = $l->snapshot();
 
-    $l->markExhausted('s', 'e');
-    $l->restoreState($snap);
+    $l->mark_exhausted('s', 'e');
+    $l->restore($snap);
 
     self::assertFalse($l->exhausted('s', 'e'));
     self::assertSame(1, $l->attempts('s', 'e'));
@@ -116,14 +116,14 @@ final class DeliveryDoublesTest extends TestCase {
 
   public function test_transport_rejection_and_missing_ref_controls(): void {
     $t = new InMemoryTransport();
-    $t->rejectNext(new TransportRejected('queue full'));
+    $t->reject_next(new TransportRejected('queue full'));
     try {
       $t->submit($this->claim(), [], new \DateTimeImmutable());
       self::fail('expected TransportRejected');
     } catch (TransportRejected) {
     }
 
-    $t->returnNoRefNext();
+    $t->drop_next_ref();
     self::assertNull($t->submit($this->claim(), [], new \DateTimeImmutable()));
     self::assertNotNull($t->submit($this->claim(), [], new \DateTimeImmutable()));
     self::assertCount(2, $t->submissions, 'rejected submissions are not recorded');
@@ -132,8 +132,8 @@ final class DeliveryDoublesTest extends TestCase {
   public function test_transport_connection_sharing_is_configurable(): void {
     $store = new InMemoryOutboxStore(new FrozenClock());
 
-    self::assertFalse((new InMemoryTransport())->sharesConnectionWith($store));
-    self::assertTrue((new InMemoryTransport(sharesConnection: true))->sharesConnectionWith($store));
+    self::assertFalse((new InMemoryTransport())->shares_connection($store));
+    self::assertTrue((new InMemoryTransport(sharesConnection: true))->shares_connection($store));
   }
 
   public function test_relay_wakeups(): void {
@@ -151,8 +151,8 @@ final class DeliveryDoublesTest extends TestCase {
     $p = new StaticSubscriberProbe(['acme_integration_order_placed' => true, 'acme_integration_x' => false]);
     self::assertInstanceOf(ISubscriberProbe::class, $p);
 
-    self::assertTrue($p->hasSubscribers('acme_integration_order_placed'));
-    self::assertFalse($p->hasSubscribers('acme_integration_x'));
-    self::assertNull($p->hasSubscribers('acme_integration_unknown'));
+    self::assertTrue($p->has_subscribers('acme_integration_order_placed'));
+    self::assertFalse($p->has_subscribers('acme_integration_x'));
+    self::assertNull($p->has_subscribers('acme_integration_unknown'));
   }
 }

@@ -48,14 +48,14 @@ final class InMemoryDeliveryLedger implements IDeliveryLedger, InMemoryTransacti
     return $this->rows[self::key($subscriberId, $eventId)]['delivered'] ?? false;
   }
 
-  public function markDelivered(string $subscriberId, string $eventId): void {
+  public function mark_delivered(string $subscriberId, string $eventId): void {
     $row = $this->row($subscriberId, $eventId);
     $row['delivered'] = true;
     $row['error'] = null;
     $this->rows[self::key($subscriberId, $eventId)] = $row;
   }
 
-  public function markFailed(string $subscriberId, string $eventId, string $error, int $attempt): void {
+  public function mark_failed(string $subscriberId, string $eventId, string $error, int $attempt): void {
     $row = $this->row($subscriberId, $eventId);
     $row['delivered'] = false;
     $row['attempts'] = $attempt;
@@ -67,11 +67,11 @@ final class InMemoryDeliveryLedger implements IDeliveryLedger, InMemoryTransacti
     return $this->rows[self::key($subscriberId, $eventId)]['attempts'] ?? 0;
   }
 
-  public function lastError(string $subscriberId, string $eventId): ?string {
+  public function last_error(string $subscriberId, string $eventId): ?string {
     return $this->rows[self::key($subscriberId, $eventId)]['error'] ?? null;
   }
 
-  public function markExhausted(string $subscriberId, string $eventId): void {
+  public function mark_exhausted(string $subscriberId, string $eventId): void {
     $row = $this->row($subscriberId, $eventId);
     $row['exhausted'] = true;
     $this->rows[self::key($subscriberId, $eventId)] = $row;
@@ -81,11 +81,11 @@ final class InMemoryDeliveryLedger implements IDeliveryLedger, InMemoryTransacti
     return $this->rows[self::key($subscriberId, $eventId)]['exhausted'] ?? false;
   }
 
-  public function snapshotState(): mixed {
+  public function snapshot(): mixed {
     return $this->rows;
   }
 
-  public function restoreState(mixed $state): void {
+  public function restore(mixed $state): void {
     $this->rows = $state;
   }
 

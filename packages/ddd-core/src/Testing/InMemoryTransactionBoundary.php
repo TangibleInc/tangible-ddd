@@ -15,8 +15,8 @@ use TangibleDDD\Runtime\TransactionFailed;
  * In-memory ITransactionBoundary. Enlisted InMemoryTransactional stores are
  * snapshotted at begin/savepoint and restored on rollback or failed commit.
  *
- * Test controls: failNextCommit() (-> TransactionFailed, nothing persists,
- * `cmd.commit-failure`), failNextRollback() (-> logged secondary, original
+ * Test controls: fail_next_commit() (-> TransactionFailed, nothing persists,
+ * `cmd.commit-failure`), fail_next_rollback() (-> logged secondary, original
  * still surfaces).
  */
 final class InMemoryTransactionBoundary implements ITransactionBoundary {
@@ -75,15 +75,15 @@ final class InMemoryTransactionBoundary implements ITransactionBoundary {
     return $result;
   }
 
-  public function isActive(): bool {
+  public function is_active(): bool {
     return $this->depth > 0;
   }
 
-  public function failNextCommit(string $reason): void {
+  public function fail_next_commit(string $reason): void {
     $this->failCommit = $reason;
   }
 
-  public function failNextRollback(string $reason): void {
+  public function fail_next_rollback(string $reason): void {
     $this->failRollback = $reason;
   }
 
@@ -127,13 +127,13 @@ final class InMemoryTransactionBoundary implements ITransactionBoundary {
 
   /** @return list<mixed> */
   private function snapshot(): array {
-    return array_map(static fn (InMemoryTransactional $p) => $p->snapshotState(), $this->participants);
+    return array_map(static fn (InMemoryTransactional $p) => $p->snapshot(), $this->participants);
   }
 
   /** @param list<mixed> $snapshot */
   private function restore(array $snapshot): void {
     foreach ($this->participants as $i => $p) {
-      $p->restoreState($snapshot[$i]);
+      $p->restore($snapshot[$i]);
     }
   }
 }

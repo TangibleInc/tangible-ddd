@@ -14,8 +14,8 @@ namespace TangibleDDD\Runtime\Lock;
  * - release() never throws; a failed release is logged as a bug.
  *
  * Lifetime: held for exactly one wake. Acquire, re-read the row, act, release
- * in `finally`. Never held across a message or runOnce item boundary; the
- * reset guard (RuntimeReset::guardLock) asserts heldCount() === 0 there.
+ * in `finally`. Never held across a message or run_once item boundary; the
+ * reset guard (RuntimeReset::guard) asserts held_count() === 0 there.
  *
  * Connection rules: MySQL and Postgres session locks live on the connection
  * that took them. sf workers need a direct (non-pooled) connection; a
@@ -24,7 +24,7 @@ namespace TangibleDDD\Runtime\Lock;
  *
  * Adapters need not be re-entrant; wrap them in ReentrantProcessLock.
  *
- * UNRATIFIED: forceReleaseAll() is beyond the register 3.7 sketch and is an
+ * UNRATIFIED: release_all() is beyond the register 3.7 sketch and is an
  * obligation on every adapter (Postgres session lock, GET_LOCK); see CR-4 in
  * Runtime/API-CHANGE-REQUESTS.md.
  */
@@ -36,17 +36,17 @@ interface IProcessLock {
   public function release(LockHandle $h): void;
 
   /** Outstanding acquisitions on this instance (for the worker-reset guard). */
-  public function heldCount(): int;
+  public function held_count(): int;
 
   /**
    * Release every lock still held through THIS instance and forget the
    * handles; returns how many outstanding acquisitions were dropped (0 when
-   * clean). Called by RuntimeReset::betweenMessages() after it has recorded
+   * clean). Called by RuntimeReset::between_messages() after it has recorded
    * a lock leak, so a leak fails loudly once but is not sticky: the next
    * message boundary is clean and the next acquire() reaches the backend
    * again. Never throws (a failed backend release is logged as a bug, as in
    * release()). Locks held by other connections are untouched. Handles
    * issued before the call become stale; releasing one is ignored.
    */
-  public function forceReleaseAll(): int;
+  public function release_all(): int;
 }

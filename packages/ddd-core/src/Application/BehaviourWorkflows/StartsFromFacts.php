@@ -23,7 +23,7 @@ trait StartsFromFacts {
   }
 
   public function ignition_key(IIntegrationEvent $fact, string $eventId): string {
-    return $eventId === '' ? '' : WorkflowIgnitionKey::forFact($eventId, $this->workflow_kind());
+    return $eventId === '' ? '' : WorkflowIgnitionKey::for_fact($eventId, $this->workflow_kind());
   }
 
   public function save_ignited(BehaviourWorkflow $workflow): void {

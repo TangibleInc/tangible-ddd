@@ -24,7 +24,7 @@ final class PersistenceConflict extends \RuntimeException {
   }
 
   /** The conflict for a unique violation anywhere in $e's chain, or null. */
-  public static function fromUniqueViolationIn(\Throwable $e): ?self {
+  public static function find_in(\Throwable $e): ?self {
     for ($t = $e; $t !== null; $t = $t->getPrevious()) {
       if ($t instanceof UniqueConstraintViolationException) {
         $constraint = preg_match('/unique constraint "([^"]+)"/', $t->getMessage(), $m) === 1 ? $m[1] : null;

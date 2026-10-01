@@ -22,7 +22,7 @@ final class MemHostCompositionTest extends ConformanceTestCase {
 
   private MemHostFixture $mem;
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return $this->mem = new MemHostFixture();
   }
 
@@ -53,28 +53,28 @@ final class MemHostCompositionTest extends ConformanceTestCase {
   }
 
   public function test_the_act_bracket_is_the_core_correlation_middleware(): void {
-    $this->publishFact(new WidgetRegistered('w-1'));
+    $this->publish(new WidgetRegistered('w-1'));
 
-    $opened = $this->mem->auditSink()->opened;
+    $opened = $this->mem->audit_sink()->opened;
     self::assertCount(1, $opened);
     // The core bracket appends the consumer's version as `plugin` (0.6 {php, wp, plugin}).
     self::assertSame(MemHostFixture::CONSUMER_VERSION, $opened[0]->environment['plugin'] ?? null);
-    self::assertSame(32, strlen($opened[0]->commandId));
+    self::assertSame(32, strlen($opened[0]->command_id));
   }
 
   public function test_facts_go_through_the_core_outbox_bus(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
+    $id = $this->publish(new WidgetRegistered('w-1'));
 
     // The core bus hands every published fact to the IFactObserver.
-    $observed = $this->mem->factObserver()->observed;
+    $observed = $this->mem->fact_observer()->observed;
     self::assertCount(1, $observed);
     self::assertSame($id, $observed[0]['record']->event_id);
   }
 
   public function test_the_relay_step_is_the_core_outbox_processor(): void {
-    $id = $this->publishFact(new WidgetRegistered('w-1'));
+    $id = $this->publish(new WidgetRegistered('w-1'));
 
-    self::assertSame([$id], $this->host->relayOnce()->accepted);
+    self::assertSame([$id], $this->host->relay_once()->accepted);
 
     // OutboxProcessor logs `[{prefix}-outbox] COMPLETED: {json}` per accepted row.
     $completed = array_filter($this->mem->logs, static fn (string $l) => str_starts_with($l, '[' . MemHostFixture::CONSUMER_PREFIX . '-outbox] COMPLETED') && str_contains($l, $id));

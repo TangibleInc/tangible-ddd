@@ -26,7 +26,7 @@ use TangibleDDD\Symfony\Runtime\Wakeup\IWakeupRelayStep;
  *   ddd:relay --sleep=1           idle poll interval when a step claimed nothing
  *
  * Run it on a DIRECT (non-pooled) Postgres connection. SIGTERM / SIGINT stop
- * the loop after the current step. Each step is Relay::runOnce(), i.e. the
+ * the loop after the current step. Each step is Relay::run_once(), i.e. the
  * core relay step (OutboxProcessor port form, CONF-3), followed by the
  * wakeup relay step when one is wired (due wakeup intents → `ddd_wakeups`,
  * plus the throttled stranded scan, register 5.3); this command owns only
@@ -98,8 +98,8 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
     $exit = Command::SUCCESS;
     do {
       try {
-        $report = $this->relay->runOnce($limit);
-        $wakeups = $this->wakeups?->runOnce($limit);
+        $report = $this->relay->run_once($limit);
+        $wakeups = $this->wakeups?->run_once($limit);
         $failures = 0;
       } catch (DbalException $e) {
         $failures++;
@@ -124,19 +124,19 @@ final class RelayCommand extends Command implements SignalableCommandInterface {
       $totals['claimed'] += count($report->claimed);
       $totals['accepted'] += count($report->accepted);
       $totals['retried'] += count($report->retried);
-      $totals['dlq'] += count($report->deadLettered);
+      $totals['dlq'] += count($report->dead_lettered);
       $totals['lost'] += count($report->lost);
       $totals['wakeups'] += count($wakeups?->projected ?? []);
-      $totals['requeued'] += count($wakeups?->strandedRequeued ?? []);
-      if ($output->isVerbose() && ($report->claimed !== [] || $wakeups?->didWork())) {
+      $totals['requeued'] += count($wakeups?->requeued ?? []);
+      if ($output->isVerbose() && ($report->claimed !== [] || $wakeups?->did_work())) {
         $output->writeln(sprintf('claimed %d, accepted %d, retried %d, dead-lettered %d, lease lost %d, wakeups projected %d',
-          count($report->claimed), count($report->accepted), count($report->retried), count($report->deadLettered), count($report->lost),
+          count($report->claimed), count($report->accepted), count($report->retried), count($report->dead_lettered), count($report->lost),
           count($wakeups?->projected ?? [])));
       }
       if ($once || $this->stop || ($deadline !== null && microtime(true) >= $deadline)) {
         break;
       }
-      if ($report->claimed === [] && !($wakeups?->didWork() ?? false) && $sleep > 0) {
+      if ($report->claimed === [] && !($wakeups?->did_work() ?? false) && $sleep > 0) {
         if ($this->waiter !== null) {
           $this->waiter->wait((float) $sleep);
         } else {

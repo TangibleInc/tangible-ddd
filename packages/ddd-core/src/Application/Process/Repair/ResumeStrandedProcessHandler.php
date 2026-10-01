@@ -39,15 +39,15 @@ final class ResumeStrandedProcessHandler extends StrandedRepair implements IComm
         // Fence the row first (see StrandedRepair: the lock may be released
         // before the command's transaction commits); the wake expects the
         // fenced version.
-        $version = $store->touch($row->processId, $version);
+        $version = $store->touch($row->process_id, $version);
         $nonce = 'repair-' . $now->setTimezone(new \DateTimeZone('UTC'))->format('YmdHis.u');
         $intent = $row->status === 'scheduled'
-          ? WakeupIntent::continuation($prefix, $row->processId, $row->stepIndex, $now, $nonce)
-          : WakeupIntent::resumeRetry($prefix, $row->processId, $row->stepIndex, 'running', $version, $now, $nonce);
+          ? WakeupIntent::continuation($prefix, $row->process_id, $row->step_index, $now, $nonce)
+          : WakeupIntent::resume_retry($prefix, $row->process_id, $row->step_index, 'running', $version, $now, $nonce);
         $wakeups->schedule($intent);
         Log::write(null, sprintf(
           '[%s process] operator resumed stranded process #%d (%s at step %d, version %d) as %s',
-          $prefix, $row->processId, $row->status, $row->stepIndex, $version, $intent->idempotencyKey
+          $prefix, $row->process_id, $row->status, $row->step_index, $version, $intent->key
         ), 'warning');
       },
     );

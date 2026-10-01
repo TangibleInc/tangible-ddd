@@ -53,7 +53,7 @@ final class DbalWakeupOperatorSource implements IOperatorItemSource {
       (int) $r['attempts'],
       $this->budget,
       $r['last_error'] === null ? null : (string) $r['last_error'],
-      Time::fromDb((string) $r['created_at']),
+      Time::from_db((string) $r['created_at']),
       $r['exhausted_at'] === null ? [] : ['rearm'],
     ), $rows);
   }

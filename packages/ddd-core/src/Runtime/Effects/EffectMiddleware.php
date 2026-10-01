@@ -17,7 +17,7 @@ use TangibleDDD\Runtime\ITransactionBoundary;
  *
  * For an IExternalEffectCommand:
  *
- *   1. key = idempotencyKey(); journal->find(key).
+ *   1. key = idempotency_key(); journal->find(key).
  *   2. No entry: perform() runs OUTSIDE any transaction (inside the act
  *      scope, so it is audited and traced as the command), and its result
  *      is stored in the journal at once, in its own autocommit. The entry
@@ -38,12 +38,12 @@ use TangibleDDD\Runtime\ITransactionBoundary;
  * The retry budget is NOT counted here. A fact-triggered effect is retried
  * by the delivery runner; its failures are counted per subscriber in the
  * delivery ledger, and when the budget is reached IntegrationDelivery fires
- * the subscriber's onExhausted, which SubscriptionRegistrar wires to
- * failureCommand() (register 5.1; never from a transport failure event).
+ * the subscriber's on_exhausted, which SubscriptionRegistrar wires to
+ * failure_command() (register 5.1; never from a transport failure event).
  * Inside a process step, the step's retry policy governs.
  *
  * Concurrency: two workers performing the same key at the same moment both
- * call perform(); the command passes its idempotencyKey() to the external
+ * call perform(); the command passes its idempotency_key() to the external
  * system (e.g. Stripe's Idempotency-Key) so the second call is absorbed
  * there. The journal records the last stored result.
  *
@@ -80,14 +80,14 @@ final class EffectMiddleware implements Middleware {
       ));
     }
 
-    $key = $command->idempotencyKey();
+    $key = $command->idempotency_key();
     if ($key === '') {
-      throw new \InvalidArgumentException(get_class($command) . '::idempotencyKey() returned an empty key');
+      throw new \InvalidArgumentException(get_class($command) . '::idempotency_key() returned an empty key');
     }
 
     $result = $journal->find($key);
     if ($result === null) {
-      if ($this->boundary()?->isActive()) {
+      if ($this->boundary()?->is_active()) {
         throw new EffectInsideTransaction(sprintf(
           '%s would perform its external effect inside an open transaction; dispatch it outside one.',
           get_class($command)

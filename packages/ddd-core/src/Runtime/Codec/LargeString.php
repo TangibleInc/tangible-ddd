@@ -10,8 +10,8 @@ namespace TangibleDDD\Runtime\Codec;
  * a sha256 so a truncated or tampered value is detected on the way back.
  *
  * Use it as a constructor parameter type of an integration event (nullable
- * is fine); IntegrationBehaviour encodes it with toPayload() and revives it
- * with fromPayload(). The stored form is a JSON object:
+ * is fine); IntegrationBehaviour encodes it with encode() and revives it
+ * with decode(). The stored form is a JSON object:
  *
  *   {"__ddd_large_string": 1, "encoding": "base64", "bytes": n,
  *    "max_bytes": m, "sha256": "...", "data": "..."}
@@ -24,8 +24,8 @@ namespace TangibleDDD\Runtime\Codec;
  * - decode: a value over its stored max_bytes (or the caller's cap) is
  *   undecodable.
  *
- * Quarantine: fromPayload() throws UndecodableLargeString, whose
- * `quarantineReason` is the text a host stores in `quarantine_reason` (a
+ * Quarantine: decode() throws UndecodableLargeString, whose
+ * `reason` is the text a host stores in `quarantine_reason` (a
  * process row) or the ledger error (a fact, which then follows the
  * delivery budget's poison path).
  */
@@ -38,13 +38,13 @@ final class LargeString implements \Stringable {
   /** @throws PayloadTooLarge when $value is longer than $maxBytes */
   public function __construct(
     public readonly string $value,
-    public readonly int $maxBytes = self::DEFAULT_MAX_BYTES,
+    public readonly int $max_bytes = self::DEFAULT_MAX_BYTES,
   ) {
-    if ($maxBytes < 1) {
+    if ($max_bytes < 1) {
       throw new \InvalidArgumentException('LargeString maxBytes must be at least 1');
     }
-    if (strlen($value) > $maxBytes) {
-      throw new PayloadTooLarge('LargeString value', strlen($value), $maxBytes);
+    if (strlen($value) > $max_bytes) {
+      throw new PayloadTooLarge('LargeString value', strlen($value), $max_bytes);
     }
   }
 
@@ -57,18 +57,18 @@ final class LargeString implements \Stringable {
   }
 
   /** @return array{__ddd_large_string: int, encoding: string, bytes: int, max_bytes: int, sha256: string, data: string} */
-  public function toPayload(): array {
+  public function encode(): array {
     return [
       self::MARKER => 1,
       'encoding' => 'base64',
       'bytes' => strlen($this->value),
-      'max_bytes' => $this->maxBytes,
+      'max_bytes' => $this->max_bytes,
       'sha256' => hash('sha256', $this->value),
       'data' => base64_encode($this->value),
     ];
   }
 
-  public static function isEncoded(mixed $raw): bool {
+  public static function is_encoded(mixed $raw): bool {
     return is_array($raw) && isset($raw[self::MARKER]);
   }
 
@@ -76,8 +76,8 @@ final class LargeString implements \Stringable {
    * @param int|null $maxBytes cap to enforce; null = the stored max_bytes
    * @throws UndecodableLargeString
    */
-  public static function fromPayload(mixed $raw, ?int $maxBytes = null): self {
-    if (!self::isEncoded($raw)) {
+  public static function decode(mixed $raw, ?int $maxBytes = null): self {
+    if (!self::is_encoded($raw)) {
       throw new UndecodableLargeString('not an encoded LargeString (expected an object with ' . self::MARKER . ')');
     }
     /** @var array<string, mixed> $raw */

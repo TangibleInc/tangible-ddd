@@ -111,47 +111,47 @@ final class CatalogueTest extends TestCase {
     $counts = ['mem' => 8, 'pdo' => 7, 'wp' => 3, 'sf' => 9];
     foreach (self::WAVE_4 as $host => $ids) {
       self::assertCount($counts[$host], $ids);
-      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::firstDueAt($host, 4), "$host wave 4");
+      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::first_due_at($host, 4), "$host wave 4");
     }
-    self::assertSame([], ScenarioCatalogue::firstDueAt('mem', 5), 'nothing is due after wave 4');
+    self::assertSame([], ScenarioCatalogue::first_due_at('mem', 5), 'nothing is due after wave 4');
   }
 
   public function test_every_id_has_a_scenario_case_by_wave_4(): void {
     foreach (array_keys(ScenarioCatalogue::WAVES) as $id) {
-      self::assertNotNull(ScenarioCatalogue::scenarioCase($id), "'$id' names its abstract scenario case");
+      self::assertNotNull(ScenarioCatalogue::case_of($id), "'$id' names its abstract scenario case");
     }
   }
 
   public function test_mem_wave_1_matches_register_section_8(): void {
-    self::assertEqualsCanonicalizing(self::MEM_WAVE_1, ScenarioCatalogue::firstDueAt('mem', 1));
-    self::assertNotContains('lock.acquire-error', ScenarioCatalogue::dueBy('mem', 1), 'moved to wave 3');
+    self::assertEqualsCanonicalizing(self::MEM_WAVE_1, ScenarioCatalogue::first_due_at('mem', 1));
+    self::assertNotContains('lock.acquire-error', ScenarioCatalogue::due_by('mem', 1), 'moved to wave 3');
   }
 
   public function test_later_wave_lists_match_register_section_8(): void {
-    self::assertSame(['audit.sink-fails'], ScenarioCatalogue::firstDueAt('mem', 2));
-    self::assertCount(12, ScenarioCatalogue::firstDueAt('wp', 2));
-    self::assertCount(15, ScenarioCatalogue::firstDueAt('sf', 2));
-    self::assertSame([], ScenarioCatalogue::firstDueAt('pdo', 2));
+    self::assertSame(['audit.sink-fails'], ScenarioCatalogue::first_due_at('mem', 2));
+    self::assertCount(12, ScenarioCatalogue::first_due_at('wp', 2));
+    self::assertCount(15, ScenarioCatalogue::first_due_at('sf', 2));
+    self::assertSame([], ScenarioCatalogue::first_due_at('pdo', 2));
   }
 
   public function test_wave_3_lists_match_register_section_8_exactly(): void {
     $counts = ['mem' => 13, 'pdo' => 37, 'wp' => 24, 'sf' => 23];
     foreach (self::WAVE_3 as $host => $ids) {
       self::assertCount($counts[$host], $ids, "register section 8 lists {$counts[$host]} wave-3 $host ids");
-      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::firstDueAt($host, 3), "$host wave 3");
+      self::assertEqualsCanonicalizing($ids, ScenarioCatalogue::first_due_at($host, 3), "$host wave 3");
     }
   }
 
   public function test_every_id_due_on_mem_by_wave_4_has_a_mem_scenario(): void {
-    $implemented = ScenarioId::implementedBy(self::memHostClasses());
+    $implemented = ScenarioId::implemented_by(self::memHostClasses());
 
-    self::assertEqualsCanonicalizing([...self::MEM_WAVE_1, 'audit.sink-fails', ...self::WAVE_3['mem']], ScenarioCatalogue::dueBy('mem', 3), 'the 31 mem ids of waves 1-3');
-    self::assertEqualsCanonicalizing([...ScenarioCatalogue::dueBy('mem', 3), ...self::WAVE_4['mem']], ScenarioCatalogue::dueBy('mem', 4), 'the 39 mem ids of waves 1-4');
-    $missing = array_values(array_diff(ScenarioCatalogue::dueBy('mem', 4), array_keys($implemented)));
+    self::assertEqualsCanonicalizing([...self::MEM_WAVE_1, 'audit.sink-fails', ...self::WAVE_3['mem']], ScenarioCatalogue::due_by('mem', 3), 'the 31 mem ids of waves 1-3');
+    self::assertEqualsCanonicalizing([...ScenarioCatalogue::due_by('mem', 3), ...self::WAVE_4['mem']], ScenarioCatalogue::due_by('mem', 4), 'the 39 mem ids of waves 1-4');
+    $missing = array_values(array_diff(ScenarioCatalogue::due_by('mem', 4), array_keys($implemented)));
     self::assertSame([], $missing, 'Due on mem by wave 4 but no scenario method carries the id');
 
     foreach (array_keys($implemented) as $id) {
-      self::assertTrue(ScenarioCatalogue::isKnown($id), "Scenario group '$id' is not a register id");
+      self::assertTrue(ScenarioCatalogue::is_known($id), "Scenario group '$id' is not a register id");
       self::assertNotNull(ScenarioCatalogue::WAVES[$id][0], "'$id' is '-' on mem and must not run on a mem host class");
     }
   }
@@ -160,7 +160,7 @@ final class CatalogueTest extends TestCase {
     $byCase = self::scenarioMethodsOfAbstractCases();
 
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      $missing = array_values(array_diff(ScenarioCatalogue::dueBy($host, 4), array_keys($byCase)));
+      $missing = array_values(array_diff(ScenarioCatalogue::due_by($host, 4), array_keys($byCase)));
       self::assertSame([], $missing, "Due on $host by wave 4 but no abstract scenario case carries the id");
     }
   }
@@ -168,12 +168,12 @@ final class CatalogueTest extends TestCase {
   public function test_wave_4_ids_live_in_new_cases_so_wave_3_host_classes_run_unchanged(): void {
     $wave3Cases = [];
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      $wave3Cases = [...$wave3Cases, ...ScenarioCatalogue::casesFor($host, 3)];
+      $wave3Cases = [...$wave3Cases, ...ScenarioCatalogue::cases_for($host, 3)];
     }
     self::assertNotEmpty($wave3Cases);
     foreach (ScenarioCatalogue::HOSTS as $host) {
-      foreach (ScenarioCatalogue::firstDueAt($host, 4) as $id) {
-        self::assertNotContains(ScenarioCatalogue::scenarioCase($id), $wave3Cases, "'$id' is not added to a case a wave-3 host already extends");
+      foreach (ScenarioCatalogue::first_due_at($host, 4) as $id) {
+        self::assertNotContains(ScenarioCatalogue::case_of($id), $wave3Cases, "'$id' is not added to a case a wave-3 host already extends");
       }
     }
   }
@@ -182,10 +182,10 @@ final class CatalogueTest extends TestCase {
     $byCase = self::scenarioMethodsOfAbstractCases();
 
     foreach ($byCase as $id => $class) {
-      self::assertSame($class, ScenarioCatalogue::scenarioCase($id), "ScenarioCatalogue::CASES['$id']");
+      self::assertSame($class, ScenarioCatalogue::case_of($id), "ScenarioCatalogue::CASES['$id']");
     }
     foreach (ScenarioCatalogue::CASES as $id => $class) {
-      self::assertTrue(ScenarioCatalogue::isKnown($id), "CASES key '$id' is a register id");
+      self::assertTrue(ScenarioCatalogue::is_known($id), "CASES key '$id' is a register id");
       self::assertArrayHasKey($id, $byCase, "CASES['$id'] names a class that implements it");
     }
   }
@@ -222,7 +222,7 @@ final class CatalogueTest extends TestCase {
         $id = ScenarioId::of($m);
         if ($id !== null && $m->getDeclaringClass()->getName() === $ref->getName()) {
           self::assertArrayNotHasKey($id, $out, "'$id' is declared by one scenario case only");
-          self::assertSame(ScenarioId::methodName($id), $m->name, "'$id' method name");
+          self::assertSame(ScenarioId::method_name($id), $m->name, "'$id' method name");
           $out[$id] = $ref->getName();
         }
       }

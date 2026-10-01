@@ -50,10 +50,10 @@ final class MessengerFailureTransportSourceTest extends TestCase {
     self::assertSame('1', $item->key, 'the transport message id, as messenger:failed:show takes it');
     self::assertSame(5, $item->attempts, 'four retries after the first attempt');
     self::assertNull($item->budget, 'the handler budget is counted in the delivery ledger');
-    self::assertStringContainsString('evt-1', (string) $item->lastError);
-    self::assertStringContainsString('smtp down', (string) $item->lastError);
-    self::assertEquals(new \DateTimeImmutable('2026-10-01T10:01:00Z'), $item->firstSeen);
-    self::assertSame(['messenger:failed:retry ddd_failed', 'messenger:failed:remove ddd_failed'], $item->repairActions);
+    self::assertStringContainsString('evt-1', (string) $item->last_error);
+    self::assertStringContainsString('smtp down', (string) $item->last_error);
+    self::assertEquals(new \DateTimeImmutable('2026-10-01T10:01:00Z'), $item->first_seen);
+    self::assertSame(['messenger:failed:retry ddd_failed', 'messenger:failed:remove ddd_failed'], $item->repairs);
   }
 
   public function test_another_consumer_s_messages_and_other_layers_are_left_out(): void {

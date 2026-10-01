@@ -77,17 +77,17 @@ final class WpProcessAdaptersTest extends TestCase {
     $key = new LockKey('acme', '3', 42);
 
     $handle = $lock->acquire($key, 5.0);
-    self::assertSame(1, $lock->heldCount());
+    self::assertSame(1, $lock->held_count());
     $lock->release($handle);
 
     $new = substr('ddd:' . sha1('acme|3|42'), 0, 64);
-    self::assertSame($new, $key->mysqlName());
+    self::assertSame($new, $key->mysql_name());
     self::assertSame([
       // legacy bound first; GET_LOCK(new) is the inner (first evaluated) acquisition
       ['GET', ['ddd_process_42', $new, 5, $new, 5]],
       ['RELEASE', ['ddd_process_42', $new]],
     ], $db->calls);
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
   }
 
   /** @return array<string, array{?string}> */
@@ -105,7 +105,7 @@ final class WpProcessAdaptersTest extends TestCase {
       self::fail('only a definite 1 is an acquisition');
     } catch (LockNotAcquired) {
     }
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
     self::assertCount(1, $db->calls, 'no RELEASE_LOCK for a lock never held');
   }
 
@@ -115,8 +115,8 @@ final class WpProcessAdaptersTest extends TestCase {
     $lock->acquire(new LockKey('acme', '', 1), 1);
     $lock->acquire(new LockKey('acme', '', 2), 1);
 
-    self::assertSame(2, $lock->forceReleaseAll());
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(2, $lock->release_all());
+    self::assertSame(0, $lock->held_count());
   }
 
   public function test_wakeups_project_to_the_legacy_hooks_with_associative_args(): void {
@@ -132,7 +132,7 @@ final class WpProcessAdaptersTest extends TestCase {
       ['hook' => 'test_process_continue', 'args' => ['process_id' => 5], 'group' => 'test-processes'],
       ['timestamp' => $due->getTimestamp(), 'hook' => 'test_process_continue', 'args' => ['process_id' => 6], 'group' => 'test-processes'],
     ], $GLOBALS['_test_scheduled_actions']);
-    self::assertSame([], $scheduler->claimDue(new \DateTimeImmutable(), 10, 60), 'Action Scheduler runs the actions itself');
+    self::assertSame([], $scheduler->claim_due(new \DateTimeImmutable(), 10, 60), 'Action Scheduler runs the actions itself');
   }
 
   public function test_the_registry_binds_one_callback_per_subscriber_at_its_priority(): void {
@@ -171,7 +171,7 @@ final class WpProcessAdaptersTest extends TestCase {
     $registry = new WpHookSubscriptionRegistry();
     $runner = new ProcessRunner(new FakeDDDConfig(), new FakeProcessRepository(), subscriptions: $registry);
 
-    (new SubscriptionRegistrar($registry, $runner))->registerProcess(FakeStartsOnProcess::class);
+    (new SubscriptionRegistrar($registry, $runner))->register_process(FakeStartsOnProcess::class);
 
     self::assertArrayHasKey(FakeResolvedEvent::integration_action(), $GLOBALS['_test_actions']);
     self::assertSame(Subscriber::IGNITION, $GLOBALS['_test_action_registrations'][FakeResolvedEvent::integration_action()][0]['priority']);
@@ -184,11 +184,11 @@ final class WpProcessAdaptersTest extends TestCase {
 
     $first = new FakeStartsOnProcess(1);
     $first->mark_ignited_by('evt-1');
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($first, FakeStartsOnProcess::class, 'evt-1'));
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($first, FakeStartsOnProcess::class, 'evt-1'));
 
     $second = new FakeStartsOnProcess(1);
     $second->mark_ignited_by('evt-1');
-    self::assertSame(IgnitionResult::AlreadyIgnited, $store->insertIgnited($second, FakeStartsOnProcess::class, 'evt-1'));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $store->insert_ignited($second, FakeStartsOnProcess::class, 'evt-1'));
     self::assertCount(1, $repo->processes);
     self::assertSame([$first->get_id()], array_keys($repo->processes));
   }

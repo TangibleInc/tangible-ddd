@@ -81,7 +81,7 @@ final class DbalBehaviourWorkflowRepository extends PersistsAggregatesRepository
       'is_complete' => $aggregate->is_complete(),
       'is_failed' => $aggregate->is_failed(),
       'correlation_id' => Correlation::peek()?->correlation_id,
-      'updated_at' => Time::toDb(new \DateTimeImmutable('now', new \DateTimeZone('UTC'))),
+      'updated_at' => Time::to_db(new \DateTimeImmutable('now', new \DateTimeZone('UTC'))),
     ];
     $types = [
       'ref_id' => ParameterType::INTEGER, 'root_workflow_id' => ParameterType::INTEGER,

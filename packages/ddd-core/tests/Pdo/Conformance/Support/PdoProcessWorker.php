@@ -26,19 +26,19 @@ final class PdoProcessWorker implements ProcessWorker {
     private readonly Drain $drain,
   ) {}
 
-  public function processRunner(): ProcessRunner {
+  public function runner(): ProcessRunner {
     return $this->runner;
   }
 
-  public function processLock(): IProcessLock {
+  public function lock(): IProcessLock {
     return $this->lock;
   }
 
-  public function deliverFact(string $eventClass, array $wrapped): DeliveryOutcome {
+  public function deliver(string $eventClass, array $wrapped): DeliveryOutcome {
     return $this->delivery->deliver($eventClass, $wrapped);
   }
 
-  public function drainOnce(int $maxItems = 200): DrainReport {
-    return $this->drain->runOnce($maxItems);
+  public function drain_once(int $maxItems = 200): DrainReport {
+    return $this->drain->run_once($maxItems);
   }
 }

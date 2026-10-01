@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\DecodeScenarios;
 #[Group('mem')]
 final class MemDecodeScenariosTest extends DecodeScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new MemHostFixture();
   }
 }

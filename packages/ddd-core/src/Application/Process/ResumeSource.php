@@ -26,7 +26,7 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  */
 final class ResumeSource {
 
-  public static function ofMechanism(IAwaitMechanism $mechanism, ?IIntegrationEvent $event): ?array {
+  public static function of_mechanism(IAwaitMechanism $mechanism, ?IIntegrationEvent $event): ?array {
     $encoded = $event === null ? null : self::encodeEvent($event);
     if ($event !== null && $encoded === null) {
       return null;
@@ -35,7 +35,7 @@ final class ResumeSource {
   }
 
   /** A precheck's own value; null when it cannot be persisted. */
-  public static function ofValue(mixed $value): ?array {
+  public static function of_value(mixed $value): ?array {
     if ($value instanceof IIntegrationEvent) {
       $encoded = self::encodeEvent($value);
       return $encoded === null ? null : ['kind' => 'event', 'event' => $encoded];

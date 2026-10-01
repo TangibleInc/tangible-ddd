@@ -28,10 +28,10 @@ final class CompiledSubscriptionRegistryTest extends TestCase {
   /** @return list<array<string, mixed>> */
   private static function specs(): array {
     return [
-      CompiledSubscriptionRegistry::listenerSpec('app.marker_listener', MarkerListener::class, PingMarker::class, 20),
-      CompiledSubscriptionRegistry::processSpec(PingProcess::class, 'resume', PingFact::class),
-      CompiledSubscriptionRegistry::processSpec(PingProcess::class, 'ignition', PingFact::class),
-      CompiledSubscriptionRegistry::listenerSpec('app.ping_listener', PingListener::class, PingFact::class, Subscriber::LISTENER),
+      CompiledSubscriptionRegistry::listener_spec('app.marker_listener', MarkerListener::class, PingMarker::class, 20),
+      CompiledSubscriptionRegistry::process_spec(PingProcess::class, 'resume', PingFact::class),
+      CompiledSubscriptionRegistry::process_spec(PingProcess::class, 'ignition', PingFact::class),
+      CompiledSubscriptionRegistry::listener_spec('app.ping_listener', PingListener::class, PingFact::class, Subscriber::LISTENER),
     ];
   }
 
@@ -105,6 +105,6 @@ final class CompiledSubscriptionRegistryTest extends TestCase {
 
   public function test_known_fact_classes_are_the_concrete_subscribed_classes(): void {
     $registry = new CompiledSubscriptionRegistry(self::specs(), $this->listeners(), null);
-    self::assertSame([PingFact::class], $registry->knownFactClasses());
+    self::assertSame([PingFact::class], $registry->fact_classes());
   }
 }

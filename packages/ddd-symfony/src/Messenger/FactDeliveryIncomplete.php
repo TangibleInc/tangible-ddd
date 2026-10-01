@@ -17,7 +17,7 @@ final class FactDeliveryIncomplete extends \RuntimeException {
   public function __construct(public readonly IntegrationFactMessage $fact, public readonly DeliveryOutcome $outcome) {
     parent::__construct(sprintf(
       'Fact %s (%s) not fully delivered; failed subscribers: %s',
-      $fact->eventId, $fact->eventClass, implode(', ', $outcome->failed)
+      $fact->event_id, $fact->event_class, implode(', ', $outcome->failed)
     ));
   }
 }

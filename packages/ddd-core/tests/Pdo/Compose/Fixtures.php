@@ -139,7 +139,7 @@ final class OrderStatus extends SelfHandlingQuery {
   public function __construct(public readonly int $order_id) {}
 
   protected function handle(IHostConnection $db): ?array {
-    return $db->fetchOne('SELECT status, outcome FROM pdocompose_orders WHERE id = ?', [$this->order_id]);
+    return $db->fetch_one('SELECT status, outcome FROM pdocompose_orders WHERE id = ?', [$this->order_id]);
   }
 }
 

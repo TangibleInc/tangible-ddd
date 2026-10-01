@@ -11,7 +11,7 @@ use TangibleDDD\Runtime\Lock\LockKey;
 /**
  * Pass-through raw IProcessLock (the shipped GetLockProcessLock underneath)
  * that counts successful BACKEND acquisitions into a counter shared by
- * every worker of the fixture (ProcessHost::processLockAcquisitions()).
+ * every worker of the fixture (ProcessHost::lock_acquisitions()).
  * Sits under ReentrantProcessLock, so re-entrant acquisitions never reach it.
  *
  * With $db set, every backend call runs on that connection (worker 2's own
@@ -35,12 +35,12 @@ final class CountingProcessLock implements IProcessLock {
     $this->on(fn () => $this->inner->release($h));
   }
 
-  public function heldCount(): int {
-    return $this->inner->heldCount();
+  public function held_count(): int {
+    return $this->inner->held_count();
   }
 
-  public function forceReleaseAll(): int {
-    return $this->on(fn () => $this->inner->forceReleaseAll());
+  public function release_all(): int {
+    return $this->on(fn () => $this->inner->release_all());
   }
 
   private function on(callable $fn): mixed {

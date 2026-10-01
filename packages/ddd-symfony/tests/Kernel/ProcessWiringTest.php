@@ -107,7 +107,7 @@ final class ProcessWiringTest extends KernelTestBase {
     $resume = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(1));
     $fail = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(2));
     $fresh = $store->insert(\TangibleDDD\Symfony\Tests\Support\Fixtures\OrderProcess::started(3));
-    // Stranded: `running` with no live intent, last touched an hour ago (findStranded's 900 s threshold).
+    // Stranded: `running` with no live intent, last touched an hour ago (find_stranded's 900 s threshold).
     $this->db->executeStatement("UPDATE ddd_processes SET status = 'running', updated_at = now() - interval '1 hour' WHERE id IN (?, ?)", [$resume, $fail]);
     $this->db->executeStatement("UPDATE ddd_processes SET status = 'running' WHERE id = ?", [$fresh]);
 

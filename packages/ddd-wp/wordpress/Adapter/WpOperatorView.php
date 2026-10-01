@@ -78,7 +78,7 @@ final class WpOperatorView {
   }
 
   private function delivery(int $limit): array {
-    if (!WpSchema::isV8($this->config)) {
+    if (!WpSchema::is_v8($this->config)) {
       return [];
     }
     return array_map(fn (array $r) => $this->item(
@@ -97,7 +97,7 @@ final class WpOperatorView {
   }
 
   private function wakeup(int $limit): array {
-    if (!WpSchema::isV8($this->config)) {
+    if (!WpSchema::is_v8($this->config)) {
       return [];
     }
     $db = self::db();
@@ -120,7 +120,7 @@ final class WpOperatorView {
   }
 
   private function process(int $limit): array {
-    if (!WpSchema::isV8($this->config)) {
+    if (!WpSchema::is_v8($this->config)) {
       return [];
     }
     $out = [];
@@ -130,14 +130,14 @@ final class WpOperatorView {
     // re-run would repeat step effects): `wp ddd ops --resume-stranded=<id>`
     // / `--fail-stranded=<id>` dispatch core's ResumeStrandedProcess /
     // FailStrandedProcess (WpStrandedRepairs, WP8-10).
-    foreach (array_slice($store->findStranded($this->now()), 0, $limit) as $s) {
+    foreach (array_slice($store->find_stranded($this->now()), 0, $limit) as $s) {
       $out[] = $this->item(
         'process',
-        "#{$s->processId} {$s->processClass} ({$s->status}, step {$s->stepIndex})",
+        "#{$s->process_id} {$s->process_class} ({$s->status}, step {$s->step_index})",
         0,
         0,
         'stranded',
-        $s->updatedAt->format('Y-m-d H:i:s'),
+        $s->updated_at->format('Y-m-d H:i:s'),
         $s->status === 'running' ? self::STRANDED_REPAIRS : [],
       );
     }

@@ -22,7 +22,7 @@ use TangibleDDD\Testing\StaticConsumerIdentity;
 final class InfrastructureEventDispatchTest extends TestCase {
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function signal(): InfrastructureEvent {

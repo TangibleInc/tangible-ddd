@@ -47,7 +47,7 @@ final class LegacyProcessStoreTest extends TestCase {
   private LegacyProcessStore $store;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
     Journal::reset();
     RecordingCommand::$sent = [];
@@ -58,7 +58,7 @@ final class LegacyProcessStoreTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     Correlation::reset();
   }
 
@@ -73,20 +73,20 @@ final class LegacyProcessStoreTest extends TestCase {
   }
 
   public function test_ignition_is_gated_by_has_ignition_under_the_named_lock(): void {
-    self::assertSame(IgnitionResult::Inserted, $this->store->insertIgnited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
-    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insertIgnited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
+    self::assertSame(IgnitionResult::Inserted, $this->store->insert_ignited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
+    self::assertSame(IgnitionResult::AlreadyIgnited, $this->store->insert_ignited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
 
     self::assertCount(1, $this->repo->rows);
     $name = 'ddd_ign_' . md5('acme|' . IgnitedProcess::class . '|' . self::EVENT_ID);
     self::assertSame([$name, $name], $this->named->acquired);
-    self::assertSame(0, $this->named->heldCount(), 'released in finally');
+    self::assertSame(0, $this->named->held_count(), 'released in finally');
   }
 
   public function test_a_contended_ignition_lock_persists_nothing(): void {
-    $this->named->holdElsewhere('ddd_ign_' . md5('acme|' . IgnitedProcess::class . '|' . self::EVENT_ID));
+    $this->named->hold_elsewhere('ddd_ign_' . md5('acme|' . IgnitedProcess::class . '|' . self::EVENT_ID));
 
     try {
-      $this->store->insertIgnited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID);
+      $this->store->insert_ignited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID);
       self::fail('expected LockNotAcquired');
     } catch (LockNotAcquired) {
     }
@@ -98,14 +98,14 @@ final class LegacyProcessStoreTest extends TestCase {
 
     $this->expectException(\LogicException::class);
     $this->expectExceptionMessage(INamedLock::class);
-    $store->insertIgnited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID);
+    $store->insert_ignited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID);
   }
 
   public function test_the_named_lock_resolves_from_host_defaults(): void {
     HostDefaults::provide(INamedLock::class, $this->named);
     $store = new LegacyProcessStore($this->repo, new StaticConsumerIdentity('acme'));
 
-    self::assertSame(IgnitionResult::Inserted, $store->insertIgnited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
+    self::assertSame(IgnitionResult::Inserted, $store->insert_ignited($this->ignitable(), IgnitedProcess::class, self::EVENT_ID));
   }
 
   public function test_insert_assigns_an_id_at_version_one(): void {
@@ -113,7 +113,7 @@ final class LegacyProcessStoreTest extends TestCase {
     $id = $this->store->insert($p);
 
     self::assertSame($id, $p->get_id());
-    self::assertSame(1, $this->store->versionOf($id));
+    self::assertSame(1, $this->store->version_of($id));
     self::assertInstanceOf(TwoStepProcess::class, $this->store->find($id));
   }
 
@@ -144,8 +144,8 @@ final class LegacyProcessStoreTest extends TestCase {
   }
 
   public function test_find_waiting_for_returns_ids_and_stranded_is_empty(): void {
-    self::assertSame([], $this->store->findWaitingFor(OrderPlaced::class));
-    self::assertSame([], $this->store->findStranded(new \DateTimeImmutable()));
+    self::assertSame([], $this->store->find_waiting_for(OrderPlaced::class));
+    self::assertSame([], $this->store->find_stranded(new \DateTimeImmutable()));
   }
 
   public function test_the_core_runner_runs_on_the_bridge(): void {

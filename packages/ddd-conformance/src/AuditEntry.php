@@ -9,9 +9,9 @@ final class AuditEntry {
 
   /** @param 'success'|'error' $status */
   public function __construct(
-    public readonly string $commandId,
-    public readonly string $commandName,
+    public readonly string $command_id,
+    public readonly string $command_name,
     public readonly string $status,
-    public readonly ?string $errorType,
+    public readonly ?string $error_type,
   ) {}
 }

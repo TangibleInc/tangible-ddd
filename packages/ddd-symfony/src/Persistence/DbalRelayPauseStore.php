@@ -13,7 +13,7 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  * row per (holder, selector), fnmatch selectors, expiry honoured (`until` <=
  * now is released). hold() is an upsert.
  *
- * activePatterns() exposes the live selectors as anchored regexes so
+ * patterns() exposes the live selectors as anchored regexes so
  * DbalPostgresOutboxStore can exclude paused rows inside its single claim
  * statement instead of claiming and releasing them.
  *
@@ -35,7 +35,7 @@ final class DbalRelayPauseStore implements IRelayPauseStore {
     $this->connection->executeStatement(
       "INSERT INTO {$this->table} (holder, selector, until) VALUES (?, ?, ?)
        ON CONFLICT (holder, selector) DO UPDATE SET until = EXCLUDED.until",
-      [$holder, $selector, $until === null ? null : Time::toDb($until)]
+      [$holder, $selector, $until === null ? null : Time::to_db($until)]
     );
   }
 
@@ -47,8 +47,8 @@ final class DbalRelayPauseStore implements IRelayPauseStore {
     $this->connection->executeStatement("DELETE FROM {$this->table} WHERE holder = ? AND selector = ?", [$holder, $selector]);
   }
 
-  public function isPaused(string $eventType, \DateTimeImmutable $now): bool {
-    foreach ($this->activeSelectors($now) as $selector) {
+  public function is_paused(string $eventType, \DateTimeImmutable $now): bool {
+    foreach ($this->selectors($now) as $selector) {
       if ($selector === $eventType || fnmatch($selector, $eventType)) {
         return true;
       }
@@ -57,15 +57,15 @@ final class DbalRelayPauseStore implements IRelayPauseStore {
   }
 
   /** @return list<string> anchored regexes (Postgres `~` / PCRE) of the live selectors */
-  public function activePatterns(\DateTimeImmutable $now): array {
-    return array_values(array_unique(array_map(GlobPattern::toRegex(...), $this->activeSelectors($now))));
+  public function patterns(\DateTimeImmutable $now): array {
+    return array_values(array_unique(array_map(GlobPattern::to_regex(...), $this->selectors($now))));
   }
 
   /** @return list<string> */
-  private function activeSelectors(\DateTimeImmutable $now): array {
+  private function selectors(\DateTimeImmutable $now): array {
     return array_map('strval', $this->connection->fetchFirstColumn(
       "SELECT DISTINCT selector FROM {$this->table} WHERE until IS NULL OR until > ?",
-      [Time::toDb($now)]
+      [Time::to_db($now)]
     ));
   }
 }

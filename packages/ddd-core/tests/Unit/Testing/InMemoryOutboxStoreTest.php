@@ -66,8 +66,8 @@ final class InMemoryOutboxStoreTest extends TestCase {
     self::assertCount(1, $claims);
     self::assertSame('e1', $claims[0]->event_id);
     self::assertSame(0, $claims[0]->attempts);
-    self::assertSame('2026-10-01T12:01:00+00:00', $claims[0]->leaseUntil->format(DATE_ATOM));
-    self::assertNotSame('', $claims[0]->claimToken);
+    self::assertSame('2026-10-01T12:01:00+00:00', $claims[0]->lease_until->format(DATE_ATOM));
+    self::assertNotSame('', $claims[0]->token);
     self::assertSame([], $this->store->claim(10, $this->clock->now(), 60), 'a leased row is not claimable again');
   }
 
@@ -120,8 +120,8 @@ final class InMemoryOutboxStoreTest extends TestCase {
 
     self::assertTrue($this->store->accept($b, 'as-99'));
     self::assertFalse($this->store->accept($a, 'as-1'), 'A finishes late: 0 rows');
-    self::assertFalse($this->store->retryLater($a, 'late', $this->clock->now()));
-    self::assertFalse($this->store->deadLetter($a, 'late'));
+    self::assertFalse($this->store->retry_later($a, 'late', $this->clock->now()));
+    self::assertFalse($this->store->dead_letter($a, 'late'));
     self::assertSame(1, $this->store->stats()['accepted']);
     self::assertSame(0, $this->store->stats()['dead_letters']);
   }
@@ -138,7 +138,7 @@ final class InMemoryOutboxStoreTest extends TestCase {
     $this->store->append($this->record('e1'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
 
-    self::assertTrue($this->store->retryLater($c, 'transport down', $this->clock->now()->modify('+60 seconds')));
+    self::assertTrue($this->store->retry_later($c, 'transport down', $this->clock->now()->modify('+60 seconds')));
     self::assertSame([], $this->store->claim(1, $this->clock->now(), 60));
 
     $this->clock->advance('PT60S');
@@ -150,14 +150,14 @@ final class InMemoryOutboxStoreTest extends TestCase {
     $this->store->append($this->record('e1'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
 
-    self::assertTrue($this->store->deadLetter($c, 'poison'));
+    self::assertTrue($this->store->dead_letter($c, 'poison'));
 
-    $letters = $this->store->deadLetters(10);
+    $letters = $this->store->dead_letters(10);
     self::assertCount(1, $letters);
     self::assertSame('e1', $letters[0]->event_id);
     self::assertSame('poison', $letters[0]->error);
     self::assertSame(1, $this->store->stats()['dlq']);
-    self::assertSame('dlq', $this->store->statusOf('e1'));
+    self::assertSame('dlq', $this->store->status_of('e1'));
   }
 
   public function test_paused_event_types_are_not_claimed_until_released(): void {
@@ -180,22 +180,22 @@ final class InMemoryOutboxStoreTest extends TestCase {
 
     $this->store->append($this->record('new', unique: true, signature: ['user' => 1]));
 
-    self::assertSame('cancelled', $this->store->statusOf('old-pending'));
-    self::assertSame('pending', $this->store->statusOf('old-leased'));
-    self::assertSame('pending', $this->store->statusOf('other-user'));
-    self::assertSame('pending', $this->store->statusOf('new'));
+    self::assertSame('cancelled', $this->store->status_of('old-pending'));
+    self::assertSame('pending', $this->store->status_of('old-leased'));
+    self::assertSame('pending', $this->store->status_of('other-user'));
+    self::assertSame('pending', $this->store->status_of('new'));
   }
 
   public function test_replay_keeps_the_event_id_and_deletes_the_dlq_row(): void {
     $this->store->append($this->record('e1'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($c, 'poison');
-    $dlq_id = $this->store->deadLetters(1)[0]->dlqId;
+    $this->store->dead_letter($c, 'poison');
+    $dlq_id = $this->store->dead_letters(1)[0]->dlq_id;
 
     $this->store->replay($dlq_id);
 
-    self::assertSame([], $this->store->deadLetters(10));
-    self::assertSame('pending', $this->store->statusOf('e1'));
+    self::assertSame([], $this->store->dead_letters(10));
+    self::assertSame('pending', $this->store->status_of('e1'));
     [$again] = $this->store->claim(1, $this->clock->now(), 60);
     self::assertSame('e1', $again->event_id);
     self::assertSame(0, $again->attempts);
@@ -204,12 +204,12 @@ final class InMemoryOutboxStoreTest extends TestCase {
   public function test_replay_reinserts_a_row_that_was_purged_with_the_original_event_id(): void {
     $this->store->append($this->record('e1'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($c, 'poison');
-    $this->store->forgetRowForTests('e1');
+    $this->store->dead_letter($c, 'poison');
+    $this->store->forget('e1');
 
-    $this->store->replay($this->store->deadLetters(1)[0]->dlqId);
+    $this->store->replay($this->store->dead_letters(1)[0]->dlq_id);
 
-    self::assertSame('pending', $this->store->statusOf('e1'));
+    self::assertSame('pending', $this->store->status_of('e1'));
   }
 
   public function test_replay_and_discard_of_an_unknown_dead_letter_throw(): void {
@@ -225,20 +225,20 @@ final class InMemoryOutboxStoreTest extends TestCase {
   public function test_discard_deletes_only_the_dlq_row(): void {
     $this->store->append($this->record('e1'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($c, 'poison');
+    $this->store->dead_letter($c, 'poison');
 
-    $this->store->discard($this->store->deadLetters(1)[0]->dlqId);
+    $this->store->discard($this->store->dead_letters(1)[0]->dlq_id);
 
-    self::assertSame([], $this->store->deadLetters(10));
-    self::assertSame('dlq', $this->store->statusOf('e1'));
+    self::assertSame([], $this->store->dead_letters(10));
+    self::assertSame('dlq', $this->store->status_of('e1'));
   }
 
   public function test_retry_resets_a_dlq_row_and_refuses_accepted_rows_unless_forced(): void {
     $this->store->append($this->record('dead'));
     [$c] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($c, 'poison');
+    $this->store->dead_letter($c, 'poison');
     $this->store->retry('dead');
-    self::assertSame('pending', $this->store->statusOf('dead'));
+    self::assertSame('pending', $this->store->status_of('dead'));
 
     [$c2] = $this->store->claim(1, $this->clock->now(), 60);
     $this->store->accept($c2, 'ref');
@@ -248,21 +248,21 @@ final class InMemoryOutboxStoreTest extends TestCase {
     } catch (OutboxAdministrationRefused) {
     }
     $this->store->retry('dead', force: true);
-    self::assertSame('pending', $this->store->statusOf('dead'));
+    self::assertSame('pending', $this->store->status_of('dead'));
   }
 
   public function test_sfc5_retry_of_a_dead_lettered_row_removes_its_dlq_entry(): void {
     $this->store->append($this->record('dead'));
     $this->store->append($this->record('other'));
     foreach ($this->store->claim(2, $this->clock->now(), 60) as $c) {
-      $this->store->deadLetter($c, 'poison');
+      $this->store->dead_letter($c, 'poison');
     }
     self::assertSame(2, $this->store->stats()['dead_letters']);
 
     $this->store->retry('dead');
 
     self::assertSame(1, $this->store->stats()['dead_letters'], 'the retried row left the DLQ');
-    self::assertSame(['other'], array_map(static fn ($d) => $d->event_id, $this->store->deadLetters(10)));
+    self::assertSame(['other'], array_map(static fn ($d) => $d->event_id, $this->store->dead_letters(10)));
   }
 
   public function test_retry_always_refuses_a_leased_row_even_forced(): void {
@@ -283,12 +283,12 @@ final class InMemoryOutboxStoreTest extends TestCase {
       $this->store->append($this->record($id));
     }
     foreach ($this->store->claim(3, $this->clock->now(), 60) as $c) {
-      $this->store->deadLetter($c, 'x');
+      $this->store->dead_letter($c, 'x');
     }
 
-    $first = $this->store->deadLetters(2);
+    $first = $this->store->dead_letters(2);
     self::assertSame(['a', 'b'], array_map(static fn ($d) => $d->event_id, $first));
-    $rest = $this->store->deadLetters(2, (string) $first[1]->dlqId);
+    $rest = $this->store->dead_letters(2, (string) $first[1]->dlq_id);
     self::assertSame(['c'], array_map(static fn ($d) => $d->event_id, $rest));
   }
 
@@ -300,8 +300,8 @@ final class InMemoryOutboxStoreTest extends TestCase {
     $this->clock->advance('P8D');
 
     self::assertSame(1, $this->store->purge($this->clock->now()->modify('-7 days')));
-    self::assertNull($this->store->statusOf('old'));
-    self::assertSame('pending', $this->store->statusOf('pending'));
+    self::assertNull($this->store->status_of('old'));
+    self::assertSame('pending', $this->store->status_of('pending'));
   }
 
   public function test_stats_count_every_status(): void {

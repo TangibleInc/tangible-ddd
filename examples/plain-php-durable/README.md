@@ -47,7 +47,7 @@ $runtime = DurableRuntime::compose(
 
 $runtime->bus()->handle(new StartTrial(1));          // request
 $report = $runtime->drain(maxItems: 200, maxSeconds: 50);   // cron, or a shutdown function
-$items = $runtime->operatorView()->toArrays();       // one failure view across relay, delivery, wakeup, process
+$items = $runtime->operator_view()->to_arrays();     // one failure view across relay, delivery, wakeup, process
 ```
 
 `drain()` never loops or sleeps. A host that wants a worker writes `while (true) { $runtime->drain(); sleep(1); }` itself. Overlapping cron invocations are safe, because claims and leases keep them apart.
@@ -71,22 +71,22 @@ final class MysqliConnection implements IHostConnection {
     return (int) $this->run($sql, $params)->affected_rows;
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
+  public function fetch_all(string $sql, array $params = []): array {
     $result = $this->run($sql, $params)->get_result();
     return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
-    return $this->fetchAll($sql, $params)[0] ?? null;
+  public function fetch_one(string $sql, array $params = []): ?array {
+    return $this->fetch_all($sql, $params)[0] ?? null;
   }
 
-  public function lastInsertId(): string { return (string) $this->db->insert_id; }
+  public function last_insert_id(): string { return (string) $this->db->insert_id; }
   public function begin(): void { $this->db->begin_transaction(); $this->inTransaction = true; }
   public function commit(): void { $this->inTransaction = false; $this->db->commit(); }
-  public function rollBack(): void { $this->inTransaction = false; $this->db->rollback(); }
-  public function inTransaction(): bool { return $this->inTransaction; }
+  public function rollback(): void { $this->inTransaction = false; $this->db->rollback(); }
+  public function in_transaction(): bool { return $this->inTransaction; }
 
-  public function isDuplicateKey(\Throwable $e): bool {
+  public function is_duplicate_key(\Throwable $e): bool {
     return $e instanceof \mysqli_sql_exception && $e->getCode() === 1062;
   }
 
@@ -106,8 +106,8 @@ final class MysqliConnection implements IHostConnection {
 Rules the adapter must keep (register 3.3):
 
 - Every method throws on failure, and nothing returns `false`.
-- `isDuplicateKey()` matches error 1062 only, never SQLSTATE 23000. That class also covers foreign-key and NOT NULL violations, and matching it would make an ignition silently disappear.
+- `is_duplicate_key()` matches error 1062 only, never SQLSTATE 23000. That class also covers foreign-key and NOT NULL violations, and matching it would make an ignition silently disappear.
 - Integers bind as integers, so `LIMIT ?` works.
-- `inTransaction()` must reflect transactions opened through this adapter. If the host opens one with `$db->transBegin()` outside the adapter, the library cannot see it, so a host that mixes the two must route its own transactions through the adapter or through the runtime's `boundary()`.
+- `in_transaction()` must reflect transactions opened through this adapter. If the host opens one with `$db->transBegin()` outside the adapter, the library cannot see it, so a host that mixes the two must route its own transactions through the adapter or through the runtime's `boundary()`.
 
 If the host's domain writes already go through a PDO, it wraps that PDO in `PdoConnection` instead and needs no adapter.

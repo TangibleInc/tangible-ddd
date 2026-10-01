@@ -41,7 +41,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $waited = microtime(true) - $started;
     self::assertGreaterThanOrEqual(0.4, $waited, 'polled until the deadline');
     self::assertLessThan(1.5, $waited, 'gave up shortly after the deadline');
-    self::assertSame(0, $b->heldCount());
+    self::assertSame(0, $b->held_count());
   }
 
   public function test_release_lets_the_other_connection_acquire(): void {
@@ -50,12 +50,12 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $key = new LockKey('acme', '', 7);
 
     $handle = $a->acquire($key, 1.0);
-    self::assertSame(1, $a->heldCount());
+    self::assertSame(1, $a->held_count());
     $a->release($handle);
-    self::assertSame(0, $a->heldCount());
+    self::assertSame(0, $a->held_count());
 
     $b->acquire($key, 0.2);
-    self::assertSame(1, $b->heldCount());
+    self::assertSame(1, $b->held_count());
   }
 
   public function test_a_released_in_finally_lock_is_free_even_when_the_work_throws(): void {
@@ -74,7 +74,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     }
 
     $b->acquire($key, 0.2);
-    self::assertSame(1, $b->heldCount());
+    self::assertSame(1, $b->held_count());
   }
 
   public function test_contention_later_succeeds_when_the_holder_goes_away_before_the_deadline(): void {
@@ -89,7 +89,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
 
       self::assertGreaterThan(0.3, $waited, 'it waited for the other session');
       self::assertLessThan(4.0, $waited);
-      self::assertSame(1, $lock->heldCount());
+      self::assertSame(1, $lock->held_count());
     } finally {
       foreach ($pipes as $p) {
         fclose($p);
@@ -111,7 +111,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     );
     self::assertNotFalse($row, 'a session advisory lock is held');
     self::assertSame($expected, ((int) $row['hi'] << 32) | (int) $row['lo']);
-    self::assertSame($expected, $key->postgresKey());
+    self::assertSame($expected, $key->postgres_key());
   }
 
   public function test_the_lock_is_session_scoped_and_survives_a_commit(): void {
@@ -134,8 +134,8 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $a->acquire(new LockKey('acme', '', 5), 1.0);
     $b->acquire(new LockKey('globex', '', 5), 0.2);
 
-    self::assertSame(1, $a->heldCount());
-    self::assertSame(1, $b->heldCount());
+    self::assertSame(1, $a->held_count());
+    self::assertSame(1, $b->held_count());
   }
 
   public function test_a_query_error_is_lock_not_acquired_and_nothing_is_held(): void {
@@ -153,7 +153,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     } catch (LockNotAcquired $e) {
       self::assertNotNull($e->getPrevious(), 'the driver error is attached');
     }
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
     $this->db->rollBack();
   }
 
@@ -163,15 +163,15 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $stale = $a->acquire(new LockKey('acme', '', 1), 1.0);
     $a->acquire(new LockKey('acme', '', 2), 1.0);
 
-    self::assertSame(2, $a->forceReleaseAll());
-    self::assertSame(0, $a->heldCount());
-    self::assertSame(0, $a->forceReleaseAll());
+    self::assertSame(2, $a->release_all());
+    self::assertSame(0, $a->held_count());
+    self::assertSame(0, $a->release_all());
 
     $b->acquire(new LockKey('acme', '', 1), 0.2);
     $b->acquire(new LockKey('acme', '', 2), 0.2);
 
     $a->release($stale); // stale handle: ignored, never throws
-    self::assertSame(0, $a->heldCount());
+    self::assertSame(0, $a->held_count());
   }
 
   public function test_release_of_an_unknown_handle_never_throws_and_is_logged(): void {
@@ -180,7 +180,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
 
     $lock->release(new LockHandle(new LockKey('acme', '', 3), 'pg:nope'));
 
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
     self::assertStringContainsString('unknown', $log->text());
   }
 
@@ -193,7 +193,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
 
     $lock->release($h);
 
-    self::assertSame(0, $lock->heldCount());
+    self::assertSame(0, $lock->held_count());
     self::assertStringContainsString('release', $log->text());
   }
 
@@ -205,13 +205,13 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
 
     $outer = $lock->acquire($key, 1.0);
     $nested = $lock->acquire($key, 1.0);
-    self::assertSame(1, $inner->heldCount());
+    self::assertSame(1, $inner->held_count());
     self::assertSame(1, $this->advisoryLocksHeldBySession());
 
     $lock->release($nested);
-    self::assertSame(1, $inner->heldCount(), 'still held by the outer acquisition');
+    self::assertSame(1, $inner->held_count(), 'still held by the outer acquisition');
     $lock->release($outer);
-    self::assertSame(0, $inner->heldCount());
+    self::assertSame(0, $inner->held_count());
     self::assertSame(0, $this->advisoryLocksHeldBySession());
 
     $other->acquire($key, 0.2);
@@ -275,7 +275,7 @@ final class PostgresAdvisoryProcessLockTest extends PostgresTestCase {
     $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $p['host'], $p['port'], $p['dbname']);
     $code = sprintf(
       '$db = new PDO(%s, %s, %s); $db->query("SELECT pg_advisory_lock(%d)"); echo "locked\n"; fflush(STDOUT); usleep(%d); exit(0);',
-      var_export($dsn, true), var_export($p['user'], true), var_export($p['password'] ?? '', true), $key->postgresKey(), $holdMs * 1000
+      var_export($dsn, true), var_export($p['user'], true), var_export($p['password'] ?? '', true), $key->postgres_key(), $holdMs * 1000
     );
     $proc = proc_open([PHP_BINARY, '-r', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     self::assertIsResource($proc);

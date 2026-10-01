@@ -30,7 +30,7 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
 
   /** @return list<string> */
   private static function keys(array $claims): array {
-    return array_map(static fn (ClaimedWakeup $w) => $w->intent->idempotencyKey, $claims);
+    return array_map(static fn (ClaimedWakeup $w) => $w->intent->key, $claims);
   }
 
   // ── IWakeupScheduler ──────────────────────────────────────────────────────
@@ -61,10 +61,10 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
 
     self::assertSame('2026-10-02 13:00:00.123456', $this->row('ddd_jobs', 'process_id = ?', [41])['due_at']);
     self::assertSame(1, $this->countRows('ddd_jobs', 'process_id = ?', [41]));
-    self::assertSame([], $jobs->claimDue(self::utc('2026-10-02 13:00:00.123455'), 10, 60), 'not a microsecond early');
+    self::assertSame([], $jobs->claim_due(self::utc('2026-10-02 13:00:00.123455'), 10, 60), 'not a microsecond early');
 
-    [$claim] = $jobs->claimDue(self::utc('2026-10-02 13:00:00.123456'), 10, 60);
-    self::assertEquals(self::utc('2026-10-02 13:00:00.123456'), $claim->intent->dueAt);
+    [$claim] = $jobs->claim_due(self::utc('2026-10-02 13:00:00.123456'), 10, 60);
+    self::assertEquals(self::utc('2026-10-02 13:00:00.123456'), $claim->intent->due_at);
     self::assertSame(WakeKind::Timeout, $claim->intent->kind);
   }
 
@@ -79,7 +79,7 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     } catch (\RuntimeException) {
     }
 
-    self::assertSame(['continue:1:2'], array_column($this->db->fetchAll('SELECT idempotency_key FROM tp_ddd_jobs'), 'idempotency_key'));
+    self::assertSame(['continue:1:2'], array_column($this->db->fetch_all('SELECT idempotency_key FROM tp_ddd_jobs'), 'idempotency_key'));
   }
 
   public function test_scheduling_an_existing_key_is_a_no_op(): void {
@@ -100,12 +100,12 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     $this->inTx(fn () => $jobs->schedule($intent));
 
     self::assertSame('2026-10-02 07:00:00.500000', $this->row('ddd_jobs', 'idempotency_key = ?', ['resume_retry:12:3'])['due_at']);
-    self::assertSame([], $jobs->claimDue(self::utc('2026-10-02 07:00:00.4'), 10, 60));
-    [$claimed] = $jobs->claimDue(self::utc('2026-10-02 07:00:00.5'), 10, 60);
+    self::assertSame([], $jobs->claim_due(self::utc('2026-10-02 07:00:00.4'), 10, 60));
+    [$claimed] = $jobs->claim_due(self::utc('2026-10-02 07:00:00.5'), 10, 60);
 
     self::assertEquals($intent, $claimed->intent);
     self::assertSame(0, $claimed->attempts);
-    self::assertEquals(self::utc('2026-10-02 07:01:00.5'), $claimed->leaseUntil);
+    self::assertEquals(self::utc('2026-10-02 07:01:00.5'), $claimed->lease_until);
   }
 
   public function test_claim_due_leases_due_intents_oldest_first_up_to_the_limit(): void {
@@ -117,19 +117,19 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
       $jobs->schedule(WakeupIntent::timeout('acme', 4, 0, self::utc('2026-10-01 12:00:01')));
     });
 
-    self::assertSame(['continue:2:0', 'timeout:1:0'], self::keys($jobs->claimDue($this->clock->now(), 2, 60)));
-    self::assertSame(['continue:3:0'], self::keys($jobs->claimDue($this->clock->now(), 10, 60)));
-    self::assertSame([], $jobs->claimDue($this->clock->now(), 10, 60));
-    self::assertSame(['continue:2:0', 'timeout:1:0', 'continue:3:0', 'timeout:4:0'], self::keys($jobs->claimDue($this->clock->now()->modify('+61 seconds'), 10, 60)), 'expired leases are claimable again');
+    self::assertSame(['continue:2:0', 'timeout:1:0'], self::keys($jobs->claim_due($this->clock->now(), 2, 60)));
+    self::assertSame(['continue:3:0'], self::keys($jobs->claim_due($this->clock->now(), 10, 60)));
+    self::assertSame([], $jobs->claim_due($this->clock->now(), 10, 60));
+    self::assertSame(['continue:2:0', 'timeout:1:0', 'continue:3:0', 'timeout:4:0'], self::keys($jobs->claim_due($this->clock->now()->modify('+61 seconds'), 10, 60)), 'expired leases are claimable again');
   }
 
   public function test_claim_due_refuses_to_run_inside_an_open_transaction(): void {
     $this->db->begin();
     try {
       $this->expectException(NestedTransactionRejected::class);
-      $this->jobs()->claimDue($this->clock->now(), 1, 60);
+      $this->jobs()->claim_due($this->clock->now(), 1, 60);
     } finally {
-      $this->db->rollBack();
+      $this->db->rollback();
     }
   }
 
@@ -143,7 +143,7 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     $other = $this->jobs($this->otherConnection());
 
     $seen = [];
-    while (($batch = array_merge($jobs->claimDue($this->clock->now(), 2, 60), $other->claimDue($this->clock->now(), 2, 60))) !== []) {
+    while (($batch = array_merge($jobs->claim_due($this->clock->now(), 2, 60), $other->claim_due($this->clock->now(), 2, 60))) !== []) {
       foreach (self::keys($batch) as $key) {
         self::assertArrayNotHasKey($key, $seen);
         $seen[$key] = true;
@@ -155,20 +155,20 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
   public function test_complete_and_retry_later_are_fenced_by_the_claim_token(): void {
     $jobs = $this->jobs();
     $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())));
-    [$a] = $jobs->claimDue($this->clock->now(), 1, 60);
-    [$b] = $this->jobs($this->otherConnection())->claimDue($this->clock->now()->modify('+61 seconds'), 1, 60);
+    [$a] = $jobs->claim_due($this->clock->now(), 1, 60);
+    [$b] = $this->jobs($this->otherConnection())->claim_due($this->clock->now()->modify('+61 seconds'), 1, 60);
 
     self::assertFalse($jobs->complete($a));
-    self::assertFalse($jobs->retryLater($a, 'late', $this->clock->now()));
+    self::assertFalse($jobs->retry_later($a, 'late', $this->clock->now()));
 
-    self::assertTrue($jobs->retryLater($b, 'LockNotAcquired', self::utc('2026-10-01 12:05:00')));
+    self::assertTrue($jobs->retry_later($b, 'LockNotAcquired', self::utc('2026-10-01 12:05:00')));
     $row = $this->row('ddd_jobs', 'idempotency_key = ?', ['timeout:1:0']);
     self::assertSame(1, (int) $row['attempts']);
     self::assertSame('LockNotAcquired', $row['last_error']);
     self::assertSame('2026-10-01 12:00:00.000000', $row['due_at'], 'a retry never moves due_at');
 
-    self::assertSame([], $jobs->claimDue(self::utc('2026-10-01 12:04:59'), 1, 60));
-    [$c] = $jobs->claimDue(self::utc('2026-10-01 12:05:00'), 1, 60);
+    self::assertSame([], $jobs->claim_due(self::utc('2026-10-01 12:04:59'), 1, 60));
+    [$c] = $jobs->claim_due(self::utc('2026-10-01 12:05:00'), 1, 60);
     self::assertSame(1, $c->attempts);
     self::assertTrue($jobs->complete($c));
     self::assertSame(0, $this->countRows('ddd_jobs'));
@@ -185,7 +185,7 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
       $jobs->cancel('timeout:does-not-exist');
     });
 
-    self::assertSame(['timeout:2:0'], self::keys($jobs->claimDue($this->clock->now(), 10, 60)));
+    self::assertSame(['timeout:2:0'], self::keys($jobs->claim_due($this->clock->now(), 10, 60)));
   }
 
   public function test_live_intents_per_process_for_the_stranded_scan(): void {
@@ -195,8 +195,8 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
       $jobs->schedule(WakeupIntent::continuation('acme', 1, 1, $this->clock->now()));
     });
 
-    self::assertTrue($jobs->hasLiveIntent(1));
-    self::assertFalse($jobs->hasLiveIntent(2));
+    self::assertTrue($jobs->has_live_intent(1));
+    self::assertFalse($jobs->has_live_intent(2));
   }
 
   public function test_a_kind_filtered_view_claims_only_its_kinds_and_shares_the_table(): void {
@@ -207,18 +207,18 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     $jobs->submit($claim, ['__event_id' => 'e1'], self::utc('2026-10-01 11:00:00'));
     $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 1, 0, self::utc('2026-10-01 10:00:00'))));
 
-    $wakeups = $jobs->withClaimKinds(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry);
-    $deliveries = $jobs->withClaimKinds(WakeKind::Deliver);
+    $wakeups = $jobs->claiming(WakeKind::Continue, WakeKind::Timeout, WakeKind::ResumeRetry);
+    $deliveries = $jobs->claiming(WakeKind::Deliver);
 
     self::assertNotSame($jobs, $wakeups);
-    self::assertSame(['timeout:1:0'], self::keys($wakeups->claimDue($this->clock->now(), 10, 60)));
-    self::assertSame(['deliver:e1'], self::keys($deliveries->claimDue($this->clock->now(), 10, 60)));
-    self::assertSame([], $jobs->claimDue($this->clock->now(), 10, 60), 'the unfiltered store sees the same leased rows');
+    self::assertSame(['timeout:1:0'], self::keys($wakeups->claim_due($this->clock->now(), 10, 60)));
+    self::assertSame(['deliver:e1'], self::keys($deliveries->claim_due($this->clock->now(), 10, 60)));
+    self::assertSame([], $jobs->claim_due($this->clock->now(), 10, 60), 'the unfiltered store sees the same leased rows');
     self::assertSame($jobs->connection(), $deliveries->connection());
-    self::assertTrue($deliveries->sharesConnectionWith($store));
+    self::assertTrue($deliveries->shares_connection($store));
 
     $this->expectException(\InvalidArgumentException::class);
-    $jobs->withClaimKinds();
+    $jobs->claiming();
   }
 
   // ── ITransport (deliver jobs) ─────────────────────────────────────────────
@@ -227,7 +227,7 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     $jobs = $this->jobs();
     self::assertInstanceOf(ITransport::class, $jobs);
     $store = $this->store();
-    $store->appendFact(self::record('e1', '2026-10-01 11:00:00'), 'App\\OrderPlaced');
+    $store->append_fact(self::record('e1', '2026-10-01 11:00:00'), 'App\\OrderPlaced');
     [$claim] = $store->claim(1, $this->clock->now(), 60);
     $envelope = ['order_id' => 7, '__event_id' => 'e1', '__correlation_id' => 'corr-e1', '__sequence' => 3];
 
@@ -238,26 +238,26 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
     self::assertSame('deliver', $row['kind']);
     self::assertSame('acme', $row['consumer']);
     self::assertSame('2026-10-01 13:00:00.000000', $row['due_at'], 'no relative delay is added (bug 3)');
-    self::assertSame([], $jobs->claimDue(self::utc('2026-10-01 12:59:59'), 10, 60));
+    self::assertSame([], $jobs->claim_due(self::utc('2026-10-01 12:59:59'), 10, 60));
 
-    [$claimed] = $jobs->claimDue(self::utc('2026-10-01 13:00:00'), 10, 60);
+    [$claimed] = $jobs->claim_due(self::utc('2026-10-01 13:00:00'), 10, 60);
     self::assertSame(WakeKind::Deliver, $claimed->intent->kind);
-    self::assertNull($claimed->intent->processId);
-    $job = $jobs->deliveryOf($claimed);
+    self::assertNull($claimed->intent->process_id);
+    $job = $jobs->delivery_of($claimed);
     self::assertInstanceOf(DeliveryJob::class, $job);
-    self::assertSame('e1', $job->eventId);
-    self::assertSame('acme_order_placed', $job->eventType);
-    self::assertSame('App\\OrderPlaced', $job->eventClass);
-    self::assertSame('acme_integration_order_placed', $job->integrationAction);
+    self::assertSame('e1', $job->event_id);
+    self::assertSame('acme_order_placed', $job->event_type);
+    self::assertSame('App\\OrderPlaced', $job->event_class);
+    self::assertSame('acme_integration_order_placed', $job->integration_action);
     self::assertSame($envelope, $job->envelope);
   }
 
   public function test_delivery_of_a_wakeup_is_null(): void {
     $jobs = $this->jobs();
     $this->inTx(fn () => $jobs->schedule(WakeupIntent::timeout('acme', 1, 0, $this->clock->now())));
-    [$claimed] = $jobs->claimDue($this->clock->now(), 1, 60);
+    [$claimed] = $jobs->claim_due($this->clock->now(), 1, 60);
 
-    self::assertNull($jobs->deliveryOf($claimed));
+    self::assertNull($jobs->delivery_of($claimed));
   }
 
   public function test_resubmitting_a_fact_whose_job_is_still_pending_returns_the_same_reference(): void {
@@ -275,9 +275,9 @@ abstract class PdoJobStoreCases extends OutboxTestCase {
 
   public function test_it_shares_the_connection_only_with_a_pdo_outbox_store_on_the_same_connection(): void {
     $jobs = $this->jobs();
-    self::assertTrue($jobs->sharesConnectionWith($this->store()));
-    self::assertFalse($jobs->sharesConnectionWith($this->store($this->otherConnection())));
-    self::assertFalse($jobs->sharesConnectionWith(new InMemoryOutboxStore($this->clock)));
+    self::assertTrue($jobs->shares_connection($this->store()));
+    self::assertFalse($jobs->shares_connection($this->store($this->otherConnection())));
+    self::assertFalse($jobs->shares_connection(new InMemoryOutboxStore($this->clock)));
   }
 
   public function test_submit_and_accept_commit_or_roll_back_together(): void {

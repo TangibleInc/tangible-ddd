@@ -56,7 +56,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
   public function test_append_then_claim_round_trips_the_record(): void {
     $store = new DbalPostgresOutboxStore($this->db);
     $due = new \DateTimeImmutable('2026-10-01T13:00:00+01:00'); // == 12:00Z
-    $store->appendFact($this->record('e1', due: $due, payload: ['widget_id' => 'w1', 'n' => 3, 'nested' => ['a' => null]]), 'App\\WidgetRegistered');
+    $store->append_fact($this->record('e1', due: $due, payload: ['widget_id' => 'w1', 'n' => 3, 'nested' => ['a' => null]]), 'App\\WidgetRegistered');
 
     $claims = $store->claim(10, $this->t0, 300);
 
@@ -64,8 +64,8 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     $c = $claims[0];
     self::assertSame('e1', $c->event_id);
     self::assertSame(0, $c->attempts);
-    self::assertNotSame('', $c->claimToken);
-    self::assertEquals($this->t0->modify('+300 seconds'), $c->leaseUntil);
+    self::assertNotSame('', $c->token);
+    self::assertEquals($this->t0->modify('+300 seconds'), $c->lease_until);
     self::assertSame('widget_registered', $c->record->event_type);
     self::assertSame('txp_integration_widget_registered', $c->record->integration_action);
     self::assertSame(['widget_id' => 'w1', 'n' => 3, 'nested' => ['a' => null]], $c->record->payload);
@@ -74,13 +74,13 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertSame('cmd-1', $c->record->command_id);
     self::assertEquals($this->t0, $c->record->due_at);
     self::assertSame('UTC', $c->record->due_at->getTimezone()->getName());
-    self::assertSame('App\\WidgetRegistered', $store->eventClassOf('e1'));
+    self::assertSame('App\\WidgetRegistered', $store->event_class_of('e1'));
   }
 
   public function test_append_inside_with_fact_class_records_that_class(): void {
     $store = new DbalPostgresOutboxStore($this->db);
 
-    $store->withFactClass(\TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact::class, fn () => $store->append($this->record('e-1')));
+    $store->with_event_class(\TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact::class, fn () => $store->append($this->record('e-1')));
     $store->append($this->record('e-2'));
 
     self::assertSame(\TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact::class, $this->db->fetchOne("SELECT event_class FROM ddd_outbox WHERE event_id = 'e-1'"));
@@ -101,7 +101,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
   public function test_append_without_a_class_leaves_event_class_null(): void {
     $store = new DbalPostgresOutboxStore($this->db);
     $store->append($this->record('e1'));
-    self::assertNull($store->eventClassOf('e1'));
+    self::assertNull($store->event_class_of('e1'));
   }
 
   public function test_a_duplicate_event_id_is_a_write_failure(): void {
@@ -171,12 +171,12 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     [$claimA] = $a->claim(1, $this->t0, 60);
     $afterExpiry = $this->t0->modify('+61 seconds');
     [$claimB] = $b->claim(1, $afterExpiry, 60);
-    self::assertNotSame($claimA->claimToken, $claimB->claimToken);
+    self::assertNotSame($claimA->token, $claimB->token);
 
     self::assertTrue($b->accept($claimB, 'msg-9'));
     self::assertFalse($a->accept($claimA, 'msg-1'));
-    self::assertFalse($a->retryLater($claimA, 'late', $afterExpiry));
-    self::assertFalse($a->deadLetter($claimA, 'late'));
+    self::assertFalse($a->retry_later($claimA, 'late', $afterExpiry));
+    self::assertFalse($a->dead_letter($claimA, 'late'));
 
     // B's re-claim of A's expired lease counted as one attempt.
     $row = $this->db->fetchAssociative('SELECT status, transport_ref, attempts, claim_token FROM ddd_outbox WHERE event_id = ?', ['e1']);
@@ -199,8 +199,8 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
 
     self::assertSame(1, $second->attempts);
     self::assertStringContainsString('lease expired', (string) $this->db->fetchOne("SELECT last_error FROM ddd_outbox WHERE event_id = 'e1'"));
-    // an unleased row (first claim, or after retryLater) is not counted
-    self::assertTrue($store->retryLater($second, 'broker down', $this->t0->modify('+61 seconds')));
+    // an unleased row (first claim, or after retry_later) is not counted
+    self::assertTrue($store->retry_later($second, 'broker down', $this->t0->modify('+61 seconds')));
     [$third] = $store->claim(1, $this->t0->modify('+62 seconds'), 60);
     self::assertSame(2, $third->attempts);
   }
@@ -214,7 +214,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
 
   public function test_a_row_whose_lease_expires_max_attempts_times_is_dead_lettered_at_claim(): void {
     $store = new DbalPostgresOutboxStore($this->db);
-    $store->appendFact($this->record('crashy'), 'App\\WidgetRegistered');
+    $store->append_fact($this->record('crashy'), 'App\\WidgetRegistered');
     $store->append($this->record('fine', due: $this->t0->modify('+1 second')));
 
     $t = $this->t0;
@@ -234,12 +234,12 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertSame(5, $dlq['attempts']);
     self::assertSame('App\\WidgetRegistered', $dlq['event_class']);
 
-    $taken = $store->takeDeadLetteredAtClaim();
+    $taken = $store->take_claim_dead_letters();
     self::assertCount(1, $taken, 'the claim-time dead letter is visible to the relay');
     self::assertSame('crashy', $taken[0][0]->event_id);
     self::assertSame(5, $taken[0][0]->attempts);
     self::assertStringContainsString('lease expired', $taken[0][1]);
-    self::assertSame([], $store->takeDeadLetteredAtClaim(), 'taken once');
+    self::assertSame([], $store->take_claim_dead_letters(), 'taken once');
   }
 
   public function test_the_relay_reports_and_signals_a_claim_time_dead_letter(): void {
@@ -253,15 +253,15 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
       $relay = new Relay($store, new InMemoryTransport(), new DbalTransactionBoundary($this->db),
         new FrozenClock($this->t0->modify('+122 seconds')), new OutboxConfig(), new NullLogger());
 
-      $report = $relay->runOnce(10);
+      $report = $relay->run_once(10);
 
       self::assertSame([], $report->claimed, 'not handed out');
-      self::assertSame(['crashy'], $report->deadLettered);
-      self::assertSame(['crashy'], $report->result?->deadLetteredAtClaim, 'the core relay step reports it (CR-W4CE-9)');
+      self::assertSame(['crashy'], $report->dead_lettered);
+      self::assertSame(['crashy'], $report->result?->claim_dead_letters, 'the core relay step reports it (CR-W4CE-9)');
       self::assertCount(1, $signals->emitted, 'signalled once: by the core relay step, not again by the sf wrapper');
       self::assertInstanceOf(OutboxDeadLettered::class, $signals->emitted[0]['event']);
     } finally {
-      HostDefaults::resetForTests();
+      HostDefaults::reset_for_tests();
     }
   }
 
@@ -278,7 +278,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     $store->append($this->record('e1'));
     [$claim] = $store->claim(1, $this->t0, 60);
 
-    self::assertTrue($store->retryLater($claim, 'broker down', $this->t0->modify('+60 seconds')));
+    self::assertTrue($store->retry_later($claim, 'broker down', $this->t0->modify('+60 seconds')));
 
     self::assertSame([], $store->claim(1, $this->t0->modify('+59 seconds'), 60));
     [$again] = $store->claim(1, $this->t0->modify('+60 seconds'), 60);
@@ -288,10 +288,10 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
 
   public function test_dead_letter_moves_the_row_and_keeps_the_outbox_row(): void {
     $store = new DbalPostgresOutboxStore($this->db);
-    $store->appendFact($this->record('e1'), 'App\\WidgetRegistered');
+    $store->append_fact($this->record('e1'), 'App\\WidgetRegistered');
     [$claim] = $store->claim(1, $this->t0, 60);
 
-    self::assertTrue($store->deadLetter($claim, 'gave up'));
+    self::assertTrue($store->dead_letter($claim, 'gave up'));
 
     self::assertSame('dlq', $this->rowStatus('e1'));
     $dlq = $this->db->fetchAssociative('SELECT event_id, error, attempts, event_class, payload FROM ddd_dlq');

@@ -97,7 +97,7 @@ final class StrandedCommand extends Command {
   }
 
   private function list(OutputInterface $output, int $limit): void {
-    $stranded = array_slice($this->processes->findStranded($this->clock->now()), 0, $limit);
+    $stranded = array_slice($this->processes->find_stranded($this->clock->now()), 0, $limit);
     if ($stranded === []) {
       $output->writeln('No stranded processes.');
     } else {
@@ -105,7 +105,7 @@ final class StrandedCommand extends Command {
       $table = new Table($output);
       $table->setHeaders(['process id', 'class', 'status', 'step', 'updated at (UTC)']);
       foreach ($stranded as $s) {
-        $table->addRow([$s->processId, $s->processClass, $s->status, $s->stepIndex, $s->updatedAt->format('Y-m-d H:i:s')]);
+        $table->addRow([$s->process_id, $s->process_class, $s->status, $s->step_index, $s->updated_at->format('Y-m-d H:i:s')]);
       }
       $table->render();
     }
@@ -119,7 +119,7 @@ final class StrandedCommand extends Command {
       $table->setHeaders(['intent key', 'kind', 'process id', 'attempts', 'exhausted at (UTC)', 'last error']);
       foreach ($exhausted as $e) {
         $table->addRow([
-          $e['intent']->idempotencyKey, $e['intent']->kind->value, $e['intent']->processId ?? '-', $e['attempts'],
+          $e['intent']->key, $e['intent']->kind->value, $e['intent']->process_id ?? '-', $e['attempts'],
           $e['exhausted_at']->format('Y-m-d H:i:s'), mb_strimwidth((string) $e['last_error'], 0, 120, '...'),
         ]);
       }
@@ -140,7 +140,7 @@ final class StrandedCommand extends Command {
     $step = $process->current_step_index();
     $intent = new WakeupIntent(WakeKind::Continue, $this->consumer, $id, $step, $process->status(), $this->clock->now(), "continue:$id:$step");
     $this->boundary->run(function () use ($intent): void {
-      $this->wakeups->cancel($intent->idempotencyKey); // an exhausted intent with the same key is replaced
+      $this->wakeups->cancel($intent->key); // an exhausted intent with the same key is replaced
       $this->wakeups->schedule($intent);
     });
   }
@@ -157,7 +157,7 @@ final class StrandedCommand extends Command {
     }
     try {
       $process = $this->processes->find($id) ?? throw new \RuntimeException('no such process');
-      $version = $this->processes->versionOf($id) ?? throw new \RuntimeException('no such process');
+      $version = $this->processes->version_of($id) ?? throw new \RuntimeException('no such process');
       if (in_array($process->status(), ['completed', 'failed'], true)) {
         throw new \RuntimeException("process is already {$process->status()}");
       }

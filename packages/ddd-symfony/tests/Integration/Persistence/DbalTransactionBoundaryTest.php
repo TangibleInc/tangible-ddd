@@ -61,10 +61,10 @@ final class DbalTransactionBoundaryTest extends PostgresTestCase {
 
   public function test_is_active_reflects_the_connection(): void {
     $boundary = new DbalTransactionBoundary($this->db);
-    self::assertFalse($boundary->isActive());
-    $seen = $boundary->run(fn () => $boundary->isActive());
+    self::assertFalse($boundary->is_active());
+    $seen = $boundary->run(fn () => $boundary->is_active());
     self::assertTrue($seen);
-    self::assertFalse($boundary->isActive());
+    self::assertFalse($boundary->is_active());
   }
 
   public function test_nested_run_is_rejected_by_default_and_leaves_the_outer_transaction_untouched(): void {

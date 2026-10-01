@@ -21,15 +21,15 @@ use Doctrine\DBAL\Connection;
  */
 final class ConnectionTopology {
 
-  public static function isPooled(Connection $connection): bool {
-    return self::describePooler($connection->getParams()) !== null;
+  public static function is_pooled(Connection $connection): bool {
+    return self::pooler($connection->getParams()) !== null;
   }
 
   /**
    * @param array<string, mixed> $params DBAL connection params
    * @return ?string why the params look pooled, null when they look direct
    */
-  public static function describePooler(array $params): ?string {
+  public static function pooler(array $params): ?string {
     $candidates = [$params];
     if (isset($params['primary']) && is_array($params['primary'])) {
       $candidates[] = $params['primary'];

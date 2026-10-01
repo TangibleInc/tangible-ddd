@@ -17,6 +17,6 @@ use TangibleDDD\Application\Infrastructure\IInfrastructureEvent;
  */
 interface RecordsSignals {
 
-  /** @return list<IInfrastructureEvent> signals emitted since setUp(), oldest first */
+  /** @return list<IInfrastructureEvent> signals emitted since set_up(), oldest first */
   public function signals(): array;
 }

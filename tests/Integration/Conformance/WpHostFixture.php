@@ -96,7 +96,7 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * runner, lock and subscription registry over the same tables; its
  * deliveries are the core IntegrationDelivery over the same WpDeliveryLedger
  * (WordPress hooks are process-global, so a second php process's
- * add_action bindings cannot coexist in this one). drainOnce() is one
+ * add_action bindings cannot coexist in this one). drain_once() is one
  * Action Scheduler queue pass of the consumer: the relay tick, then the
  * due actions (wakes through the ddd-wp hooks and WpWakeBracket, relayed
  * facts, redeliveries) on the host clock (WpConformanceRuntime::drainPass()).
@@ -106,11 +106,11 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  *
  * Isolation: the consumer prefix is the conformance facts' own prefix,
  * `ddd_conformance`, because a fact's hook, and the ledger and consumer the
- * gate derives from it, carry that prefix. setUp() and tearDown() therefore
+ * gate derives from it, carry that prefix. set_up() and tear_down() therefore
  * wipe everything under it (tables, options, Action Scheduler actions and
- * groups, hooks) instead of using ScenarioContext::uniqueName(); setUp()
+ * groups, hooks) instead of using ScenarioContext::unique_name(); set_up()
  * then installs the v8 schema fresh. Nothing is wrapped in a per-test
- * transaction. tearDown() restores ddd-wp's HostDefaults.
+ * transaction. tear_down() restores ddd-wp's HostDefaults.
  */
 final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, ProcessDecodeFaults {
 
@@ -151,16 +151,16 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** @var list<array{0: string, 1: \Closure, 2: int}> */
   private array $boundHooks = [];
 
-  /** @var array<int, true> Action Scheduler action ids deliverTransported() already ran */
+  /** @var array<int, true> Action Scheduler action ids deliver_transported() already ran */
   private array $deliveredActions = [];
 
   private bool $up = false;
 
-  public function hostName(): string {
+  public function name(): string {
     return 'wp';
   }
 
-  public function setUp(ScenarioContext $context): void {
+  public function set_up(ScenarioContext $context): void {
     global $wpdb;
 
     $this->resetStatics();
@@ -190,13 +190,13 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->deliveredActions = [];
 
     RuntimeReset::register('conformance.events', fn () => $this->rt->events->reset());
-    RuntimeReset::guardLock($this->rt->lock);
+    RuntimeReset::guard($this->rt->lock);
     // Step commands commit their effect row on the WordPress connection.
     ProcessJournal::bind($this->rt->rows, $this->rt->boundary);
     $this->up = true;
   }
 
-  public function tearDown(): void {
+  public function tear_down(): void {
     global $wpdb;
     if (!$this->up) {
       return;
@@ -219,9 +219,9 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
       }
       $this->boundHooks = [];
     });
-    $this->quietly(fn () => $this->rt->lock->forceReleaseAll());
+    $this->quietly(fn () => $this->rt->lock->release_all());
     foreach ($this->workerLocks as $lock) {
-      $this->quietly(fn () => $lock->forceReleaseAll());
+      $this->quietly(fn () => $lock->release_all());
     }
     foreach ($this->connections as $db) {
       $this->quietly(fn () => $db->close());
@@ -232,7 +232,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
     ProcessJournal::bind(null);
     $this->resetStatics();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaultsWiring::register();
     $wpdb->suppress_errors($this->previousSuppress);
   }
@@ -243,7 +243,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->clock;
   }
 
-  public function advanceClock(int $seconds): void {
+  public function advance_clock(int $seconds): void {
     $this->clock->advance("+{$seconds} seconds");
   }
 
@@ -257,11 +257,11 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->rt->outbox;
   }
 
-  public function outboxAdministration(): IOutboxAdministration {
+  public function outbox_admin(): IOutboxAdministration {
     return $this->rt->admin;
   }
 
-  public function relayPauses(): IRelayPauseStore {
+  public function pauses(): IRelayPauseStore {
     return $this->rt->pauses;
   }
 
@@ -277,7 +277,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->rt->subscriptions;
   }
 
-  public function processLock(): IProcessLock {
+  public function lock(): IProcessLock {
     return $this->rt->lock;
   }
 
@@ -285,13 +285,13 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->rt->events;
   }
 
-  public function scenarioRows(): ScenarioRows {
+  public function rows(): ScenarioRows {
     return $this->rt->rows;
   }
 
   // ── command pipeline ─────────────────────────────────────────────────────
 
-  public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+  public function command_bus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
     return $this->rt->commandBus($handlers, $options);
   }
 
@@ -299,11 +299,11 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->rt->dispatcher->listen($eventClassOrMarker, $listener, $priority);
   }
 
-  public function failNextCommit(string $reason): void {
+  public function fail_next_commit(string $reason): void {
     $this->faults->failNextCommit($reason);
   }
 
-  public function auditTrail(): array {
+  public function audit_trail(): array {
     global $wpdb;
     $rows = $wpdb->get_results(
       "SELECT command_id, command_name, status, error FROM `{$this->config->table('command_audit')}` WHERE status <> 'in_progress' ORDER BY id ASC"
@@ -316,7 +316,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── relay ────────────────────────────────────────────────────────────────
 
-  public function relayOnce(int $limit = 50): RelayReport {
+  public function relay_once(int $limit = 50): RelayReport {
     $relay = $this->rt->relayProcessor($this->relayStore);
     if ($this->crashAfterSubmit) {
       $this->crashAfterSubmit = false;
@@ -329,15 +329,15 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->relayStore->report();
   }
 
-  public function rejectNextSubmission(?\Throwable $e = null): void {
+  public function reject_next_submission(?\Throwable $e = null): void {
     $this->rt->transport->rejectNext($e);
   }
 
-  public function acceptNextSubmissionWithoutRef(): void {
+  public function accept_next_without_ref(): void {
     $this->rt->transport->noReferenceNext();
   }
 
-  public function crashNextRelayAfterSubmit(): void {
+  public function crash_next_relay(): void {
     $this->crashAfterSubmit = true;
   }
 
@@ -348,7 +348,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  public function seedLegacyDelayedFact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
+  public function seed_legacy_fact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
     global $wpdb;
 
     // Exactly the row a 0.6 OutboxRepository::write() left: a RELATIVE
@@ -389,7 +389,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->rt->deliver($eventClass, $wrapped);
   }
 
-  public function deliverTransported(string $eventClass): array {
+  public function deliver_transported(string $eventClass): array {
     // Only $eventClass's actions: the AS hook is the fact's integration_action.
     $hook = IntegrationHookName::resolve($eventClass)
       ?? throw new \LogicException("$eventClass has no integration hook on this host");
@@ -406,7 +406,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  public function runWorker(array $messages): WorkerRun {
+  public function run_worker(array $messages): WorkerRun {
     $errors = $leaks = [];
     foreach ($messages as $message) {
       $error = $leak = null;
@@ -416,7 +416,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         $error = $e;
       } finally {
         try {
-          RuntimeReset::betweenMessages();
+          RuntimeReset::between_messages();
         } catch (RuntimeLeakDetected $l) {
           $leak = $l;
         }
@@ -427,7 +427,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return new WorkerRun($errors, $leaks);
   }
 
-  public function runnerTransients(): ?array {
+  public function runner_transients(): ?array {
     // The runner's one per-message transient (register 3.9), read without widening its API.
     return ['resume_argument' => (fn () => $this->resume_argument)->call($this->rt->runner)];
   }
@@ -435,7 +435,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── audit.sink-fails seams (AuditSinkFaults, RecordsSignals) ─────────────
 
   /** The next WpdbAuditSink::close() fails inside wpdb (its 0.6 finalise UPDATE throws). */
-  public function failNextAuditClose(string $reason): void {
+  public function fail_next_audit_close(string $reason): void {
     $this->failNextAuditWrite('close', new \RuntimeException($reason));
   }
 
@@ -448,7 +448,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  /** @return list<IInfrastructureEvent> infrastructure signals emitted on this consumer's hooks since setUp(), oldest first */
+  /** @return list<IInfrastructureEvent> infrastructure signals emitted on this consumer's hooks since set_up(), oldest first */
   public function signals(): array {
     return $this->signals;
   }
@@ -487,7 +487,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── ProcessHost (CR-W3CP-1) ──────────────────────────────────────────────
 
-  public function wireProcesses(array $starts, array $awaits): void {
+  public function wire_processes(array $starts, array $awaits): void {
     foreach ($starts as $pair) {
       $this->starts[] = $pair;
     }
@@ -497,7 +497,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     self::wire($this->rt->runner, $starts, $awaits);
     foreach ($this->workers as $n => $worker) {
       if ($n > 1) {
-        self::wire($worker->processRunner(), $starts, $awaits);
+        self::wire($worker->runner(), $starts, $awaits);
       }
     }
   }
@@ -509,7 +509,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->workers[$n] ??= $n === 1 ? $this->firstWorker() : $this->otherWorker($n);
   }
 
-  public function processStore(): IProcessStore {
+  public function process_store(): IProcessStore {
     return $this->rt->processStore;
   }
 
@@ -523,19 +523,19 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
    * with their resume_stranded / fail_stranded repairs). The wp-specific
    * WpOperatorView does not implement IOperatorView yet (WP8-2).
    */
-  public function operatorView(): IOperatorView {
+  public function operator_view(): IOperatorView {
     return new PortOperatorView($this->config, $this->rt->admin, $this->rt->processStore, $this->clock);
   }
 
-  public function processConsumer(): string {
+  public function consumer_prefix(): string {
     return $this->config->prefix();
   }
 
-  public function processLockKey(int $processId): LockKey {
+  public function lock_key(int $processId): LockKey {
     return new LockKey($this->config->prefix(), '', $processId);
   }
 
-  public function processRow(int $id): ?ProcessRow {
+  public function process_row(int $id): ?ProcessRow {
     global $wpdb;
     $row = $wpdb->get_row($wpdb->prepare(
       "SELECT id, process_class, status, step_index, version, ignition_key, ignited_by_event_id FROM `{$this->config->table('long_processes')}` WHERE id = %d",
@@ -555,7 +555,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  public function processIds(?string $processClass = null): array {
+  public function process_ids(?string $processClass = null): array {
     global $wpdb;
     $table = $this->config->table('long_processes');
     $ids = $processClass === null
@@ -565,18 +565,18 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   /** Intents not done or cancelled (pending, firing, exhausted), in scheduling order. */
-  public function pendingWakeups(): array {
+  public function live_intents(): array {
     global $wpdb;
     $rows = $wpdb->get_results("SELECT * FROM `{$this->config->table('ddd_wakeups')}` WHERE status IN ('pending', 'firing', 'exhausted') ORDER BY id ASC");
     return array_map(fn (object $row): WakeupIntent => $this->rt->wakeups->intent($row), is_array($rows) ? $rows : []);
   }
 
   /** Another MySQL session takes both names GetLockProcessLock takes (the namespaced one and `ddd_process_<id>`). */
-  public function holdProcessLockElsewhere(int $processId): void {
+  public function hold_lock_elsewhere(int $processId): void {
     $db = $this->holder();
-    $key = $this->processLockKey($processId);
+    $key = $this->lock_key($processId);
     $taken = [];
-    foreach ([GetLockProcessLock::name($key), GetLockProcessLock::legacyName($key)] as $name) {
+    foreach ([GetLockProcessLock::name($key), GetLockProcessLock::legacy_name($key)] as $name) {
       if ((string) $db->get_var($db->prepare('SELECT GET_LOCK(%s, 0)', $name)) !== '1') {
         foreach ($taken as $held) {
           $db->get_var($db->prepare('SELECT RELEASE_LOCK(%s)', $held));
@@ -587,25 +587,25 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     }
   }
 
-  public function releaseProcessLockElsewhere(int $processId): void {
+  public function release_lock_elsewhere(int $processId): void {
     $db = $this->holder();
-    $key = $this->processLockKey($processId);
-    foreach ([GetLockProcessLock::legacyName($key), GetLockProcessLock::name($key)] as $name) {
+    $key = $this->lock_key($processId);
+    foreach ([GetLockProcessLock::legacy_name($key), GetLockProcessLock::name($key)] as $name) {
       $db->get_var($db->prepare('SELECT RELEASE_LOCK(%s)', $name));
     }
   }
 
   /** The next per-process GET_LOCK answers NULL at the driver (Support\WpdbFaults). */
-  public function failNextProcessLockAcquire(string $reason): void {
+  public function fail_next_lock(string $reason): void {
     $this->faults->nullNextProcessLock();
   }
 
-  public function processLockAcquisitions(): int {
+  public function lock_acquisitions(): int {
     return (int) $this->rt->lockAcquisitions['n'];
   }
 
-  public function beforeNextProcessLockAcquire(callable $fn): void {
-    $this->rt->interleaving->beforeNextAcquire(static function () use ($fn): void {
+  public function before_next_lock(callable $fn): void {
+    $this->rt->interleaving->before_next_acquire(static function () use ($fn): void {
       $fn();
     });
   }
@@ -620,7 +620,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
    * cannot be expressed instead: WpdbWakeupScheduler::schedule() then
    * throws and the state change rolls back with it, by design.
    */
-  public function failNextWakeHandoff(string $reason): void {
+  public function fail_next_handoff(string $reason): void {
     $hooks = array_map(fn (string $h) => $this->config->hook($h), self::WAKE_HOOKS);
     $fault = null;
     $fault = function () use (&$fault, $hooks, $reason): void {
@@ -638,7 +638,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── ProcessDecodeFaults (CR-W4C4-3, decode.unknown-class) ────────────────
 
   /** The stored class is the 0.6 `process_class` column; nothing else in the row names it. */
-  public function forgetProcessClass(int $processId, string $missingClass): void {
+  public function forget_class(int $processId, string $missingClass): void {
     global $wpdb;
     $n = $wpdb->update($this->config->table('long_processes'), ['process_class' => $missingClass], ['id' => $processId]);
     if ($n !== 1) {
@@ -646,11 +646,11 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     }
   }
 
-  public function storedProcessStatus(int $processId): ?string {
+  public function stored_status(int $processId): ?string {
     return $this->processColumn($processId, 'status');
   }
 
-  public function quarantineReason(int $processId): ?string {
+  public function quarantine_reason(int $processId): ?string {
     return $this->processColumn($processId, 'quarantine_reason');
   }
 
@@ -662,7 +662,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── FreshProcesses (CR-W3CP-4) ───────────────────────────────────────────
 
-  public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
+  public function publish_fresh(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
     $run = FreshPhp::run('publish', ['fact' => base64_encode(serialize($fact)), 'kill' => $killAfterCommit], $this->clock->now());
     $id = $run['out']['eventId'] ?? null;
     if (!is_string($id) || $id === '') {
@@ -671,7 +671,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $id;
   }
 
-  public function drainInFreshProcess(): FreshRun {
+  public function drain_fresh(): FreshRun {
     $run = FreshPhp::run('drain', [], $this->clock->now());
     return new FreshRun(
       died: $run['died'],
@@ -681,7 +681,7 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  public function deliverInFreshProcess(string $eventClass, array $wrapped): FreshRun {
+  public function deliver_fresh(string $eventClass, array $wrapped): FreshRun {
     $run = FreshPhp::run('deliver', ['eventClass' => $eventClass, 'wrapped' => $wrapped], $this->clock->now());
     return new FreshRun(
       died: $run['died'],
@@ -690,12 +690,12 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  public function startInFreshProcess(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
+  public function start_fresh(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
     $run = FreshPhp::run('start', ['process' => base64_encode(serialize($process)), 'die' => $dieAfterCommand], $this->clock->now());
     $id = $run['out']['processId'] ?? null;
     return new FreshRun(
       died: $run['died'],
-      processId: $id === null ? null : (int) $id,
+      process_id: $id === null ? null : (int) $id,
       errors: array_values((array) ($run['out']['errors'] ?? [])),
     );
   }
@@ -843,16 +843,17 @@ final class WpHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     try {
       $step();
     } catch (\Throwable) {
-      // tearDown never throws (HostFixture contract)
+      // tear_down never throws (HostFixture contract)
+
     }
   }
 
   private function resetStatics(): void {
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
     Reactions::reset();
-    WpdbTransactionDepth::resetForTests();
-    WpLedgeredDelivery::resetForTests();
+    WpdbTransactionDepth::reset_for_tests();
+    WpLedgeredDelivery::reset_for_tests();
     IntegrationHookName::reset();
   }
 }

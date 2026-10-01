@@ -74,29 +74,29 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->schedule(WakeupIntent::timeout('acme', 5, 2, $this->clock->now()));
     $this->schedule(WakeupIntent::continuation('acme', 6, 0, $this->clock->now()->modify('+1 hour')));
 
-    $report = $this->relay()->runOnce(10);
+    $report = $this->relay()->run_once(10);
 
     self::assertSame(['timeout:5:2'], $report->projected);
     [$m] = $this->sent();
     self::assertInstanceOf(ProcessWakeupMessage::class, $m);
     self::assertSame('timeout', $m->kind);
-    self::assertSame(5, $m->processId);
-    self::assertSame(2, $m->stepIndex);
-    self::assertSame('suspended', $m->expectedStatus);
-    self::assertSame('timeout:5:2', $m->idempotencyKey);
-    self::assertNotSame('', $m->claimToken);
+    self::assertSame(5, $m->process_id);
+    self::assertSame(2, $m->step_index);
+    self::assertSame('suspended', $m->expected_status);
+    self::assertSame('timeout:5:2', $m->key);
+    self::assertNotSame('', $m->claim_token);
 
-    self::assertSame([], $this->relay()->runOnce(10)->projected, 'leased: not projected again');
+    self::assertSame([], $this->relay()->run_once(10)->projected, 'leased: not projected again');
     self::assertCount(1, $this->transport->getSent());
   }
 
   public function test_a_lost_message_is_re_projected_after_the_lease_expires(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
-    $this->relay(null, 30)->runOnce(10);
+    $this->relay(null, 30)->run_once(10);
     $this->transport->reset(); // the queue lost it (or the worker died before handling)
 
     $this->clock->advance('+31 seconds');
-    self::assertSame(['continue:5:0'], $this->relay(null, 30)->runOnce(10)->projected);
+    self::assertSame(['continue:5:0'], $this->relay(null, 30)->run_once(10)->projected);
     self::assertCount(1, $this->transport->getSent());
   }
 
@@ -106,21 +106,21 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
       public function send(Envelope $envelope): Envelope { throw new \RuntimeException('transport down'); }
     };
 
-    $report = $this->relay($broken)->runOnce(10);
+    $report = $this->relay($broken)->run_once(10);
 
     self::assertSame(['continue:5:0'], $report->failed);
     $row = $this->db->fetchAssociative('SELECT attempts, last_error, claim_token FROM ddd_wakeups');
     self::assertSame(1, (int) $row['attempts']);
     self::assertStringContainsString('transport down', (string) $row['last_error']);
     self::assertNull($row['claim_token']);
-    self::assertSame([], $this->relay()->runOnce(10)->projected, 'backed off');
+    self::assertSame([], $this->relay()->run_once(10)->projected, 'backed off');
     $this->clock->advance('+2 seconds');
-    self::assertSame(['continue:5:0'], $this->relay()->runOnce(10)->projected);
+    self::assertSame(['continue:5:0'], $this->relay()->run_once(10)->projected);
   }
 
   public function test_the_handler_wakes_the_process_and_completes_the_intent(): void {
     $this->schedule(WakeupIntent::timeout('acme', 5, 2, $this->clock->now()));
-    $this->relay()->runOnce(10);
+    $this->relay()->run_once(10);
     $target = new RecordingWakeTarget();
 
     $outcome = ($this->handler($target))($this->sent()[0]);
@@ -128,14 +128,14 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     self::assertSame(ProcessWakeupHandler::COMPLETED, $outcome, 'the handler result names what happened (HandledStamp)');
     self::assertCount(1, $target->woken);
     self::assertSame(WakeKind::Timeout, $target->woken[0]->kind);
-    self::assertSame(5, $target->woken[0]->processId);
-    self::assertSame(2, $target->woken[0]->stepIndex);
+    self::assertSame(5, $target->woken[0]->process_id);
+    self::assertSame(2, $target->woken[0]->step_index);
     self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_wakeups'));
   }
 
   public function test_a_lock_or_fence_failure_retries_with_backoff(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
-    $this->relay()->runOnce(10);
+    $this->relay()->run_once(10);
     $target = new RecordingWakeTarget([new ProcessLockUnavailable('lock busy', 0, new LockNotAcquired('busy'))]);
 
     self::assertSame(ProcessWakeupHandler::RETRIED, ($this->handler($target))($this->sent()[0]));
@@ -143,22 +143,22 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $row = $this->db->fetchAssociative('SELECT attempts, next_attempt_at, exhausted_at FROM ddd_wakeups');
     self::assertSame(1, (int) $row['attempts']);
     self::assertNull($row['exhausted_at']);
-    self::assertSame([], $this->relay()->runOnce(10)->projected);
+    self::assertSame([], $this->relay()->run_once(10)->projected);
     $this->clock->advance('+2 seconds');
-    self::assertSame(['continue:5:0'], $this->relay()->runOnce(10)->projected, 'retried after 2 s (5.1: 2 s x 2^n)');
+    self::assertSame(['continue:5:0'], $this->relay()->run_once(10)->projected, 'retried after 2 s (5.1: 2 s x 2^n)');
 
     ($this->handler(new RecordingWakeTarget([new ConcurrentProcessModification('moved on')])))($this->sent()[1]);
     self::assertSame(2, (int) $this->db->fetchOne('SELECT attempts FROM ddd_wakeups'));
     $this->clock->advance('+3 seconds');
-    self::assertSame([], $this->relay()->runOnce(10)->projected, 'second retry waits 4 s');
+    self::assertSame([], $this->relay()->run_once(10)->projected, 'second retry waits 4 s');
     $this->clock->advance('+1 second');
-    self::assertSame(['continue:5:0'], $this->relay()->runOnce(10)->projected);
+    self::assertSame(['continue:5:0'], $this->relay()->run_once(10)->projected);
   }
 
   public function test_the_tenth_failed_attempt_exhausts_the_intent(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
     $this->db->executeStatement('UPDATE ddd_wakeups SET attempts = 9');
-    $this->relay()->runOnce(10);
+    $this->relay()->run_once(10);
 
     self::assertSame(ProcessWakeupHandler::EXHAUSTED, ($this->handler(new RecordingWakeTarget([new LockNotAcquired('busy')])))($this->sent()[0]));
 
@@ -170,7 +170,7 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
 
   public function test_a_non_retryable_wake_failure_exhausts_the_intent_for_the_operator(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
-    $this->relay()->runOnce(10);
+    $this->relay()->run_once(10);
 
     ($this->handler(new RecordingWakeTarget([new \LogicException('wiring bug')])))($this->sent()[0]);
 
@@ -180,9 +180,9 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
 
   public function test_a_handler_whose_lease_was_lost_does_not_touch_the_new_holder(): void {
     $this->schedule(WakeupIntent::continuation('acme', 5, 0, $this->clock->now()));
-    $this->relay(null, 30)->runOnce(10);
+    $this->relay(null, 30)->run_once(10);
     $this->clock->advance('+31 seconds');
-    $this->relay(null, 30)->runOnce(10);
+    $this->relay(null, 30)->run_once(10);
     [$stale, $fresh] = $this->sent();
 
     self::assertSame(ProcessWakeupHandler::LEASE_LOST, ($this->handler(new RecordingWakeTarget()))($stale));
@@ -200,31 +200,31 @@ final class WakeupRelayPostgresTest extends PostgresTestCase {
     $this->store->insert($running);
     $this->clock->advance('+16 minutes');
 
-    $report = $this->relay()->runOnce(10);
+    $report = $this->relay()->run_once(10);
 
-    self::assertSame([$scheduled->get_id()], $report->strandedRequeued);
-    self::assertSame([$running->get_id()], $report->strandedReported);
+    self::assertSame([$scheduled->get_id()], $report->requeued);
+    self::assertSame([$running->get_id()], $report->reported);
     self::assertSame(['continue:' . $scheduled->get_id() . ':0'], $report->projected, 'the minted intent is projected in the same tick');
     self::assertNotEmpty($this->log->at('warning'));
 
     // The scan is throttled (every 60 s), and a requeued row now has a live intent.
     $this->clock->advance('+61 seconds');
-    self::assertSame([], $this->relay()->runOnce(10)->strandedRequeued);
+    self::assertSame([], $this->relay()->run_once(10)->requeued);
   }
 
   public function test_the_stranded_scan_runs_at_most_once_per_interval(): void {
     $relay = $this->relay();
-    $relay->runOnce(10);
+    $relay->run_once(10);
 
     $p = OrderProcess::started(1);
     $p->advance(status: 'scheduled');
     $this->store->insert($p);
     $this->clock->advance('+16 minutes');
 
-    self::assertSame([$p->get_id()], $relay->runOnce(10)->strandedRequeued);
+    self::assertSame([$p->get_id()], $relay->run_once(10)->requeued);
     $this->db->executeStatement('DELETE FROM ddd_wakeups');
     $this->clock->advance('+30 seconds');
-    self::assertSame([], $relay->runOnce(10)->strandedRequeued, 'not yet: last scan 30 s ago');
+    self::assertSame([], $relay->run_once(10)->requeued, 'not yet: last scan 30 s ago');
   }
 }
 

@@ -8,14 +8,14 @@ use TangibleDDD\Defaults\Pdo\IHostConnection;
 
 /**
  * Decorates a real IHostConnection and injects one failure on demand:
- * begin, commit or rollBack throw, or a statement matching a pattern throws.
+ * begin, commit or rollback throw, or a statement matching a pattern throws.
  * The real operation still runs where that matters (a failing COMMIT is
  * simulated before the real commit, so the transaction stays open and the
  * boundary must roll it back).
  */
 final class FaultyConnection implements IHostConnection {
 
-  public ?string $failOn = null;          // 'begin' | 'commit' | 'rollBack'
+  public ?string $failOn = null;          // 'begin' | 'commit' | 'rollback'
   public ?string $failStatement = null;   // regex on SQL
   public ?\Throwable $failWith = null;
 
@@ -33,18 +33,18 @@ final class FaultyConnection implements IHostConnection {
     return $this->inner->execute($sql, $params);
   }
 
-  public function fetchAll(string $sql, array $params = []): array {
+  public function fetch_all(string $sql, array $params = []): array {
     $this->maybeFailStatement($sql);
-    return $this->inner->fetchAll($sql, $params);
+    return $this->inner->fetch_all($sql, $params);
   }
 
-  public function fetchOne(string $sql, array $params = []): ?array {
+  public function fetch_one(string $sql, array $params = []): ?array {
     $this->maybeFailStatement($sql);
-    return $this->inner->fetchOne($sql, $params);
+    return $this->inner->fetch_one($sql, $params);
   }
 
-  public function lastInsertId(): string {
-    return $this->inner->lastInsertId();
+  public function last_insert_id(): string {
+    return $this->inner->last_insert_id();
   }
 
   public function begin(): void {
@@ -57,20 +57,20 @@ final class FaultyConnection implements IHostConnection {
     $this->inner->commit();
   }
 
-  public function rollBack(): void {
-    if ($this->failOn === 'rollBack') {
-      $this->inner->rollBack();
+  public function rollback(): void {
+    if ($this->failOn === 'rollback') {
+      $this->inner->rollback();
     }
-    $this->maybeFail('rollBack');
-    $this->inner->rollBack();
+    $this->maybeFail('rollback');
+    $this->inner->rollback();
   }
 
-  public function inTransaction(): bool {
-    return $this->inner->inTransaction();
+  public function in_transaction(): bool {
+    return $this->inner->in_transaction();
   }
 
-  public function isDuplicateKey(\Throwable $e): bool {
-    return $this->inner->isDuplicateKey($e);
+  public function is_duplicate_key(\Throwable $e): bool {
+    return $this->inner->is_duplicate_key($e);
   }
 
   private function maybeFail(string $op): void {

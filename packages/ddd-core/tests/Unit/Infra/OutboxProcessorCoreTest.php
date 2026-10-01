@@ -38,7 +38,7 @@ final class OutboxProcessorCoreTest extends TestCase {
   private object $signals;
 
   protected function setUp(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     HostDefaults::provide(LoggerInterface::class, new RecordingLogger());
     $this->signals = new class implements IInfrastructureSignalDispatcher {
       public array $seen = [];
@@ -53,7 +53,7 @@ final class OutboxProcessorCoreTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
   }
 
   private function append(string $id, string $due = '2026-10-01 12:00:00', int $max = 5): void {
@@ -78,9 +78,9 @@ final class OutboxProcessorCoreTest extends TestCase {
     $result = $this->relay($transport)->process_batch();
 
     self::assertSame([1, 0, 0, 1], [$result->completed, $result->failed, $result->dlq, $result->total]);
-    self::assertSame('accepted', $this->store->statusOf('e1'));
-    self::assertSame('pending', $this->store->statusOf('e2'), 'not due yet');
-    self::assertSame('mem-1', $this->store->transportRefOf('e1'));
+    self::assertSame('accepted', $this->store->status_of('e1'));
+    self::assertSame('pending', $this->store->status_of('e2'), 'not due yet');
+    self::assertSame('mem-1', $this->store->transport_ref_of('e1'));
     self::assertEquals(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')), $transport->submissions[0]['due_at']);
     self::assertSame(
       ['order_id' => 1, '__correlation_id' => 'corr-e1', '__sequence' => 2, '__event_id' => 'e1'],
@@ -94,20 +94,20 @@ final class OutboxProcessorCoreTest extends TestCase {
     $transport = new InMemoryTransport();
     $relay = $this->relay($transport);
 
-    $transport->rejectNext();
+    $transport->reject_next();
     $first = $relay->process_batch();
     self::assertSame(1, $first->failed);
-    self::assertSame('pending', $this->store->statusOf('e1'));
-    self::assertSame(1, $this->store->attemptsOf('e1'));
+    self::assertSame('pending', $this->store->status_of('e1'));
+    self::assertSame(1, $this->store->attempts_of('e1'));
     self::assertSame(['outbox_attempt_failed'], $this->signals->seen);
 
     self::assertSame(0, $relay->process_batch()->total, 'not before the backoff (60 s)');
 
     $this->clock->advance('PT61S');
-    $transport->rejectNext();
+    $transport->reject_next();
     $second = $relay->process_batch();
     self::assertSame(1, $second->dlq);
-    self::assertSame('dlq', $this->store->statusOf('e1'));
+    self::assertSame('dlq', $this->store->status_of('e1'));
     self::assertSame(['outbox_attempt_failed', 'outbox_dlq'], $this->signals->seen);
   }
 
@@ -115,12 +115,12 @@ final class OutboxProcessorCoreTest extends TestCase {
     // CONF-4: null, '' and '0' are rejections, never acceptances.
     $this->append('e1');
     $transport = new InMemoryTransport();
-    $transport->returnNoRefNext();
+    $transport->drop_next_ref();
 
     $result = $this->relay($transport)->process_batch();
 
     self::assertSame(1, $result->failed);
-    self::assertSame('pending', $this->store->statusOf('e1'));
+    self::assertSame('pending', $this->store->status_of('e1'));
   }
 
   public function test_a_shared_connection_transport_rolls_back_with_the_accept(): void {
@@ -140,8 +140,8 @@ final class OutboxProcessorCoreTest extends TestCase {
     }
 
     self::assertSame([], $transport->submissions, 'submit rolled back with the transaction');
-    self::assertSame('pending', $this->store->statusOf('e1'));
-    self::assertSame(0, $this->store->attemptsOf('e1'), 'an interruption is not a failed attempt');
+    self::assertSame('pending', $this->store->status_of('e1'));
+    self::assertSame(0, $this->store->attempts_of('e1'), 'an interruption is not a failed attempt');
   }
 
   public function test_a_separate_transport_keeps_its_submission_when_accept_never_happens(): void {
@@ -158,13 +158,13 @@ final class OutboxProcessorCoreTest extends TestCase {
     }
 
     self::assertCount(1, $transport->submissions, 'at-least-once: the same event_id may recur');
-    self::assertSame('pending', $this->store->statusOf('e1'));
+    self::assertSame('pending', $this->store->status_of('e1'));
   }
 
   public function test_an_unheard_fact_is_still_accepted_and_signalled(): void {
     $this->append('e1');
     $probe = new class implements ISubscriberProbe {
-      public function hasSubscribers(string $integrationAction): ?bool { return false; }
+      public function has_subscribers(string $integrationAction): ?bool { return false; }
     };
 
     $result = $this->relay(new InMemoryTransport(), $probe)->process_batch();
@@ -176,7 +176,7 @@ final class OutboxProcessorCoreTest extends TestCase {
   public function test_the_lease_comes_from_the_outbox_config(): void {
     $this->append('e1');
     $this->relay(new InMemoryTransport(), null, new OutboxConfig(lock_timeout_seconds: 42, batch_size: 1))->process_batch();
-    self::assertSame('accepted', $this->store->statusOf('e1'));
+    self::assertSame('accepted', $this->store->status_of('e1'));
   }
 
   public function test_the_backoff_rule(): void {
@@ -200,8 +200,8 @@ final class OutboxProcessorCoreTest extends TestCase {
         }
         return $this->inner->accept($c, $ref);
       }
-      public function retryLater(\TangibleDDD\Runtime\Outbox\Claim $c, string $e, \DateTimeImmutable $n): bool { return $this->inner->retryLater($c, $e, $n); }
-      public function deadLetter(\TangibleDDD\Runtime\Outbox\Claim $c, string $e): bool { return $this->inner->deadLetter($c, $e); }
+      public function retry_later(\TangibleDDD\Runtime\Outbox\Claim $c, string $e, \DateTimeImmutable $n): bool { return $this->inner->retry_later($c, $e, $n); }
+      public function dead_letter(\TangibleDDD\Runtime\Outbox\Claim $c, string $e): bool { return $this->inner->dead_letter($c, $e); }
     };
   }
 
@@ -217,8 +217,8 @@ final class OutboxProcessorCoreTest extends TestCase {
 
     self::assertSame([], $transport->submissions, 'the submission rolled back, so the new lease holder submits it once');
     self::assertSame([0, 0, 0, 1], [$result->completed, $result->failed, $result->dlq, $result->total]);
-    self::assertSame(['e1'], $result->leaseLost);
-    self::assertSame(0, $this->store->attemptsOf('e1'), 'a lost lease is not a failed attempt');
+    self::assertSame(['e1'], $result->lease_lost);
+    self::assertSame(0, $this->store->attempts_of('e1'), 'a lost lease is not a failed attempt');
     self::assertSame([], $this->signals->seen);
   }
 
@@ -233,7 +233,7 @@ final class OutboxProcessorCoreTest extends TestCase {
     $result = $relay->process_batch();
 
     self::assertCount(1, $transport->submissions, 'at-least-once on a separate connection');
-    self::assertSame(['e1'], $result->leaseLost);
+    self::assertSame(['e1'], $result->lease_lost);
   }
 
   public function test_sfc3_process_batch_takes_an_optional_limit(): void {
@@ -260,7 +260,7 @@ final class OutboxProcessorCoreTest extends TestCase {
         }
         return 'ref-ok';
       }
-      public function sharesConnectionWith(\TangibleDDD\Runtime\Outbox\IOutboxStore $s): bool { return false; }
+      public function shares_connection(\TangibleDDD\Runtime\Outbox\IOutboxStore $s): bool { return false; }
     };
     $relay = new OutboxProcessor(
       new AcmeConfig(), null, new OutboxConfig(), null,
@@ -272,14 +272,14 @@ final class OutboxProcessorCoreTest extends TestCase {
     self::assertSame(['ok', 'retry', 'dead'], $r->claimed);
     self::assertSame(['ok'], $r->accepted);
     self::assertSame(['retry'], $r->retried);
-    self::assertSame(['dead'], $r->deadLettered);
-    self::assertSame([], $r->leaseLost);
+    self::assertSame(['dead'], $r->dead_lettered);
+    self::assertSame([], $r->lease_lost);
   }
 
   public function test_sfc4_the_counts_only_constructor_stays_valid(): void {
     $r = new \TangibleDDD\Infra\Services\ProcessingResult(1, 2, 3, 6);
     self::assertSame([], $r->claimed);
-    self::assertSame([], $r->leaseLost);
+    self::assertSame([], $r->lease_lost);
   }
 
   public function test_the_0_6_form_runs_without_any_host_call(): void {

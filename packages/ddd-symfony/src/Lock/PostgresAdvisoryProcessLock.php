@@ -19,7 +19,7 @@ use TangibleDDD\Symfony\Persistence\PoolerPolicy;
  * IProcessLock on Postgres session advisory locks (register 3.7, 5.2).
  *
  * - acquire(): `SELECT pg_try_advisory_lock(key)` polled every 50-200 ms
- *   (jittered) until the deadline. Key: LockKey::postgresKey() =
+ *   (jittered) until the deadline. Key: LockKey::postgres_key() =
  *   (crc32(consumer_prefix) << 32) | (process_id & 0xffffffff). Only a
  *   definite `true` enters; `false` until the deadline, or any query error
  *   (an aborted transaction, a dropped connection), throws LockNotAcquired
@@ -27,7 +27,7 @@ use TangibleDDD\Symfony\Persistence\PoolerPolicy;
  * - release(): `pg_advisory_unlock(key)`, called by the runner in `finally`.
  *   Never throws: an unknown or stale handle, a `false` unlock (the session
  *   was lost, so was the lock) or a query error is logged as a bug.
- * - forceReleaseAll(): unlocks every acquisition still outstanding through
+ * - release_all(): unlocks every acquisition still outstanding through
  *   this instance (RuntimeReset's leak repair, CR-4) and returns the count.
  *
  * The lock is SESSION scoped: it survives commits and is held across the
@@ -77,7 +77,7 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
 
   public function acquire(LockKey $k, float $timeoutSeconds): LockHandle {
     $this->checkTopologyOnce();
-    $key = $k->postgresKey();
+    $key = $k->postgres_key();
     $deadline = microtime(true) + max(0.0, $timeoutSeconds);
 
     while (true) {
@@ -112,11 +112,11 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
     $this->unlock($key, 'release');
   }
 
-  public function heldCount(): int {
+  public function held_count(): int {
     return count($this->held);
   }
 
-  public function forceReleaseAll(): int {
+  public function release_all(): int {
     $held = $this->held;
     $this->held = [];
     foreach ($held as $key) {
@@ -134,7 +134,7 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
     if ($this->topologyChecked) {
       return;
     }
-    $why = ConnectionTopology::describePooler($this->connection->getParams());
+    $why = ConnectionTopology::pooler($this->connection->getParams());
     if ($why === null) {
       $this->topologyChecked = true;
       return;
@@ -150,7 +150,7 @@ final class PostgresAdvisoryProcessLock implements IProcessLock {
 
   private function unlock(LockKey $k, string $why): void {
     try {
-      $released = $this->connection->fetchOne('SELECT pg_advisory_unlock(?)', [$k->postgresKey()], [ParameterType::INTEGER]);
+      $released = $this->connection->fetchOne('SELECT pg_advisory_unlock(?)', [$k->postgres_key()], [ParameterType::INTEGER]);
       if (!($released === true || $released === 't' || $released === 1 || $released === '1')) {
         $this->logger->error(sprintf(
           '[ddd lock] %s of %s returned false: this session no longer held it (reconnect?) (bug)', $why, $k->id()

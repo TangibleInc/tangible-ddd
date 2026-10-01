@@ -28,7 +28,7 @@ final class ProcessJournal {
   /** @var list<array{label: string, commandId: ?string, widget: string}> `widget` is StepCommand::$widget_id (a minted ref for the D3 processes) */
   public static array $sent = [];
 
-  /** @var array<string, true> rows marked while no ScenarioRows is bound (markRow) */
+  /** @var array<string, true> rows marked while no ScenarioRows is bound (mark_row) */
   private static array $unboundRows = [];
 
   /**
@@ -38,7 +38,7 @@ final class ProcessJournal {
    *
    * @var null|\Closure(StepCommand): void
    */
-  public static ?\Closure $onSend = null;
+  public static ?\Closure $on_send = null;
 
   private static ?ScenarioRows $rows = null;
 
@@ -47,7 +47,7 @@ final class ProcessJournal {
   public static function reset(): void {
     self::$steps = [];
     self::$sent = [];
-    self::$onSend = null;
+    self::$on_send = null;
     self::$rows = null;
     self::$boundary = null;
     self::$unboundRows = [];
@@ -56,10 +56,10 @@ final class ProcessJournal {
   /**
    * Commit scenario row $id on the host connection (its own transaction, or
    * the open one), idempotently. A process step or precheck reads it back
-   * with hasRow(): it stands for state another context published (D3
+   * with has_row(): it stands for state another context published (D3
    * precheck). Without a bound ScenarioRows it is kept in this php process.
    */
-  public static function markRow(string $id, string $value = '1'): void {
+  public static function mark_row(string $id, string $value = '1'): void {
     if (self::$rows === null) {
       self::$unboundRows[$id] = true;
       return;
@@ -71,10 +71,10 @@ final class ProcessJournal {
       }
     };
     $boundary = self::$boundary;
-    $boundary === null || $boundary->isActive() ? $write() : $boundary->run($write);
+    $boundary === null || $boundary->is_active() ? $write() : $boundary->run($write);
   }
 
-  public static function hasRow(string $id): bool {
+  public static function has_row(string $id): bool {
     return self::$rows !== null ? self::$rows->has($id) : isset(self::$unboundRows[$id]);
   }
 
@@ -101,23 +101,23 @@ final class ProcessJournal {
 
     if (self::$rows !== null && $commandId !== null) {
       $rows = self::$rows;
-      $id = self::rowId($command->label, $commandId);
+      $id = self::row_id($command->label, $commandId);
       $write = static function () use ($rows, $id, $command): void {
         if (!$rows->has($id)) {
           $rows->insert($id, $command->label);
         }
       };
       $boundary = self::$boundary;
-      $boundary === null || $boundary->isActive() ? $write() : $boundary->run($write);
+      $boundary === null || $boundary->is_active() ? $write() : $boundary->run($write);
     }
 
-    if (self::$onSend !== null) {
-      (self::$onSend)($command);
+    if (self::$on_send !== null) {
+      (self::$on_send)($command);
     }
   }
 
   /** The effect row id of one step command. */
-  public static function rowId(string $label, string $commandId): string {
+  public static function row_id(string $label, string $commandId): string {
     return "cmd:$label:$commandId";
   }
 
@@ -127,7 +127,7 @@ final class ProcessJournal {
   }
 
   /** @return list<?string> the command ids $label was sent under, in order */
-  public static function commandIds(string $label): array {
+  public static function command_ids(string $label): array {
     return array_values(array_map(
       static fn (array $s) => $s['commandId'],
       array_filter(self::$sent, static fn (array $s) => $s['label'] === $label),
