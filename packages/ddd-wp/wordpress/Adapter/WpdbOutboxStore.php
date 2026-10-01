@@ -13,6 +13,7 @@ use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\SystemClock;
@@ -36,6 +37,15 @@ use TangibleDDD\Runtime\SystemClock;
  *   (= $now + $leaseSeconds) / `locked_by` (the worker), so a 0.6 copy
  *   running alongside during a deploy keeps excluding claimed rows. Time is
  *   the caller's $now, never the wall clock.
+ * - CR-PDO-6 (IReportsClaimDeadLetters): a selected row that still carries
+ *   a claim_token is a re-claim of an expired N lease (every outcome clears
+ *   the token): it counts one attempt (`attempts + 1`, `last_error` =
+ *   LEASE_EXPIRED_ERROR, an error_history entry), and Claim::$attempts
+ *   includes it. When that reaches max_attempts the row is dead-lettered
+ *   inside the claim's transaction (status `dlq`, lease cleared, DLQ row)
+ *   and returned by takeDeadLetteredAtClaim(), not handed out. A row a 0.6
+ *   copy leased (locked_until without claim_token) is not counted: 0.6
+ *   counts its own attempts.
  * - accept() writes status `completed` (the 0.6 ENUM value; `accepted` is
  *   the port's read alias, so a rolled-back 0.6 winner still purges and
  *   counts them); retryLater() attempts + 1 in SQL, `next_attempt_at` =
@@ -54,9 +64,12 @@ use TangibleDDD\Runtime\SystemClock;
  * (the conformance host and HostDefaults pass it); the v8 store does not
  * delegate to it.
  */
-final class WpdbOutboxStore implements IOutboxStore {
+final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
   private readonly IRelayPauseStore $pauses;
+
+  /** @var list<array{0: Claim, 1: string}> claim-time dead letters not yet taken by the relay step */
+  private array $deadLetteredAtClaim = [];
 
   public function __construct(
     OutboxRepository $repository,
@@ -165,20 +178,83 @@ final class WpdbOutboxStore implements IOutboxStore {
           continue;
         }
         $token = bin2hex(random_bytes(16));
-        $ok = $db->query($db->prepare(
-          "UPDATE `{$this->outbox()}` SET claim_token = %s, locked_until = %s, locked_by = %s WHERE id = %d",
-          $token,
-          $leaseUntil->format('Y-m-d H:i:s'),
-          $worker,
-          (int) $row->id
-        ));
+        // CR-PDO-6: a row that still carries a claim_token was claimed by N
+        // and its holder died without an outcome (accept / retryLater /
+        // deadLetter all clear the token). Its lease is expired (the SELECT
+        // only takes lease-free rows), so this re-claim is one attempt.
+        $reclaim = $row->claim_token !== null && $row->claim_token !== '';
+        $ok = $db->query($reclaim
+          ? $db->prepare(
+            // error_history is assigned before attempts, so it reads the old count.
+            "UPDATE `{$this->outbox()}`
+             SET error_history = JSON_ARRAY_APPEND(COALESCE(error_history, JSON_ARRAY()), '$', JSON_OBJECT('attempt', attempts + 1, 'error', %s, 'timestamp', %s)),
+                 attempts = attempts + 1, last_error = %s,
+                 claim_token = %s, locked_until = %s, locked_by = %s
+             WHERE id = %d",
+            self::LEASE_EXPIRED_ERROR,
+            $stamp,
+            self::LEASE_EXPIRED_ERROR,
+            $token,
+            $leaseUntil->format('Y-m-d H:i:s'),
+            $worker,
+            (int) $row->id
+          )
+          : $db->prepare(
+            "UPDATE `{$this->outbox()}` SET claim_token = %s, locked_until = %s, locked_by = %s WHERE id = %d",
+            $token,
+            $leaseUntil->format('Y-m-d H:i:s'),
+            $worker,
+            (int) $row->id
+          ));
         if ($ok === false) {
           throw new OutboxWriteFailed("Outbox claim of {$row->event_id} failed: " . (string) $db->last_error);
         }
-        $claims[] = new Claim((string) $row->event_id, $token, $leaseUntil, self::record($row), (int) $row->attempts);
+        $attempts = (int) $row->attempts + ($reclaim ? 1 : 0);
+        $claim = new Claim((string) $row->event_id, $token, $leaseUntil, self::record($row), $attempts);
+        if ($reclaim && $attempts >= (int) $row->max_attempts) {
+          $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $attempts);
+          $this->deadLetterAtClaim($claim, $error, $stamp);
+          $this->deadLetteredAtClaim[] = [$claim, $error];
+          continue;
+        }
+        $claims[] = $claim;
       }
       return $claims;
     });
+  }
+
+  public function takeDeadLetteredAtClaim(): array {
+    $taken = $this->deadLetteredAtClaim;
+    $this->deadLetteredAtClaim = [];
+    return $taken;
+  }
+
+  /** Inside claim()'s transaction: the re-claimed row goes to the DLQ instead of being handed out. */
+  private function deadLetterAtClaim(Claim $c, string $error, string $stamp): void {
+    $db = self::db();
+    $ok = $db->query($db->prepare(
+      "UPDATE `{$this->outbox()}`
+       SET status = 'dlq', last_error = %s, locked_until = NULL, locked_by = NULL, claim_token = NULL
+       WHERE event_id = %s AND claim_token = %s",
+      $error,
+      $c->event_id,
+      $c->claimToken
+    ));
+    if ($ok === false || (int) $ok !== 1) {
+      throw new OutboxWriteFailed("Dead-lettering {$c->event_id} at claim failed: " . (string) $db->last_error);
+    }
+    $ok = $db->query($db->prepare(
+      "INSERT INTO `{$this->dlq()}`
+         (outbox_id, event_id, event_type, integration_action, correlation_id, command_id, payload, attempts, error_history, final_error, moved_at, blog_id)
+       SELECT id, event_id, event_type, integration_action, correlation_id, command_id, payload, attempts, error_history, %s, %s, blog_id
+       FROM `{$this->outbox()}` WHERE event_id = %s",
+      $error,
+      $stamp,
+      $c->event_id
+    ));
+    if ($ok === false) {
+      throw new OutboxWriteFailed("Dead-letter insert of {$c->event_id} at claim failed: " . (string) $db->last_error);
+    }
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
