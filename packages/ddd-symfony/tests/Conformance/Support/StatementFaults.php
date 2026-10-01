@@ -11,7 +11,7 @@ namespace TangibleDDD\Symfony\Tests\Conformance\Support;
  * failNextAdvisoryLock(): the NEXT `pg_try_advisory_lock(?)` statement, on
  * whichever connection runs it, is replaced by one that the server rejects
  * with an error carrying $reason, and takes no lock. That is the sf form of
- * ProcessHost::failNextProcessLockAcquire() (register 3.7: "the lock
+ * ProcessHost::fail_next_lock() (register 3.7: "the lock
  * backend returns NULL / false / an error"): PostgresAdvisoryProcessLock
  * sees a real query error.
  */

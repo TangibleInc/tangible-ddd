@@ -45,17 +45,17 @@ $kill = static function (): never {
 };
 
 // A console worker on a direct connection: a start here runs in-band, as
-// FreshProcesses::startInFreshProcess() requires; other ops use the bundle default.
+// FreshProcesses::start_fresh() requires; other ops use the bundle default.
 $host = SfHostFixture::attach($in['schema'], new DateTimeImmutable($in['now']), $in['op'] === 'start' ? StartMode::InBand : StartMode::Deferred);
-$runner = $host->worker(1)->processRunner();
-FreshProcessBoot::boot($runner, $host->subscriptions(), $host->scenarioRows(), $host->boundary());
+$runner = $host->worker(1)->runner();
+FreshProcessBoot::boot($runner, $host->subscriptions(), $host->rows(), $host->boundary());
 
 $args = $in['args'];
 try {
   switch ($in['op']) {
     case 'publish':
       $fact = $args['fact'];
-      $host->commandBus([CreateWidget::class => static function () use ($host, $fact): void {
+      $host->command_bus([CreateWidget::class => static function () use ($host, $fact): void {
         $host->events()->record($fact);
       }])->handle(new CreateWidget('fresh-publish'));
       $emit(['event' => PublishedFacts::id_of($fact)]);
@@ -66,7 +66,7 @@ try {
       break;
 
     case 'drain':
-      $report = $host->worker(1)->drainOnce();
+      $report = $host->worker(1)->drain_once();
       $emit(['result' => [
         'relayed' => $report->relay?->accepted ?? [],
         'delivered' => $report->delivered,
@@ -83,7 +83,7 @@ try {
       $process = $args['process'];
       $die = $args['die'];
       if ($die !== null) {
-        ProcessJournal::$onSend = static function (StepCommand $c) use ($die, $process, $emit, $kill): void {
+        ProcessJournal::$on_send = static function (StepCommand $c) use ($die, $process, $emit, $kill): void {
           if ($c->label === $die) {
             $emit(['process' => $process->get_id()]);
             $kill(); // the step's command committed; the checkpoint is not saved

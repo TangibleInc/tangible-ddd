@@ -26,13 +26,13 @@ final class DbalOutboxAdministrationTest extends PostgresTestCase {
   }
 
   private function append(string $id): void {
-    $this->store->appendFact(new OutboxRecord($id, 'widget_registered', 'txp_integration_widget_registered', 'c', 1, null, ['id' => $id], $this->clock->now()), 'App\\W');
+    $this->store->append_fact(new OutboxRecord($id, 'widget_registered', 'txp_integration_widget_registered', 'c', 1, null, ['id' => $id], $this->clock->now()), 'App\\W');
   }
 
   private function deadLetter(string $id): int {
     $this->append($id);
     [$claim] = $this->store->claim(1, $this->clock->now(), 60);
-    $this->store->deadLetter($claim, 'boom');
+    $this->store->dead_letter($claim, 'boom');
     return (int) $this->db->fetchOne('SELECT id FROM ddd_dlq WHERE event_id = ?', [$id]);
   }
 
@@ -45,16 +45,16 @@ final class DbalOutboxAdministrationTest extends PostgresTestCase {
     $a = $this->deadLetter('a');
     $b = $this->deadLetter('b');
 
-    $page = $this->admin->deadLetters(1);
+    $page = $this->admin->dead_letters(1);
     self::assertCount(1, $page);
-    self::assertSame($a, $page[0]->dlqId);
+    self::assertSame($a, $page[0]->dlq_id);
     self::assertSame('a', $page[0]->event_id);
     self::assertSame('boom', $page[0]->error);
     self::assertSame(1, $page[0]->attempts);
     self::assertSame(['id' => 'a'], $page[0]->record->payload);
 
-    $next = $this->admin->deadLetters(10, (string) $a);
-    self::assertSame([$b], array_map(fn ($d) => $d->dlqId, $next));
+    $next = $this->admin->dead_letters(10, (string) $a);
+    self::assertSame([$b], array_map(fn ($d) => $d->dlq_id, $next));
   }
 
   public function test_replay_keeps_the_event_id_resets_the_row_and_deletes_the_dlq_row(): void {
@@ -76,7 +76,7 @@ final class DbalOutboxAdministrationTest extends PostgresTestCase {
     $this->admin->replay($dlqId);
 
     self::assertSame('pending', $this->statusOf('a'));
-    self::assertSame('App\\W', $this->store->eventClassOf('a'));
+    self::assertSame('App\\W', $this->store->event_class_of('a'));
     self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_dlq'));
   }
 
@@ -132,7 +132,7 @@ final class DbalOutboxAdministrationTest extends PostgresTestCase {
     $this->admin->retry('dead');
 
     self::assertSame('pending', $this->statusOf('dead'));
-    self::assertSame(['other'], array_map(fn ($d) => $d->event_id, $this->admin->deadLetters(10)),
+    self::assertSame(['other'], array_map(fn ($d) => $d->event_id, $this->admin->dead_letters(10)),
       'the retried row leaves the DLQ; a later replay cannot reset it a second time');
     self::assertSame(1, $this->admin->stats()['dead_letters']);
     self::assertSame(1, $this->admin->stats()['dlq']);

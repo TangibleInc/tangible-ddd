@@ -27,11 +27,11 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  *   pokes it in the same transaction (a transactional NOTIFY is delivered on
  *   commit only, D14).
  * - cancel(): DELETE by key, same transaction rule.
- * - claimDue(): ONE autocommit statement leasing due rows (`due_at <= now`,
+ * - claim_due(): ONE autocommit statement leasing due rows (`due_at <= now`,
  *   `next_attempt_at` passed, lease free or expired) with FOR UPDATE SKIP
  *   LOCKED, each with its own claim token. Refuses to join an open
  *   transaction (NestedTransactionRejected), as the outbox claim does.
- * - complete() deletes the row; retryLater() counts an attempt, records the
+ * - complete() deletes the row; retry_later() counts an attempt, records the
  *   error, sets next_attempt_at and clears the lease. Both are fenced on
  *   (idempotency_key, claim_token): false means the lease was lost.
  */
@@ -57,10 +57,10 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       "INSERT INTO {$this->table} (idempotency_key, kind, consumer, process_id, step_index, expected_status, due_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (idempotency_key) DO NOTHING",
-      [$i->idempotencyKey, $i->kind->value, $i->consumer, $i->processId, $i->stepIndex, $i->expectedStatus, Time::toDb($i->dueAt)],
+      [$i->key, $i->kind->value, $i->consumer, $i->process_id, $i->step_index, $i->expected_status, Time::to_db($i->due_at)],
       [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING,
-        $i->processId === null ? ParameterType::NULL : ParameterType::INTEGER,
-        $i->stepIndex === null ? ParameterType::NULL : ParameterType::INTEGER,
+        $i->process_id === null ? ParameterType::NULL : ParameterType::INTEGER,
+        $i->step_index === null ? ParameterType::NULL : ParameterType::INTEGER,
         ParameterType::STRING, ParameterType::STRING]
     );
     if ($inserted > 0) {
@@ -73,7 +73,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
     $this->connection->executeStatement("DELETE FROM {$this->table} WHERE idempotency_key = ?", [$idempotencyKey]);
   }
 
-  public function claimDue(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
+  public function claim_due(\DateTimeImmutable $now, int $limit, int $leaseSeconds): array {
     if ($this->connection->isTransactionActive()) {
       throw new NestedTransactionRejected('DbalWakeupScheduler::claimDue() must run outside an open transaction (it commits its own lease).');
     }
@@ -81,7 +81,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       return [];
     }
     $leaseUntil = $now->modify("+{$leaseSeconds} seconds");
-    $nowDb = Time::toDb($now);
+    $nowDb = Time::to_db($now);
 
     $rows = $this->connection->fetchAllAssociative(
       "WITH picked AS (
@@ -97,29 +97,29 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
        UPDATE {$this->table} AS w SET claim_token = gen_random_uuid()::text, lease_until = :lease
        FROM picked WHERE w.id = picked.id
        RETURNING w.*",
-      ['now' => $nowDb, 'lease' => Time::toDb($leaseUntil), 'limit' => $limit],
+      ['now' => $nowDb, 'lease' => Time::to_db($leaseUntil), 'limit' => $limit],
       ['limit' => ParameterType::INTEGER]
     );
-    usort($rows, static fn (array $a, array $b) => [Time::fromDb((string) $a['due_at']), (int) $a['id']] <=> [Time::fromDb((string) $b['due_at']), (int) $b['id']]);
+    usort($rows, static fn (array $a, array $b) => [Time::from_db((string) $a['due_at']), (int) $a['id']] <=> [Time::from_db((string) $b['due_at']), (int) $b['id']]);
 
     return array_map(static fn (array $r) => new ClaimedWakeup(
-      self::intentOf($r), (string) $r['claim_token'], $leaseUntil, (int) $r['attempts']
+      self::intent_from_row($r), (string) $r['claim_token'], $leaseUntil, (int) $r['attempts']
     ), $rows);
   }
 
   public function complete(ClaimedWakeup $w): bool {
     return $this->connection->executeStatement(
       "DELETE FROM {$this->table} WHERE idempotency_key = ? AND claim_token = ?",
-      [$w->intent->idempotencyKey, $w->claimToken]
+      [$w->intent->key, $w->token]
     ) > 0;
   }
 
-  public function retryLater(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(ClaimedWakeup $w, string $error, \DateTimeImmutable $nextAt): bool {
     return $this->connection->executeStatement(
       "UPDATE {$this->table}
           SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?, claim_token = NULL, lease_until = NULL
         WHERE idempotency_key = ? AND claim_token = ?",
-      [$error, Time::toDb($nextAt), $w->intent->idempotencyKey, $w->claimToken]
+      [$error, Time::to_db($nextAt), $w->intent->key, $w->token]
     ) > 0;
   }
 
@@ -136,7 +136,7 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       "UPDATE {$this->table}
           SET attempts = attempts + 1, last_error = ?, exhausted_at = ?, claim_token = NULL, lease_until = NULL
         WHERE idempotency_key = ? AND claim_token = ?",
-      [$error, Time::toDb($at ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))), $w->intent->idempotencyKey, $w->claimToken]
+      [$error, Time::to_db($at ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))), $w->intent->key, $w->token]
     ) > 0;
   }
 
@@ -152,10 +152,10 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       [ParameterType::INTEGER]
     );
     return array_map(static fn (array $r) => [
-      'intent' => self::intentOf($r),
+      'intent' => self::intent_from_row($r),
       'attempts' => (int) $r['attempts'],
       'last_error' => $r['last_error'] === null ? null : (string) $r['last_error'],
-      'exhausted_at' => Time::fromDb((string) $r['exhausted_at']),
+      'exhausted_at' => Time::from_db((string) $r['exhausted_at']),
     ], $rows);
   }
 
@@ -168,19 +168,19 @@ final class DbalWakeupScheduler implements IWakeupScheduler {
       "UPDATE {$this->table}
           SET exhausted_at = NULL, attempts = 0, next_attempt_at = NULL, claim_token = NULL, lease_until = NULL, due_at = ?
         WHERE idempotency_key = ?",
-      [Time::toDb($dueAt), $idempotencyKey]
+      [Time::to_db($dueAt), $idempotencyKey]
     ) > 0;
   }
 
   /** @param array<string, mixed> $r */
-  public static function intentOf(array $r): WakeupIntent {
+  public static function intent_from_row(array $r): WakeupIntent {
     return new WakeupIntent(
       WakeKind::from((string) $r['kind']),
       (string) $r['consumer'],
       $r['process_id'] === null ? null : (int) $r['process_id'],
       $r['step_index'] === null ? null : (int) $r['step_index'],
       $r['expected_status'] === null ? null : (string) $r['expected_status'],
-      Time::fromDb((string) $r['due_at']),
+      Time::from_db((string) $r['due_at']),
       (string) $r['idempotency_key'],
     );
   }

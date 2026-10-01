@@ -32,13 +32,13 @@ final class ProcessRunnerWakeTarget implements IProcessWakeTarget {
       return;
     }
 
-    $id = $intent->processId ?? throw new WakeKindUnsupported("Wakeup {$intent->idempotencyKey} has no process id");
+    $id = $intent->process_id ?? throw new WakeKindUnsupported("Wakeup {$intent->key} has no process id");
     match ($intent->kind) {
       WakeKind::Continue => $this->runner->continue_scheduled($id),
-      WakeKind::Timeout => $this->runner->handle_timeout($id, $intent->stepIndex ?? throw new WakeKindUnsupported("Timeout {$intent->idempotencyKey} has no step index")),
+      WakeKind::Timeout => $this->runner->handle_timeout($id, $intent->step_index ?? throw new WakeKindUnsupported("Timeout {$intent->key} has no step index")),
       default => throw new WakeKindUnsupported(sprintf(
         'Wakeup kind %s (%s) needs ProcessRunner::wake(WakeupIntent), which this core version lacks',
-        $intent->kind->value, $intent->idempotencyKey
+        $intent->kind->value, $intent->key
       )),
     };
   }

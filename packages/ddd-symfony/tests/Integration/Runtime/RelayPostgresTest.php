@@ -37,7 +37,7 @@ final class RelayPostgresTest extends PostgresTestCase {
     $this->db->executeStatement('DROP TABLE IF EXISTS sf_relay_messages');
     $this->transportOn($this->db)->setup();
     $this->store = new DbalPostgresOutboxStore($this->db);
-    $this->store->appendFact(new OutboxRecord('evt-1', 'ping_fact', 'sft_integration_ping_fact', 'c', 1, null, ['n' => 1],
+    $this->store->append_fact(new OutboxRecord('evt-1', 'ping_fact', 'sft_integration_ping_fact', 'c', 1, null, ['n' => 1],
       new \DateTimeImmutable('-1 second', new \DateTimeZone('UTC'))), PingFact::class);
   }
 
@@ -55,7 +55,7 @@ final class RelayPostgresTest extends PostgresTestCase {
   }
 
   public function test_submit_and_accept_commit_together(): void {
-    $report = $this->relay(new MessengerFactTransport($this->transportOn($this->db), 'sft', new OutboxFactClassResolver($this->store)))->runOnce(10);
+    $report = $this->relay(new MessengerFactTransport($this->transportOn($this->db), 'sft', new OutboxFactClassResolver($this->store)))->run_once(10);
 
     self::assertSame(['evt-1'], $report->accepted);
     self::assertSame(1, $this->messages());
@@ -73,12 +73,12 @@ final class RelayPostgresTest extends PostgresTestCase {
         $this->competitor->executeStatement("UPDATE ddd_outbox SET claim_token = 'competitor' WHERE event_id = ?", [$c->event_id]);
         return $ref;
       }
-      public function sharesConnectionWith(IOutboxStore $store): bool {
-        return $this->inner->sharesConnectionWith($store);
+      public function shares_connection(IOutboxStore $store): bool {
+        return $this->inner->shares_connection($store);
       }
     };
 
-    $report = $this->relay($stealing)->runOnce(10);
+    $report = $this->relay($stealing)->run_once(10);
 
     self::assertSame(['evt-1'], $report->lost);
     self::assertSame([], $report->accepted);
@@ -94,12 +94,12 @@ final class RelayPostgresTest extends PostgresTestCase {
         $this->inner->submit($c, $wrappedEnvelope, $dueAt);
         throw new \RuntimeException('relay process dies after the Messenger insert');
       }
-      public function sharesConnectionWith(IOutboxStore $store): bool {
-        return $this->inner->sharesConnectionWith($store);
+      public function shares_connection(IOutboxStore $store): bool {
+        return $this->inner->shares_connection($store);
       }
     };
 
-    $this->relay($crashing)->runOnce(10);
+    $this->relay($crashing)->run_once(10);
 
     self::assertSame(0, $this->messages());
     self::assertSame('pending', $this->db->fetchOne("SELECT status FROM ddd_outbox WHERE event_id = 'evt-1'"));

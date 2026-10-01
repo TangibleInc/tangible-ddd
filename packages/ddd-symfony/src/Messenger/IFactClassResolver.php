@@ -12,5 +12,5 @@ use TangibleDDD\Runtime\Outbox\Claim;
  * the row retries and ends in the relay DLQ instead of vanishing.
  */
 interface IFactClassResolver {
-  public function classFor(Claim $claim): ?string;
+  public function resolve(Claim $claim): ?string;
 }

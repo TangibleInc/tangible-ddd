@@ -46,7 +46,7 @@ final class ProcessRunnerWakeTargetTest extends TestCase {
   public function test_a_runner_with_a_wake_door_gets_every_kind(): void {
     $runner = new class {
       public array $woken = [];
-      public function wake(WakeupIntent $i): void { $this->woken[] = $i->idempotencyKey; }
+      public function wake(WakeupIntent $i): void { $this->woken[] = $i->key; }
       public function continue_scheduled(int $id): void { throw new \LogicException('must not be used'); }
     };
 
@@ -60,9 +60,9 @@ final class ProcessRunnerWakeTargetTest extends TestCase {
     $claim = new ClaimedWakeup(WakeupIntent::timeout('acme', 9, 3, $this->at()), 'tok-1', $this->at()->modify('+300 seconds'), 2);
     $serializer = new PhpSerializer();
 
-    $decoded = $serializer->decode($serializer->encode(new Envelope(ProcessWakeupMessage::fromClaim($claim))))->getMessage();
+    $decoded = $serializer->decode($serializer->encode(new Envelope(ProcessWakeupMessage::from_claim($claim))))->getMessage();
 
     self::assertInstanceOf(ProcessWakeupMessage::class, $decoded);
-    self::assertEquals($claim, $decoded->toClaim());
+    self::assertEquals($claim, $decoded->to_claim());
   }
 }

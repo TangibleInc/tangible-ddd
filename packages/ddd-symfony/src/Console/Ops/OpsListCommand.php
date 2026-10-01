@@ -21,7 +21,7 @@ use TangibleDDD\Runtime\Ops\OperatorItem;
  * transport, attempts against each layer's budget, the last error, and the
  * repairs that apply (`ddd:ops:dlq:*`, `ddd:ops:stranded`,
  * `messenger:failed:*`). Read-only. `--format=json` prints
- * OperatorItem::toArray() rows.
+ * OperatorItem::to_array() rows.
  */
 #[AsCommand(name: 'ddd:ops:list', description: 'List failures across every layer (relay, delivery, wakeup, process, transport)')]
 final class OpsListCommand extends Command {
@@ -66,7 +66,7 @@ final class OpsListCommand extends Command {
 
     if ($format === 'json') {
       $output->writeln(json_encode(
-        array_map(static fn (OperatorItem $i) => $i->toArray(), $items),
+        array_map(static fn (OperatorItem $i) => $i->to_array(), $items),
         JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
       ), OutputInterface::OUTPUT_RAW);
       return Command::SUCCESS;
@@ -85,11 +85,11 @@ final class OpsListCommand extends Command {
         $i->layer->value,
         $i->key,
         $i->budget === null ? (string) $i->attempts : "{$i->attempts}/{$i->budget}",
-        $i->firstSeen?->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s') ?? '-',
-        mb_strimwidth((string) $i->lastError, 0, 100, '...'),
-        implode(', ', $i->repairActions),
+        $i->first_seen?->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s') ?? '-',
+        mb_strimwidth((string) $i->last_error, 0, 100, '...'),
+        implode(', ', $i->repairs),
       ]);
-      foreach ($i->repairActions as $action) {
+      foreach ($i->repairs as $action) {
         $used[$action] = true;
       }
     }

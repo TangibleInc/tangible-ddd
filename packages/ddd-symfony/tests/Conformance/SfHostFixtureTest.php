@@ -24,11 +24,12 @@ use TangibleDDD\Symfony\Tests\Support\PostgresDatabase;
 #[Group('conformance')]
 final class SfHostFixtureTest extends TestCase {
 
+  /** @return array{SfHostFixture, string} the set-up fixture and its schema name */
   private function fixture(string $method): array {
     $context = new ScenarioContext(self::class, $method, null);
     $fixture = new SfHostFixture();
-    $fixture->setUp($context);
-    return [$fixture, $context->uniqueName('sf')];
+    $fixture->set_up($context);
+    return [$fixture, $context->unique_name('sf')];
   }
 
   public function test_each_test_gets_its_own_schema_and_it_is_dropped_afterwards(): void {
@@ -37,22 +38,22 @@ final class SfHostFixtureTest extends TestCase {
     $admin = PostgresDatabase::connect();
     try {
       self::assertNotSame($schemaA, $schemaB);
-      $a->scenarioRows()->insert('only-in-a', 'x');
-      self::assertTrue($a->scenarioRows()->has('only-in-a'));
-      self::assertFalse($b->scenarioRows()->has('only-in-a'), 'schemas are isolated');
+      $a->rows()->insert('only-in-a', 'x');
+      self::assertTrue($a->rows()->has('only-in-a'));
+      self::assertFalse($b->rows()->has('only-in-a'), 'schemas are isolated');
       $tables = $admin->fetchFirstColumn('SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY 1', [$schemaA]);
       foreach (['ddd_outbox', 'ddd_dlq', 'ddd_relay_pauses', 'ddd_delivery_ledger', 'messenger_messages', 'conf_scenario_rows'] as $t) {
         self::assertContains($t, $tables);
       }
 
-      $a->tearDown();
-      $b->tearDown();
+      $a->tear_down();
+      $b->tear_down();
 
       self::assertFalse($admin->fetchOne('SELECT 1 FROM pg_namespace WHERE nspname = ?', [$schemaA]), 'dropped on tearDown');
       self::assertFalse($admin->fetchOne('SELECT 1 FROM pg_namespace WHERE nspname = ?', [$schemaB]));
     } finally {
-      $a->tearDown();
-      $b->tearDown();
+      $a->tear_down();
+      $b->tear_down();
       $admin->close();
     }
   }
@@ -60,10 +61,10 @@ final class SfHostFixtureTest extends TestCase {
   public function test_an_injected_commit_failure_is_raised_by_postgres_at_commit(): void {
     [$host] = $this->fixture('commit');
     try {
-      $host->failNextCommit('injected');
+      $host->fail_next_commit('injected');
       $thrown = null;
       try {
-        $host->boundary()->run(static fn () => $host->scenarioRows()->insert('w', 'v'));
+        $host->boundary()->run(static fn () => $host->rows()->insert('w', 'v'));
       } catch (TransactionFailed $e) {
         $thrown = $e;
       }
@@ -71,74 +72,74 @@ final class SfHostFixtureTest extends TestCase {
       self::assertNotNull($thrown);
       self::assertStringStartsWith('COMMIT failed', $thrown->getMessage());
       self::assertStringContainsString('23503', $thrown->getPrevious()?->getMessage() ?? '', 'a deferred FK violation reported at COMMIT');
-      self::assertSame(0, $host->scenarioRows()->count());
-      self::assertFalse($host->boundary()->isActive());
+      self::assertSame(0, $host->rows()->count());
+      self::assertFalse($host->boundary()->is_active());
 
-      $host->boundary()->run(static fn () => $host->scenarioRows()->insert('w', 'v'));
-      self::assertSame(1, $host->scenarioRows()->count(), 'one-shot: the next commit succeeds');
+      $host->boundary()->run(static fn () => $host->rows()->insert('w', 'v'));
+      self::assertSame(1, $host->rows()->count(), 'one-shot: the next commit succeeds');
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
   public function test_the_relay_hand_off_is_the_shared_connection_one(): void {
     [$host] = $this->fixture('shared');
     try {
-      self::assertTrue($host->transport()->sharesConnectionWith($host->outbox()));
+      self::assertTrue($host->transport()->shares_connection($host->outbox()));
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
   public function test_the_lock_held_elsewhere_and_worker_2_are_other_postgres_sessions(): void {
     [$host, $schema] = $this->fixture('sessions');
     try {
-      $key = $host->processLockKey(7);
-      $host->holdProcessLockElsewhere(7);
-      $holders = $this->advisoryHolders($key->postgresKey());
+      $key = $host->lock_key(7);
+      $host->hold_lock_elsewhere(7);
+      $holders = $this->advisoryHolders($key->postgres_key());
       self::assertCount(1, $holders);
       self::assertNotContains($this->backendPidOf($host), $holders, 'not the fixture connection');
 
-      self::assertInstanceOf(LockNotAcquired::class, $this->thrown(fn () => $host->worker(1)->processLock()->acquire($key, 0.1)));
-      $host->releaseProcessLockElsewhere(7);
+      self::assertInstanceOf(LockNotAcquired::class, $this->thrown(fn () => $host->worker(1)->lock()->acquire($key, 0.1)));
+      $host->release_lock_elsewhere(7);
 
-      $handle = $host->worker(2)->processLock()->acquire($key, 0.1);
-      self::assertNotContains($this->backendPidOf($host), $this->advisoryHolders($key->postgresKey()), 'worker 2 holds it on its own session');
-      self::assertInstanceOf(LockNotAcquired::class, $this->thrown(fn () => $host->worker(1)->processLock()->acquire($key, 0.1)));
-      $host->worker(2)->processLock()->release($handle);
-      self::assertSame(1, $host->processLockAcquisitions(), 'one successful backend acquisition');
+      $handle = $host->worker(2)->lock()->acquire($key, 0.1);
+      self::assertNotContains($this->backendPidOf($host), $this->advisoryHolders($key->postgres_key()), 'worker 2 holds it on its own session');
+      self::assertInstanceOf(LockNotAcquired::class, $this->thrown(fn () => $host->worker(1)->lock()->acquire($key, 0.1)));
+      $host->worker(2)->lock()->release($handle);
+      self::assertSame(1, $host->lock_acquisitions(), 'one successful backend acquisition');
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
   public function test_an_injected_lock_acquire_error_is_a_server_error_and_takes_no_lock(): void {
     [$host] = $this->fixture('lock-error');
     try {
-      $key = $host->processLockKey(9);
-      $host->failNextProcessLockAcquire('backend down');
+      $key = $host->lock_key(9);
+      $host->fail_next_lock('backend down');
 
-      $thrown = $this->thrown(fn () => $host->worker(1)->processLock()->acquire($key, 1.0));
+      $thrown = $this->thrown(fn () => $host->worker(1)->lock()->acquire($key, 1.0));
 
       self::assertInstanceOf(LockNotAcquired::class, $thrown);
       self::assertStringContainsString('injected lock error: backend down', $thrown->getPrevious()?->getMessage() ?? '', 'Postgres raised it');
-      self::assertSame([], $this->advisoryHolders($key->postgresKey()));
-      $host->worker(1)->processLock()->release($host->worker(1)->processLock()->acquire($key, 1.0));
+      self::assertSame([], $this->advisoryHolders($key->postgres_key()));
+      $host->worker(1)->lock()->release($host->worker(1)->lock()->acquire($key, 1.0));
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
   public function test_a_lock_attempt_in_a_web_request_is_refused_as_on_a_pooled_connection(): void {
     [$host] = $this->fixture('web');
     try {
-      $thrown = $this->thrown(fn () => $host->inWebRequest(fn () => $host->worker(1)->processLock()->acquire($host->processLockKey(3), 0.1)));
+      $thrown = $this->thrown(fn () => $host->in_web_request(fn () => $host->worker(1)->lock()->acquire($host->lock_key(3), 0.1)));
 
       self::assertInstanceOf(PooledConnectionRefused::class, $thrown);
       self::assertSame(1, $host->webLockAttempts());
-      self::assertSame(0, $host->processLockAcquisitions());
+      self::assertSame(0, $host->lock_acquisitions());
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
@@ -146,17 +147,17 @@ final class SfHostFixtureTest extends TestCase {
     [$host] = $this->fixture('drain');
     try {
       $process = new MakeWidgetProcess('w-1');
-      $host->worker(1)->processRunner()->start($process);
+      $host->worker(1)->runner()->start($process);
       $id = (int) $process->get_id();
-      self::assertSame('scheduled', $host->processRow($id)?->status);
+      self::assertSame('scheduled', $host->process_row($id)?->status);
 
-      $report = $host->worker(1)->drainOnce();
+      $report = $host->worker(1)->drain_once();
 
-      self::assertSame(["continue:$id:0"], $report->wakesCompleted, 'projected to ddd_wakeups and handled by ProcessWakeupHandler');
-      self::assertSame('completed', $host->processRow($id)?->status);
-      self::assertSame([], $host->pendingWakeups());
+      self::assertSame(["continue:$id:0"], $report->wakes_completed, 'projected to ddd_wakeups and handled by ProcessWakeupHandler');
+      self::assertSame('completed', $host->process_row($id)?->status);
+      self::assertSame([], $host->live_intents());
     } finally {
-      $host->tearDown();
+      $host->tear_down();
     }
   }
 
@@ -164,16 +165,16 @@ final class SfHostFixtureTest extends TestCase {
     [$host] = $this->fixture('fresh');
     try {
       ProcessJournal::reset();
-      ProcessJournal::bind($host->scenarioRows(), $host->boundary());
+      ProcessJournal::bind($host->rows(), $host->boundary());
 
-      $run = $host->startInFreshProcess(new MakeWidgetProcess('w-1'));
+      $run = $host->start_fresh(new MakeWidgetProcess('w-1'));
 
       self::assertFalse($run->died);
-      self::assertSame('completed', $host->processRow((int) $run->processId)?->status, 'the fresh process ran it in-band');
+      self::assertSame('completed', $host->process_row((int) $run->process_id)?->status, 'the fresh process ran it in-band');
       self::assertSame([], ProcessJournal::$steps, 'nothing ran in this process');
-      self::assertSame(2, $host->scenarioRows()->count(), 'its two step commands committed their rows');
+      self::assertSame(2, $host->rows()->count(), 'its two step commands committed their rows');
     } finally {
-      $host->tearDown();
+      $host->tear_down();
       ProcessJournal::reset();
     }
   }

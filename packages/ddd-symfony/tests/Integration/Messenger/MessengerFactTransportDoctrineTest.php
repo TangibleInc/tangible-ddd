@@ -41,8 +41,8 @@ final class MessengerFactTransportDoctrineTest extends PostgresTestCase {
     $same = new MessengerFactTransport($this->doctrineTransport($this->db), 'txp', new OutboxFactClassResolver($store));
     $other = new MessengerFactTransport($this->doctrineTransport($this->secondConnection()), 'txp', new OutboxFactClassResolver($store));
 
-    self::assertTrue($same->sharesConnectionWith($store));
-    self::assertFalse($other->sharesConnectionWith($store));
+    self::assertTrue($same->shares_connection($store));
+    self::assertFalse($other->shares_connection($store));
   }
 
   public function test_submit_and_accept_commit_or_roll_back_together(): void {
@@ -50,7 +50,7 @@ final class MessengerFactTransportDoctrineTest extends PostgresTestCase {
     $transport = new MessengerFactTransport($this->doctrineTransport($this->db), 'txp', new OutboxFactClassResolver($store));
     $boundary = new DbalTransactionBoundary($this->db);
     $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-    $store->appendFact(new OutboxRecord('evt-1', 'ping_fact', 'sft_integration_ping_fact', 'c', 1, null, ['n' => 1], $now), PingFact::class);
+    $store->append_fact(new OutboxRecord('evt-1', 'ping_fact', 'sft_integration_ping_fact', 'c', 1, null, ['n' => 1], $now), PingFact::class);
     [$claim] = $store->claim(1, $now, 60);
     $wrapped = IntegrationEnvelope::wrap(['n' => 1], 'c', 1, 'evt-1');
 
@@ -77,7 +77,7 @@ final class MessengerFactTransportDoctrineTest extends PostgresTestCase {
     self::assertCount(1, $received);
     $message = $received[0]->getMessage();
     self::assertInstanceOf(IntegrationFactMessage::class, $message);
-    self::assertSame(PingFact::class, $message->eventClass);
-    self::assertSame($wrapped, $message->wrappedPayload);
+    self::assertSame(PingFact::class, $message->event_class);
+    self::assertSame($wrapped, $message->envelope);
   }
 }

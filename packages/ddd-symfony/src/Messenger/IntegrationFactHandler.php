@@ -39,18 +39,18 @@ final class IntegrationFactHandler {
   public function __invoke(IntegrationFactMessage $fact): DeliveryOutcome {
     if ($fact->consumer !== $this->consumer) {
       throw new UnrecoverableMessageHandlingException(sprintf(
-        'Fact %s belongs to consumer "%s"; this worker serves "%s".', $fact->eventId, $fact->consumer, $this->consumer
+        'Fact %s belongs to consumer "%s"; this worker serves "%s".', $fact->event_id, $fact->consumer, $this->consumer
       ));
     }
-    if (!class_exists($fact->eventClass) || !is_a($fact->eventClass, IIntegrationEvent::class, true)) {
+    if (!class_exists($fact->event_class) || !is_a($fact->event_class, IIntegrationEvent::class, true)) {
       throw new UnrecoverableMessageHandlingException(sprintf(
-        'Fact %s names class %s, which is missing or not an IIntegrationEvent.', $fact->eventId, $fact->eventClass
+        'Fact %s names class %s, which is missing or not an IIntegrationEvent.', $fact->event_id, $fact->event_class
       ));
     }
 
-    $outcome = $this->delivery->deliver($fact->eventClass, $fact->wrappedPayload);
+    $outcome = $this->delivery->deliver($fact->event_class, $fact->envelope);
 
-    if ($outcome->needsRetry()) {
+    if ($outcome->needs_retry()) {
       throw new FactDeliveryIncomplete($fact, $outcome);
     }
     return $outcome;

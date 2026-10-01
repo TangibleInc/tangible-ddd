@@ -72,7 +72,7 @@ final class SubscriptionMapPass implements CompilerPassInterface {
         $priority = $attr[0]->newInstance()->priority;
       }
 
-      $specs[] = CompiledSubscriptionRegistry::listenerSpec($id, $class, $event, $priority);
+      $specs[] = CompiledSubscriptionRegistry::listener_spec($id, $class, $event, $priority);
       $listenerRefs[$id] = new Reference($id);
     }
 
@@ -86,12 +86,12 @@ final class SubscriptionMapPass implements CompilerPassInterface {
       foreach ($reflection->getAttributes(StartsOn::class) as $a) {
         $event = $a->newInstance()->event_class;
         self::assertSubscribable($event, $class);
-        $specs[] = CompiledSubscriptionRegistry::processSpec($class, 'ignition', $event);
+        $specs[] = CompiledSubscriptionRegistry::process_spec($class, 'ignition', $event);
       }
       foreach ($reflection->getAttributes(Awaits::class) as $a) {
         $event = $a->newInstance()->event_class;
         self::assertSubscribable($event, $class);
-        $spec = CompiledSubscriptionRegistry::processSpec($class, 'resume', $event);
+        $spec = CompiledSubscriptionRegistry::process_spec($class, 'resume', $event);
         if (!isset($seen[$spec['id']])) {
           $seen[$spec['id']] = true;
           $specs[] = $spec;
@@ -118,7 +118,7 @@ final class SubscriptionMapPass implements CompilerPassInterface {
         if (!is_a($event, IIntegrationEvent::class, true)) {
           throw new InvalidArgumentException("$class #[StartsOn($event)]: $event must implement IIntegrationEvent.");
         }
-        $specs[] = CompiledSubscriptionRegistry::workflowSpec($id, $class, $event, $prefix);
+        $specs[] = CompiledSubscriptionRegistry::workflow_spec($id, $class, $event, $prefix);
       }
       $listenerRefs[$id] = new Reference($id);
     }

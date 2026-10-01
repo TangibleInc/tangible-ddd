@@ -50,12 +50,12 @@ final class ProcessFactoryTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     ProcessJournal::reset();
   }
 
   private function runner(bool $inbandStart, ?RecordingLogger $log = null): ProcessRunner {
-    return Factory::processRunner(
+    return Factory::process_runner(
       new SymfonyConsumerConfig('acme', 'App'),
       new ReentrantProcessLock($this->lock),
       $this->store,
@@ -75,13 +75,13 @@ final class ProcessFactoryTest extends TestCase {
     $this->runner(false, $log)->start($process);
 
     $id = (int) $process->get_id();
-    self::assertSame('scheduled', $this->store->statusOf($id), 'persisted, first step not run');
+    self::assertSame('scheduled', $this->store->status_of($id), 'persisted, first step not run');
     $intents = $this->wakeups->pending();
     self::assertCount(1, $intents);
     self::assertSame(WakeKind::Continue, $intents[0]->kind);
-    self::assertSame("continue:$id:0", $intents[0]->idempotencyKey);
+    self::assertSame("continue:$id:0", $intents[0]->key);
     self::assertSame([], ProcessJournal::$steps, 'no step ran in the caller');
-    self::assertSame(0, $this->lock->acquireCount(), 'no process lock was taken');
+    self::assertSame(0, $this->lock->acquisitions(), 'no process lock was taken');
     self::assertSame('', $log->text(), 'nothing to warn about: core has the start mode');
   }
 
@@ -91,14 +91,14 @@ final class ProcessFactoryTest extends TestCase {
     $this->runner(true)->start($process);
 
     self::assertSame(['make', 'finish'], ProcessJournal::$steps, 'StartMode::InBand: the steps run in start()');
-    self::assertSame('completed', $this->store->statusOf((int) $process->get_id()));
-    self::assertSame(1, $this->lock->acquireCount());
+    self::assertSame('completed', $this->store->status_of((int) $process->get_id()));
+    self::assertSame(1, $this->lock->acquisitions());
   }
 
   public function test_the_process_lock_is_the_reentrant_wrapper_over_the_advisory_lock(): void {
     $conn = DriverManager::getConnection(['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'x']);
 
-    $lock = Factory::processLock($conn, 'warn');
+    $lock = Factory::process_lock($conn, 'warn');
 
     self::assertInstanceOf(ReentrantProcessLock::class, $lock);
     self::assertInstanceOf(PostgresAdvisoryProcessLock::class, $lock->inner());

@@ -58,7 +58,7 @@ final class DbalWorkItemRepository implements IWorkItemRepository {
   }
 
   public function save(WorkItem $item): void {
-    $now = Time::toDb(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
+    $now = Time::to_db(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
     $row = [
       'workflow_id' => $item->workflow_id,
       'behaviour_idx' => $item->behaviour_idx,
@@ -112,8 +112,8 @@ final class DbalWorkItemRepository implements IWorkItemRepository {
       payload: $payload,
       blog_id: (int) $row['blog_id'],
     );
-    $item->created_at = Time::fromDbOrNull($row['created_at'] === null ? null : (string) $row['created_at']);
-    $item->updated_at = Time::fromDbOrNull($row['updated_at'] === null ? null : (string) $row['updated_at']);
+    $item->created_at = Time::from_db_or_null($row['created_at'] === null ? null : (string) $row['created_at']);
+    $item->updated_at = Time::from_db_or_null($row['updated_at'] === null ? null : (string) $row['updated_at']);
     return $item;
   }
 }

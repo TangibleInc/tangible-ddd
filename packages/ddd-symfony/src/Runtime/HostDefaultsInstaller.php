@@ -39,7 +39,7 @@ final class HostDefaultsInstaller {
 
   public function install(): void {
     if ($this->inbandStart) {
-      $why = ConnectionTopology::describePooler($this->connection->getParams());
+      $why = ConnectionTopology::pooler($this->connection->getParams());
       if ($why !== null) {
         throw new PooledConnectionRefused(
           "tangible_ddd.process.inband_start is true, but the DBAL connection looks pooled ($why). "

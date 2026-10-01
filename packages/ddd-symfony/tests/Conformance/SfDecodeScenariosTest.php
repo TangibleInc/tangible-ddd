@@ -13,7 +13,7 @@ use TangibleDDD\Conformance\Scenarios\DecodeScenarios;
 #[Group('conformance')]
 final class SfDecodeScenariosTest extends DecodeScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new SfHostFixture(StartMode::InBand);
   }
 }

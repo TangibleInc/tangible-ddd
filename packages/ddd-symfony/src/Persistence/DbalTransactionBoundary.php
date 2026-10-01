@@ -103,7 +103,7 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
         try {
           ($this->beforeCommit)();
         } catch (\Throwable $flush) {
-          throw PersistenceConflict::fromUniqueViolationIn($flush) ?? $flush;
+          throw PersistenceConflict::find_in($flush) ?? $flush;
         }
       }
     } catch (\Throwable $original) {
@@ -152,7 +152,7 @@ final class DbalTransactionBoundary implements ITransactionBoundary {
     return $result;
   }
 
-  public function isActive(): bool {
+  public function is_active(): bool {
     return $this->connection->isTransactionActive();
   }
 

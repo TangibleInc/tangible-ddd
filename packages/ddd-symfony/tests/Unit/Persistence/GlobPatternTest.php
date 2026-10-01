@@ -26,7 +26,7 @@ final class GlobPatternTest extends TestCase {
 
   #[DataProvider('cases')]
   public function test_regex_agrees_with_fnmatch(string $glob, string $subject): void {
-    $regex = GlobPattern::toRegex($glob);
+    $regex = GlobPattern::to_regex($glob);
 
     self::assertSame(
       fnmatch($glob, $subject),

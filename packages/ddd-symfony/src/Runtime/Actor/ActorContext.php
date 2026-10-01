@@ -30,7 +30,7 @@ final class ActorContext implements ResetInterface {
    * @param callable(): T $work
    * @return T
    */
-  public function runAs(Actor $actor, callable $work): mixed {
+  public function run_as(Actor $actor, callable $work): mixed {
     $previous = $this->actor;
     $this->actor = $actor;
     try {

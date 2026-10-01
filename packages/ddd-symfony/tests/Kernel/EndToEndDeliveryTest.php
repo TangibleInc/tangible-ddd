@@ -42,7 +42,7 @@ final class EndToEndDeliveryTest extends KernelTestBase {
 
     // 2. relay: submit + accept in one transaction on the shared connection
     $transport = self::getContainer()->get('tangible_ddd.fact_transport');
-    self::assertTrue($transport->sharesConnectionWith(self::getContainer()->get('tangible_ddd.outbox_store')));
+    self::assertTrue($transport->shares_connection(self::getContainer()->get('tangible_ddd.outbox_store')));
     $relay = $this->console('ddd:relay', ['--once' => true]);
     self::assertSame(0, $relay->getStatusCode());
     self::assertStringContainsString('accepted 1', $relay->getDisplay());

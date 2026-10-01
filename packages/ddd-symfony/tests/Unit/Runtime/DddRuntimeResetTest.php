@@ -24,7 +24,7 @@ final class DddRuntimeResetTest extends TestCase {
   private DddRuntimeReset $reset;
 
   protected function setUp(): void {
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     $this->events = new EventsUnitOfWork();
     $this->actors = new ActorContext();
     $this->logger = new class extends AbstractLogger {
@@ -38,7 +38,7 @@ final class DddRuntimeResetTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
   }
 
@@ -52,7 +52,7 @@ final class DddRuntimeResetTest extends TestCase {
     $this->events->record(new PingDomainEvent());
     $this->actors->set(new \TangibleDDD\Runtime\Audit\Actor(\TangibleDDD\Runtime\Audit\ActorKind::Machine, 'm'));
 
-    $this->reset->onMessageHandled(new WorkerMessageHandledEvent(new Envelope(new \stdClass()), 'ddd_facts'));
+    $this->reset->on_handled(new WorkerMessageHandledEvent(new Envelope(new \stdClass()), 'ddd_facts'));
 
     self::assertSame([], $this->events->drain());
     self::assertNull($this->actors->get());
@@ -64,7 +64,7 @@ final class DddRuntimeResetTest extends TestCase {
     Correlation::current();
     self::assertNotNull(Correlation::peek());
 
-    $this->reset->onMessageFailed(new WorkerMessageFailedEvent(new Envelope(new \stdClass()), 'ddd_facts', new \RuntimeException('x')));
+    $this->reset->on_failed(new WorkerMessageFailedEvent(new Envelope(new \stdClass()), 'ddd_facts', new \RuntimeException('x')));
 
     self::assertNull(Correlation::peek(), 'cleaned before reporting');
     self::assertCount(1, $this->logger->lines);

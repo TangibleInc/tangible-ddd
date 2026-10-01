@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\AwaitScenarios;
 #[Group('conformance')]
 final class SfAwaitScenariosTest extends AwaitScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new SfHostFixture();
   }
 }

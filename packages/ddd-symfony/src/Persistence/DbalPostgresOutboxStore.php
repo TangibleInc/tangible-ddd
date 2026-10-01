@@ -37,14 +37,14 @@ use TangibleDDD\Runtime\PrefixedTableNames;
  *   paused claims are handed back. Refuses to run inside an open transaction
  *   (NestedTransactionRejected): it must not silently join, and commit with,
  *   someone else's unit of work.
- * - accept() / retryLater() / deadLetter(): fenced on (event_id, claim_token)
+ * - accept() / retry_later() / dead_letter(): fenced on (event_id, claim_token)
  *   and status `pending`; 0 rows = lease lost → false, nothing thrown. An
  *   expired lease nobody re-claimed still matches.
  *
- * sf addition (not on the port): the fact's PHP class. appendFact() stores
- * it; eventClassOf() returns it to the Messenger transport, which needs it to
+ * sf addition (not on the port): the fact's PHP class. append_fact() stores
+ * it; event_class_of() returns it to the Messenger transport, which needs it to
  * hydrate the fact and match marker subscriptions (D2). See CR sf-1 in
- * docs/extraction/wave2-symfony-adapters-change-requests.md. withFactClass()
+ * docs/extraction/wave2-symfony-adapters-change-requests.md. with_event_class()
  * scopes a class for append() calls that come from the core bus.
  *
  * D14: with an IRelayWakeup, every append pokes it for $wakeupConsumer on
@@ -63,7 +63,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
   private array $claimedClasses = [];
 
   /** @var list<array{0: Claim, 1: string}> dead-lettered by claim() and not yet taken */
-  private array $deadLetteredAtClaim = [];
+  private array $claim_dead_letters = [];
 
   private ?string $scopedClass = null;
 
@@ -87,9 +87,9 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
 
   public function append(OutboxRecord $r): void {
     // Forward compatible with an OutboxRecord that carries the class (CR sf-1);
-    // until then the bus decorator scopes the class with withFactClass().
+    // until then the bus decorator scopes the class with with_event_class().
     $class = property_exists($r, 'event_class') ? $r->event_class : null;
-    $this->appendFact($r, is_string($class) ? $class : $this->scopedClass);
+    $this->append_fact($r, is_string($class) ? $class : $this->scopedClass);
   }
 
   /**
@@ -101,7 +101,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
    * @param callable():T $work
    * @return T
    */
-  public function withFactClass(string $eventClass, callable $work): mixed {
+  public function with_event_class(string $eventClass, callable $work): mixed {
     $previous = $this->scopedClass;
     $this->scopedClass = $eventClass;
     try {
@@ -112,7 +112,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
   }
 
   /** append() plus the fact's PHP class. @throws OutboxWriteFailed */
-  public function appendFact(OutboxRecord $r, ?string $eventClass): void {
+  public function append_fact(OutboxRecord $r, ?string $eventClass): void {
     try {
       $payload = self::json($r->payload);
       $signatureJson = $r->payload_signature === null ? null : self::json(self::canonical($r->payload_signature));
@@ -126,7 +126,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
         );
       }
 
-      $due = Time::toDb($r->due_at);
+      $due = Time::to_db($r->due_at);
       $this->connection->insert($this->outbox, [
         'event_id' => $r->event_id,
         'event_type' => $r->event_type,
@@ -167,14 +167,14 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
     }
 
     $token = bin2hex(random_bytes(16));
-    $nowDb = Time::toDb($now);
+    $nowDb = Time::to_db($now);
     $leaseUntil = $now->modify("+{$leaseSeconds} seconds");
 
     $pauseSql = '';
-    $params = ['token' => $token, 'lease' => Time::toDb($leaseUntil), 'now' => $nowDb, 'limit' => $limit];
+    $params = ['token' => $token, 'lease' => Time::to_db($leaseUntil), 'now' => $nowDb, 'limit' => $limit];
     $types = ['limit' => ParameterType::INTEGER];
     if ($this->pauses instanceof DbalRelayPauseStore && $this->pauses->connection() === $this->connection) {
-      $patterns = $this->pauses->activePatterns($now);
+      $patterns = $this->pauses->patterns($now);
       if ($patterns !== []) {
         $pauseSql = 'AND NOT (event_type ~ ANY(ARRAY[:patterns]::text[]))';
         $params['patterns'] = $patterns;
@@ -215,18 +215,18 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
 
     $claims = [];
     foreach ($rows as $row) {
-      $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, $this->recordOf($row), (int) $row['attempts']);
+      $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, self::record_from_row($row), (int) $row['attempts']);
       if ($claim->attempts >= $claim->record->max_attempts) {
         // Its lease expired max_attempts times: stop re-claiming it forever.
         $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
         if ($this->moveToDlq($claim, $error, 0)) {
-          $this->deadLetteredAtClaim[] = [$claim, $error];
+          $this->claim_dead_letters[] = [$claim, $error];
         }
         $this->logger->error("[ddd outbox] {$claim->event_id} dead-lettered at claim: its lease expired {$claim->attempts} times without an outcome");
         continue;
       }
       if ($this->pauses !== null && !$this->pauses instanceof DbalRelayPauseStore
-        && $this->pauses->isPaused($claim->record->event_type, $now)) {
+        && $this->pauses->is_paused($claim->record->event_type, $now)) {
         $this->unclaim($claim);
         continue;
       }
@@ -246,23 +246,23 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
     return $this->fenced(
       "UPDATE {$this->outbox} SET status = 'accepted', transport_ref = ?, accepted_at = now(), claim_token = NULL, lease_until = NULL
        WHERE event_id = ? AND claim_token = ? AND status = 'pending'",
-      [$transportRef, $c->event_id, $c->claimToken],
+      [$transportRef, $c->event_id, $c->token],
       $c,
       'accept'
     );
   }
 
-  public function retryLater(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
+  public function retry_later(Claim $c, string $error, \DateTimeImmutable $nextAt): bool {
     return $this->fenced(
       "UPDATE {$this->outbox} SET attempts = attempts + 1, next_attempt_at = ?, last_error = ?, claim_token = NULL, lease_until = NULL
        WHERE event_id = ? AND claim_token = ? AND status = 'pending'",
-      [Time::toDb($nextAt), $error, $c->event_id, $c->claimToken],
+      [Time::to_db($nextAt), $error, $c->event_id, $c->token],
       $c,
-      'retryLater'
+      'retry_later'
     );
   }
 
-  public function deadLetter(Claim $c, string $error): bool {
+  public function dead_letter(Claim $c, string $error): bool {
     return $this->moveToDlq($c, $error, 1);
   }
 
@@ -273,7 +273,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
         "UPDATE {$this->outbox} SET status = 'dlq', attempts = attempts + ?, last_error = ?, claim_token = NULL, lease_until = NULL
          WHERE event_id = ? AND claim_token = ? AND status = 'pending'
          RETURNING *",
-        [$countAttempt, $error, $c->event_id, $c->claimToken],
+        [$countAttempt, $error, $c->event_id, $c->token],
         [ParameterType::INTEGER]
       );
       if ($row === false) {
@@ -300,19 +300,19 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
    * times, with the error stored in the DLQ, since the last call; the list
    * is emptied. The core relay step (OutboxProcessor) takes them after every
    * claim, emits OutboxDeadLettered and lists them in
-   * ProcessingResult::$deadLetteredAtClaim, so a claim-time dead letter is
+   * ProcessingResult::$claim_dead_letters, so a claim-time dead letter is
    * as visible as a relay-side one (IReportsClaimDeadLetters, CR-W4CE-9).
    *
    * @return list<array{0: Claim, 1: string}>
    */
-  public function takeDeadLetteredAtClaim(): array {
-    $taken = $this->deadLetteredAtClaim;
-    $this->deadLetteredAtClaim = [];
+  public function take_claim_dead_letters(): array {
+    $taken = $this->claim_dead_letters;
+    $this->claim_dead_letters = [];
     return $taken;
   }
 
   /** The fact class of a claimed (or any) row; null when the writer did not know it. */
-  public function eventClassOf(string $eventId): ?string {
+  public function event_class_of(string $eventId): ?string {
     if (array_key_exists($eventId, $this->claimedClasses)) {
       return $this->claimedClasses[$eventId];
     }
@@ -321,7 +321,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
   }
 
   /** @param array<string, mixed> $row */
-  public static function recordFromRow(array $row): OutboxRecord {
+  public static function record_from_row(array $row): OutboxRecord {
     $signature = $row['signature_json'] ?? null;
     return new OutboxRecord(
       event_id: (string) $row['event_id'],
@@ -331,7 +331,7 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
       sequence: $row['sequence'] === null ? null : (int) $row['sequence'],
       command_id: $row['command_id'] === null ? null : (string) $row['command_id'],
       payload: (array) json_decode((string) $row['payload'], true, 512, JSON_THROW_ON_ERROR),
-      due_at: Time::fromDb((string) $row['due_at']),
+      due_at: Time::from_db((string) $row['due_at']),
       is_unique: (bool) $row['is_unique'],
       payload_signature: $signature === null ? null : (array) json_decode((string) $signature, true, 512, JSON_THROW_ON_ERROR),
       max_attempts: (int) $row['max_attempts'],
@@ -339,15 +339,10 @@ final class DbalPostgresOutboxStore implements IOutboxStore, IReportsClaimDeadLe
     );
   }
 
-  /** @param array<string, mixed> $row */
-  private function recordOf(array $row): OutboxRecord {
-    return self::recordFromRow($row);
-  }
-
   private function unclaim(Claim $c): void {
     $this->connection->executeStatement(
       "UPDATE {$this->outbox} SET claim_token = NULL, lease_until = NULL WHERE event_id = ? AND claim_token = ?",
-      [$c->event_id, $c->claimToken]
+      [$c->event_id, $c->token]
     );
   }
 

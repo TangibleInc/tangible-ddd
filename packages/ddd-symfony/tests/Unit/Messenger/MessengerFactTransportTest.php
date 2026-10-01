@@ -36,7 +36,7 @@ final class MessengerFactTransportTest extends TestCase {
   private function resolver(?string $class = 'App\\WidgetRegistered'): IFactClassResolver {
     return new class ($class) implements IFactClassResolver {
       public function __construct(private readonly ?string $class) {}
-      public function classFor(Claim $claim): ?string {
+      public function resolve(Claim $claim): ?string {
         return $this->class;
       }
     };
@@ -56,11 +56,11 @@ final class MessengerFactTransportTest extends TestCase {
     $message = $sent[0]->getMessage();
     self::assertInstanceOf(IntegrationFactMessage::class, $message);
     self::assertSame('txp', $message->consumer);
-    self::assertSame('evt-1', $message->eventId);
-    self::assertSame('widget_registered', $message->eventType);
-    self::assertSame('App\\WidgetRegistered', $message->eventClass);
-    self::assertSame('txp_integration_widget_registered', $message->integrationAction);
-    self::assertSame($wrapped, $message->wrappedPayload);
+    self::assertSame('evt-1', $message->event_id);
+    self::assertSame('widget_registered', $message->event_type);
+    self::assertSame('App\\WidgetRegistered', $message->event_class);
+    self::assertSame('txp_integration_widget_registered', $message->integration_action);
+    self::assertSame($wrapped, $message->envelope);
     self::assertSame('messenger.bus.default', $sent[0]->last(BusNameStamp::class)?->getBusName());
     self::assertNull($sent[0]->last(DelayStamp::class), 'a due fact is never delayed again (bug 3)');
   }
@@ -102,6 +102,6 @@ final class MessengerFactTransportTest extends TestCase {
 
   public function test_a_non_doctrine_sender_does_not_share_the_store_connection(): void {
     $transport = new MessengerFactTransport(new InMemoryTransport(), 'txp', $this->resolver(), null, $this->clock);
-    self::assertFalse($transport->sharesConnectionWith(new InMemoryOutboxStore($this->clock)));
+    self::assertFalse($transport->shares_connection(new InMemoryOutboxStore($this->clock)));
   }
 }

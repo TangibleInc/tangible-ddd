@@ -19,12 +19,12 @@ final class DbalOperatorSourcesTest extends PostgresTestCase {
 
   public function test_the_ledger_lists_failing_and_exhausted_pairs_against_the_budget(): void {
     $ledger = new DbalDeliveryLedger($this->db);
-    $ledger->markFailed('listener:A', 'evt-1', 'smtp down', 2);
-    $ledger->markFailed('listener:B', 'evt-1', 'bad data', 5);
-    $ledger->markExhausted('listener:B', 'evt-1');
-    $ledger->markDelivered('listener:C', 'evt-1');
-    $ledger->markFailed('listener:D', 'evt-2', 'flaky', 1);
-    $ledger->markDelivered('listener:D', 'evt-2'); // recovered
+    $ledger->mark_failed('listener:A', 'evt-1', 'smtp down', 2);
+    $ledger->mark_failed('listener:B', 'evt-1', 'bad data', 5);
+    $ledger->mark_exhausted('listener:B', 'evt-1');
+    $ledger->mark_delivered('listener:C', 'evt-1');
+    $ledger->mark_failed('listener:D', 'evt-2', 'flaky', 1);
+    $ledger->mark_delivered('listener:D', 'evt-2'); // recovered
 
     $items = (new DbalLedgerOperatorSource($this->db, 'txp', '', 5))->items(null, 10);
 
@@ -36,16 +36,16 @@ final class DbalOperatorSourcesTest extends PostgresTestCase {
     self::assertSame(Layer::Delivery, $byKey['listener:A@evt-1']->layer);
     self::assertSame(2, $byKey['listener:A@evt-1']->attempts);
     self::assertSame(5, $byKey['listener:A@evt-1']->budget);
-    self::assertSame('smtp down', $byKey['listener:A@evt-1']->lastError);
+    self::assertSame('smtp down', $byKey['listener:A@evt-1']->last_error);
     self::assertSame('txp', $byKey['listener:B@evt-1']->consumer);
-    self::assertStringContainsString('exhausted', (string) $byKey['listener:B@evt-1']->lastError);
-    self::assertNotNull($byKey['listener:B@evt-1']->firstSeen);
+    self::assertStringContainsString('exhausted', (string) $byKey['listener:B@evt-1']->last_error);
+    self::assertNotNull($byKey['listener:B@evt-1']->first_seen);
   }
 
   public function test_the_ledger_honours_layer_and_limit(): void {
     $ledger = new DbalDeliveryLedger($this->db);
-    $ledger->markFailed('listener:A', 'evt-1', 'x', 1);
-    $ledger->markFailed('listener:B', 'evt-1', 'y', 1);
+    $ledger->mark_failed('listener:A', 'evt-1', 'x', 1);
+    $ledger->mark_failed('listener:B', 'evt-1', 'y', 1);
     $source = new DbalLedgerOperatorSource($this->db, 'txp');
 
     self::assertCount(1, $source->items(Layer::Delivery, 1));
@@ -62,9 +62,9 @@ final class DbalOperatorSourcesTest extends PostgresTestCase {
       $wakeups->schedule(WakeupIntent::timeout('txp', 8, 1, $clock->now()));
       $wakeups->schedule(WakeupIntent::timeout('other', 9, 1, $clock->now()));
     });
-    $claims = $wakeups->claimDue($clock->now(), 10, 60);
+    $claims = $wakeups->claim_due($clock->now(), 10, 60);
     foreach ($claims as $claim) {
-      if ($claim->intent->processId === 7 || $claim->intent->processId === 9) {
+      if ($claim->intent->process_id === 7 || $claim->intent->process_id === 9) {
         $wakeups->exhaust($claim, 'lock busy x10');
       }
     }
@@ -75,8 +75,8 @@ final class DbalOperatorSourcesTest extends PostgresTestCase {
     self::assertSame(Layer::Wakeup, $items[0]->layer);
     self::assertSame('timeout:7:2', $items[0]->key);
     self::assertSame(10, $items[0]->budget);
-    self::assertSame('lock busy x10', $items[0]->lastError);
-    self::assertSame(['rearm'], $items[0]->repairActions);
+    self::assertSame('lock busy x10', $items[0]->last_error);
+    self::assertSame(['rearm'], $items[0]->repairs);
     self::assertSame([], (new DbalWakeupOperatorSource($this->db, 'txp'))->items(Layer::Delivery, 10));
   }
 }

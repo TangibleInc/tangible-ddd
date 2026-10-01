@@ -20,29 +20,29 @@ final class DbalDeliveryLedgerTest extends PostgresTestCase {
 
     self::assertFalse($ledger->delivered('s', 'e'));
     self::assertSame(0, $ledger->attempts('s', 'e'));
-    self::assertNull($ledger->lastError('s', 'e'));
+    self::assertNull($ledger->last_error('s', 'e'));
     self::assertFalse($ledger->exhausted('s', 'e'));
   }
 
   public function test_failures_count_attempts_and_keep_the_last_error(): void {
     $ledger = new DbalDeliveryLedger($this->db);
 
-    $ledger->markFailed('s', 'e', 'first', 1);
-    $ledger->markFailed('s', 'e', 'second', 2);
+    $ledger->mark_failed('s', 'e', 'first', 1);
+    $ledger->mark_failed('s', 'e', 'second', 2);
 
     self::assertFalse($ledger->delivered('s', 'e'));
     self::assertSame(2, $ledger->attempts('s', 'e'));
-    self::assertSame('second', $ledger->lastError('s', 'e'));
+    self::assertSame('second', $ledger->last_error('s', 'e'));
     self::assertSame(0, $ledger->attempts('other', 'e'), 'per subscriber');
     self::assertSame(0, $ledger->attempts('s', 'other'), 'per event');
   }
 
   public function test_delivered_after_a_failure_keeps_the_attempt_count(): void {
     $ledger = new DbalDeliveryLedger($this->db);
-    $ledger->markFailed('s', 'e', 'boom', 1);
+    $ledger->mark_failed('s', 'e', 'boom', 1);
 
-    $ledger->markDelivered('s', 'e');
-    $ledger->markDelivered('s', 'e'); // idempotent
+    $ledger->mark_delivered('s', 'e');
+    $ledger->mark_delivered('s', 'e'); // idempotent
 
     self::assertTrue($ledger->delivered('s', 'e'));
     self::assertSame(1, $ledger->attempts('s', 'e'));
@@ -53,21 +53,21 @@ final class DbalDeliveryLedgerTest extends PostgresTestCase {
 
   public function test_exhausted_is_a_terminal_marker_separate_from_failures(): void {
     $ledger = new DbalDeliveryLedger($this->db);
-    $ledger->markFailed('s', 'e', 'boom', 5);
+    $ledger->mark_failed('s', 'e', 'boom', 5);
     self::assertFalse($ledger->exhausted('s', 'e'), 'markFailed never writes the marker');
 
-    $ledger->markExhausted('s', 'e');
-    $ledger->markExhausted('s', 'e');
+    $ledger->mark_exhausted('s', 'e');
+    $ledger->mark_exhausted('s', 'e');
 
     self::assertTrue($ledger->exhausted('s', 'e'));
     self::assertSame(5, $ledger->attempts('s', 'e'));
-    self::assertSame('boom', $ledger->lastError('s', 'e'));
+    self::assertSame('boom', $ledger->last_error('s', 'e'));
     self::assertNotNull($this->db->fetchOne("SELECT exhausted_at FROM ddd_delivery_ledger WHERE subscriber_id = 's'"));
   }
 
   public function test_mark_exhausted_without_prior_failures_creates_the_row(): void {
     $ledger = new DbalDeliveryLedger($this->db);
-    $ledger->markExhausted('s', 'e');
+    $ledger->mark_exhausted('s', 'e');
     self::assertTrue($ledger->exhausted('s', 'e'));
   }
 

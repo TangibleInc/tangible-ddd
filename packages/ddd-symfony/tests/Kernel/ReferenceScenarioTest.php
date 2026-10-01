@@ -77,7 +77,7 @@ final class ReferenceScenarioTest extends KernelTestBase {
       'the keyed route is the job id the step minted (D3, D13 step_ref)'
     );
     self::assertSame(
-      DeterministicCommandId::forStep('sfk', $pid, '0', 0),
+      DeterministicCommandId::for_step('sfk', $pid, '0', 0),
       $this->db->fetchOne("SELECT cause_id FROM app_listener_runs WHERE listener = 'toy-order'"),
       'the step command id is uuid5(process, step) (D13)'
     );
@@ -114,7 +114,7 @@ final class ReferenceScenarioTest extends KernelTestBase {
     // 5. The worker left nothing behind (E section 8).
     self::assertNull(Correlation::peek());
     self::assertSame([], $c->get(EventsUnitOfWork::class)->drain());
-    self::assertSame(0, $c->get('test.process_lock')->heldCount());
+    self::assertSame(0, $c->get('test.process_lock')->held_count());
   }
 
   public function test_a_failed_job_retries_the_step_once_then_compensates_the_order(): void {
@@ -157,9 +157,9 @@ final class ReferenceScenarioTest extends KernelTestBase {
     $at = $this->clock()->now();
     self::ensureKernelShutdown();
     ConsumerRegistry::reset();
-    RuntimeReset::forgetRegistrationsForTests();
+    RuntimeReset::forget_for_tests();
     Correlation::reset();
-    HostDefaults::resetForTests();
+    HostDefaults::reset_for_tests();
     self::bootKernel(['variant' => static::$variant]);
     $this->db = self::getContainer()->get('tangible_ddd.connection');
     $this->clock()->set($at);

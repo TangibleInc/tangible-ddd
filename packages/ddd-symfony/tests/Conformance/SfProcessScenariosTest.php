@@ -12,7 +12,7 @@ use TangibleDDD\Conformance\Scenarios\ProcessScenarios;
 #[Group('conformance')]
 final class SfProcessScenariosTest extends ProcessScenarios {
 
-  protected function createFixture(): HostFixture {
+  protected function create_fixture(): HostFixture {
     return new SfHostFixture();
   }
 }

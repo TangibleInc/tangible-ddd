@@ -26,7 +26,7 @@ final class ChargeToyCommand extends SelfHandlingCommand implements IExternalEff
     public readonly string $key,
   ) {}
 
-  public function idempotencyKey(): string {
+  public function idempotency_key(): string {
     return $this->key;
   }
 
@@ -35,14 +35,14 @@ final class ChargeToyCommand extends SelfHandlingCommand implements IExternalEff
   }
 
   public function record(EffectResult $r): void {
-    $this->event(new ToyCharged($this->team_id, (string) $r->externalRef));
+    $this->event(new ToyCharged($this->team_id, (string) $r->external_ref));
     if (ToyPaymentGateway::$failRecords > 0) {
       ToyPaymentGateway::$failRecords--;
       throw new \RuntimeException('recording the charge failed (simulated)');
     }
   }
 
-  public function failureCommand(\Throwable $last): ?ICommand {
+  public function failure_command(\Throwable $last): ?ICommand {
     return null; // inside a process step the step's retry policy, then compensation, govern (register 3.8)
   }
 

@@ -165,10 +165,10 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * ddd-symfony classes the bundle wires (config/services.php), composed by
  * hand so each scenario can pick its handlers, listeners and bus options.
  *
- * - Fresh schema per test: setUp() creates a Postgres schema named
- *   ScenarioContext::uniqueName('sf'), applies schema/postgres, the Doctrine
+ * - Fresh schema per test: set_up() creates a Postgres schema named
+ *   ScenarioContext::unique_name('sf'), applies schema/postgres, the Doctrine
  *   transport table and the scenario table, and pins every physical
- *   connection to it (search_path, ScenarioSchemaMiddleware). tearDown()
+ *   connection to it (search_path, ScenarioSchemaMiddleware). tear_down()
  *   drops it. Nothing is wrapped in a per-test transaction.
  * - Worker 1 is ONE DBAL connection: boundary, outbox, administration,
  *   pauses, ledger, scenario rows, process store, intents, the advisory
@@ -187,10 +187,10 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - Delivery: IntegrationFactHandler on a Messenger bus; the Doctrine
  *   transport is consumed by a real Messenger Worker.
  * - Processes (ProcessHost): the core ProcessRunner built by
- *   Factory::processRunner() with the bundle default StartMode::Deferred,
+ *   Factory::process_runner() with the bundle default StartMode::Deferred,
  *   on DbalProcessStore, DbalWakeupScheduler and the core
  *   ReentrantProcessLock over PostgresAdvisoryProcessLock. A drain
- *   (ProcessWorker::drainOnce()) is what the sf workers do in one pass:
+ *   (ProcessWorker::drain_once()) is what the sf workers do in one pass:
  *   `ddd:relay` (outbox step, then WakeupRelay: stranded scan and due
  *   intents projected to `ddd_wakeups`), then `messenger:consume ddd_facts
  *   ddd_wakeups` (IntegrationFactHandler, ProcessWakeupHandler), with
@@ -281,14 +281,14 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->startMode = $startMode;
   }
 
-  public function hostName(): string {
+  public function name(): string {
     return 'sf';
   }
 
-  public function setUp(ScenarioContext $context): void {
+  public function set_up(ScenarioContext $context): void {
     $this->resetStatics();
 
-    $this->schema = $context->uniqueName('sf');
+    $this->schema = $context->unique_name('sf');
     $admin = PostgresDatabase::connect();
     try {
       $admin->executeStatement('CREATE SCHEMA ' . $this->schema);
@@ -302,7 +302,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   /**
-   * The composition of setUp() over an EXISTING schema, for a fresh php
+   * The composition of set_up() over an EXISTING schema, for a fresh php
    * process (tests/Conformance/bin/fresh-process.php). Nothing is created,
    * and detach() drops nothing.
    */
@@ -318,16 +318,16 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** End an attach()ed fixture: close its connections, keep the schema. */
   public function detach(): void {
     $this->ownsSchema = false;
-    $this->tearDown();
+    $this->tear_down();
   }
 
-  public function tearDown(): void {
-    $this->stopRelayWorker();
+  public function tear_down(): void {
+    $this->stop_relay();
     if ($this->ready) {
       $this->ready = false;
       foreach ($this->ports as $w) {
         try {
-          $w->lock->forceReleaseAll();
+          $w->lock->release_all();
           if ($w->connection->isTransactionActive()) {
             $w->connection->rollBack();
           }
@@ -357,7 +357,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->clock;
   }
 
-  public function advanceClock(int $seconds): void {
+  public function advance_clock(int $seconds): void {
     $this->clock->advance("+{$seconds} seconds");
   }
 
@@ -371,11 +371,11 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->ports[1]->outbox;
   }
 
-  public function outboxAdministration(): IOutboxAdministration {
+  public function outbox_admin(): IOutboxAdministration {
     return $this->ports[1]->administration;
   }
 
-  public function relayPauses(): IRelayPauseStore {
+  public function pauses(): IRelayPauseStore {
     return $this->ports[1]->pauses;
   }
 
@@ -391,7 +391,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->ports[1]->subscriptions;
   }
 
-  public function processLock(): IProcessLock {
+  public function lock(): IProcessLock {
     return $this->ports[1]->lock;
   }
 
@@ -399,20 +399,20 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->events;
   }
 
-  public function scenarioRows(): ScenarioRows {
+  public function rows(): ScenarioRows {
     return $this->rows;
   }
 
   // ── command pipeline ─────────────────────────────────────────────────────
 
-  public function commandBus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
+  public function command_bus(array $handlers, BusOptions $options = new BusOptions()): CommandBus {
     return $this->bundleBus($handlers, $options, null);
   }
 
   /**
    * The bundle's command bus (config/services.php): act bracket → [effect] →
    * transaction → domain events → handler map. $effects is the bundle's
-   * `tangible_ddd.middleware.effect` (EffectHost only); commandBus() keeps
+   * `tangible_ddd.middleware.effect` (EffectHost only); command_bus() keeps
    * the frozen HostFixture order without it.
    *
    * @param array<class-string, callable(object): mixed> $handlers
@@ -424,7 +424,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         return false;
       }
 
-      public function captureParameters(object $command): bool {
+      public function captures_parameters(object $command): bool {
         return false;
       }
     };
@@ -441,10 +441,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         new PhpEnvironmentProvider(['host' => 'sf']),
       ),
       $effects,
-      new TransactionalCommandMiddleware($options->withBoundary ? $w->boundary : null),
+      new TransactionalCommandMiddleware($options->boundary ? $w->boundary : null),
       new DomainEventsPublishMiddleware(
         $this->events,
-        new EventRouter($this->dispatcher, Factory::integrationBus($w->outbox, $this->clock, $this->consumer, $this->outboxConfig)),
+        new EventRouter($this->dispatcher, Factory::integration_bus($w->outbox, $this->clock, $this->consumer, $this->outboxConfig)),
       ),
       new HandlerMapMiddleware($handlers),
     ])));
@@ -453,7 +453,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
 
   /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
-  public function effectJournal(): IEffectJournal {
+  public function effect_journal(): IEffectJournal {
     return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
   }
 
@@ -469,14 +469,14 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
    * (A separate `ddd:relay` php process is covered by
    * tests/Kernel/PostCommitWakeupTest and PostCommitPollFallbackTest.)
    */
-  public function startRelayWorker(): void {
+  public function start_relay(): void {
     $this->worker(self::RELAY_WORKER);
     $this->relayWaiter = new PostgresListenWaiter($this->ports[self::RELAY_WORKER]->connection, self::CONSUMER, $this->logger);
     $this->relayPassUntilIdle();
     $this->relayWaiter->listen(); // idle and listening before the scenario commits
   }
 
-  public function relayUntilTransported(string $eventId, float $timeoutSeconds): ?float {
+  public function relay_until(string $eventId, float $timeoutSeconds): ?float {
     $waiter = $this->relayWaiter ?? throw new \LogicException('startRelayWorker() first');
     $start = microtime(true);
     while (true) {
@@ -496,19 +496,19 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     }
   }
 
-  public function wakeupArrives(float $timeoutSeconds): bool {
+  public function await_wakeup(float $timeoutSeconds): bool {
     return ($this->relayWaiter ?? throw new \LogicException('startRelayWorker() first'))->wait($timeoutSeconds);
   }
 
-  public function suppressNextWakeup(): void {
+  public function drop_next_wakeup(): void {
     $this->relayWakeup?->suppressNext();
   }
 
-  public function relayPollIntervalSeconds(): float {
+  public function poll_seconds(): float {
     return self::RELAY_POLL_SECONDS;
   }
 
-  public function stopRelayWorker(): void {
+  public function stop_relay(): void {
     if ($this->relayWaiter === null) {
       return;
     }
@@ -529,7 +529,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $relay = $this->ports[self::RELAY_WORKER]->relay;
     $transported = false;
     do {
-      $report = $relay->runOnce();
+      $report = $relay->run_once();
       $transported = $transported || ($eventId !== null && in_array($eventId, $report->accepted, true));
     } while ($report->claimed !== []);
     $this->relayIdleSince = microtime(true);
@@ -539,26 +539,26 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
 
   /** `tangible_ddd.workflow_ignitions`, on the app clock as the bundle wires it (CR sf-b-1). */
-  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+  public function ignition_ledger(): IWorkflowIgnitionLedger {
     return $this->workflowLedger ??= new DbalWorkflowIgnitionLedger($this->connection, '', $this->clock);
   }
 
   /** `tangible_ddd.workflow_repository`. */
-  public function workflowRepository(): IBehaviourWorkflowRepository {
+  public function workflows(): IBehaviourWorkflowRepository {
     return $this->workflowRepository ??= new DbalBehaviourWorkflowRepository($this->events, $this->connection);
   }
 
   /** `tangible_ddd.workflow_igniter`: core WorkflowIgniter(ledger, boundary, logger, clock). */
-  public function workflowIgniter(): WorkflowIgniter {
-    return $this->workflowIgniter ??= new WorkflowIgniter($this->workflowIgnitionLedger(), $this->boundary(), $this->logger, $this->clock);
+  public function igniter(): WorkflowIgniter {
+    return $this->workflowIgniter ??= new WorkflowIgniter($this->ignition_ledger(), $this->boundary(), $this->logger, $this->clock);
   }
 
-  public function effectBus(array $handlers): CommandBus {
+  public function effect_bus(array $handlers): CommandBus {
     return $this->bundleBus(
       // The bundle's terminal is SelfExecuting (RecordEffect is a SelfHandlingCommand); the handler map routes it to apply().
       [RecordEffect::class => static fn (RecordEffect $r): EffectResult => $r->apply()] + $handlers,
       new BusOptions(),
-      new EffectMiddleware($this->effectJournal(), $this->boundary()),
+      new EffectMiddleware($this->effect_journal(), $this->boundary()),
     );
   }
 
@@ -566,37 +566,37 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->dispatcher->listen($eventClassOrMarker, $listener, $priority);
   }
 
-  public function failNextCommit(string $reason): void {
+  public function fail_next_commit(string $reason): void {
     $this->middleware->failNextCommit($reason);
   }
 
-  public function auditTrail(): array {
+  public function audit_trail(): array {
     $names = [];
     foreach ($this->audit->opened as $open) {
-      $names[$open->commandId] = $open->commandName;
+      $names[$open->command_id] = $open->command_name;
     }
     return array_map(
-      static fn ($close) => new AuditEntry($close->commandId, $names[$close->commandId] ?? '?', $close->status, $close->error['type'] ?? null),
+      static fn ($close) => new AuditEntry($close->command_id, $names[$close->command_id] ?? '?', $close->status, $close->error['type'] ?? null),
       $this->audit->closed,
     );
   }
 
   // ── relay ────────────────────────────────────────────────────────────────
 
-  public function relayOnce(int $limit = 50): RelayReport {
-    $r = $this->ports[1]->relay->runOnce($limit);
-    return new RelayReport($r->claimed, $r->accepted, $r->retried, $r->deadLettered, $r->lost);
+  public function relay_once(int $limit = 50): RelayReport {
+    $r = $this->ports[1]->relay->run_once($limit);
+    return new RelayReport($r->claimed, $r->accepted, $r->retried, $r->dead_lettered, $r->lost);
   }
 
-  public function rejectNextSubmission(?\Throwable $e = null): void {
+  public function reject_next_submission(?\Throwable $e = null): void {
     $this->ports[1]->factSender->rejectNext($e);
   }
 
-  public function acceptNextSubmissionWithoutRef(): void {
+  public function accept_next_without_ref(): void {
     $this->ports[1]->factSender->noIdNext();
   }
 
-  public function crashNextRelayAfterSubmit(): void {
+  public function crash_next_relay(): void {
     $this->onceAfterSubmit(static function ($claim): void {
       throw new SimulatedCrash("relay died after submitting {$claim->event_id}, before accept");
     });
@@ -611,10 +611,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return array_values($held);
   }
 
-  public function seedLegacyDelayedFact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
+  public function seed_legacy_fact(IIntegrationEvent $fact, int $delaySeconds, \DateTimeImmutable $scheduledAt): string {
     // No legacy schema on sf: the port record carries the absolute time.
     $eventId = Uuid::v4();
-    $this->ports[1]->outbox->appendFact(new OutboxRecord(
+    $this->ports[1]->outbox->append_fact(new OutboxRecord(
       event_id: $eventId,
       event_type: $fact::name(),
       integration_action: $fact::integration_action(),
@@ -634,13 +634,13 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->deliverOn($this->ports[1], $eventClass, $wrapped);
   }
 
-  public function deliverTransported(string $eventClass): array {
+  public function deliver_transported(string $eventClass): array {
     return $this->consumeFacts($this->ports[1], PHP_INT_MAX);
   }
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  public function runWorker(array $messages): WorkerRun {
+  public function run_worker(array $messages): WorkerRun {
     $queue = new MessengerInMemoryTransport();
     foreach (array_values($messages) as $slot => $work) {
       $queue->send(new Envelope(new WorkerTask($slot, \Closure::fromCallable($work))));
@@ -670,7 +670,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return new WorkerRun($errors, $leaks);
   }
 
-  public function runnerTransients(): ?array {
+  public function runner_transients(): ?array {
     $runner = $this->ports[1]->runner;
     // The runner's one per-message transient (register 3.9), read without widening its API.
     return ['resume_argument' => (fn () => $this->resume_argument)->call($runner)];
@@ -678,8 +678,8 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── AuditSinkFaults, RecordsSignals (CR-CC-1) ────────────────────────────
 
-  public function failNextAuditClose(string $reason): void {
-    $this->auditPort->failNextClose($reason);
+  public function fail_next_audit_close(string $reason): void {
+    $this->auditPort->fail_next_close($reason);
   }
 
   public function signals(): array {
@@ -688,7 +688,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── RelayRace (CR-W3CP-2), StatementErrors (CR-W3CP-3) ──────────────────
 
-  public function raceNextRelayAfterSubmit(callable $competitor): void {
+  public function race_next_relay(callable $competitor): void {
     $this->onceAfterSubmit(function () use ($competitor): void {
       // The relay holds its submit + accept transaction open on this
       // connection; the competitor's statements go to a second session.
@@ -696,7 +696,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     });
   }
 
-  public function runFailingStatement(): void {
+  public function fail_statement(): void {
     if (!$this->connection->isTransactionActive()) {
       throw new \LogicException('runFailingStatement() runs inside the open transaction');
     }
@@ -706,7 +706,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
 
   // ── ProcessHost (CR-W3CP-1) ──────────────────────────────────────────────
 
-  public function wireProcesses(array $starts, array $awaits): void {
+  public function wire_processes(array $starts, array $awaits): void {
     foreach ($starts as $pair) {
       $this->starts[] = $pair;
     }
@@ -728,7 +728,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->workers[$n];
   }
 
-  public function processStore(): IProcessStore {
+  public function process_store(): IProcessStore {
     return $this->ports[1]->processStore;
   }
 
@@ -736,20 +736,20 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     return $this->ports[1]->wakeups;
   }
 
-  public function operatorView(): IOperatorView {
+  public function operator_view(): IOperatorView {
     $w = $this->ports[1];
     return new PortOperatorView($this->consumer, $w->administration, $w->processStore, $this->clock, []);
   }
 
-  public function processConsumer(): string {
+  public function consumer_prefix(): string {
     return $this->consumer->prefix();
   }
 
-  public function processLockKey(int $processId): LockKey {
+  public function lock_key(int $processId): LockKey {
     return new LockKey($this->consumer->prefix(), '', $processId);
   }
 
-  public function processRow(int $id): ?ProcessRow {
+  public function process_row(int $id): ?ProcessRow {
     $r = $this->connection->fetchAssociative(
       'SELECT id, process_class, status, step_index, version, ignition_key, ignited_by_event_id FROM ddd_processes WHERE id = ?',
       [$id],
@@ -769,80 +769,80 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     );
   }
 
-  public function processIds(?string $processClass = null): array {
+  public function process_ids(?string $processClass = null): array {
     $ids = $processClass === null
       ? $this->connection->fetchFirstColumn('SELECT id FROM ddd_processes ORDER BY id')
       : $this->connection->fetchFirstColumn('SELECT id FROM ddd_processes WHERE process_class = ? ORDER BY id', [$processClass]);
     return array_map('intval', $ids);
   }
 
-  public function pendingWakeups(): array {
+  public function live_intents(): array {
     // Completed intents are deleted on sf; exhausted ones are kept (not completed).
     return array_map(
-      [DbalWakeupScheduler::class, 'intentOf'],
+      [DbalWakeupScheduler::class, 'intent_from_row'],
       $this->connection->fetchAllAssociative('SELECT * FROM ddd_wakeups ORDER BY id'),
     );
   }
 
-  public function holdProcessLockElsewhere(int $processId): void {
-    $this->elsewhere()->fetchOne('SELECT pg_advisory_lock(?)', [$this->processLockKey($processId)->postgresKey()], [ParameterType::INTEGER]);
+  public function hold_lock_elsewhere(int $processId): void {
+    $this->elsewhere()->fetchOne('SELECT pg_advisory_lock(?)', [$this->lock_key($processId)->postgres_key()], [ParameterType::INTEGER]);
   }
 
-  public function releaseProcessLockElsewhere(int $processId): void {
-    $this->elsewhere()->fetchOne('SELECT pg_advisory_unlock(?)', [$this->processLockKey($processId)->postgresKey()], [ParameterType::INTEGER]);
+  public function release_lock_elsewhere(int $processId): void {
+    $this->elsewhere()->fetchOne('SELECT pg_advisory_unlock(?)', [$this->lock_key($processId)->postgres_key()], [ParameterType::INTEGER]);
   }
 
-  public function failNextProcessLockAcquire(string $reason): void {
+  public function fail_next_lock(string $reason): void {
     $this->statementFaults->failNextAdvisoryLock($reason);
   }
 
-  public function processLockAcquisitions(): int {
+  public function lock_acquisitions(): int {
     return $this->locks->acquisitions;
   }
 
-  public function beforeNextProcessLockAcquire(callable $fn): void {
-    $this->ports[1]->interleaving?->beforeNextAcquire(static function () use ($fn): void {
+  public function before_next_lock(callable $fn): void {
+    $this->ports[1]->interleaving?->before_next_acquire(static function () use ($fn): void {
       $fn();
     });
   }
 
-  public function failNextWakeHandoff(string $reason): void {
+  public function fail_next_handoff(string $reason): void {
     $this->wakeFaults->failNext($reason);
   }
 
   // ── ProcessDecodeFaults (CR-W4C4-3) ──────────────────────────────────────
 
-  public function forgetProcessClass(int $processId, string $missingClass): void {
+  public function forget_class(int $processId, string $missingClass): void {
     // sf stores the class in process_class only (business_data is the promoted constructor parameters).
     $this->connection->executeStatement('UPDATE ddd_processes SET process_class = ? WHERE id = ?', [$missingClass, $processId], [ParameterType::STRING, ParameterType::INTEGER]);
   }
 
-  public function storedProcessStatus(int $processId): ?string {
+  public function stored_status(int $processId): ?string {
     $status = $this->connection->fetchOne('SELECT status FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
     return $status === false ? null : (string) $status;
   }
 
-  public function quarantineReason(int $processId): ?string {
+  public function quarantine_reason(int $processId): ?string {
     $reason = $this->connection->fetchOne('SELECT quarantine_reason FROM ddd_processes WHERE id = ?', [$processId], [ParameterType::INTEGER]);
     return $reason === false || $reason === null ? null : (string) $reason;
   }
 
   // ── FreshProcesses (CR-W3CP-4) ───────────────────────────────────────────
 
-  public function publishInFreshProcess(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
+  public function publish_fresh(DomainEvent&IIntegrationEvent $fact, bool $killAfterCommit): string {
     $run = $this->runFresh('publish', ['fact' => $fact, 'kill' => $killAfterCommit]);
     return (string) ($run['event'] ?? throw new \LogicException('the fresh process published nothing: ' . json_encode($run)));
   }
 
-  public function drainInFreshProcess(): FreshRun {
+  public function drain_fresh(): FreshRun {
     return $this->freshRun($this->runFresh('drain', []));
   }
 
-  public function deliverInFreshProcess(string $eventClass, array $wrapped): FreshRun {
+  public function deliver_fresh(string $eventClass, array $wrapped): FreshRun {
     return $this->freshRun($this->runFresh('deliver', ['class' => $eventClass, 'wrapped' => $wrapped]));
   }
 
-  public function startInFreshProcess(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
+  public function start_fresh(LongProcess $process, ?string $dieAfterCommand = null): FreshRun {
     return $this->freshRun($this->runFresh('start', ['process' => $process, 'die' => $dieAfterCommand]));
   }
 
@@ -855,7 +855,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
    * so any lock attempt inside the request throws PooledConnectionRefused,
    * as on the pooled web connection (register 5.2).
    */
-  public function inWebRequest(callable $fn): mixed {
+  public function in_web_request(callable $fn): mixed {
     $this->locks->inWebRequest = true;
     try {
       return $fn();
@@ -865,7 +865,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   /** The real bundle boot (TestKernel `inband_pooled`: inband_start true on port 6432). */
-  public function bootInBandStartOnPooledDsn(): ?\Throwable {
+  public function boot_inband_pooled(): ?\Throwable {
     $kernel = new TestKernel('test', true, 'inband_pooled');
     try {
       $kernel->boot();
@@ -988,10 +988,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $backend = new CountingProcessLock(new PostgresAdvisoryProcessLock($c, $logger), $this->locks, $this->webLock());
     $interleaving = $n === 1 ? new InterleavingProcessLock($backend) : null;
     $lock = new ReentrantProcessLock($interleaving ?? $backend, $logger);
-    RuntimeReset::guardLock($lock);
+    RuntimeReset::guard($lock);
 
     $subscriptions = new SubscriptionRegistry();
-    $runner = Factory::processRunner(
+    $runner = Factory::process_runner(
       $this->consumer, $lock, $processStore, $wakeups, $subscriptions, $boundary, $clock,
       $this->startMode === StartMode::InBand, $logger,
     );
@@ -1057,12 +1057,12 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private function onceAfterSubmit(\Closure $hook): void {
     $relay = $this->ports[1]->relay;
     $fired = false;
-    $relay->betweenSubmitAndAccept(static function ($claim, $ref) use ($relay, $hook, &$fired): void {
+    $relay->between_submit_and_accept(static function ($claim, $ref) use ($relay, $hook, &$fired): void {
       if ($fired) {
         return;
       }
       $fired = true;
-      $relay->betweenSubmitAndAccept(null);
+      $relay->between_submit_and_accept(null);
       $hook($claim, $ref);
     });
   }
@@ -1100,7 +1100,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->lastDeliveryFailures = [];
 
     try {
-      $report = $w->relay->runOnce(max(0, $maxItems));
+      $report = $w->relay->run_once(max(0, $maxItems));
       $relay = $report->result;
       $items += count($report->claimed);
     } catch (\Throwable $e) {
@@ -1120,7 +1120,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $wakes = [ProcessWakeupHandler::COMPLETED => [], ProcessWakeupHandler::RETRIED => [], ProcessWakeupHandler::EXHAUSTED => [], ProcessWakeupHandler::LEASE_LOST => []];
     $stranded = null;
     try {
-      $projection = $w->wakeupRelay->runOnce(max(0, $maxItems - $items));
+      $projection = $w->wakeupRelay->run_once(max(0, $maxItems - $items));
       $items += count($projection->projected) + count($projection->failed);
       foreach ($projection->failed as $key) {
         $wakes[ProcessWakeupHandler::RETRIED][] = $key; // the hand-off failed; the intent is retried later
@@ -1129,10 +1129,10 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
         $wakes[$outcome][] = $key;
       }
       $running = array_values(array_filter(
-        $w->processStore->findStranded($this->clock->now()),
-        static fn ($s) => in_array($s->processId, $projection->strandedReported, true),
+        $w->processStore->find_stranded($this->clock->now()),
+        static fn ($s) => in_array($s->process_id, $projection->reported, true),
       ));
-      $stranded = new StrandedScanReport($projection->strandedRequeued, $running);
+      $stranded = new StrandedScanReport($projection->requeued, $running);
     } catch (\Throwable $e) {
       $errors[] = 'wakeups: ' . $e->getMessage();
     }
@@ -1159,7 +1159,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** @param list<string> $leaks */
   private function betweenStages(array &$leaks): void {
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
     } catch (RuntimeLeakDetected $e) {
       $leaks[] = $e->getMessage();
     }
@@ -1182,7 +1182,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->consume($w, 'ddd_facts', $w->facts, $count, function (Envelope $envelope, mixed $result) use (&$outcomes): void {
       $outcomes[] = $result;
       foreach ($result->failed as $sid) {
-        $this->lastDeliveryFailures[] = "subscriber $sid failed on {$envelope->getMessage()->eventId}";
+        $this->lastDeliveryFailures[] = "subscriber $sid failed on {$envelope->getMessage()->event_id}";
       }
     });
 
@@ -1206,7 +1206,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     }
     $outcomes = [];
     $this->consume($w, 'ddd_wakeups', $w->wakeTransport, $due, static function (Envelope $envelope, mixed $result) use (&$outcomes): void {
-      $outcomes[] = [$envelope->getMessage()->idempotencyKey, (string) $result];
+      $outcomes[] = [$envelope->getMessage()->key, (string) $result];
     });
     return $outcomes;
   }
@@ -1275,7 +1275,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
       $offset = $this->ports[1]->factSender->hostOffsetOf($id) ?? $fallback;
       $wall = (new \DateTimeImmutable((string) $r['available_at'], new \DateTimeZone('UTC')))->getTimestamp();
       $held[$id] = [
-        'fact' => new TransportedFact($message->eventId, new \DateTimeImmutable('@' . (int) round($wall + $offset))),
+        'fact' => new TransportedFact($message->event_id, new \DateTimeImmutable('@' . (int) round($wall + $offset))),
         'due' => $due,
       ];
     }
@@ -1341,7 +1341,7 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $result = $run['result'] ?? [];
     return new FreshRun(
       died: $run['died'],
-      processId: isset($result['processId']) ? (int) $result['processId'] : (isset($run['process']) ? (int) $run['process'] : null),
+      process_id: isset($result['processId']) ? (int) $result['processId'] : (isset($run['process']) ? (int) $run['process'] : null),
       relayed: array_values($result['relayed'] ?? []),
       delivered: (int) ($result['delivered'] ?? 0),
       errors: array_values($result['errors'] ?? []),
@@ -1349,8 +1349,8 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   }
 
   private function resetStatics(): void {
-    RuntimeReset::forgetRegistrationsForTests();
-    HostDefaults::resetForTests();
+    RuntimeReset::forget_for_tests();
+    HostDefaults::reset_for_tests();
     ConsumerRegistry::reset();
     Correlation::reset();
     Reactions::reset();

@@ -18,7 +18,7 @@ use TangibleDDD\Symfony\Runtime\Actor\ActorContext;
 /**
  * The worker / request boundary reset (register 3.9, E section 8).
  *
- * Runs the core RuntimeReset::betweenMessages() after every handled or
+ * Runs the core RuntimeReset::between_messages() after every handled or
  * failed Messenger message (lowest priority, after Messenger's own retry and
  * failure listeners) and on `kernel.reset` (the services resetter between
  * messages and, under a long-running HTTP runtime, between requests).
@@ -47,8 +47,8 @@ final class DddRuntimeReset implements ResetInterface, EventSubscriberInterface 
 
   public static function getSubscribedEvents(): array {
     return [
-      WorkerMessageHandledEvent::class => ['onMessageHandled', -1024],
-      WorkerMessageFailedEvent::class => ['onMessageFailed', -1024],
+      WorkerMessageHandledEvent::class => ['on_handled', -1024],
+      WorkerMessageFailedEvent::class => ['on_failed', -1024],
     ];
   }
 
@@ -57,11 +57,11 @@ final class DddRuntimeReset implements ResetInterface, EventSubscriberInterface 
     RuntimeReset::register('tangible_ddd.symfony.actor_context', fn () => $this->actors->reset());
   }
 
-  public function onMessageHandled(WorkerMessageHandledEvent $event): void {
+  public function on_handled(WorkerMessageHandledEvent $event): void {
     $this->betweenMessages('after handling a message from ' . $event->getReceiverName());
   }
 
-  public function onMessageFailed(WorkerMessageFailedEvent $event): void {
+  public function on_failed(WorkerMessageFailedEvent $event): void {
     $this->betweenMessages('after a failed message from ' . $event->getReceiverName());
   }
 
@@ -71,7 +71,7 @@ final class DddRuntimeReset implements ResetInterface, EventSubscriberInterface 
 
   private function betweenMessages(string $when): void {
     try {
-      RuntimeReset::betweenMessages();
+      RuntimeReset::between_messages();
     } catch (RuntimeLeakDetected $leak) {
       $this->logger->critical('[ddd reset] ' . $leak->getMessage() . " ($when)", ['exception' => $leak]);
     }

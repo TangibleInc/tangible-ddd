@@ -66,8 +66,8 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     });
 
     self::assertSame(1, $this->intentRows());
-    [$claimed] = $this->scheduler()->claimDue($this->t0, 10, 60);
-    self::assertEquals($this->t0, $claimed->intent->dueAt);
+    [$claimed] = $this->scheduler()->claim_due($this->t0, 10, 60);
+    self::assertEquals($this->t0, $claimed->intent->due_at);
   }
 
   public function test_claim_due_returns_only_due_intents_oldest_first_with_every_field(): void {
@@ -79,21 +79,21 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
       $s->schedule(new WakeupIntent(WakeKind::ResumeRetry, 'acme', 10, null, null, $this->t0, 'resume_retry:10'));
     });
 
-    $claimed = $this->scheduler()->claimDue($this->t0->modify('+10 seconds'), 10, 60);
+    $claimed = $this->scheduler()->claim_due($this->t0->modify('+10 seconds'), 10, 60);
 
-    self::assertSame(['continue:8:0', 'resume_retry:10', 'timeout:7:3'], array_map(static fn ($w) => $w->intent->idempotencyKey, $claimed));
+    self::assertSame(['continue:8:0', 'resume_retry:10', 'timeout:7:3'], array_map(static fn ($w) => $w->intent->key, $claimed));
     $timeout = $claimed[2];
     self::assertSame(WakeKind::Timeout, $timeout->intent->kind);
     self::assertSame('acme', $timeout->intent->consumer);
-    self::assertSame(7, $timeout->intent->processId);
-    self::assertSame(3, $timeout->intent->stepIndex);
-    self::assertSame('suspended', $timeout->intent->expectedStatus);
-    self::assertEquals($this->t0->modify('+10 seconds'), $timeout->intent->dueAt);
-    self::assertSame('UTC', $timeout->intent->dueAt->getTimezone()->getName());
+    self::assertSame(7, $timeout->intent->process_id);
+    self::assertSame(3, $timeout->intent->step_index);
+    self::assertSame('suspended', $timeout->intent->expected_status);
+    self::assertEquals($this->t0->modify('+10 seconds'), $timeout->intent->due_at);
+    self::assertSame('UTC', $timeout->intent->due_at->getTimezone()->getName());
     self::assertSame(0, $timeout->attempts);
-    self::assertEquals($this->t0->modify('+70 seconds'), $timeout->leaseUntil);
-    self::assertNull($claimed[1]->intent->stepIndex);
-    self::assertNull($claimed[1]->intent->expectedStatus);
+    self::assertEquals($this->t0->modify('+70 seconds'), $timeout->lease_until);
+    self::assertNull($claimed[1]->intent->step_index);
+    self::assertNull($claimed[1]->intent->expected_status);
   }
 
   public function test_claim_due_honours_the_limit(): void {
@@ -103,19 +103,19 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
       }
     });
 
-    self::assertCount(2, $this->scheduler()->claimDue($this->t0, 2, 60));
-    self::assertCount(3, $this->scheduler()->claimDue($this->t0, 10, 60));
-    self::assertCount(0, $this->scheduler()->claimDue($this->t0, 10, 60));
+    self::assertCount(2, $this->scheduler()->claim_due($this->t0, 2, 60));
+    self::assertCount(3, $this->scheduler()->claim_due($this->t0, 10, 60));
+    self::assertCount(0, $this->scheduler()->claim_due($this->t0, 10, 60));
   }
 
   public function test_a_leased_intent_is_not_claimed_again_until_the_lease_expires(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::continuation('acme', 1, 0, $this->t0)));
 
-    [$first] = $this->scheduler()->claimDue($this->t0, 10, 60);
-    self::assertSame([], $this->scheduler($this->secondConnection())->claimDue($this->t0->modify('+59 seconds'), 10, 60));
+    [$first] = $this->scheduler()->claim_due($this->t0, 10, 60);
+    self::assertSame([], $this->scheduler($this->secondConnection())->claim_due($this->t0->modify('+59 seconds'), 10, 60));
 
-    [$again] = $this->scheduler($this->secondConnection())->claimDue($this->t0->modify('+60 seconds'), 10, 60);
-    self::assertNotSame($first->claimToken, $again->claimToken);
+    [$again] = $this->scheduler($this->secondConnection())->claim_due($this->t0->modify('+60 seconds'), 10, 60);
+    self::assertNotSame($first->token, $again->token);
 
     self::assertFalse($this->scheduler()->complete($first), 'the first holder lost its lease');
     self::assertSame(1, $this->intentRows());
@@ -125,9 +125,9 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
 
   public function test_complete_is_fenced_on_the_claim_token(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::continuation('acme', 1, 0, $this->t0)));
-    [$w] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
 
-    $forged = new \TangibleDDD\Runtime\Scheduling\ClaimedWakeup($w->intent, 'not-the-token', $w->leaseUntil, 0);
+    $forged = new \TangibleDDD\Runtime\Scheduling\ClaimedWakeup($w->intent, 'not-the-token', $w->lease_until, 0);
     self::assertFalse($this->scheduler()->complete($forged));
     self::assertTrue($this->scheduler()->complete($w));
     self::assertFalse($this->scheduler()->complete($w), 'completing twice is a lost lease, not an error');
@@ -135,25 +135,25 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
 
   public function test_retry_later_counts_an_attempt_and_gates_the_next_claim(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::continuation('acme', 1, 0, $this->t0)));
-    [$w] = $this->scheduler()->claimDue($this->t0, 10, 300);
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 300);
 
-    self::assertTrue($this->scheduler()->retryLater($w, 'lock busy', $this->t0->modify('+4 seconds')));
-    self::assertFalse($this->scheduler()->retryLater($w, 'again', $this->t0->modify('+4 seconds')), 'the lease was released');
+    self::assertTrue($this->scheduler()->retry_later($w, 'lock busy', $this->t0->modify('+4 seconds')));
+    self::assertFalse($this->scheduler()->retry_later($w, 'again', $this->t0->modify('+4 seconds')), 'the lease was released');
 
-    self::assertSame([], $this->scheduler()->claimDue($this->t0->modify('+3 seconds'), 10, 60));
-    [$retry] = $this->scheduler()->claimDue($this->t0->modify('+4 seconds'), 10, 60);
+    self::assertSame([], $this->scheduler()->claim_due($this->t0->modify('+3 seconds'), 10, 60));
+    [$retry] = $this->scheduler()->claim_due($this->t0->modify('+4 seconds'), 10, 60);
     self::assertSame(1, $retry->attempts);
     self::assertSame('lock busy', $this->db->fetchOne('SELECT last_error FROM ddd_wakeups'));
   }
 
   public function test_an_exhausted_intent_is_kept_for_the_operator_and_never_claimed_again(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
-    [$w] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
 
     self::assertTrue($this->scheduler()->exhaust($w, 'budget spent: lock busy'));
     self::assertFalse($this->scheduler()->exhaust($w, 'again'), 'fenced like complete()');
 
-    self::assertSame([], $this->scheduler()->claimDue($this->t0->modify('+1 day'), 10, 60));
+    self::assertSame([], $this->scheduler()->claim_due($this->t0->modify('+1 day'), 10, 60));
     $row = $this->db->fetchAssociative('SELECT attempts, last_error, exhausted_at, claim_token FROM ddd_wakeups');
     self::assertSame(1, (int) $row['attempts']);
     self::assertSame('budget spent: lock busy', $row['last_error']);
@@ -161,19 +161,19 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     self::assertNull($row['claim_token']);
 
     [$listed] = $this->scheduler()->exhausted(10);
-    self::assertSame('timeout:1:0', $listed['intent']->idempotencyKey);
+    self::assertSame('timeout:1:0', $listed['intent']->key);
     self::assertSame('budget spent: lock busy', $listed['last_error']);
   }
 
   public function test_rearm_puts_an_exhausted_intent_back_in_line(): void {
     $this->inTx(fn () => $this->scheduler()->schedule(WakeupIntent::timeout('acme', 1, 0, $this->t0)));
-    [$w] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    [$w] = $this->scheduler()->claim_due($this->t0, 10, 60);
     $this->scheduler()->exhaust($w, 'boom');
 
     self::assertTrue($this->scheduler()->rearm('timeout:1:0', $this->t0));
     self::assertFalse($this->scheduler()->rearm('timeout:nope', $this->t0));
 
-    [$again] = $this->scheduler()->claimDue($this->t0, 10, 60);
+    [$again] = $this->scheduler()->claim_due($this->t0, 10, 60);
     self::assertSame(0, $again->attempts);
   }
 
@@ -193,7 +193,7 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
     $this->db->beginTransaction();
     try {
       $this->expectException(NestedTransactionRejected::class);
-      $this->scheduler()->claimDue($this->t0, 10, 60);
+      $this->scheduler()->claim_due($this->t0, 10, 60);
     } finally {
       $this->db->rollBack();
     }
@@ -206,10 +206,10 @@ final class DbalWakeupSchedulerTest extends PostgresTestCase {
       }
     });
 
-    $a = $this->scheduler()->claimDue($this->t0, 3, 60);
-    $b = $this->scheduler($this->secondConnection())->claimDue($this->t0, 10, 60);
+    $a = $this->scheduler()->claim_due($this->t0, 3, 60);
+    $b = $this->scheduler($this->secondConnection())->claim_due($this->t0, 10, 60);
 
-    $keys = array_map(static fn ($w) => $w->intent->idempotencyKey, array_merge($a, $b));
+    $keys = array_map(static fn ($w) => $w->intent->key, array_merge($a, $b));
     self::assertCount(6, $keys);
     self::assertCount(6, array_unique($keys));
   }

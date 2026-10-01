@@ -81,8 +81,8 @@ final class MessengerFailureTransportSource implements IOperatorItemSource {
     }
     $error = $envelope->last(ErrorDetailsStamp::class);
     $what = match (true) {
-      $message instanceof IntegrationFactMessage => "fact {$message->eventType} {$message->eventId}",
-      $message instanceof ProcessWakeupMessage => "wakeup {$message->idempotencyKey}",
+      $message instanceof IntegrationFactMessage => "fact {$message->event_type} {$message->event_id}",
+      $message instanceof ProcessWakeupMessage => "wakeup {$message->key}",
       default => get_class($message),
     };
 

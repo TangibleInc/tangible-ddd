@@ -31,13 +31,13 @@ final class OutboxFactClassResolverTest extends TestCase {
     $conn->method('fetchOne')->willReturn('App\\Stored');
     $resolver = new OutboxFactClassResolver(new DbalPostgresOutboxStore($conn), [PingFact::class]);
 
-    self::assertSame('App\\Stored', $resolver->classFor($this->claim('sft_integration_ping_fact')));
+    self::assertSame('App\\Stored', $resolver->resolve($this->claim('sft_integration_ping_fact')));
   }
 
   public function test_falls_back_to_the_known_facts_by_integration_action(): void {
     $resolver = new OutboxFactClassResolver($this->storeWithoutClass(), [PingMarker::class, 'App\\Missing', PingFact::class]);
 
-    self::assertSame(PingFact::class, $resolver->classFor($this->claim('sft_integration_ping_fact')));
-    self::assertNull($resolver->classFor($this->claim('sft_integration_unknown')));
+    self::assertSame(PingFact::class, $resolver->resolve($this->claim('sft_integration_ping_fact')));
+    self::assertNull($resolver->resolve($this->claim('sft_integration_unknown')));
   }
 }

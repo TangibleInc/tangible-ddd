@@ -23,6 +23,6 @@ final class CapturingRegistry implements ISubscriptionRegistry {
   }
 
   public function for(string $eventClass): array {
-    return array_values(array_filter($this->subscribers, static fn (Subscriber $s) => is_a($eventClass, $s->eventClassOrMarker, true)));
+    return array_values(array_filter($this->subscribers, static fn (Subscriber $s) => is_a($eventClass, $s->event_class, true)));
   }
 }

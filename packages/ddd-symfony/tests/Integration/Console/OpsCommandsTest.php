@@ -54,9 +54,9 @@ final class OpsCommandsTest extends PostgresTestCase {
   }
 
   private function deadLetter(string $id): int {
-    $this->outbox->appendFact(new OutboxRecord($id, 'widget_registered', 'acme_integration_widget_registered', 'c', 1, null, ['id' => $id], $this->clock->now()), 'App\\W');
+    $this->outbox->append_fact(new OutboxRecord($id, 'widget_registered', 'acme_integration_widget_registered', 'c', 1, null, ['id' => $id], $this->clock->now()), 'App\\W');
     [$claim] = $this->outbox->claim(1, $this->clock->now(), 60);
-    $this->outbox->deadLetter($claim, "boom $id");
+    $this->outbox->dead_letter($claim, "boom $id");
     return (int) $this->db->fetchOne('SELECT id FROM ddd_dlq WHERE event_id = ?', [$id]);
   }
 
@@ -109,7 +109,7 @@ final class OpsCommandsTest extends PostgresTestCase {
     self::assertSame(Command::SUCCESS, $t->execute(['dlq-id' => [(string) $dlq]]));
 
     self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_dlq'));
-    self::assertSame([], $this->admin->deadLetters(10));
+    self::assertSame([], $this->admin->dead_letters(10));
   }
 
   public function test_dlq_retry_resets_the_row_and_removes_its_dlq_entry(): void {
@@ -123,7 +123,7 @@ final class OpsCommandsTest extends PostgresTestCase {
   }
 
   public function test_dlq_retry_of_an_accepted_row_needs_force(): void {
-    $this->outbox->appendFact(new OutboxRecord('e-1', 'w', 'a', 'c', 1, null, [], $this->clock->now()), 'App\\W');
+    $this->outbox->append_fact(new OutboxRecord('e-1', 'w', 'a', 'c', 1, null, [], $this->clock->now()), 'App\\W');
     [$claim] = $this->outbox->claim(1, $this->clock->now(), 60);
     $this->outbox->accept($claim, 'ref');
 
@@ -138,20 +138,20 @@ final class OpsCommandsTest extends PostgresTestCase {
   public function test_pause_and_resume_hold_and_release_a_selector(): void {
     $pause = new CommandTester(new PauseCommand($this->pauses, $this->clock));
     self::assertSame(Command::SUCCESS, $pause->execute(['selector' => 'widget_*', '--holder' => 'deploy']));
-    self::assertTrue($this->pauses->isPaused('widget_registered', $this->clock->now()));
+    self::assertTrue($this->pauses->is_paused('widget_registered', $this->clock->now()));
     self::assertStringContainsString('widget_*', $pause->getDisplay());
 
     $resume = new CommandTester(new ResumeCommand($this->pauses));
     self::assertSame(Command::SUCCESS, $resume->execute(['selector' => 'widget_*', '--holder' => 'deploy']));
-    self::assertFalse($this->pauses->isPaused('widget_registered', $this->clock->now()));
+    self::assertFalse($this->pauses->is_paused('widget_registered', $this->clock->now()));
   }
 
   public function test_pause_until_expires_by_itself(): void {
     $pause = new CommandTester(new PauseCommand($this->pauses, $this->clock));
     $pause->execute(['selector' => '*', '--for' => '600']);
 
-    self::assertTrue($this->pauses->isPaused('anything', $this->clock->now()));
-    self::assertFalse($this->pauses->isPaused('anything', $this->clock->now()->modify('+601 seconds')));
+    self::assertTrue($this->pauses->is_paused('anything', $this->clock->now()));
+    self::assertFalse($this->pauses->is_paused('anything', $this->clock->now()->modify('+601 seconds')));
   }
 
   public function test_resume_without_a_selector_releases_every_hold_of_the_holder(): void {
@@ -161,16 +161,16 @@ final class OpsCommandsTest extends PostgresTestCase {
 
     (new CommandTester(new ResumeCommand($this->pauses)))->execute([]);
 
-    self::assertFalse($this->pauses->isPaused('a', $this->clock->now()));
-    self::assertFalse($this->pauses->isPaused('b', $this->clock->now()));
-    self::assertTrue($this->pauses->isPaused('c', $this->clock->now()), 'another holder keeps its pause');
+    self::assertFalse($this->pauses->is_paused('a', $this->clock->now()));
+    self::assertFalse($this->pauses->is_paused('b', $this->clock->now()));
+    self::assertTrue($this->pauses->is_paused('c', $this->clock->now()), 'another holder keeps its pause');
   }
 
   public function test_stranded_lists_stranded_processes_and_exhausted_intents(): void {
     $running = OrderProcess::started(1);
     $this->processes->insert($running);
     $this->boundary->run(fn () => $this->wakeups->schedule(WakeupIntent::timeout('acme', 77, 2, $this->clock->now())));
-    [$w] = $this->wakeups->claimDue($this->clock->now(), 10, 60);
+    [$w] = $this->wakeups->claim_due($this->clock->now(), 10, 60);
     $this->wakeups->exhaust($w, 'lock busy x10');
     $this->clock->advance('+16 minutes');
 
@@ -186,13 +186,13 @@ final class OpsCommandsTest extends PostgresTestCase {
 
   public function test_stranded_rearm_puts_an_exhausted_intent_back(): void {
     $this->boundary->run(fn () => $this->wakeups->schedule(WakeupIntent::timeout('acme', 77, 2, $this->clock->now())));
-    [$w] = $this->wakeups->claimDue($this->clock->now(), 10, 60);
+    [$w] = $this->wakeups->claim_due($this->clock->now(), 10, 60);
     $this->wakeups->exhaust($w, 'boom');
 
     $t = new CommandTester($this->stranded());
     self::assertSame(Command::SUCCESS, $t->execute(['--rearm' => ['timeout:77:2']]));
 
-    self::assertCount(1, $this->wakeups->claimDue($this->clock->now(), 10, 60));
+    self::assertCount(1, $this->wakeups->claim_due($this->clock->now(), 10, 60));
   }
 
   public function test_stranded_resume_mints_a_continue_intent_for_the_process(): void {
@@ -202,9 +202,9 @@ final class OpsCommandsTest extends PostgresTestCase {
     $t = new CommandTester($this->stranded());
     self::assertSame(Command::SUCCESS, $t->execute(['--resume' => [(string) $id]]));
 
-    [$claimed] = $this->wakeups->claimDue($this->clock->now(), 10, 60);
-    self::assertSame("continue:$id:0", $claimed->intent->idempotencyKey);
-    self::assertSame('running', $claimed->intent->expectedStatus, 'a running row is resumed at its current step');
+    [$claimed] = $this->wakeups->claim_due($this->clock->now(), 10, 60);
+    self::assertSame("continue:$id:0", $claimed->intent->key);
+    self::assertSame('running', $claimed->intent->expected_status, 'a running row is resumed at its current step');
   }
 
   public function test_stranded_fail_marks_the_process_failed_under_its_lock(): void {
