@@ -99,6 +99,64 @@ final class HostAndResetTest extends TestCase {
     self::assertSame($clock, HostDefaults::get(IClock::class));
   }
 
+  public function test_a_miss_asks_the_resolver_and_reads_the_port_again(): void {
+    $clock = new FrozenClock();
+    $asked = [];
+    HostDefaults::onMiss(static function (string $port) use ($clock, &$asked): void {
+      $asked[] = $port;
+      HostDefaults::provide(IClock::class, $clock);
+    });
+
+    self::assertFalse(HostDefaults::has(IClock::class), 'has() reports only what was provided; it never resolves');
+    self::assertSame([], $asked);
+    self::assertSame($clock, HostDefaults::get(IClock::class));
+    self::assertSame([IClock::class], $asked);
+    self::assertSame($clock, HostDefaults::get(IClock::class), 'a hit never asks');
+    self::assertSame([IClock::class], $asked);
+  }
+
+  public function test_a_resolver_that_provides_nothing_keeps_the_miss_and_is_asked_again(): void {
+    $calls = 0;
+    HostDefaults::onMiss(static function () use (&$calls): void { $calls++; });
+
+    self::assertNull(HostDefaults::get(IClock::class));
+    self::assertNull(HostDefaults::get(IClock::class));
+    self::assertSame(2, $calls, 'a resolver that is not ready yet is asked on the next miss');
+  }
+
+  public function test_a_miss_inside_the_resolver_returns_null_instead_of_recursing(): void {
+    $inner = 'unset';
+    HostDefaults::onMiss(static function () use (&$inner): void {
+      $inner = HostDefaults::get(ITableNames::class);
+    });
+
+    self::assertNull(HostDefaults::get(IClock::class));
+    self::assertNull($inner);
+  }
+
+  public function test_for_asks_the_resolver_for_the_host_port_factory(): void {
+    $acme = new FrozenClock(new \DateTimeImmutable('2030-01-01'));
+    HostDefaults::onMiss(static function () use ($acme): void {
+      HostDefaults::provide(\TangibleDDD\Runtime\IHostPortFactory::class, new class($acme) implements \TangibleDDD\Runtime\IHostPortFactory {
+        public function __construct(private readonly IClock $acme) {}
+        public function create(string $port, IConsumerIdentity $consumer, ?object $legacy = null): ?object {
+          return $port === IClock::class ? $this->acme : null;
+        }
+      });
+      HostDefaults::onMiss(null);
+    });
+
+    self::assertSame($acme, HostDefaults::for(IClock::class, new StaticConsumerIdentity('acme')));
+  }
+
+  public function test_reset_for_tests_removes_the_resolver(): void {
+    HostDefaults::onMiss(static function (): void { HostDefaults::provide(IClock::class, new FrozenClock()); });
+
+    HostDefaults::resetForTests();
+
+    self::assertNull(HostDefaults::get(IClock::class));
+  }
+
   public function test_host_defaults_refuse_an_implementation_of_the_wrong_port(): void {
     $this->expectException(\InvalidArgumentException::class);
     HostDefaults::provide(ITableNames::class, new FrozenClock());

@@ -44,7 +44,7 @@ use TangibleDDD\Runtime\SystemClock;
  * - a `failed` pair whose subscriber is not bound when the redelivery runs
  *   (removed, context-only, closure id changed: WP8-9) spends one attempt
  *   per redelivery and is exhausted at the budget without a compensation;
- *   `wp ddd ops --abandon=<subscriber@event>` ends one at once;
+ *   `wp ddd ops --abandon=<pair>` ends one at once;
  * - a ledger read or write that throws is contained per subscriber: logged,
  *   covered by a whole-fact redelivery, and the later subscribers still
  *   run; only when that redelivery cannot be scheduled is it rethrown (the

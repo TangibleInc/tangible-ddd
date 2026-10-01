@@ -16,17 +16,31 @@ namespace TangibleDDD\Runtime;
  * (A F-18); only the test seam resetForTests() does.
  *
  * Error behaviour: provide() throws \InvalidArgumentException when the
- * implementation does not implement the named port; get() never throws and
- * returns null when nothing was provided.
+ * implementation does not implement the named port; get() returns null when
+ * nothing was provided and throws only what a miss resolver throws.
  *
  * Per-consumer ports (audit sink, fact observer, process store, wakeup
  * scheduler) resolve through for(), which asks the host's IHostPortFactory
  * first (CR-SP-2).
+ *
+ * Late hosts: a host whose init can run before its platform is up (ddd-wp
+ * is included from vendor/autoload.php, before a test bootstrap loads
+ * WordPress or its stubs) registers a miss resolver with onMiss(). get() and
+ * for() call it when a port has no implementation, at most once at a time
+ * (re-entrant misses during resolution return null), then read the port
+ * again. The resolver decides whether it can provide anything yet and may
+ * unregister itself; core never knows which platform it stands for. has()
+ * reports only what was provided and never resolves.
  */
 final class HostDefaults {
 
   /** @var array<class-string, object> */
   private static array $impls = [];
+
+  /** @var (\Closure(class-string): void)|null */
+  private static ?\Closure $missResolver = null;
+
+  private static bool $resolving = false;
 
   /**
    * @template T of object
@@ -46,6 +60,33 @@ final class HostDefaults {
    * @return T|null
    */
   public static function get(string $port): ?object {
+    return self::$impls[$port] ?? self::resolveMiss($port);
+  }
+
+  /**
+   * Register (or, with null, remove) the host's miss resolver; see the class
+   * doc. It receives the missed port and provides whatever it can through
+   * provide(). Boot-time wiring like provide(); resetForTests() removes it.
+   *
+   * @param (callable(class-string): void)|null $resolver
+   */
+  public static function onMiss(?callable $resolver): void {
+    self::$missResolver = $resolver === null ? null : \Closure::fromCallable($resolver);
+  }
+
+  /**
+   * @param class-string $port
+   */
+  private static function resolveMiss(string $port): ?object {
+    if (self::$missResolver === null || self::$resolving) {
+      return null;
+    }
+    self::$resolving = true;
+    try {
+      (self::$missResolver)($port);
+    } finally {
+      self::$resolving = false;
+    }
     return self::$impls[$port] ?? null;
   }
 
@@ -63,7 +104,7 @@ final class HostDefaults {
    * @return T|null
    */
   public static function for(string $port, \TangibleDDD\Infra\IConsumerIdentity $consumer, ?object $legacy = null): ?object {
-    $factory = self::$impls[IHostPortFactory::class] ?? null;
+    $factory = self::get(IHostPortFactory::class);
     if ($factory instanceof IHostPortFactory) {
       $impl = $factory->create($port, $consumer, $legacy);
       if ($impl !== null) {
@@ -76,8 +117,12 @@ final class HostDefaults {
     return self::get($port);
   }
 
-  /** Test seam only; production never clears host defaults. */
+  /**
+   * Test seam only; production never clears host defaults. Also removes the
+   * miss resolver, so a test that provides a partial set is not topped up.
+   */
   public static function resetForTests(): void {
     self::$impls = [];
+    self::$missResolver = null;
   }
 }

@@ -193,7 +193,7 @@ class DDD_Command {
    * : Repair: re-arm the exhausted wakeup intent with this idempotency key
    *   (fresh budget, due now). Needs --consumer.
    *
-   * [--abandon=<subscriber@event>]
+   * [--abandon=<pair>]
    * : Repair: end the failed delivery pair with this key (as `wp ddd ops`
    *   lists it, `<subscriber id> @ <event id>`) without a compensation; its
    *   pending redelivery then skips it. Needs --consumer.

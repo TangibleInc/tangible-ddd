@@ -11,12 +11,19 @@ use TangibleDDD\Infra\IDDDConfig;
 // ddd-wp init (register 1.3 R2): the winner includes this file from its
 // initializer inside WordPress, before any consumer container compiles, so
 // the 0.6 constructors' optional port parameters resolve to the transitional
-// WordPress adapters. Outside WordPress (no hook system) HostDefaults stays
-// empty, as the register requires; test harnesses call register() themselves.
+// WordPress adapters. Included before WordPress is up (vendor/autoload.php
+// runs the loader ahead of a test bootstrap's WorDBless or add_action /
+// get_option stubs), it installs a lazy miss resolver instead: HostDefaults
+// stays empty until a port is first needed with WordPress functions present,
+// and stays empty for good in a process that never defines them, as the
+// register requires. Only the winner's initializer includes this file, so
+// only the winner's adapters are wired either way.
 if (function_exists('add_action')) {
   \TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register();
   // After the winner's self-consume hook builds the container (pri 20).
   add_action('plugins_loaded', __NAMESPACE__ . '\\register_self_consumer', 21, 0);
+} else {
+  \TangibleDDD\WordPress\Adapter\HostDefaultsWiring::register_lazily();
 }
 
 /**
