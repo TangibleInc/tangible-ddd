@@ -113,7 +113,13 @@ use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Runtime\Effects\RecordEffect;
 use TangibleDDD\Symfony\Persistence\DbalDeliveryLedger;
+use TangibleDDD\Symfony\Persistence\DbalBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalEffectJournal;
+use TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\IWorkflowIgnitionLedger;
+use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
+use TangibleDDD\Conformance\WorkflowHost;
+use TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository;
 use TangibleDDD\Symfony\Persistence\DbalOutboxAdministration;
 use TangibleDDD\Symfony\Persistence\DbalPostgresOutboxStore;
 use TangibleDDD\Symfony\Persistence\DbalProcessStore;
@@ -194,7 +200,7 @@ use TangibleDDD\Testing\InMemoryAuditSink;
  * - COMMIT failure: a deferred foreign key violated at COMMIT, so Postgres
  *   itself rejects the COMMIT.
  */
-final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost {
+final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, FreshProcesses, WebRequests, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
 
   public const CONSUMER = 'sfc';
 
@@ -228,6 +234,9 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   private ?PostgresAdvisoryProcessLock $webLock = null;
   private ?Connection $elsewhere = null;
   private ?DbalEffectJournal $effectJournal = null;
+  private ?DbalWorkflowIgnitionLedger $workflowLedger = null;
+  private ?DbalBehaviourWorkflowRepository $workflowRepository = null;
+  private ?WorkflowIgniter $workflowIgniter = null;
 
   /** @var array<int, SfWorkerPorts> */
   private array $ports = [];
@@ -432,6 +441,23 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
   /** The bundle's `tangible_ddd.effect_journal` on worker 1's connection: invalidate() rolls back with its command. */
   public function effectJournal(): IEffectJournal {
     return $this->effectJournal ??= new DbalEffectJournal($this->connection, $this->clock);
+  }
+
+  // ── WorkflowHost (CR-W4C4-4) ─────────────────────────────────────────────
+
+  /** `tangible_ddd.workflow_ignitions`, on the app clock as the bundle wires it (CR sf-b-1). */
+  public function workflowIgnitionLedger(): IWorkflowIgnitionLedger {
+    return $this->workflowLedger ??= new DbalWorkflowIgnitionLedger($this->connection, '', $this->clock);
+  }
+
+  /** `tangible_ddd.workflow_repository`. */
+  public function workflowRepository(): IBehaviourWorkflowRepository {
+    return $this->workflowRepository ??= new DbalBehaviourWorkflowRepository($this->events, $this->connection);
+  }
+
+  /** `tangible_ddd.workflow_igniter`: core WorkflowIgniter(ledger, boundary, logger, clock). */
+  public function workflowIgniter(): WorkflowIgniter {
+    return $this->workflowIgniter ??= new WorkflowIgniter($this->workflowIgnitionLedger(), $this->boundary(), $this->logger, $this->clock);
   }
 
   public function effectBus(array $handlers): CommandBus {
@@ -814,6 +840,9 @@ final class SfHostFixture implements HostFixture, AuditSinkFaults, RecordsSignal
     $this->ports = [];
     $this->workers = [];
     $this->effectJournal = null;
+    $this->workflowLedger = null;
+    $this->workflowRepository = null;
+    $this->workflowIgniter = null;
     $this->provideHostDefaults();
 
     $this->composeWorker(1, $this->connection);
