@@ -76,6 +76,27 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
     self::assertSame('App\\WidgetRegistered', $store->eventClassOf('e1'));
   }
 
+  public function test_append_inside_with_fact_class_records_that_class(): void {
+    $store = new DbalPostgresOutboxStore($this->db);
+
+    $store->withFactClass(\TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact::class, fn () => $store->append($this->record('e-1')));
+    $store->append($this->record('e-2'));
+
+    self::assertSame(\TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact::class, $this->db->fetchOne("SELECT event_class FROM ddd_outbox WHERE event_id = 'e-1'"));
+    self::assertNull($this->db->fetchOne("SELECT event_class FROM ddd_outbox WHERE event_id = 'e-2'"), 'the class is scoped to the callable');
+  }
+
+  public function test_append_pokes_the_relay_wakeup_for_the_consumer(): void {
+    $wakeup = new \TangibleDDD\Testing\RecordingRelayWakeup();
+    $store = new DbalPostgresOutboxStore($this->db, null, '', null, $wakeup, 'acme');
+
+    $this->db->beginTransaction();
+    $store->append($this->record('e-1'));
+    $this->db->commit();
+
+    self::assertSame(['acme'], $wakeup->pokes);
+  }
+
   public function test_append_without_a_class_leaves_event_class_null(): void {
     $store = new DbalPostgresOutboxStore($this->db);
     $store->append($this->record('e1'));
@@ -324,7 +345,7 @@ final class DbalPostgresOutboxStoreTest extends PostgresTestCase {
       self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_outbox'));
     } finally {
       foreach (\TangibleDDD\Symfony\Persistence\PostgresSchema::tables() as $t) {
-        $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t);
+        $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t . ' CASCADE');
       }
     }
   }

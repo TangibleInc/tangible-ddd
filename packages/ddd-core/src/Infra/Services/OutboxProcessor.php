@@ -40,7 +40,11 @@ use Throwable;
  *   or a reference of null / '' / '0' (CONF-4), is a rejection:
  *   retryLater() with base × multiplier^(n-1) capped at the max delay, or
  *   deadLetter() once attempts reach the record's max_attempts. A fenced
- *   write matching 0 rows is a lost lease: logged and discarded.
+ *   write matching 0 rows is a lost lease: logged and discarded. On a
+ *   shared connection a 0-row accept() also rolls the submission back
+ *   (CR sfc-1), so the new lease holder's submission is the only one.
+ *   process_batch(?int $limit) overrides the batch size for one run
+ *   (CR sfc-3); ProcessingResult lists the event ids per outcome (CR sfc-4).
  *   between_submit_and_accept() is the test seam (a hook that throws aborts
  *   the batch at exactly that point; it is never counted as an attempt).
  * - 0.6 form, unchanged for shipped containers: (config, IOutboxRepository,
@@ -101,30 +105,49 @@ final class OutboxProcessor {
 
   /**
    * Process a batch of pending outbox entries.
+   *
+   * @param int|null $limit rows for this run (CR sfc-3); null = OutboxConfig::batch_size
    */
-  public function process_batch(): ProcessingResult {
+  public function process_batch(?int $limit = null): ProcessingResult {
+    $limit = $limit === null ? $this->outbox_config->batch_size : max(0, $limit);
     return $this->store !== null && $this->transport !== null
-      ? $this->relay_batch()
-      : $this->legacy_batch();
+      ? $this->relay_batch($limit)
+      : $this->legacy_batch($limit);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Port form
   // ─────────────────────────────────────────────────────────────────────────
 
-  private function relay_batch(): ProcessingResult {
+  private function relay_batch(int $limit): ProcessingResult {
     $now = $this->clock()->now();
-    $claims = $this->store->claim($this->outbox_config->batch_size, $now, $this->outbox_config->lock_timeout_seconds);
+    $claims = $limit > 0
+      ? $this->store->claim($limit, $now, $this->outbox_config->lock_timeout_seconds)
+      : [];
 
     $completed = $failed = $dlq = 0;
+    $ids = ['claimed' => [], 'accepted' => [], 'retried' => [], 'dead' => [], 'lost' => []];
 
     foreach ($claims as $claim) {
+      $ids['claimed'][] = $claim->event_id;
       $unheard = $this->probe()?->hasSubscribers($claim->record->integration_action) === false;
 
       try {
-        $accepted = $this->transport->sharesConnectionWith($this->store) && $this->boundary() !== null
-          ? $this->boundary()->run(fn () => $this->submit_and_accept($claim))
-          : $this->submit_and_accept($claim);
+        if ($this->transport->sharesConnectionWith($this->store) && $this->boundary() !== null) {
+          // CR sfc-1: on a shared connection a 0-row accept must roll the
+          // submission back with it, or the new lease holder submits the
+          // same fact a second time. Throw inside run(), catch outside.
+          $this->boundary()->run(function () use ($claim): void {
+            if (!$this->submit_and_accept($claim)) {
+              throw new LeaseLostOnAccept($claim->event_id);
+            }
+          });
+          $accepted = true;
+        } else {
+          $accepted = $this->submit_and_accept($claim);
+        }
+      } catch (LeaseLostOnAccept) {
+        $accepted = false;
       } catch (Throwable $e) {
         if ($e === $this->interruption) {
           $this->interruption = null;
@@ -137,18 +160,22 @@ final class OutboxProcessor {
         if ($attempts >= $claim->record->max_attempts) {
           if (!$this->store->deadLetter($claim, $e->getMessage())) {
             $this->lost_lease($claim, 'dead-letter');
+            $ids['lost'][] = $claim->event_id;
             continue;
           }
           $dlq++;
+          $ids['dead'][] = $claim->event_id;
           $this->log_event('dlq', $entry, $e->getMessage());
           (new OutboxDeadLettered($entry, $e->getMessage()))->dispatch($this->config);
         } else {
           $next = $now->modify('+' . self::backoff_seconds($attempts, $this->outbox_config) . ' seconds');
           if (!$this->store->retryLater($claim, $e->getMessage(), $next)) {
             $this->lost_lease($claim, 'retry');
+            $ids['lost'][] = $claim->event_id;
             continue;
           }
           $failed++;
+          $ids['retried'][] = $claim->event_id;
           $this->log_event('failed', $entry, $e->getMessage());
           (new OutboxAttemptFailed($entry, $attempts, $claim->record->max_attempts, $e->getMessage()))->dispatch($this->config);
         }
@@ -157,10 +184,12 @@ final class OutboxProcessor {
 
       if (!$accepted) {
         $this->lost_lease($claim, 'accept');
+        $ids['lost'][] = $claim->event_id;
         continue;
       }
 
       $completed++;
+      $ids['accepted'][] = $claim->event_id;
       $entry = OutboxEntry::from_claim($claim, 'accepted');
       $this->log_event('completed', $entry);
       if ($unheard) {
@@ -169,7 +198,10 @@ final class OutboxProcessor {
       }
     }
 
-    return new ProcessingResult($completed, $failed, $dlq, count($claims));
+    return new ProcessingResult(
+      $completed, $failed, $dlq, count($claims),
+      $ids['claimed'], $ids['accepted'], $ids['retried'], $ids['dead'], $ids['lost'],
+    );
   }
 
   private function submit_and_accept(Claim $claim): bool {
@@ -207,16 +239,13 @@ final class OutboxProcessor {
   // 0.6 form
   // ─────────────────────────────────────────────────────────────────────────
 
-  private function legacy_batch(): ProcessingResult {
+  private function legacy_batch(int $limit): ProcessingResult {
     // First, release any stale locks from crashed workers
     $this->outbox->release_stale_locks($this->outbox_config->lock_timeout_seconds);
 
     // Fetch pending entries (acquires lock). Paused event types are excluded by
     // the repository itself, so this returns nothing (or fewer rows) while paused.
-    $entries = $this->outbox->fetch_pending(
-      $this->outbox_config->batch_size,
-      $this->worker_id
-    );
+    $entries = $limit > 0 ? $this->outbox->fetch_pending($limit, $this->worker_id) : [];
 
     if (empty($entries)) {
       return new ProcessingResult(0, 0, 0, 0);
@@ -225,8 +254,10 @@ final class OutboxProcessor {
     $completed = 0;
     $failed = 0;
     $dlq = 0;
+    $ids = ['claimed' => [], 'accepted' => [], 'retried' => [], 'dead' => []];
 
     foreach ($entries as $entry) {
+      $ids['claimed'][] = $entry->event_id;
       try {
         // Delivered-to-nobody check happens BEFORE firing: the probe reads
         // the listener table as it stands at drain time. The contract is
@@ -237,6 +268,7 @@ final class OutboxProcessor {
         $this->publisher->publish($entry, $wrapped);
         $this->outbox->mark_completed($entry->event_id);
         $completed++;
+        $ids['accepted'][] = $entry->event_id;
 
         $this->log_event('completed', $entry);
 
@@ -266,6 +298,7 @@ final class OutboxProcessor {
           // that actually caused the dead-letter.
           $this->outbox->move_to_dlq($entry->event_id, $e->getMessage());
           $dlq++;
+          $ids['dead'][] = $entry->event_id;
           $this->log_event('dlq', $entry, $e->getMessage());
 
           // Infrastructure event — terminal failure, out-of-band. Carries the
@@ -275,6 +308,7 @@ final class OutboxProcessor {
         } else {
           $this->outbox->mark_failed($entry->event_id, $e->getMessage());
           $failed++;
+          $ids['retried'][] = $entry->event_id;
           $this->log_event('failed', $entry, $e->getMessage());
 
           // Infrastructure event — transient retry-pressure signal (metrics),
@@ -284,7 +318,10 @@ final class OutboxProcessor {
       }
     }
 
-    return new ProcessingResult($completed, $failed, $dlq, count($entries));
+    return new ProcessingResult(
+      $completed, $failed, $dlq, count($entries),
+      $ids['claimed'], $ids['accepted'], $ids['retried'], $ids['dead'],
+    );
   }
 
   /**

@@ -73,7 +73,8 @@ final class TestKernel extends Kernel {
       'dbal' => [
         'driver' => 'pdo_pgsql',
         'host' => $params['host'],
-        'port' => $params['port'],
+        // inband_pooled: a PgBouncer-style port; the boot check reads params and never connects.
+        'port' => $this->variant === 'inband_pooled' ? 6432 : $params['port'],
         'user' => $params['user'],
         'password' => $params['password'],
         'dbname' => $params['dbname'],
@@ -89,12 +90,19 @@ final class TestKernel extends Kernel {
       ],
       'connection' => 'default',
       'transaction' => $this->variant === 'flush' ? ['entity_manager' => 'test.flusher'] : [],
+      'process' => in_array($this->variant, ['inband_pooled', 'inband'], true) ? ['inband_start' => true] : [],
     ]);
 
     $services = $container->services();
     $services->defaults()->autowire()->autoconfigure();
     $services->set('logger', NullLogger::class);
     $services->set('test.flusher', RecordingFlusher::class)->public();
+    // An app service that injects the D10 stores (unused private services are removed).
+    $services->set('test.d10_stores', \ArrayObject::class)->args([[
+      \Symfony\Component\DependencyInjection\Loader\Configurator\service(\TangibleDDD\Domain\Repositories\IBehaviourWorkflowRepository::class),
+      \Symfony\Component\DependencyInjection\Loader\Configurator\service(\TangibleDDD\Domain\Repositories\IWorkItemRepository::class),
+      \Symfony\Component\DependencyInjection\Loader\Configurator\service(\TangibleDDD\Symfony\Persistence\DbalWorkflowIgnitionLedger::class),
+    ]])->public();
     $services->load(__NAMESPACE__ . '\\', __DIR__ . '/{Commands,CommandHandlers,Events,Listeners,Persistence,Reactions}/')
       // Commands are resource-loaded like `App\: resource: ../src/` does in an app:
       // autoconfiguration tags the self-handling ones for the handle() locator.

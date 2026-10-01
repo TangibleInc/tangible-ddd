@@ -96,7 +96,7 @@ final class DbalRelayPauseStoreTest extends PostgresTestCase {
     self::assertSame(1, (int) $this->db->fetchOne('SELECT count(*) FROM p_ddd_relay_pauses'));
     self::assertSame(0, (int) $this->db->fetchOne('SELECT count(*) FROM ddd_relay_pauses'));
     foreach (\TangibleDDD\Symfony\Persistence\PostgresSchema::tables() as $t) {
-      $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t);
+      $this->db->executeStatement('DROP TABLE IF EXISTS p_' . $t . ' CASCADE');
     }
   }
 }

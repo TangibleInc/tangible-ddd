@@ -12,12 +12,8 @@ use TangibleDDD\Runtime\Support\Log;
 /** Core default IInfrastructureSignalDispatcher: one log line per signal, never silent. */
 final class LoggingSignalDispatcher implements IInfrastructureSignalDispatcher {
 
-  /**
-   * @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger; the
-   *   closure form is the deprecated wave-1 shape (CR-SP-1). Null: host logger,
-   *   else error_log().
-   */
-  public function __construct(private readonly LoggerInterface|\Closure|null $log = null) {}
+  /** @param LoggerInterface|null $log PSR-3 logger. Null: host logger, else error_log(). */
+  public function __construct(private readonly ?LoggerInterface $log = null) {}
 
   public function emit(IInfrastructureEvent $e, IConsumerIdentity $c): void {
     Log::write($this->log, sprintf(

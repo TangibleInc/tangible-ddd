@@ -159,6 +159,13 @@ final class InMemoryOutboxStore implements IOutboxStore, IOutboxAdministration, 
       throw new OutboxAdministrationRefused("Outbox row $event_id is {$row['status']}; retry needs force");
     }
     $this->reset($event_id);
+
+    // CR sfc-5: a retried row leaves the DLQ (its dead-letter entries go).
+    foreach ($this->dlq as $id => $letter) {
+      if ($letter->event_id === $event_id) {
+        unset($this->dlq[$id]);
+      }
+    }
   }
 
   public function replay(int $dlqId): void {

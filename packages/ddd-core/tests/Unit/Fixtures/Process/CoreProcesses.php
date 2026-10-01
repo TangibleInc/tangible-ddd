@@ -26,14 +26,67 @@ final class Journal {
   /** @var list<?string> ambient cause kind seen by each step */
   public static array $causes = [];
 
+  /** @var null|\Closure(string): void runs inside each step, after recording */
+  public static ?\Closure $onNote = null;
+
   public static function reset(): void {
     self::$steps = [];
     self::$causes = [];
+    self::$onNote = null;
   }
 
   public static function note(string $step): void {
     self::$steps[] = $step;
     self::$causes[] = Correlation::peek()?->cause?->kind->name;
+    if (self::$onNote !== null) {
+      (self::$onNote)($step);
+    }
+  }
+}
+
+/** Plain first step, then an #[Async] step that must run after one continuation. */
+final class AsyncHopProcess extends LongProcess {
+
+  public function __construct() {
+    parent::__construct(null);
+  }
+
+  protected function before(): Result {
+    Journal::note('before');
+    return new Result();
+  }
+
+  #[\TangibleDDD\Application\Process\Async]
+  protected function after(): Result {
+    Journal::note('after');
+    return new Result(commands: [new RecordingCommand('after')]);
+  }
+}
+
+/** Sends two commands while suspending on UserJoined; the second command may fail. */
+final class AskThenWaitProcess extends LongProcess {
+
+  public function __construct(public readonly int $user_id = 5) {
+    parent::__construct(null);
+  }
+
+  protected function ask(): Result {
+    Journal::note('ask');
+    return new Result(
+      commands: [new RecordingCommand('ask', $this->user_id), new RecordingCommand('ask-2', $this->user_id)],
+      await: new AwaitEvent(UserJoined::class, ['user_id' => $this->user_id]),
+    );
+  }
+
+  protected function thank(mixed $payload, UserJoined $joined): Result {
+    Journal::note('thank');
+    return new Result(commands: [new RecordingCommand('thank', $joined->user_id)]);
+  }
+
+  #[Compensates('ask')]
+  protected function unask(\Throwable $cause, mixed $checkpoint): Result {
+    Journal::note('unask');
+    return new Result();
   }
 }
 

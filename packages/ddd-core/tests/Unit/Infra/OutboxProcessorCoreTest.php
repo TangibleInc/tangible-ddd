@@ -186,6 +186,102 @@ final class OutboxProcessorCoreTest extends TestCase {
     self::assertSame(3600, OutboxProcessor::backoff_seconds(12, $c));
   }
 
+  /** A view of the store whose next accept() finds the lease gone (another worker re-claimed the row). */
+  private function storeLosingNextAccept(): \TangibleDDD\Runtime\Outbox\IOutboxStore {
+    return new class($this->store) implements \TangibleDDD\Runtime\Outbox\IOutboxStore {
+      public bool $loseNextAccept = true;
+      public function __construct(private InMemoryOutboxStore $inner) {}
+      public function append(OutboxRecord $r): void { $this->inner->append($r); }
+      public function claim(int $l, \DateTimeImmutable $n, int $s): array { return $this->inner->claim($l, $n, $s); }
+      public function accept(\TangibleDDD\Runtime\Outbox\Claim $c, ?string $ref): bool {
+        if ($this->loseNextAccept) {
+          $this->loseNextAccept = false;
+          return false;
+        }
+        return $this->inner->accept($c, $ref);
+      }
+      public function retryLater(\TangibleDDD\Runtime\Outbox\Claim $c, string $e, \DateTimeImmutable $n): bool { return $this->inner->retryLater($c, $e, $n); }
+      public function deadLetter(\TangibleDDD\Runtime\Outbox\Claim $c, string $e): bool { return $this->inner->deadLetter($c, $e); }
+    };
+  }
+
+  public function test_sfc1_a_lost_lease_on_accept_rolls_back_a_shared_submission(): void {
+    $this->append('e1');
+    $transport = new InMemoryTransport(sharesConnection: true, boundary: $this->boundary);
+    $relay = new OutboxProcessor(
+      new AcmeConfig(), null, new OutboxConfig(), null,
+      null, null, $this->clock, $this->storeLosingNextAccept(), $transport, $this->boundary,
+    );
+
+    $result = $relay->process_batch();
+
+    self::assertSame([], $transport->submissions, 'the submission rolled back, so the new lease holder submits it once');
+    self::assertSame([0, 0, 0, 1], [$result->completed, $result->failed, $result->dlq, $result->total]);
+    self::assertSame(['e1'], $result->leaseLost);
+    self::assertSame(0, $this->store->attemptsOf('e1'), 'a lost lease is not a failed attempt');
+    self::assertSame([], $this->signals->seen);
+  }
+
+  public function test_sfc1_a_separate_transport_keeps_its_submission_on_a_lost_lease(): void {
+    $this->append('e1');
+    $transport = new InMemoryTransport();
+    $relay = new OutboxProcessor(
+      new AcmeConfig(), null, new OutboxConfig(), null,
+      null, null, $this->clock, $this->storeLosingNextAccept(), $transport, $this->boundary,
+    );
+
+    $result = $relay->process_batch();
+
+    self::assertCount(1, $transport->submissions, 'at-least-once on a separate connection');
+    self::assertSame(['e1'], $result->leaseLost);
+  }
+
+  public function test_sfc3_process_batch_takes_an_optional_limit(): void {
+    foreach (['e1', 'e2', 'e3'] as $id) {
+      $this->append($id);
+    }
+    $relay = $this->relay(new InMemoryTransport(), null, new OutboxConfig(batch_size: 50));
+
+    $first = $relay->process_batch(2);
+    $rest = $relay->process_batch();
+
+    self::assertSame(2, $first->total);
+    self::assertSame(1, $rest->total, 'without a limit the configured batch size applies');
+  }
+
+  public function test_sfc4_the_result_lists_event_ids_per_outcome(): void {
+    $this->append('ok');
+    $this->append('retry');
+    $this->append('dead', max: 1);
+    $transport = new class extends \stdClass implements \TangibleDDD\Runtime\Delivery\ITransport {
+      public function submit(\TangibleDDD\Runtime\Outbox\Claim $c, array $w, \DateTimeImmutable $d): ?string {
+        if ($c->event_id !== 'ok') {
+          throw new \RuntimeException('down');
+        }
+        return 'ref-ok';
+      }
+      public function sharesConnectionWith(\TangibleDDD\Runtime\Outbox\IOutboxStore $s): bool { return false; }
+    };
+    $relay = new OutboxProcessor(
+      new AcmeConfig(), null, new OutboxConfig(), null,
+      null, null, $this->clock, $this->store, $transport, $this->boundary,
+    );
+
+    $r = $relay->process_batch();
+
+    self::assertSame(['ok', 'retry', 'dead'], $r->claimed);
+    self::assertSame(['ok'], $r->accepted);
+    self::assertSame(['retry'], $r->retried);
+    self::assertSame(['dead'], $r->deadLettered);
+    self::assertSame([], $r->leaseLost);
+  }
+
+  public function test_sfc4_the_counts_only_constructor_stays_valid(): void {
+    $r = new \TangibleDDD\Infra\Services\ProcessingResult(1, 2, 3, 6);
+    self::assertSame([], $r->claimed);
+    self::assertSame([], $r->leaseLost);
+  }
+
   public function test_the_0_6_form_runs_without_any_host_call(): void {
     // No WordPress here: the 0.6 path must not reach has_action, WP_DEBUG
     // or wp_json_encode (the latter fataled outside WordPress in 0.6).

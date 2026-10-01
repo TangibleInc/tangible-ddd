@@ -34,10 +34,10 @@ final class InMemoryTransactionBoundary implements ITransactionBoundary {
 
   private ?string $failRollback = null;
 
-  /** @param LoggerInterface|(\Closure(string):void)|null $log PSR-3 logger (closure form deprecated, CR-SP-1) */
+  /** @param LoggerInterface|null $log PSR-3 logger; null: host logger, else error_log() */
   public function __construct(
     private readonly NestedPolicy $policy = NestedPolicy::Reject,
-    private readonly LoggerInterface|\Closure|null $log = null,
+    private readonly ?LoggerInterface $log = null,
   ) {}
 
   public function enlist(InMemoryTransactional $participant): void {

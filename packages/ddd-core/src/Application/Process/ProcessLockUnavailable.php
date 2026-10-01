@@ -13,8 +13,10 @@ use TangibleDDD\Infra\Exceptions\LockingException;
  *
  * It extends the 0.6 LockingException, which is what 0.6 callers (Action
  * Scheduler callbacks, consumer code) catch, and carries the port's
- * LockNotAcquired as previous. Retryable; on WordPress the failed Action
- * Scheduler action is visible and can be retried (wave 3 re-queues it as a
- * ResumeRetry intent instead).
+ * LockNotAcquired as previous. Retryable. Before throwing it from a direct
+ * wake entry (start, ignition's first step, continue_scheduled,
+ * handle_timeout) the runner re-queues the wake as a ResumeRetry intent
+ * (wave 3); inside ProcessRunner::wake() the caller re-queues its claimed
+ * intent; a fact resume is re-delivered by the delivery invoker.
  */
 final class ProcessLockUnavailable extends LockingException {}

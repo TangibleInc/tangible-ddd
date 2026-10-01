@@ -48,7 +48,10 @@ final class IntegrationDeliveryTest extends TestCase {
   }
 
   private function delivery(int $budget = 5, ?\Closure $log = null): IntegrationDelivery {
-    return new IntegrationDelivery($this->registry, $this->ledger, $budget, $log ?? static fn () => null);
+    return new IntegrationDelivery(
+      $this->registry, $this->ledger, $budget,
+      $log === null ? new \Psr\Log\NullLogger() : new \TangibleDDD\Core\Tests\Unit\Fixtures\CallbackLogger($log),
+    );
   }
 
   public function test_phase_constants_are_frozen(): void {

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ddd-core Defaults/Pdo adapter suite against a real MySQL 8.
+
+    vendor/bin/phpunit -c packages/ddd-core/phpunit.pdo.xml
+
+  Every case runs twice: tests/Pdo/Native with PDO::ATTR_EMULATE_PREPARES =
+  false, tests/Pdo/Emulated with it true (register 2, 3.3). The bootstrap
+  drops and recreates its OWN database (DDD_PDO_DATABASE, default
+  ddd_w3_pdo_adapters) and applies schema/mysql8 with the test prefix, as a
+  host would. Connection: DDD_PDO_HOST (127.0.0.1), DDD_PDO_PORT (33306),
+  DDD_PDO_USER (root), DDD_PDO_PASSWORD (ddd).
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="tests/Pdo/bootstrap.php"
+         cacheDirectory="../../.phpunit.cache/ddd-core-pdo"
+         executionOrder="default"
+         failOnWarning="true"
+         failOnRisky="true"
+         colors="true">
+    <testsuites>
+        <testsuite name="pdo">
+            <directory suffix="Test.php">tests/Pdo/Native</directory>
+            <directory suffix="Test.php">tests/Pdo/Emulated</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory suffix=".php">src/Defaults/Pdo</directory>
+        </include>
+    </source>
+</phpunit>

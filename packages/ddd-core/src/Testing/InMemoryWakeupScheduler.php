@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace TangibleDDD\Testing;
 
 use TangibleDDD\Runtime\ITransactionBoundary;
+use TangibleDDD\Runtime\Ops\IOperatorItemSource;
+use TangibleDDD\Runtime\Ops\Layer;
+use TangibleDDD\Runtime\Ops\OperatorItem;
+use TangibleDDD\Runtime\Scheduling\WakeRetryPolicy;
 use TangibleDDD\Runtime\Scheduling\ClaimedWakeup;
 use TangibleDDD\Runtime\Scheduling\IWakeupScheduler;
 use TangibleDDD\Runtime\Scheduling\WakeupIntent;
@@ -18,7 +22,7 @@ use TangibleDDD\Runtime\Scheduling\WakeupOutsideTransaction;
  * process save. Tests that deliberately skip the rule must say so with
  * withoutTransactionCheck().
  */
-final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional {
+final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransactional, IOperatorItemSource {
 
   /** @var array<string, array{intent: WakeupIntent, seq: int, attempts: int, next_at: ?\DateTimeImmutable, token: ?string, lease_until: ?\DateTimeImmutable, error: ?string}> */
   private array $intents = [];
@@ -93,6 +97,24 @@ final class InMemoryWakeupScheduler implements IWakeupScheduler, InMemoryTransac
     $this->intents[$key]['token'] = null;
     $this->intents[$key]['lease_until'] = null;
     return true;
+  }
+
+  /** IOperatorItemSource: intents that failed at least once (layer `wakeup`). */
+  public function items(?Layer $layer, int $limit): array {
+    if ($layer !== null && $layer !== Layer::Wakeup) {
+      return [];
+    }
+    $items = [];
+    foreach ($this->intents as $key => $r) {
+      if ($r['attempts'] === 0) {
+        continue;
+      }
+      $items[] = new OperatorItem(
+        Layer::Wakeup, $r['intent']->consumer, $key, $r['attempts'], WakeRetryPolicy::BUDGET,
+        $r['error'], null, ['retry_wake'],
+      );
+    }
+    return array_slice($items, 0, max(0, $limit));
   }
 
   /** @return list<WakeupIntent> every intent not yet completed or cancelled */
