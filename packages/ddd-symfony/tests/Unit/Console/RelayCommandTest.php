@@ -115,6 +115,41 @@ final class RelayCommandTest extends TestCase {
     self::assertSame([], $this->slept);
   }
 
+  public function test_an_idle_loop_waits_on_the_listen_waiter_instead_of_sleeping(): void {
+    $waiter = new class implements \TangibleDDD\Symfony\Runtime\Wakeup\IRelayWaiter {
+      /** @var list<float> */
+      public array $waits = [];
+      public function wait(float $seconds): bool { $this->waits[] = $seconds; usleep(50_000); return false; }
+    };
+    $relay = new Relay($this->inner, new InMemoryTransport(), $this->boundary, $this->clock, new OutboxConfig());
+    $command = new RelayCommand($relay, 10, 2, $this->logger, function (int $s): void { $this->slept[] = $s; }, 10, null, $waiter);
+
+    (new CommandTester($command))->execute(['--time-limit' => '0.2']);
+
+    self::assertNotEmpty($waiter->waits);
+    self::assertSame(2.0, $waiter->waits[0]);
+    self::assertSame([], $this->slept, 'no plain sleep when a waiter is wired');
+  }
+
+  public function test_each_step_also_runs_the_wakeup_relay_and_reports_it(): void {
+    $wakeups = new class {
+      public int $runs = 0;
+    };
+    $wakeupRelay = $this->createStub(\TangibleDDD\Symfony\Runtime\Wakeup\IWakeupRelayStep::class);
+    $wakeupRelay->method('runOnce')->willReturnCallback(function () use ($wakeups) {
+      $wakeups->runs++;
+      return new \TangibleDDD\Symfony\Runtime\Wakeup\WakeupRelayReport(['continue:1:0'], [], [], []);
+    });
+    $relay = new Relay($this->inner, new InMemoryTransport(), $this->boundary, $this->clock, new OutboxConfig());
+    $command = new RelayCommand($relay, 10, 0, $this->logger, null, 10, $wakeupRelay);
+
+    $tester = new CommandTester($command);
+    $tester->execute(['--once' => true]);
+
+    self::assertSame(1, $wakeups->runs);
+    self::assertStringContainsString('wakeups projected 1', $tester->getDisplay());
+  }
+
   public function test_a_non_storage_error_is_not_swallowed(): void {
     $store = $this->flakyStore([new \LogicException('programming error')]);
 
