@@ -18,6 +18,7 @@ use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Testing\InMemoryRelayPauseStore;
 
@@ -131,6 +132,96 @@ abstract class PdoOutboxStoreCases extends OutboxTestCase {
     self::assertSame([], $store->claim(1, $this->clock->now()->modify('+59 seconds'), 60));
     [$second] = $store->claim(1, $this->clock->now()->modify('+60 seconds'), 60);
     self::assertNotSame($first->claimToken, $second->claimToken);
+  }
+
+  public function test_the_store_reports_claim_time_dead_letters(): void {
+    self::assertInstanceOf(IReportsClaimDeadLetters::class, $this->store());
+  }
+
+  public function test_a_first_claim_counts_no_attempt(): void {
+    $store = $this->store();
+    $store->append(self::record('e1'));
+
+    [$claim] = $store->claim(1, $this->clock->now(), 60);
+
+    self::assertSame(0, $claim->attempts);
+    self::assertSame(0, (int) $this->row('ddd_outbox', 'event_id = ?', ['e1'])['attempts']);
+    self::assertSame([], $store->takeDeadLetteredAtClaim());
+  }
+
+  public function test_re_claiming_an_expired_lease_counts_an_attempt(): void {
+    $store = $this->store();
+    $store->append(self::record('e1'));
+    $store->claim(1, $this->clock->now(), 60); // the submitter dies without an outcome
+
+    [$again] = $store->claim(1, $this->clock->now()->modify('+61 seconds'), 60);
+
+    self::assertSame(1, $again->attempts, 'Claim::$attempts includes the re-claim (CR-PDO-6)');
+    $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
+    self::assertSame(1, (int) $row['attempts']);
+    self::assertSame(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR, $row['last_error']);
+    self::assertSame([], $store->takeDeadLetteredAtClaim());
+  }
+
+  public function test_a_released_lease_is_not_a_re_claim(): void {
+    $store = $this->store();
+    $store->append(self::record('e1'));
+    [$c] = $store->claim(1, $this->clock->now(), 60);
+    $store->retryLater($c, 'transport down', $this->clock->now());
+
+    [$again] = $store->claim(1, $this->clock->now(), 60);
+
+    self::assertSame(1, $again->attempts, 'only the explicit failure counted');
+    self::assertSame('transport down', $this->row('ddd_outbox', 'event_id = ?', ['e1'])['last_error']);
+  }
+
+  public function test_a_row_reaching_max_attempts_through_re_claims_is_dead_lettered_at_claim(): void {
+    $store = $this->store();
+    $store->append(self::record('e1', extra: ['max_attempts' => 3]));
+    $store->append(self::record('e2'));
+    $at = $this->clock->now();
+    $store->claim(1, $at, 60);                                   // attempt 0, dies
+    $store->claim(1, $at = $at->modify('+61 seconds'), 60);     // re-claim 1, dies
+    $store->claim(1, $at = $at->modify('+61 seconds'), 60);     // re-claim 2, dies
+
+    $claims = $store->claim(2, $at->modify('+61 seconds'), 60); // re-claim 3 = max_attempts
+
+    self::assertSame(['e2'], self::ids($claims), 'the dead-lettered row is not handed out');
+    $row = $this->row('ddd_outbox', 'event_id = ?', ['e1']);
+    self::assertSame('dlq', $row['status']);
+    self::assertNull($row['claim_token']);
+    $dlq = $this->row('ddd_dlq', 'event_id = ?', ['e1']);
+    self::assertNotNull($dlq);
+    self::assertSame(3, (int) $dlq['attempts']);
+    self::assertStringStartsWith(IReportsClaimDeadLetters::LEASE_EXPIRED_ERROR . ' 3 times', (string) $dlq['error']);
+
+    $taken = $store->takeDeadLetteredAtClaim();
+    self::assertCount(1, $taken);
+    [$claim, $error] = $taken[0];
+    self::assertSame('e1', $claim->event_id);
+    self::assertSame(3, $claim->attempts);
+    self::assertSame($dlq['error'], $error);
+    self::assertSame([], $store->takeDeadLetteredAtClaim(), 'taking empties the list');
+  }
+
+  public function test_the_relay_step_reports_a_claim_time_dead_letter_and_the_operator_view_lists_it(): void {
+    $store = $this->store();
+    $store->append(self::record('e1', extra: ['max_attempts' => 1]));
+    $store->claim(1, $this->clock->now(), 60);
+    $this->clock->advance('PT2M');
+
+    $jobs = new \TangibleDDD\Defaults\Pdo\PdoJobStore($this->db, 'acme', self::PREFIX, $this->clock);
+    $relay = new \TangibleDDD\Infra\Services\OutboxProcessor(
+      new AcmeConfig(), null, new \TangibleDDD\Application\Outbox\OutboxConfig(), null, null, new \Psr\Log\NullLogger(), $this->clock, $store, $jobs,
+      new PdoTransactionBoundary($this->db),
+    );
+    $result = $relay->process_batch(10);
+
+    self::assertSame(['e1'], $result->deadLetteredAtClaim);
+    $items = (new \TangibleDDD\Defaults\Pdo\PdoOperatorView($this->db, 'acme', self::PREFIX, $this->clock))->list(\TangibleDDD\Runtime\Ops\Layer::Relay);
+    self::assertSame(['e1'], array_map(static fn ($i) => $i->key, $items));
+    self::assertSame(1, $items[0]->attempts);
+    self::assertSame(1, $items[0]->budget);
   }
 
   public function test_claim_skips_rows_another_connection_has_locked(): void {

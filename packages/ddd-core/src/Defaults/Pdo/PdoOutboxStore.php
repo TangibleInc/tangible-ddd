@@ -13,6 +13,7 @@ use TangibleDDD\Runtime\NestedTransactionRejected;
 use TangibleDDD\Runtime\Outbox\Claim;
 use TangibleDDD\Runtime\Outbox\IOutboxStore;
 use TangibleDDD\Runtime\Outbox\IRelayPauseStore;
+use TangibleDDD\Runtime\Outbox\IReportsClaimDeadLetters;
 use TangibleDDD\Runtime\Outbox\OutboxRecord;
 use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\PrefixedTableNames;
@@ -37,6 +38,15 @@ use TangibleDDD\Runtime\SystemClock;
  *   UPDATE, so paused rows are never leased. Refuses to run inside an open
  *   transaction (NestedTransactionRejected): it must not silently join, and
  *   commit with, someone else's unit of work.
+ * - Lease expiry (CR-PDO-6 core rule, IReportsClaimDeadLetters, wave 4):
+ *   a claim of a row that still carries an EXPIRED lease (its submitter
+ *   died without an outcome) counts one attempt in the same UPDATE
+ *   (`attempts + 1`, `last_error` = LEASE_EXPIRED_ERROR), and
+ *   Claim::$attempts includes it. A re-claimed row whose attempts reach its
+ *   max_attempts is dead-lettered inside the claim's transaction (DLQ row,
+ *   status `dlq`, lease cleared) and not handed out;
+ *   takeDeadLetteredAtClaim() reports it to the relay step. A row whose
+ *   lease was released by an outcome (retryLater) is not a re-claim.
  * - accept() / retryLater() / deadLetter(): fenced on (event_id,
  *   claim_token, status `pending`); 0 rows = lease lost → false, logged,
  *   nothing thrown. An expired lease nobody re-claimed still matches.
@@ -46,7 +56,7 @@ use TangibleDDD\Runtime\SystemClock;
  * pdo addition (not on the port): appendFact() / eventClassOf() keep the
  * fact's PHP class for the delivery job, as ddd-symfony does (CR sf-1).
  */
-final class PdoOutboxStore implements IOutboxStore {
+final class PdoOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
   private readonly string $outbox;
   private readonly string $dlq;
@@ -55,6 +65,9 @@ final class PdoOutboxStore implements IOutboxStore {
 
   /** The fact class withFactClass() scopes onto plain append() calls. */
   private ?string $scopedClass = null;
+
+  /** @var list<array{0: Claim, 1: string}> rows claim() dead-lettered since the last take */
+  private array $deadLetteredAtClaim = [];
 
   public function __construct(
     private readonly IHostConnection $db,
@@ -172,14 +185,35 @@ final class PdoOutboxStore implements IOutboxStore {
         }
       }
 
-      $rows = [];
+      $claims = [];
+      $deadLettered = [];
       if ($ids !== []) {
         $in = implode(', ', array_fill(0, count($ids), '?'));
+        // Remember which rows still held an (expired) lease: re-claiming one is
+        // an attempt (CR-PDO-6). The rows are locked, so this cannot change.
+        $reclaimed = [];
+        foreach ($this->db->fetchAll("SELECT id FROM `{$this->outbox}` WHERE id IN ($in) AND claim_token IS NOT NULL", $ids) as $r) {
+          $reclaimed[(int) $r['id']] = true;
+        }
+        // MySQL evaluates SET left to right: attempts and last_error read the OLD claim_token.
         $this->db->execute(
-          "UPDATE `{$this->outbox}` SET claim_token = ?, lease_until = ? WHERE id IN ($in)",
-          [$token, Utc::toDb($leaseUntil), ...$ids]
+          "UPDATE `{$this->outbox}` SET
+             attempts = attempts + CASE WHEN claim_token IS NOT NULL THEN 1 ELSE 0 END,
+             last_error = CASE WHEN claim_token IS NOT NULL THEN ? ELSE last_error END,
+             claim_token = ?, lease_until = ?
+           WHERE id IN ($in)",
+          [self::LEASE_EXPIRED_ERROR, $token, Utc::toDb($leaseUntil), ...$ids]
         );
-        $rows = $this->db->fetchAll("SELECT * FROM `{$this->outbox}` WHERE id IN ($in) ORDER BY due_at, id", $ids);
+        foreach ($this->db->fetchAll("SELECT * FROM `{$this->outbox}` WHERE id IN ($in) ORDER BY due_at, id", $ids) as $row) {
+          $claim = new Claim((string) $row['event_id'], $token, $leaseUntil, OutboxRows::record($row), (int) $row['attempts']);
+          if (isset($reclaimed[(int) $row['id']]) && $claim->attempts >= $claim->record->max_attempts) {
+            $error = sprintf('%s %d times; dead-lettered at claim', self::LEASE_EXPIRED_ERROR, $claim->attempts);
+            $this->moveToDlq($row, $error, $claim->attempts);
+            $deadLettered[] = [$claim, $error];
+            continue;
+          }
+          $claims[] = $claim;
+        }
       }
       $this->db->commit();
     } catch (\Throwable $e) {
@@ -187,10 +221,36 @@ final class PdoOutboxStore implements IOutboxStore {
       throw $e;
     }
 
-    return array_map(
-      static fn (array $row) => new Claim((string) $row['event_id'], $token, $leaseUntil, OutboxRows::record($row), (int) $row['attempts']),
-      $rows
+    foreach ($deadLettered as [$claim, $error]) {
+      $this->logger->error("[ddd outbox] {$claim->event_id} dead-lettered at claim: its lease expired {$claim->attempts} times without an outcome");
+      $this->deadLetteredAtClaim[] = [$claim, $error];
+    }
+    return $claims;
+  }
+
+  public function takeDeadLetteredAtClaim(): array {
+    $taken = $this->deadLetteredAtClaim;
+    $this->deadLetteredAtClaim = [];
+    return $taken;
+  }
+
+  /**
+   * Status `dlq` plus the DLQ row, inside the caller's transaction; the
+   * lease is cleared. $attempts is what the DLQ row records.
+   *
+   * @param array<string, mixed> $row the locked outbox row
+   */
+  private function moveToDlq(array $row, string $error, int $attempts): void {
+    $this->db->execute(
+      "UPDATE `{$this->outbox}` SET status = 'dlq', attempts = ?, last_error = ?, claim_token = NULL, lease_until = NULL WHERE id = ?",
+      [$attempts, $error, (int) $row['id']]
     );
+    $columns = array_combine(OutboxRows::SHARED, OutboxRows::sharedValues($row)) + [
+      'error' => $error,
+      'attempts' => $attempts,
+      'dead_lettered_at' => Utc::toDb($this->clock->now()),
+    ];
+    $this->db->execute(OutboxRows::insertSql($this->dlq, $columns), array_values($columns));
   }
 
   public function accept(Claim $c, ?string $transportRef): bool {
@@ -231,17 +291,7 @@ final class PdoOutboxStore implements IOutboxStore {
         return false;
       }
 
-      $this->db->execute(
-        "UPDATE `{$this->outbox}` SET status = 'dlq', attempts = attempts + 1, last_error = ?, claim_token = NULL, lease_until = NULL
-         WHERE id = ?",
-        [$error, (int) $row['id']]
-      );
-      $columns = array_combine(OutboxRows::SHARED, OutboxRows::sharedValues($row)) + [
-        'error' => $error,
-        'attempts' => (int) $row['attempts'] + 1,
-        'dead_lettered_at' => Utc::toDb($this->clock->now()),
-      ];
-      $this->db->execute(OutboxRows::insertSql($this->dlq, $columns), array_values($columns));
+      $this->moveToDlq($row, $error, (int) $row['attempts'] + 1);
 
       if ($own) {
         $this->db->commit();
