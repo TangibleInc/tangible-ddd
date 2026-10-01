@@ -168,23 +168,31 @@ abstract class ProcessScenarios extends ProcessScenarioCase {
   #[TestDox('process.intent-survives-queue-failure: the process save commits, the wake transport is down; the intent row remains and a later run wakes the process')]
   public function test_process_intent_survives_queue_failure(): void {
     $processes = $this->processes();
+    // Armed before the start: hosts hand intents over at schedule time (wp),
+    // at relay time (sf) or at execution (pdo, mem); the FIRST hand-off
+    // after a committed save fails, wherever it happens. HopWidgetProcess
+    // always leaves a Continue intent behind its committed save (the start
+    // under StartMode::Deferred, else the #[Async] second step).
     $processes->failNextWakeHandoff('wake transport down');
-
-    $id = $this->start(new HopWidgetProcess('w-1'));
-    self::assertSame('scheduled', $this->row($id)->status, 'the save committed (first step done, continuation due)');
-    self::assertSame(["continue:$id:1"], $this->intentKeys($id, WakeKind::Continue));
+    $process = new HopWidgetProcess('w-1');
+    $processes->worker()->processRunner()->start($process);
+    $id = (int) $process->get_id();
 
     $processes->worker()->drainOnce();
 
-    self::assertSame(0, ProcessJournal::runs('second'), 'the wake never reached the runner');
-    self::assertSame('scheduled', $this->row($id)->status);
-    self::assertSame(["continue:$id:1"], $this->intentKeys($id, WakeKind::Continue), 'the intent row remains');
+    self::assertSame('scheduled', $this->row($id)->status, 'the save committed; the process waits on its intent');
+    self::assertSame(0, ProcessJournal::runs('second'), 'the failed hand-off woke nothing');
+    $survivor = $this->intentKeys($id, WakeKind::Continue);
+    self::assertCount(1, $survivor, 'the intent row remains');
 
-    $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
-    $processes->worker()->drainOnce();
+    for ($run = 0; $run < 3 && $this->row($id)->status !== 'completed'; $run++) {
+      $this->host->advanceClock(self::PAST_WAKE_BACKOFF);
+      $processes->worker()->drainOnce();
+    }
 
-    self::assertSame(1, ProcessJournal::runs('second'), 'a later run woke the process');
-    self::assertSame('completed', $this->row($id)->status);
+    self::assertSame('completed', $this->row($id)->status, 'a later run woke the process');
+    self::assertSame(1, ProcessJournal::runs('first'));
+    self::assertSame(1, ProcessJournal::runs('second'));
     self::assertSame([], $this->intents($id));
   }
 
