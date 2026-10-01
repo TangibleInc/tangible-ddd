@@ -25,9 +25,11 @@ use TangibleDDD\Runtime\Process\AwaitRoute;
  *
  * Indexing: routes() lists every branch's route. event_class() (the
  * `waiting_for` column) is the most specific class or interface that every
- * branch class shares, so a store that indexes only that column, matching a
- * fact by its class, parents and interfaces, still finds the process for
- * every branch; accepts() filters the rest.
+ * branch class shares. A store that indexes only that column finds the
+ * process for every branch either by matching a fact's parents and
+ * interfaces itself (mem, pdo: IMatchesFactAncestry) or, on an exact-match
+ * store (wp, LegacyProcessStore), because the runner also looks the fact's
+ * IIntegrationEvent ancestors up; accepts() filters the rest.
  *
  * Branches are AwaitEvent (one arrival each).
  */

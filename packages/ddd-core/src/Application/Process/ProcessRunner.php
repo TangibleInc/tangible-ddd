@@ -26,6 +26,7 @@ use TangibleDDD\Runtime\Lock\ReentrantProcessLock;
 use TangibleDDD\Runtime\Process\AwaitRoute;
 use TangibleDDD\Runtime\Process\ConcurrentProcessModification;
 use TangibleDDD\Runtime\Process\IgnitionResult;
+use TangibleDDD\Runtime\Process\IMatchesFactAncestry;
 use TangibleDDD\Runtime\Process\IProcessEntry;
 use TangibleDDD\Runtime\Process\IProcessStore;
 use TangibleDDD\Runtime\Process\IStrandedScanner;
@@ -110,8 +111,11 @@ use Throwable;
  * - D3 keyed awaits: AwaitEvent::keyed() / AwaitAll::keyed() on refs the
  *   process mints (LongProcess::step_ref()); the suspending step's
  *   checkpoint commits with its await. resume_with_outcome() looks up
- *   (class, key) and (class, ''), and every process whose await accepts the
- *   fact takes it. AwaitAny: the first accepted branch resumes, a
+ *   (class, key) and (class, '') (plus the fact's IIntegrationEvent
+ *   ancestors on a store without IMatchesFactAncestry). Keyed awaits and
+ *   AwaitAny take the fact in every accepting process; 0.6-shaped awaits
+ *   (unkeyed AwaitEvent, extractor AwaitAll, consumer mechanisms) keep
+ *   first-wins (R1). AwaitAny: the first accepted branch resumes, a
  *   cancellation branch compensates. An AwaitAll over an empty key set does
  *   not suspend. IPrecheckAwait: register-then-check after the await
  *   committed and the step dispatched.
@@ -119,7 +123,10 @@ use Throwable;
  *   once at suspension (IHasDeadline, else now + timeout_seconds), stored
  *   as LongProcess::await_deadline(); AwaitAlarm waits for no fact.
  * - D1 inside steps: #[RetryStep] re-runs a failed step through a durable
- *   Continue intent before compensating (default 0 retries).
+ *   Continue intent before compensating (default 0 retries). A resumed
+ *   step's argument (the fact, the gather, the precheck value) is persisted
+ *   with the retry, and with an #[Async] post-await step's continuation
+ *   (ProcessSteps::$resume, ResumeSource), so the re-run receives it.
  *
  * Constructor (R2): the 0.6.5 `(IDDDConfig, IProcessRepository)` call stays
  * valid; the repository became optional and the ports, the start mode and
@@ -148,6 +155,14 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
 
   /** @var mixed Transient - resume_argument() output from the mechanism that woke the process */
   private mixed $resume_argument = null;
+
+  /**
+   * The persistable source of $resume_argument (ResumeSource shape), or
+   * ['kind' => 'unpersistable'] when it cannot cross a wake; null when there
+   * is no resume argument. Persisted with a RetryStep retry or an #[Async]
+   * continuation of the resumed step, restored by continue_scheduled().
+   */
+  private ?array $resume_source = null;
 
   /** @var array<int, int> process id → last version this runner read or wrote */
   private array $versions = [];
@@ -434,6 +449,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           $process->advance(status: 'running', payload: $process->payload());
           $this->persist($process);
           $this->skip_async_once = true;
+          $this->restore_resume($process);
           $this->run($process);
         });
       },
@@ -451,22 +467,28 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   }
 
   /**
-   * resume_on_event() with what it did (D3). Every suspended process whose
-   * await accepts the fact takes it, in id order: a cancellation fact
-   * (AwaitAny::cancelledBy) reaches every process it cancels. Keyed awaits
-   * accept only their own key, so a keyed answer reaches exactly the process
-   * that minted the key.
+   * resume_on_event() with what it did (D3). Candidates are tried in id
+   * order. A keyed await or an AwaitAny takes the fact in every process
+   * that accepts it: a cancellation fact (AwaitAny::cancelledBy) reaches
+   * every process it cancels, and keyed awaits accept only their own key,
+   * so a keyed answer reaches exactly the process that minted the key. A
+   * 0.6-shaped await (unkeyed AwaitEvent, extractor-keyed AwaitAll, a
+   * consumer mechanism) keeps 0.6's first-wins: once one of them took the
+   * fact, the others do not (R1).
    *
    * Lookup: findWaitingFor(class) for an unkeyed fact; for a fact reporting
    * an await key (IAwaitKeyed), findWaitingFor(class, key) plus the unkeyed
    * rows findWaitingFor(class, ''), so a route-indexing store (sf) answers
    * from its index and a column store (mem, pdo, wp, which ignore the key)
-   * returns its usual candidates. accepts() is the final filter either way.
+   * returns its usual candidates. On a store without IMatchesFactAncestry
+   * the fact's IIntegrationEvent ancestors are looked up too (an AwaitAny
+   * row holds the branches' common ancestor). accepts() is the final filter.
    */
   public function resume_with_outcome(IIntegrationEvent $event): ResumeReport {
     $resumed = [];
     $accumulated = [];
     $cancelled = [];
+    $first_taken = false; // a 0.6-shaped await already took this fact
 
     foreach ($this->candidates($event) as $process_id) {
       try {
@@ -474,11 +496,15 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       } catch (QuarantinedProcess) {
         continue; // undecodable row: quarantined by the store, the worker continues
       }
-      if ($candidate === null || $candidate->status() !== 'suspended' || !($candidate->await_mechanism()?->accepts($event) ?? false)) {
+      $await = $candidate?->await_mechanism();
+      if ($candidate === null || $candidate->status() !== 'suspended' || $await === null || !$await->accepts($event)) {
         continue;
       }
+      if ($first_taken && self::first_wins($await)) {
+        continue; // 0.6: only the first accepting process per fact (R1)
+      }
 
-      $this->with_process_lock($process_id, function () use ($process_id, $event, &$resumed, &$accumulated, &$cancelled): void {
+      $this->with_process_lock($process_id, function () use ($process_id, $event, &$resumed, &$accumulated, &$cancelled, &$first_taken): void {
         $process = $this->find($process_id); // re-read under the lock (C6, C7)
         if ($process === null || $process->status() !== 'suspended') {
           return;
@@ -486,6 +512,12 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $mechanism = $process->await_mechanism();
         if ($mechanism === null || !$mechanism->accepts($event)) {
           return;
+        }
+        if (self::first_wins($mechanism)) {
+          if ($first_taken) {
+            return;
+          }
+          $first_taken = true;
         }
 
         $this->in_scope($process, function () use ($process, $event, $mechanism, &$resumed, &$accumulated, &$cancelled): void {
@@ -515,7 +547,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           }
 
           $process->advance_step();
-          $this->resume_argument = $updated->resume_argument($event);
+          $this->take_resume($updated->resume_argument($event), ResumeSource::ofMechanism($updated, $event));
           $process->advance(status: 'running', payload: $process->payload());
           $this->persist($process, null, $alarm);
           $resumed[] = $id;
@@ -523,7 +555,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
           try {
             $this->run($process);
           } finally {
-            $this->resume_argument = null;
+            $this->clear_resume();
           }
         });
       });
@@ -532,17 +564,42 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     return new ResumeReport($resumed, $accumulated, $cancelled);
   }
 
+  /**
+   * Does this await keep 0.6's first-wins on a fact? Unkeyed AwaitEvent,
+   * extractor-keyed AwaitAll and consumer mechanisms: yes (0.6 resumed only
+   * the first accepting process; R1). Keyed awaits and AwaitAny (whose
+   * cancellation facts must reach every process they cancel): no, every
+   * accepting process takes the fact.
+   */
+  private static function first_wins(IAwaitMechanism $mechanism): bool {
+    return match (true) {
+      $mechanism instanceof AwaitAny => false,
+      $mechanism instanceof AwaitEvent => $mechanism->await_key === null,
+      $mechanism instanceof AwaitAll => !$mechanism->is_keyed(),
+      default => true,
+    };
+  }
+
   /** @return list<int> candidate process ids for $event (see resume_with_outcome) */
   private function candidates(IIntegrationEvent $event): array {
+    $store = $this->store();
     $class = get_class($event);
     $key = AwaitRoute::keyOf($event);
-    if ($key === null) {
-      return $this->store()->findWaitingFor($class);
+    $ids = $key === null
+      ? $store->findWaitingFor($class)
+      : [...$store->findWaitingFor($class, $key), ...$store->findWaitingFor($class, '')];
+
+    if (!$store instanceof IMatchesFactAncestry) {
+      // An exact-match column store: an AwaitAny row holds the branches'
+      // common ancestor in `waiting_for`, so ask for each ancestor as well.
+      foreach ([...array_values(class_parents($event) ?: []), ...array_values(class_implements($event) ?: [])] as $ancestor) {
+        if (is_a($ancestor, IIntegrationEvent::class, true)) {
+          array_push($ids, ...$store->findWaitingFor($ancestor));
+        }
+      }
     }
-    $ids = array_values(array_unique([
-      ...$this->store()->findWaitingFor($class, $key),
-      ...$this->store()->findWaitingFor($class, ''),
-    ]));
+
+    $ids = array_values(array_unique($ids));
     sort($ids);
     return $ids;
   }
@@ -578,13 +635,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $this->in_scope($process, function () use ($process, $mechanism): void {
           if ($mechanism->on_timeout() === AwaitAll::TIMEOUT_PROCEED) {
             $process->advance_step();
-            $this->resume_argument = $mechanism->resume_argument(null);
+            $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
             $process->advance(status: 'running', payload: $process->payload());
             $this->persist($process);
             try {
               $this->run($process);
             } finally {
-              $this->resume_argument = null;
+              $this->clear_resume();
             }
             return;
           }
@@ -853,8 +910,57 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       throw $e;
     } finally {
       // A precheck or an empty gather sets it mid-run; never carry it into the next wake.
-      $this->resume_argument = null;
+      $this->clear_resume();
     }
+  }
+
+  private function take_resume(mixed $argument, ?array $source): void {
+    $this->resume_argument = $argument;
+    $this->resume_source = $source ?? ['kind' => 'unpersistable'];
+  }
+
+  private function clear_resume(): void {
+    $this->resume_argument = null;
+    $this->resume_source = null;
+  }
+
+  /**
+   * A continuation that re-runs a resumed step (a RetryStep retry, an
+   * #[Async] post-await step) gets the step's argument back from the row. A
+   * source that no longer decodes is logged; the step then runs without it
+   * and fails or copes on its own.
+   */
+  private function restore_resume(LongProcess $process): void {
+    $source = $process->is_compensating() ? null : $process->resume_source();
+    if ($source === null) {
+      return;
+    }
+    unset($source['step_index']);
+    try {
+      $this->take_resume(ResumeSource::restore($source), $source);
+    } catch (Throwable $e) {
+      Log::write($this->logger, sprintf(
+        '[%s process] process #%d: the persisted argument of step %s cannot be restored: %s',
+        $this->config->prefix(), (int) $process->get_id(), (string) $process->current_step_name(), $e->getMessage()
+      ), 'error');
+    }
+  }
+
+  /**
+   * Persist the in-memory resume source with the next save, for a re-run of
+   * the current step in a later wake. False when the argument cannot be
+   * persisted (the caller decides what that means).
+   */
+  private function keep_resume_for_rerun(LongProcess $process): bool {
+    if ($this->resume_source === null) {
+      $process->set_resume_source(null);
+      return true;
+    }
+    if (($this->resume_source['kind'] ?? null) === 'unpersistable') {
+      return false;
+    }
+    $process->set_resume_source($this->resume_source);
+    return true;
   }
 
   /**
@@ -910,7 +1016,8 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         // Advance to next step
         $process->advance_step();
         $process->advance(status: 'running', payload: $result->payload);
-        $this->resume_argument = null; // Clear after first step post-resume
+        $this->clear_resume(); // Clear after first step post-resume
+        $process->set_resume_source(null);
         $this->persist($process);
 
         // Check resources after each step
@@ -1026,6 +1133,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   private function enter_compensation(LongProcess $process, string $message): void {
     $cancel = $this->withdraw_await($process);
     $process->begin_compensation($message);
+    $process->set_resume_source(null);
     $this->persist($process, null, $cancel);
   }
 
@@ -1055,9 +1163,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
   /**
    * RetryStep (D1 inside steps): when the failed step still has retries,
    * withdraw its await (if it had suspended), persist the process
-   * `scheduled` at the same step with its input payload, and schedule the
-   * re-run as a Continue intent after the policy backoff, in one state
-   * change. False = no retry left (or none declared): compensate.
+   * `scheduled` at the same step with its input payload and, for a
+   * post-await step, the source of the fact (or gather) it was resumed with
+   * (ProcessSteps::$resume), and schedule the re-run as a Continue intent
+   * after the policy backoff, in one state change. The continuation restores
+   * the argument, so the retry receives what the first attempt received.
+   * False = no retry left (or none declared), or a resume argument that
+   * cannot be persisted (logged): compensate.
    */
   private function retry_step(LongProcess $process, ReflectionMethod $method, ?\TangibleDDD\Domain\Shared\JsonLifecycleValue $input_payload, Throwable $error): bool {
     $attrs = $method->getAttributes(RetryStep::class);
@@ -1069,6 +1181,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $step = $method->getName();
     $used = $process->step_attempts($step);
     if ($used >= $policy->attempts) {
+      return false;
+    }
+    if (!$this->keep_resume_for_rerun($process)) {
+      Log::write($this->logger, sprintf(
+        '[%s process] step %s of process #%d failed (%s) and is not retried: the argument it was resumed with cannot be persisted',
+        $this->config->prefix(), $step, (int) $process->get_id(), $error->getMessage()
+      ), 'error');
       return false;
     }
 
@@ -1155,7 +1274,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
       $process->advance_step();
       $process->advance(status: 'running', payload: $result->payload);
       $this->persist($process);
-      $this->resume_argument = $mechanism->resume_argument(null);
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
       return true;
     }
 
@@ -1205,7 +1324,11 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $process->advance_step();
     $process->advance(status: 'running', payload: $process->payload());
     $this->persist($process, null, $alarm);
-    $this->resume_argument = $hit->use_mechanism_argument ? $mechanism->resume_argument(null) : $hit->resume_argument;
+    if ($hit->use_mechanism_argument) {
+      $this->take_resume($mechanism->resume_argument(null), ResumeSource::ofMechanism($mechanism, null));
+    } else {
+      $this->take_resume($hit->resume_argument, ResumeSource::ofValue($hit->resume_argument));
+    }
     return true;
   }
 
@@ -1230,6 +1353,7 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     if ($forward) {
       $process->record_checkpoint($result->checkpoint);
     }
+    $process->set_resume_source(null); // a new await: the last resume is spent
 
     $process->advance(
       status: 'suspended',
@@ -1269,6 +1393,13 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
    * move while compensating.
    */
   private function schedule_continuation(LongProcess $process, ?string $discriminator = null): void {
+    // An #[Async] post-await step runs in the continuation: it keeps its argument.
+    if (!$process->is_compensating() && !$this->keep_resume_for_rerun($process)) {
+      Log::write($this->logger, sprintf(
+        '[%s process] process #%d: the argument of step %s cannot be persisted for its continuation; the step runs without it',
+        $this->config->prefix(), (int) $process->get_id(), (string) $process->current_step_name()
+      ), 'error');
+    }
     $process->advance(status: 'scheduled', payload: $process->payload());
 
     $this->persist($process, WakeupIntent::continuation(

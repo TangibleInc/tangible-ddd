@@ -29,6 +29,14 @@ use TangibleDDD\Core\Tests\Unit\Fixtures\Process\KeyedJobProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\NoRetryProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\ReadinessProcess;
 use TangibleDDD\Core\Tests\Unit\Fixtures\Process\RetriedAwaitProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\AsyncAnswerProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\RetriedAnswerProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\RetriedGatherProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\Process\UnkeyedWaitProcess;
+use TangibleDDD\Core\Tests\Unit\Fixtures\ArrayProcessRepository;
+use TangibleDDD\Runtime\Process\LegacyProcessStore;
+use TangibleDDD\Testing\InMemoryNamedLock;
+use TangibleDDD\Testing\StaticConsumerIdentity;
 use TangibleDDD\Core\Tests\Unit\Fixtures\RecordingCommand;
 use TangibleDDD\Core\Tests\Unit\Fixtures\RecordingLogger;
 use TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined;
@@ -81,6 +89,8 @@ final class ProcessRunnerWave4Test extends TestCase {
     ReadinessProcess::$seenStatus = [];
     ReadinessProcess::$statusProbe = null;
     EffectStepProcess::reset();
+    RetriedAnswerProcess::$failures = 1;
+    RetriedGatherProcess::$failures = 1;
 
     $this->clock = new FrozenClock(new \DateTimeImmutable('2026-10-01 12:00:00', new \DateTimeZone('UTC')));
     $this->boundary = new InMemoryTransactionBoundary();
@@ -317,6 +327,54 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame('suspended', $this->store->statusOf($p->get_id()));
   }
 
+  private function legacyRunner(ArrayProcessRepository $repo): ProcessRunner {
+    $store = new LegacyProcessStore($repo, new StaticConsumerIdentity('acme'), new InMemoryNamedLock(), new RecordingLogger());
+    $runner = new ProcessRunner(
+      new AcmeConfig(), null, $this->lock, $store, $this->wakeups, $this->registry, $this->boundary, $this->clock,
+    );
+    foreach ([JobFinished::class, AppDestroyScheduled::class] as $fact) {
+      $runner->register_event($fact);
+    }
+    return $runner;
+  }
+
+  public function test_any_of_over_different_branch_classes_resumes_on_an_exact_match_legacy_store(): void {
+    // The 0.6 repository matches waiting_for = class exactly; the row holds
+    // the branches' common ancestor, so the runner asks for the fact's
+    // ancestors too.
+    $repo = new ArrayProcessRepository();
+    $runner = $this->legacyRunner($repo);
+    $answered = new CancellableSyncProcess(9);
+    $cancelled = new CancellableSyncProcess(10);
+    $runner->start($answered);
+    $runner->start($cancelled);
+    $job = RecordingCommand::$sent[0]->data;
+    self::assertSame([], $repo->find_waiting_for(JobFinished::class), 'exact match: the branch class alone finds nothing');
+
+    $report = $runner->resume_with_outcome(new JobFinished($job, true));
+    self::assertSame([$answered->get_id()], $report->resumed);
+    self::assertSame('completed', $repo->find($answered->get_id())->status());
+
+    $report = $runner->resume_with_outcome(new AppDestroyScheduled(10));
+    self::assertSame([$cancelled->get_id()], $report->cancelled);
+    self::assertSame('failed', $repo->find($cancelled->get_id())->status());
+  }
+
+  public function test_unkeyed_0_6_awaits_keep_first_wins_on_one_fact(): void {
+    $a = new UnkeyedWaitProcess('a');
+    $b = new UnkeyedWaitProcess('b');
+    $this->runner->start($a);
+    $this->runner->start($b);
+
+    $first = $this->runner->resume_with_outcome(new UserJoined(5));
+    self::assertSame([$a->get_id()], $first->resumed, '0.6: only the first accepting process takes an unkeyed fact');
+    self::assertSame('suspended', $this->store->statusOf($b->get_id()));
+
+    $second = $this->runner->resume_with_outcome(new UserJoined(6));
+    self::assertSame([$b->get_id()], $second->resumed);
+    self::assertSame(['joined:a:5', 'joined:b:6'], Journal::$steps);
+  }
+
   public function test_any_of_round_trips_and_routes_each_branch(): void {
     $any = AwaitAny::of(AwaitEvent::keyed(JobFinished::class, 'j1'))
       ->cancelledBy(new AwaitEvent(AppDestroyScheduled::class, ['app_id' => 3]))
@@ -506,12 +564,73 @@ final class ProcessRunnerWave4Test extends TestCase {
     self::assertSame(RecordingCommand::$hints[0], RecordingCommand::$hints[1], 'the re-run dispatches the same deterministic command id');
   }
 
+  public function test_a_retried_post_await_step_receives_the_same_fact(): void {
+    $p = new RetriedAnswerProcess();
+    $this->runner->start($p);
+    $job = $this->store->find($p->get_id())->await_routes()[0]->awaitKey;
+
+    $this->deliver(JobFinished::class, ['job_id' => $job, 'ok' => true]);
+    self::assertSame('scheduled', $this->store->statusOf($p->get_id()), 'a retry, not a compensation');
+    self::assertSame(1, $this->store->find($p->get_id())->step_attempts('answer'));
+
+    // A restarted worker runs the retry: the fact must come from the row.
+    $this->runner = new ProcessRunner(
+      new AcmeConfig(), null, $this->lock, $this->store, $this->wakeups, $this->registry, $this->boundary, $this->clock,
+    );
+    $this->clock->advance('PT10S');
+    $this->drainDue();
+
+    self::assertSame(['ask', 'answer:' . $job, 'answer:' . $job], Journal::$steps);
+    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+    self::assertNull($this->store->find($p->get_id())->steps()->resume, 'the resume source is cleared once the step completes');
+  }
+
+  public function test_a_retried_post_gather_step_receives_the_same_tally(): void {
+    $p = new RetriedGatherProcess();
+    $this->runner->start($p);
+    $this->deliver(ChildPurged::class, ['child_id' => 'c1']);
+    $this->deliver(ChildPurged::class, ['child_id' => 'c2'], '0b6c4c5e-1f53-4a8e-9f2b-6b8d5f0a9d25');
+    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+
+    $this->drainDue();
+
+    self::assertSame(['judge:c1,c2', 'judge:c1,c2'], Journal::$steps);
+    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+  }
+
+  public function test_an_async_post_await_step_still_receives_its_fact(): void {
+    $p = new AsyncAnswerProcess();
+    $this->runner->start($p);
+    $ref = $this->store->find($p->get_id())->await_routes()[0]->awaitKey;
+
+    $this->deliver(JobFinished::class, ['job_id' => $ref, 'ok' => true]);
+    self::assertSame('scheduled', $this->store->statusOf($p->get_id()));
+    $this->drainDue();
+
+    self::assertSame(['async-answer:' . $ref], Journal::$steps);
+    self::assertSame('completed', $this->store->statusOf($p->get_id()));
+  }
+
   public function test_new_step_state_round_trips_through_the_steps_json(): void {
     $steps = new ProcessSteps(['a', 'b'], [], [], 1, -1, null, ['a' => 2], '2026-10-02T13:00:00+00:00');
     $copy = ProcessSteps::from_json(json_decode((string) $steps->to_json(), false));
 
     self::assertSame(['a' => 2], $copy->attempts);
     self::assertSame('2026-10-02T13:00:00+00:00', $copy->await_due_at);
+
+    $source = ['step_index' => 1] + \TangibleDDD\Application\Process\ResumeSource::ofMechanism(
+      AwaitAll::keyed(ChildPurged::class, ['a'], 60)->accumulate(new ChildPurged('a')), new ChildPurged('a'),
+    );
+    $withResume = new ProcessSteps(['a', 'b'], [], [], 1, -1, null, [], null, $source);
+    $restored = ProcessSteps::from_json(json_decode((string) $withResume->to_json(), false))->resume;
+    self::assertSame($source, $restored);
+    unset($restored['step_index']);
+    self::assertSame(['a'], \TangibleDDD\Application\Process\ResumeSource::restore($restored)->gathered());
+    self::assertEquals(new JobFinished('j', false), \TangibleDDD\Application\Process\ResumeSource::restore(
+      \TangibleDDD\Application\Process\ResumeSource::ofValue(new JobFinished('j', false)),
+    ));
+    self::assertNull(\TangibleDDD\Application\Process\ResumeSource::ofValue(new \stdClass()), 'not persistable');
+
     // A 0.6 / wave-3 row without the new keys still decodes.
     $old = ProcessSteps::from_json(json_decode('{"steps":["a"],"compensations":{},"checkpoints":{},"step_index":0,"undo_index":-1,"failure_msg":null}', false));
     self::assertSame([], $old->attempts);

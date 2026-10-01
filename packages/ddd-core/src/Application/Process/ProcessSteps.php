@@ -42,6 +42,13 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
 
     /** The current await's alarm instant, ISO 8601 UTC, fixed at suspension (D7; wave 4) */
     public ?string $await_due_at = null,
+
+    /**
+     * The resumed step's argument source (ResumeSource shape plus
+     * 'step_index'), persisted while that step is re-run in a later wake
+     * (RetryStep, #[Async]); null otherwise (wave 4 fix round 1)
+     */
+    public ?array $resume = null,
   ) {
     parent::__construct();
   }
@@ -73,6 +80,8 @@ final class ProcessSteps extends DirectJsonLifecycleValue {
       failure_msg: $data['failure_msg'] ?? null,
       attempts: array_map('intval', (array) ($data['attempts'] ?? [])),
       await_due_at: isset($data['await_due_at']) ? (string) $data['await_due_at'] : null,
+      // Nested objects arrive as stdClass when the row was decoded that way.
+      resume: isset($data['resume']) ? json_decode((string) json_encode($data['resume']), true) : null,
     );
   }
 

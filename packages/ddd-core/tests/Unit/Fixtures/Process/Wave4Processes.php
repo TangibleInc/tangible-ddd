@@ -309,3 +309,94 @@ final class RetriedAwaitProcess extends LongProcess {
     return new Result();
   }
 }
+
+/**
+ * D1 in reaction to an awaited answer: the post-await step (non-nullable
+ * typed fact) fails once and is retried by its policy; the retry must see
+ * the same fact.
+ */
+final class RetriedAnswerProcess extends LongProcess {
+
+  public static int $failures = 1;
+
+  public function __construct() {
+    parent::__construct(null);
+  }
+
+  protected function ask(): Result {
+    Journal::note('ask');
+    return new Result(
+      commands: [new RecordingCommand('ask')],
+      await: AwaitEvent::keyed(JobFinished::class, $this->step_ref('ask')),
+    );
+  }
+
+  #[RetryStep(attempts: 2, backoff_seconds: 10)]
+  protected function answer(mixed $payload, JobFinished $done): Result {
+    Journal::note('answer:' . $done->job_id);
+    if (self::$failures > 0) {
+      self::$failures--;
+      throw new \RuntimeException('effect transport down');
+    }
+    return new Result();
+  }
+}
+
+/** A retried post-gather step: the retry must see the same AwaitAll tally. */
+final class RetriedGatherProcess extends LongProcess {
+
+  public static int $failures = 1;
+
+  public function __construct() {
+    parent::__construct(null);
+  }
+
+  protected function gather(): Result {
+    return new Result(await: AwaitAll::keyed(ChildPurged::class, ['c1', 'c2'], timeout_seconds: 3600));
+  }
+
+  #[RetryStep(attempts: 1)]
+  protected function judge(mixed $payload, AwaitAll $children): Result {
+    Journal::note('judge:' . implode(',', $children->gathered()));
+    if (self::$failures > 0) {
+      self::$failures--;
+      throw new \RuntimeException('judge failed');
+    }
+    return new Result();
+  }
+}
+
+/** An #[Async] post-await step: its continuation must still see the fact. */
+final class AsyncAnswerProcess extends LongProcess {
+
+  public function __construct() {
+    parent::__construct(null);
+  }
+
+  protected function ask(): Result {
+    return new Result(await: AwaitEvent::keyed(JobFinished::class, $this->step_ref('ask')));
+  }
+
+  #[\TangibleDDD\Application\Process\Async]
+  protected function answer(mixed $payload, JobFinished $done): Result {
+    Journal::note('async-answer:' . $done->job_id);
+    return new Result();
+  }
+}
+
+/** A 0.6-shaped unkeyed await (no key, criteria only): first-wins on one fact. */
+final class UnkeyedWaitProcess extends LongProcess {
+
+  public function __construct(public readonly string $name = 'a') {
+    parent::__construct(null);
+  }
+
+  protected function wait(): Result {
+    return new Result(await: new AwaitEvent(\TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined::class));
+  }
+
+  protected function joined(mixed $payload, \TangibleDDD\Core\Tests\Unit\Fixtures\UserJoined $fact): Result {
+    Journal::note('joined:' . $this->name . ':' . $fact->user_id);
+    return new Result();
+  }
+}

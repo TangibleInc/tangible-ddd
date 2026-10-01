@@ -188,6 +188,25 @@ abstract class LongProcess extends Aggregate {
     }
   }
 
+  /**
+   * @internal runner machinery: the persisted source of the current step's
+   * resume argument (ResumeSource), when that step is re-run in a later wake.
+   */
+  public function resume_source(): ?array {
+    $source = $this->steps?->resume;
+    if ($source === null || ($source['step_index'] ?? null) !== $this->current_step_index()) {
+      return null; // none, or one left behind by an earlier step
+    }
+    return $source;
+  }
+
+  /** @internal runner machinery */
+  public function set_resume_source(?array $source): void {
+    if ($this->steps !== null) {
+      $this->steps->resume = $source === null ? null : ['step_index' => $this->current_step_index()] + $source;
+    }
+  }
+
   /** The current await's alarm instant (UTC), fixed when the step suspended (D7). */
   public function await_deadline(): ?DateTimeImmutable {
     $at = $this->steps?->await_due_at;
