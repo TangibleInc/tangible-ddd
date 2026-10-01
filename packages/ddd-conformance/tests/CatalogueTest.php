@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\Mem\MemHostFixture;
 use TangibleDDD\Conformance\ProcessDecodeFaults;
 use TangibleDDD\Conformance\ProcessHost;
@@ -110,6 +111,7 @@ final class CatalogueTest extends TestCase {
     'lock.parked-answer'                     => [5, 5, null, 5],
     'process.resume-contention-keeps-answer' => [5, 5, null, 5],
     'process.resume-cause'                   => [5, 5, 5, 5],
+    'effect.performed-not-recorded'          => [5, 5, null, 5],
   ];
 
   public function test_the_catalogue_has_the_44_register_ids_the_3_d3_ids_and_the_wave_5_ids(): void {
@@ -231,6 +233,8 @@ final class CatalogueTest extends TestCase {
     self::assertTrue(is_a(MemHostFixture::class, EffectHost::class, true), 'MemHostFixture implements EffectHost (effect.journal-reuse)');
     self::assertTrue(is_a(MemHostFixture::class, WorkflowHost::class, true), 'MemHostFixture implements WorkflowHost (workflow.fact-ignition-once)');
     self::assertTrue(is_a(MemHostFixture::class, ProcessDecodeFaults::class, true), 'MemHostFixture implements ProcessDecodeFaults (decode.unknown-class)');
+    // wave 5 (CR-W5C5-2..)
+    self::assertTrue(is_a(MemHostFixture::class, EffectStateHost::class, true), 'MemHostFixture implements EffectStateHost (effect.performed-not-recorded)');
   }
 
   /** @return list<class-string> */

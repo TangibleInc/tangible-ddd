@@ -23,7 +23,7 @@ use TangibleDDD\Application\Process\StartMode;
 use TangibleDDD\Conformance\AuditEntry;
 use TangibleDDD\Conformance\AuditSinkFaults;
 use TangibleDDD\Conformance\BusOptions;
-use TangibleDDD\Conformance\EffectHost;
+use TangibleDDD\Conformance\EffectStateHost;
 use TangibleDDD\Conformance\Fixtures\Process\ProcessJournal;
 use TangibleDDD\Conformance\HostFixture;
 use TangibleDDD\Conformance\ProcessDecodeFaults;
@@ -68,6 +68,7 @@ use TangibleDDD\Runtime\Effects\EffectMiddleware;
 use TangibleDDD\Runtime\Effects\EffectResult;
 use TangibleDDD\Runtime\Effects\IEffectJournal;
 use TangibleDDD\Runtime\Effects\RecordEffect;
+use TangibleDDD\Runtime\Effects\UnrecordedEffects;
 use TangibleDDD\Runtime\DrainReport;
 use TangibleDDD\Runtime\FrozenClock;
 use TangibleDDD\Runtime\HostDefaults;
@@ -132,7 +133,7 @@ use TangibleDDD\Testing\RecordingSignalDispatcher;
  *
  * "Fresh schema" on mem is a fresh object graph built in set_up().
  */
-class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectHost, WorkflowHost {
+class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, ProcessHost, RelayRace, StatementErrors, ProcessDecodeFaults, EffectStateHost, WorkflowHost {
 
   public const START = '2026-10-01T00:00:00Z';
   public const CONSUMER_PREFIX = 'conformance';
@@ -233,7 +234,7 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
       : new InMemoryWakeupScheduler($this->boundary);
     $this->process_store->attach_intents($this->wakeups);
     $this->wake_faults = new WakeHandoffFaults();
-    $this->effect_journal = new InMemoryEffectJournal();
+    $this->effect_journal = new InMemoryEffectJournal($this->clock);
     $this->ignitions = new InMemoryWorkflowIgnitionLedger($this->clock);
     $this->workflows = new InMemoryWorkflowRepository();
     $this->workers = [];
@@ -557,7 +558,11 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
   }
 
   public function operator_view(): IOperatorView {
-    return new PortOperatorView($this->config, $this->outbox, $this->process_store, $this->clock, [$this->ledger, $this->wakeups]);
+    return new PortOperatorView($this->config, $this->outbox, $this->process_store, $this->clock, [
+      $this->ledger,
+      $this->wakeups,
+      new UnrecordedEffects($this->effect_journal, $this->config->prefix(), $this->clock),
+    ]);
   }
 
   public function consumer_prefix(): string {
@@ -630,7 +635,8 @@ class MemHostFixture implements HostFixture, AuditSinkFaults, RecordsSignals, Pr
     $this->wake_faults->fail_next($reason);
   }
 
-  // ── EffectHost (CR-W4C4-2) ───────────────────────────────────────────────
+  // ── EffectHost (CR-W4C4-2), EffectStateHost (CR-W5C5-2) ─────────────────
+  // operator_view() (ProcessHost above) carries the UnrecordedEffects source.
 
   public function effect_journal(): IEffectJournal {
     return $this->effect_journal;

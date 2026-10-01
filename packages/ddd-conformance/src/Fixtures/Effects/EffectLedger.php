@@ -13,6 +13,7 @@ use TangibleDDD\Conformance\ScenarioRows;
  * EffectHost::effect_bus()).
  *
  * - performs: perform() calls per widget (the external system's side);
+ * - records: record() calls per widget that did not hit an armed failure;
  * - fail_record(): make record() throw for the next $times calls of a widget;
  * - failure_sends: the command ids ChargeFailed was sent under.
  *
@@ -29,6 +30,9 @@ final class EffectLedger {
   /** @var array<string, int> */
   public static array $performs = [];
 
+  /** @var array<string, int> record() calls per widget that got past an armed failure */
+  public static array $records = [];
+
   /** @var array<string, int> */
   public static array $record_failures = [];
 
@@ -39,6 +43,7 @@ final class EffectLedger {
     self::$bus = null;
     self::$rows = null;
     self::$performs = [];
+    self::$records = [];
     self::$record_failures = [];
     self::$failure_sends = [];
   }
