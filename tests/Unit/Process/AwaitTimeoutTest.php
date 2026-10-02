@@ -135,9 +135,11 @@ class AwaitTimeoutTest extends TestCase {
   public function test_handle_timeout_arms_the_resource_governor(): void {
     // handle_timeout is an AS-action entry point like continue_scheduled: it
     // must set started_at, or time_exceeded() stays false (started_at null)
-    // and the whole compensation cascade runs ungoverned. With the budget
-    // forced to zero, the governor must reschedule after the first
-    // compensation instead of finishing the cascade in-request.
+    // and the whole compensation cascade runs ungoverned. This process has a
+    // single compensation, so with the budget forced to zero the governor
+    // has nothing left to yield for after it: the process finishes `failed`
+    // in-request. (Before the 2026-10-02 fix it scheduled an 'undo-end'
+    // continuation that woke into execute_forward().)
     $p = new FakeGatherFailCompensatingProcess([1]);
     $this->runner->start($p);   // normal budget: runs to suspension
 
@@ -155,9 +157,10 @@ class AwaitTimeoutTest extends TestCase {
 
     $this->runner->handle_timeout($p->get_id(), $this->repo->find($p->get_id())->current_step_index());
 
+    $this->assertNotNull($started_at->getValue($this->runner), 'handle_timeout armed the governor');
     $this->assertContains('undo_reserve', $p->executed_steps);
-    $this->assertSame('scheduled', $this->repo->find($p->get_id())->status());
+    $this->assertSame('failed', $this->repo->find($p->get_id())->status());
     $continuations = array_filter($_test_scheduled_actions, fn($a) => str_contains($a['hook'], 'process_continue'));
-    $this->assertCount(1, $continuations);
+    $this->assertCount(0, $continuations, 'nothing to continue after the last compensation');
   }
 }

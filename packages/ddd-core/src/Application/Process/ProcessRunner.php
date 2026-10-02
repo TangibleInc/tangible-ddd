@@ -1047,7 +1047,12 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
     $this->started_at = time();
 
     try {
-      if ($process->is_compensating()) {
+      // failure_message() is set only by begin_compensation() and never
+      // cleared, so a process that has one but is not compensating has nothing
+      // left to undo and is not failed yet: a continuation queued after its
+      // last undo step (older code scheduled 'undo-end') or a first-step
+      // failure. execute_compensation() then just finishes it.
+      if ($process->is_compensating() || $process->failure_message() !== null) {
         $this->execute_compensation($process);
       } else {
         $this->execute_forward($process);
@@ -1270,8 +1275,12 @@ final class ProcessRunner implements IProcessEntry, IWakeHandler, IStrandedScann
         $process->advance_compensation();
         $this->persist($process);
 
-        if ($this->resources_exceeded()) {
-          $this->schedule_continuation($process, 'undo-' . ($process->current_undo_step() ?? 'end'));
+        // Only yield while undo steps remain (as execute_forward() does with
+        // is_steps_complete()). After the last one undo_index is -1, which also
+        // reads as "not compensating": a continuation scheduled now would wake
+        // into execute_forward() and re-run the failed step. Finish instead.
+        if (!$process->is_compensation_complete() && $this->resources_exceeded()) {
+          $this->schedule_continuation($process, 'undo-' . $process->current_undo_step());
           return;
         }
 
