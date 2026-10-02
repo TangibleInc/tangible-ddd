@@ -6,6 +6,8 @@ Library items raised after the wave-5 gate (`3f22973`). Each is a gap a consumer
 
 - **Undo-end resume (correctness, 2026-10-02).** A process that hit its resource budget right after its last compensation step scheduled an `undo-end` continuation that woke into `execute_forward()`, re-ran the failed step and could end `completed`. Fixed on `fix/compensation-resource-budget` (`b0c72ee`): yield only while undo steps remain, and route a process that has a failure message but is not compensating to `execute_compensation()`. Reported by the TXP pipeline (`txp-program`), tests in `packages/ddd-core/tests/Unit/Process/CompensationBudgetTest.php`.
 
+- **E3 note for E1 effects (2026-10-02).** ddd-symfony's `CompiledSubscriptionRegistry::failure_command_of()` checked `instanceof IExternalEffectCommand`, so a handler-class (E1) effect command, an `IEffectCommand` handled by an `IExternalEffectHandler`, never had its failure command recorded in the delivery ledger note: `ddd:ops:list --layer=delivery` showed the exhausted pair without `failure_command`/`failure_command_at`. Core already fired the command (it checks `IEffectCommand`). Fixed on `fix/effect-failure-command`; test `FailureCommandNoteTest::test_an_exhausted_handler_class_effect_pair_records_its_failure_command`. Reported by TXP slice billing-accounts.
+
 ## Open (from TXP PR #4, slice process-kernel)
 
 | Id | Kind | Gap | TXP workaround |

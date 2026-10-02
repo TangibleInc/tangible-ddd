@@ -15,6 +15,7 @@ use TangibleDDD\Symfony\Runtime\DeliveryNotes;
 use TangibleDDD\Symfony\Tests\Integration\PostgresTestCase;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingEffectListener;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingFact;
+use TangibleDDD\Symfony\Tests\Support\Fixtures\PingHandledEffectListener;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\PingListener;
 use TangibleDDD\Symfony\Tests\Support\Fixtures\RecordingCommand;
 
@@ -55,6 +56,31 @@ final class FailureCommandNoteTest extends PostgresTestCase {
     [$item] = (new DbalLedgerOperatorSource($this->db, 'txp', '', 2))->items(Layer::Delivery, 10);
     self::assertSame(2, $item->attempts);
     self::assertStringStartsWith('exhausted: provider down', (string) $item->last_error);
+    self::assertStringContainsString('failure command ' . RecordingCommand::class . ' ran at ', (string) $item->last_error);
+  }
+
+  public function test_an_exhausted_handler_class_effect_pair_records_its_failure_command(): void {
+    // E1: the failure command lives on IEffectCommand, not only on the
+    // self-contained IExternalEffectCommand (reported by TXP billing-accounts).
+    $ledger = new DbalDeliveryLedger($this->db);
+    $registry = new CompiledSubscriptionRegistry(
+      [CompiledSubscriptionRegistry::listener_spec('app.handled', PingHandledEffectListener::class, PingFact::class, 10)],
+      new ServiceLocator(['app.handled' => static fn () => new PingHandledEffectListener()]),
+      null, null, new DeliveryNotes($ledger),
+    );
+    $delivery = new IntegrationDelivery($registry, $ledger, 2);
+    $fact = IntegrationEnvelope::wrap(['n' => 9], 'corr-1', 1, 'evt-e3-handled');
+
+    $delivery->deliver(PingFact::class, $fact);
+    $second = $delivery->deliver(PingFact::class, $fact);
+    self::assertSame(['listener:' . PingHandledEffectListener::class], $second->exhausted);
+    self::assertSame(['compensate-handled:9'], RecordingCommand::$sent, 'core fires the failure command');
+
+    $row = $this->db->fetchAssociative('SELECT failure_command, failure_command_at FROM ddd_delivery_ledger');
+    self::assertSame(RecordingCommand::class, $row['failure_command'], 'the E3 note names it');
+    self::assertNotNull($row['failure_command_at']);
+
+    [$item] = (new DbalLedgerOperatorSource($this->db, 'txp', '', 2))->items(Layer::Delivery, 10);
     self::assertStringContainsString('failure command ' . RecordingCommand::class . ' ran at ', (string) $item->last_error);
   }
 

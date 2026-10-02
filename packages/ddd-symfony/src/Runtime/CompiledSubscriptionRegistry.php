@@ -8,7 +8,7 @@ use Psr\Container\ContainerInterface;
 use TangibleDDD\Application\BehaviourWorkflows\WorkflowIgniter;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Domain\Events\IIntegrationEvent;
-use TangibleDDD\Runtime\Effects\IExternalEffectCommand;
+use TangibleDDD\Runtime\Effects\IEffectCommand;
 use TangibleDDD\Runtime\Delivery\ISubscriptionRegistry;
 use TangibleDDD\Runtime\Delivery\Subscriber;
 use TangibleDDD\Runtime\Delivery\SubscriptionRegistrar;
@@ -230,7 +230,9 @@ final class CompiledSubscriptionRegistry implements ISubscriptionRegistry {
       } else {
         return null;
       }
-      $failure = $command instanceof IExternalEffectCommand ? $command->failure_command($last) : null;
+      // IEffectCommand, as core's SubscriptionRegistrar: an E1 handler-class
+      // effect declares failure_command() too, not only IExternalEffectCommand.
+      $failure = $command instanceof IEffectCommand ? $command->failure_command($last) : null;
       return $failure === null ? null : get_class($failure);
     } catch (\Throwable) {
       return null;
