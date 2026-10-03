@@ -76,6 +76,10 @@ seven `proposals-*.json` files, with the reviewer's overrides applied.
 - **Flat fixture namespaces keep a qualifier** that a focused class drops:
   `EffectHost::effect_journal` vs `DurableRuntime::journal`, and
   `HostFixture::reject_next_submission` vs `InMemoryTransport::reject_next`.
+- **Accessors prefer a bare noun** (`status()`, `event_id()`, `pooler()`).
+  Dropping `get_` is a preference, not a rule: keep it where the bare noun
+  would be ambiguous, would read like a verb, or would break a family of
+  existing names (the 0.6 `get_id()`, `get_by_*()`).
 - **Verb predicates are allowed only where `is_`/`has_` misreads**:
   `needs_retry`, `shares_connection`, `captures_parameters`,
   `in_transaction`, `did_work`. Every other predicate is `is_`/`has_`.
@@ -146,7 +150,7 @@ alternative rejected, and the reason.
 | 25 | `HostFixture`/`ProcessWorker::processLock`, `processRunner` | `lock`, `runner` | `process_lock`, `process_runner` | The fixture has one lock port. The family is `lock_key`, `hold_lock_elsewhere`, `fail_next_lock` and `lock_acquisitions`. `Factory::process_lock` keeps the qualifier because a factory builds many locks. |
 | 26 | `FreshProcesses::*InFreshProcess` | `publish_fresh` / `drain_fresh` / `deliver_fresh` / `start_fresh` | `publish_in_fresh_process`, ... | They are one family that returns `FreshRun`. The suffix says the rest. |
 | 27 | `WpNamedLock::isFreeOrHeldHere` | `is_free_or_mine` | `is_held_elsewhere` | Inverting it would flip the fail-closed default on a query error. "mine" is the shortest word that keeps the "held here" half. |
-| 28 | `AggregateRootRepository::get_aggregate_class` | `aggregate_class` | keep `get_aggregate_class` | The house style is binding for new API. The frozen sibling `PersistsAggregatesRepository::get_aggregate_class()` is grandfathered, so a subclass that moves between the two bases renames one protected override. |
+| 28 | `AggregateRootRepository::get_aggregate_class` | `aggregate_class` | keep `get_aggregate_class` | Dropping `get_` is a preference, applied here because the bare noun reads fine. The frozen sibling `PersistsAggregatesRepository::get_aggregate_class()` is grandfathered, so a subclass that moves between the two bases renames one protected override. |
 | 29 | `RuntimeReset::forgetRegistrationsForTests` | `forget_for_tests` | `reset_for_tests` | On a class called `RuntimeReset`, "reset" already means `between_messages()`. |
 | 30 | `ConnectionTopology::describePooler` | `pooler` | `describe_pooler` | A bare noun accessor: the detected pooler as a reason string, or null. Call sites bind it to `$why`. |
 

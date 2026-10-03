@@ -142,7 +142,7 @@ Both SQL schemas only grow. A shipped file is never edited, and every change is 
 
 ### Naming
 
-Every API added in 0.7 follows the house style. Methods and properties are snake_case. Accessors are bare nouns with no `get_` prefix (`status()`, `event_id`, `last_error()`). Predicates start with `is_` or `has_` (`is_unheard()`, `is_satisfied()`). Lookups are `find()` / `find_*()`, and keyed lookups end in `_of()` (`version_of()`, `event_class_of()`). Interfaces are I-prefixed.
+Every API added in 0.7 follows the house style. Methods and properties are snake_case. Accessors prefer a bare noun (`status()`, `event_id`, `last_error()`): drop `get_` where the name reads fine without it, and keep it where the bare noun would be ambiguous, would read like a verb, or would break a family of existing names. That part is a preference, not a rule. Predicates start with `is_` or `has_` (`is_unheard()`, `is_satisfied()`). Lookups are `find()` / `find_*()`, and keyed lookups end in `_of()` (`version_of()`, `event_class_of()`). Interfaces are I-prefixed.
 
 The 0.6 API keeps its names: `get_id()`, `get_event_class()`, `get_command()`, `get_by_*()` and the rest. Framework callbacks keep the framework's names, such as `__invoke()`, Symfony `process()` and `getConfigTreeBuilder()`. The full rename of the extraction-era names (402 members) is in `docs/extraction/naming/table.json`.
 

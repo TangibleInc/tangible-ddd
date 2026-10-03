@@ -81,6 +81,18 @@ for the question funnel, adversarial review, and handoff format.
 Do not introduce an abstraction only to rename a handler. The distinction must
 change ownership, lifecycle, persistence, or execution semantics.
 
+## Naming
+
+New tangible-ddd API (and consumers that adopt the house style) uses
+snake_case methods and properties, `I`-prefixed interfaces, and `is_`/`has_`
+predicates. Prefer short, well-chosen names.
+
+Accessors prefer a bare noun (`status()`, `event_id()`, `last_error()`):
+drop `get_` where the name reads fine without it. This is a preference, not a
+rule. Keep `get_` where the bare noun would be ambiguous, would read like a
+verb, or would break a family of existing names (the 0.6 `get_id()`,
+`get_event_class()`, `get_by_*()`).
+
 ## Commands and queries
 
 Both handler shapes are supported.
