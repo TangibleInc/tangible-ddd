@@ -22,6 +22,44 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * - `protected function step_name(SomePayload $payload): Result` - receives payload
  * - `protected function step_name(?SomePayload $payload, SomeEvent $event): Result` - post-await step
  *
+ * ## Why a process, and why its step names matter
+ *
+ * A LongProcess keeps a multi-step flow in one class, in order. The
+ * alternative, a chain of integration events and listeners where each
+ * listener works out from state where the flow is, scatters the story so
+ * that it exists nowhere in the code. That only pays off if the one place
+ * the flow lives reads as the business story. Steps named in engine
+ * vocabulary give you the flow in one place but lose most of the benefit.
+ *
+ * ## Step names
+ *
+ * Name steps as verbs in the domain's words, so the method list reads as the
+ * process's story, top to bottom:
+ *
+ * ```php
+ * // Bad: engine vocabulary. Nobody can tell what this process does.
+ * protected function push_target(...): Result
+ * protected function probe_target(...): Result
+ * protected function settle_target(...): Result
+ *
+ * // Good: the same cycle-change story, in the business's words.
+ * protected function add_app_to_annual_subscription(...): Result
+ * protected function remove_app_from_monthly_subscription(...): Result
+ * protected function grant_the_new_entitlement(...): Result
+ *
+ * #[Compensates('add_app_to_annual_subscription')]
+ * protected function take_app_back_off_annual(\Throwable $cause, mixed $checkpoint): Result
+ * ```
+ *
+ * - Prefer one process per business story over one generic process that
+ *   covers several kinds of change. A process that handles subscribe,
+ *   release and cycle change at once is forced into generic words.
+ * - Keep engine concerns out of the step list where the library has a
+ *   mechanism for them: timeouts go on the await (`timeout_seconds` and
+ *   `on_timeout`; `within()` / `until()` on `AwaitAny`), retries on
+ *   `#[RetryStep]`, idempotent external calls on an effect command, undo on
+ *   `#[Compensates]`.
+ *
  * ## DI Registration
  *
  * Register the consumer's process namespace as private, discovery-only

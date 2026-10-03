@@ -229,6 +229,25 @@ or checkpoints.
   its purpose. The resulting domain work announces any further integration
   events.
 
+**Why a process, and why its step names matter.** A `LongProcess` keeps a
+multi-step flow in one class, in order, instead of hiding it in an integration
+event dance, where each listener works out from state where the flow is and the
+story exists nowhere in the code. That only pays off if the one place the flow
+lives reads as the business story:
+
+- **Steps are verbs in the domain's words**, and the method list reads as the
+  story. Not `push_target` / `probe_target` / `settle_target`, but
+  `add_app_to_annual_subscription`, `remove_app_from_monthly_subscription`,
+  `grant_the_new_entitlement`, with
+  `#[Compensates('add_app_to_annual_subscription')] take_app_back_off_annual`.
+- **One process per business story.** A generic process covering subscribe,
+  release, reversal, same-cycle plan change and cycle change is what forces
+  generic "target/source leg" vocabulary. Split it.
+- **Engine concerns are not steps** where the library has a mechanism:
+  timeouts on the await (`timeout_seconds` and `on_timeout`; `within()` /
+  `until()` on `AwaitAny`), retries on `#[RetryStep]`, idempotent external
+  calls on an effect command, undo on `#[Compensates]`.
+
 For retained and dumped Symfony containers, register process classes as
 private discovery definitions tagged `ddd.long_process`. Call
 `DDDCompilerPasses::register($container_builder)` after loading all service
