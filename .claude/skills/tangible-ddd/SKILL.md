@@ -76,7 +76,7 @@ for the question funnel, adversarial review, and handoff format.
 | React synchronously inside the same transaction | Domain event handler |
 | React later, across a boundary, with retry and causation | Integration event plus `IntegrationListener` |
 | Run a stored/configurable sequence over work items | `BehaviourWorkflow` routine |
-| Model a named lifecycle that waits, resumes, schedules, or compensates | `LongProcess` |
+| Model a well-named business process that spans time (waits, resumes, schedules, or compensates) and belongs in one place | `LongProcess` |
 
 Do not introduce an abstraction only to rename a handler. The distinction must
 change ownership, lifecycle, persistence, or execution semantics.
@@ -229,11 +229,18 @@ or checkpoints.
   its purpose. The resulting domain work announces any further integration
   events.
 
+**When to use one.** A `LongProcess` is reserved for a flow that is a business
+process you can give a good name, may span time (awaits, alarms, waits), and
+makes sense to have all in one place, which is the `LongProcess` row of the
+selection table above. Anything else is a single command, a listener, or a
+behaviour workflow.
+
 **Why a process, and why its step names matter.** A `LongProcess` keeps a
 multi-step flow in one class, in order, instead of hiding it in an integration
 event dance, where each listener works out from state where the flow is and the
-story exists nowhere in the code. That only pays off if the one place the flow
-lives reads as the business story:
+story exists nowhere in the code. Having the flow in one place pays off even
+when the step names are technical. Naming the steps in the business's words
+makes it pay off more, because that one place then reads as the business story:
 
 - **Steps are verbs in the domain's words**, and the method list reads as the
   story. Not `push_target` / `probe_target` / `settle_target`, but

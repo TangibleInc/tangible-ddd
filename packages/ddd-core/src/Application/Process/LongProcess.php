@@ -22,14 +22,24 @@ use TangibleDDD\Domain\Shared\JsonLifecycleValue;
  * - `protected function step_name(SomePayload $payload): Result` - receives payload
  * - `protected function step_name(?SomePayload $payload, SomeEvent $event): Result` - post-await step
  *
+ * ## When to use a LongProcess
+ *
+ * A LongProcess is reserved for a flow that:
+ * - is a business process you can give a good name;
+ * - may span time (it awaits facts, sets alarms, or waits);
+ * - makes sense to have all in one place.
+ * Anything else is not a LongProcess: a single command, a listener, or a
+ * behaviour workflow.
+ *
  * ## Why a process, and why its step names matter
  *
  * A LongProcess keeps a multi-step flow in one class, in order. The
  * alternative, a chain of integration events and listeners where each
  * listener works out from state where the flow is, scatters the story so
- * that it exists nowhere in the code. That only pays off if the one place
- * the flow lives reads as the business story. Steps named in engine
- * vocabulary give you the flow in one place but lose most of the benefit.
+ * that it exists nowhere in the code. Having the flow in one place pays off
+ * even when the step names are technical; naming the steps in the
+ * business's words makes it pay off more, because the one place the flow
+ * lives then reads as the business story.
  *
  * ## Step names
  *
