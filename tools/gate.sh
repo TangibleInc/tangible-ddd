@@ -8,7 +8,7 @@
 #                         and the harnesses wp-integration, conformance-wp, core-pdo
 #                         (PDO adapters + PDO conformance in both prepare modes + the
 #                         two-process example) and compat (loader 7.2 + rollback 7.3).
-#                         About 45-60 minutes.
+#                         About 15-20 minutes (11.5 on an M-series Mac with warm caches).
 #
 # Also as `composer gate` / `composer gate:quick`.
 #
@@ -71,7 +71,8 @@ conformance() { (cd packages/ddd-conformance && rm -rf vendor/tangible && compos
 # ddd-symfony: a compiled test container in var/cache keeps the database it was built
 # with; clear it, or a run against a different DDD_SF_PG_URL gives false failures.
 symfony()     { (cd packages/ddd-symfony && rm -rf vendor/tangible var/cache && composer install -q --no-interaction && vendor/bin/phpunit); }
-harness()     { DDD_DB_NAME="${RUN_ID}_$1" bash tests/harness/run.sh "$1"; }
+# Database names must be [A-Za-z0-9_]: wp-integration -> gate_<pid>_wp_integration.
+harness()     { DDD_DB_NAME="${RUN_ID}_${1//-/_}" bash tests/harness/run.sh "$1"; }
 
 composer install -q --no-interaction >"$LOGS/composer-install.log" 2>&1 || { echo "composer install failed: $LOGS/composer-install.log"; exit 1; }
 

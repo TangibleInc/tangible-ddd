@@ -234,7 +234,7 @@ Every library change must pass the gate before it lands:
 
 ```bash
 composer gate:quick   # no databases, about 30 seconds: run it constantly
-composer gate         # everything, about 45-60 minutes: run it before landing
+composer gate         # everything, about 15-20 minutes: run it before landing
 ```
 
 Both run `tools/gate.sh`, which prints PASS/FAIL per step with its log path and
@@ -290,8 +290,11 @@ every red step.
   such as `PostCommitWakeupTest`, because Postgres NOTIFY does not cross databases).
 - **Result cache.** The root suite orders tests defects-first from
   `.phpunit.cache`. After a random-order run, delete it before a normal run.
-- **Slow suites.** compat (about 15-20 min) and core-pdo (about 10 min) dominate.
-  The Symfony suite takes about 5-10 minutes.
+- **Slow suites.** symfony, core-pdo and compat take about 3-5 minutes each and
+  dominate the full gate; everything else is seconds. The first harness run on a
+  machine is slower: it downloads WordPress, pulls the pinned Docker images and
+  clones datastream.
+- **Database names.** The harnesses accept only `[A-Za-z0-9_]` in `DDD_DB_NAME`.
 - **Known flake.** `ParkedAnswerTest::test_a_parked_answer_held_off_past_the_budget_is_kept_retrying_at_the_cap`
   (ddd-symfony) waits out real lock timeouts and failed once in a loaded run. Re-run
   it alone with a clean `var/cache` before treating it as a regression.
