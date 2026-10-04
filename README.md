@@ -228,6 +228,81 @@ Schema v8 is additive only, and a 0.6 copy tolerates it.
 
 The winning copy registers **Tangible DDD** at the `tangible-dddash` admin page. The dashboard discovers top-level consumers and reads each one's audit, outbox, process, workflow, touch and trace data. Exact traces are unified across participating consumers and keep consumer provenance. Biography stays scoped to the selected aggregate's owner. The live view uses WordPress Heartbeat to show new trace pieces as workers finish them.
 
+## Verifying a change
+
+Every library change must pass the gate before it lands:
+
+```bash
+composer gate:quick   # no databases, about 30 seconds: run it constantly
+composer gate         # everything, about 45-60 minutes: run it before landing
+```
+
+Both run `tools/gate.sh`, which prints PASS/FAIL per step with its log path and
+exits non-zero if any step failed. It keeps going after a failure, so one run shows
+every red step.
+
+| Step | What | Needs |
+|---|---|---|
+| `cs` | php-cs-fixer on the new code | — |
+| `phpstan`, `phpstan-core` | both static configs | — |
+| `deptrac` | package boundaries (core must not reach WordPress or Symfony) | — |
+| `root-unit` | root unit suite (WordPress stubs, loader, ABI freeze) | — |
+| `core-unit` | `packages/ddd-core` with Composer autoload only | — |
+| `conformance` | `packages/ddd-conformance --group mem`, every scenario on the in-memory host | — |
+| `example-plain` | `examples/plain-php/run.php` | — |
+| `symfony` (full) | `packages/ddd-symfony`: bundle, DBAL/Messenger adapters, its conformance host | Postgres 16 |
+| `wp-integration` (full) | the WordPress integration suite in a real WordPress | Docker, MySQL 8.0, datastream |
+| `conformance-wp` (full) | every scenario on the WordPress host | Docker, MySQL 8.0, datastream |
+| `core-pdo` (full) | PDO adapters + every scenario on the PDO host in both prepare modes + the two-process example | MySQL 8.0 |
+| `compat` (full) | cs, release artifact, loader cases (7.2) and rollback against real 0.6.2/0.6.5/0.6.6 installs (7.3) | Docker, MySQL 8.0, datastream, network |
+
+**Environment for the full gate.**
+
+- PHP 8.2+ with `pdo_mysql`, `pdo_pgsql`, `mysqli`; Composer; Docker; git.
+- MySQL 8.0 at `DDD_MYSQL_HOST:DDD_MYSQL_PORT` (default `127.0.0.1:33306`, user
+  `root`, password `DDD_MYSQL_PASSWORD`, default `ddd`). The PDO suite reads the same
+  server through `DDD_PDO_HOST`/`DDD_PDO_PORT`/`DDD_PDO_USER`/`DDD_PDO_PASSWORD`/
+  `DDD_PDO_DATABASE` (same defaults). The harnesses can also start their own pinned
+  MySQL container if `DDD_MYSQL_HOST` is unset; see `tests/harness/lib/common.sh`.
+- Postgres 16 through `DDD_SF_PG_URL` (default
+  `pgsql://postgres:ddd@127.0.0.1:55432/<unique>`).
+- Every run creates and drops its own databases, so several gates can share one
+  server. Throwaway local servers:
+  `docker run -d --name ddd-mysql8 -e MYSQL_ROOT_PASSWORD=ddd -p 33306:3306 mysql:8.0` and
+  `docker run -d --name ddd-pg16 -e POSTGRES_PASSWORD=ddd -p 55432:5432 postgres:16`.
+  Test data only, so durability settings such as `fsync` can be off.
+- **`.reference/tangible-datastream`** is optional for the quick gate: the root
+  suite passes without it. The WordPress harnesses need datastream at the commit
+  pinned in `tests/harness/refs.lock` as their integration host; they take it from
+  the local `.reference` clone (created by `composer install`) when it has that
+  commit, otherwise they clone it over SSH, which needs read access to
+  TangibleInc/tangible-datastream (or point `DDD_DATASTREAM_SRC` at a copy).
+
+**Things that trip newcomers.**
+
+- **The harnesses test the committed tree** (git HEAD), not the working directory.
+  Commit first, or run with `DDD_HARNESS_REF=WORKTREE`.
+- **Stale copies.** `packages/ddd-symfony` and `packages/ddd-conformance` vendor a
+  *copy* of ddd-core through path repositories, and ddd-symfony compiles a test
+  container into `var/cache` that remembers its database URL. The gate removes
+  `vendor/tangible` and `var/cache` before those suites; when you run them by hand,
+  do the same, or you test old core code or the wrong database (false failures
+  such as `PostCommitWakeupTest`, because Postgres NOTIFY does not cross databases).
+- **Result cache.** The root suite orders tests defects-first from
+  `.phpunit.cache`. After a random-order run, delete it before a normal run.
+- **Slow suites.** compat (about 15-20 min) and core-pdo (about 10 min) dominate.
+  The Symfony suite takes about 5-10 minutes.
+- **Known flake.** `ParkedAnswerTest::test_a_parked_answer_held_off_past_the_budget_is_kept_retrying_at_the_cap`
+  (ddd-symfony) waits out real lock timeouts and failed once in a loaded run. Re-run
+  it alone with a clean `var/cache` before treating it as a regression.
+- **Serial or parallel.** The suites use unique database names, so they can run in
+  parallel against shared servers. One machine-level limit: the harnesses start
+  Docker containers, so don't run two `compat` gates at once on a small machine.
+- **Order independence.** The root suite also passes under
+  `vendor/bin/phpunit --order-by=random`. A test that only fails in some orders is a
+  real defect in its setup or teardown (usually a process-static registry reset on
+  one side only).
+
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md): 0.7.0 changes, migration from 0.6.x

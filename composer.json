@@ -66,11 +66,21 @@
         ],
         "deadcode": "phpstan analyse -c phpstan-deadcode.neon --memory-limit=1G --no-progress",
         "cs": "php-cs-fixer check --config=.php-cs-fixer.dist.php --diff --show-progress=none",
-        "cs:fix": "php-cs-fixer fix --config=.php-cs-fixer.dist.php --show-progress=none"
+        "cs:fix": "php-cs-fixer fix --config=.php-cs-fixer.dist.php --show-progress=none",
+        "gate": [
+            "Composer\\Config::disableProcessTimeout",
+            "bash tools/gate.sh full"
+        ],
+        "gate:quick": [
+            "Composer\\Config::disableProcessTimeout",
+            "bash tools/gate.sh quick"
+        ]
     },
     "scripts-descriptions": {
         "cs": "Fail on code-style drift in the new code (.php-cs-fixer.dist.php); also run by tests/harness/run.sh compat",
-        "cs:fix": "Format the new code to .php-cs-fixer.dist.php"
+        "cs:fix": "Format the new code to .php-cs-fixer.dist.php",
+        "gate": "The full library gate: every suite, including the MySQL/Postgres/Docker ones (tools/gate.sh full)",
+        "gate:quick": "The library gate without databases (tools/gate.sh quick)"
     },
     "minimum-stability": "stable"
 }
