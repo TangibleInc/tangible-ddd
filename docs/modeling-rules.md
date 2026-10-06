@@ -183,13 +183,22 @@ implements `ITransactionalCommand` when the stock wpdb middleware is used.
 ### DDD-M6: Long processes coordinate, they do not publish
 
 A `LongProcess` step returns commands, awaits, schedules, or checkpoints. It
-never starts another process or publishes an integration event directly.
+never calls `ProcessRunner::start()`, and it never publishes an integration
+event directly.
+
+A later process begins instead when a step's command is handled, its domain
+work announces a fact, and a process declaring `#[StartsOn]` on that fact
+ignites. Processes therefore nest only implicitly, through facts; see DDD-J4.
 
 - **Why:** a process is a lifecycle that waits and resumes. Events it
   published directly would bypass the commands whose domain work is meant to
-  announce them.
-- **Enforced by:** Phan (planned): no references to `IIntegrationEventBus` or
-  `ProcessRunner` in a `LongProcess`.
+  announce them, and a direct spawn would make the child's birth an
+  un-audited side effect of a step. Routing through command and fact keeps
+  every hop recorded and replay-safe via `ignited_by` dedup.
+- **Enforced by:** Runtime for direct spawns — `ProcessRunner::start()` throws
+  `ProcessStartedInsideProcess` when the ambient cause is a trajectory, and
+  `ProcessStartedInsideCommand` when it is an act. Phan (planned): no
+  references to `IIntegrationEventBus` in a `LongProcess`.
 
 ## Events
 
@@ -268,6 +277,22 @@ When authority, invariants, transaction scope, time boundaries, retry,
 orchestration, or ownership is unclear, the model is agreed through the
 [consumer design interview](consumer-design-interview.md) before
 implementation starts.
+
+- **Enforced by:** Review.
+
+### DDD-J4: Implicit process nesting is reviewed, not assumed
+
+Because a process can only begin from a fact (DDD-M6), a chain of processes
+can form without any one of them naming another: a step's command announces a
+fact, a second process ignites on it, and its own steps do the same. The
+framework permits this and the trace records it faithfully.
+
+Whether a given chain is sound composition or an accidental lifecycle is a
+modeling judgment. Read it in the dashboard trace: depth nobody designed,
+processes whose lifetimes overlap without a stated reason, or a chain no
+single consumer can explain, are the signals to re-examine. Decomposition
+across consumer boundaries is normally fine; depth accumulating inside one
+consumer usually means one `LongProcess` is doing what one process should.
 
 - **Enforced by:** Review.
 
