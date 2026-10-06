@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.5
+# Consumer release and migration ledger — through 0.6.7
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -609,11 +609,12 @@ the readouts. Every other admin screen is unaffected.
 that previously fataled now skips and logs. Consumers that relied on the fatal
 as an activation-order alarm should watch the log line instead.
 
-## 0.6.7 (unreleased: typed lists move to the domain)
+## 0.6.7 (typed lists move to the domain; modeling rules)
 
 `TypedList`, `IntList` and `StringList` move from `TangibleDDD\Infra\Shared` to
 `TangibleDDD\Domain\Shared`. They are plain in-memory collections, and the
-modeling rules do not let domain code depend on infrastructure (DDD-L1). The framework's own `WorkItemList` broke that rule by
+[modeling rules](modeling-rules.md) do not let domain code depend on
+infrastructure (DDD-L1). The framework's own `WorkItemList` broke that rule by
 extending the old class.
 
 The old names remain aliases of the new classes, so a plugin that has not
@@ -628,6 +629,10 @@ namespace in `use` statements and parent classes. A consumer that does so must
 require this release or later, because older framework copies only have the
 old names. The old names are deprecated and will be removed in a future
 breaking release.
+
+Documentation: [modeling rules](modeling-rules.md) is new, a checkable list of
+the rules a consumer follows, each with a stable ID (`DDD-L1` and so on) and
+how it is enforced. The agent skill links to it.
 
 ## How to verify a migration (any version)
 
