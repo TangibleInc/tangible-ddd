@@ -13,6 +13,7 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/wiring-a-consumer.md',
     'docs/consumer-design-interview.md',
     'docs/consumer-modules.md',
+    'docs/modeling-rules.md',
     'docs/migration-0.2-to-0.3.md',
     '.claude/skills/tangible-ddd/SKILL.md',
   ];
@@ -30,6 +31,7 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/wiring-a-consumer.md',
     'docs/consumer-design-interview.md',
     'docs/consumer-modules.md',
+    'docs/modeling-rules.md',
     '.claude/skills/tangible-ddd/SKILL.md',
   ];
 

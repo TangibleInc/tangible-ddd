@@ -20,6 +20,7 @@ first; then the current documents below.
 | [This documentation map](README.md) | Status vocabulary and navigation |
 | [Wiring a consumer](wiring-a-consumer.md) | Complete top-level consumer, DI, middleware, table, and deployment contract |
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |
+| [Modeling rules](modeling-rules.md) | The checkable rules with stable IDs, their reasons, and how each is enforced |
 | [Consumer modules](consumer-modules.md) | Host/module lifecycle, separate-container bridge, routing, and process overlay |
 | [Eventing lanes](eventing-lanes.md) | The three raising lanes, reschedule-via-fact, the WorkflowHandler phase lock, and the replay-not-splice rule |
 | [DDDash v2 scope](dashboard/V2-OUTLINE.md) | Implemented unified trace, Aggregate Biography, consumer provenance, and explicit non-goals |
