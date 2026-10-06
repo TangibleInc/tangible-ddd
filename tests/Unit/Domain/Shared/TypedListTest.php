@@ -1,11 +1,11 @@
 <?php
 
-namespace TangibleDDD\Tests\Unit\Infra;
+namespace TangibleDDD\Tests\Unit\Domain\Shared;
 
 use InvalidArgumentException;
 use OutOfBoundsException;
 use PHPUnit\Framework\TestCase;
-use TangibleDDD\Infra\Shared\TypedList;
+use TangibleDDD\Domain\Shared\TypedList;
 
 /**
  * Concrete typed list for testing: a list of strings.

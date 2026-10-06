@@ -2,18 +2,19 @@
 
 namespace TangibleDDD\Infra\Shared;
 
-final class StringList extends TypedList {
-  public function offsetGet($index): string {
-    return $this->protected_get($index);
-  }
+/*
+ * StringList moved to TangibleDDD\Domain\Shared in 0.6.7; the old name
+ * stays an alias. See TypedList.php in this directory.
+ */
 
-  public function current(): string {
-    return $this->protected_get($this->_position);
-  }
+class_exists(\TangibleDDD\Domain\Shared\StringList::class);
 
-  public function get_type(): string {
-    return 'string';
+if (\false) {
+  /**
+   * Declared only for static analysis and IDEs; never executed.
+   *
+   * @deprecated 0.6.7 Use \TangibleDDD\Domain\Shared\StringList.
+   */
+  final class StringList extends \TangibleDDD\Domain\Shared\TypedList {
   }
 }
-
-

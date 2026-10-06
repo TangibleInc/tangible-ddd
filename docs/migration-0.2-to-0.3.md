@@ -609,6 +609,26 @@ the readouts. Every other admin screen is unaffected.
 that previously fataled now skips and logs. Consumers that relied on the fatal
 as an activation-order alarm should watch the log line instead.
 
+## 0.6.7 (unreleased: typed lists move to the domain)
+
+`TypedList`, `IntList` and `StringList` move from `TangibleDDD\Infra\Shared` to
+`TangibleDDD\Domain\Shared`. They are plain in-memory collections, and the
+modeling rules do not let domain code depend on infrastructure (DDD-L1). The framework's own `WorkItemList` broke that rule by
+extending the old class.
+
+The old names remain aliases of the new classes, so a plugin that has not
+migrated keeps working against this release. Each new class registers its
+alias when it loads, so type hints, `instanceof` and `catch` with an old name
+hold even when nothing has referenced the old name yet. Subclasses declared
+with an old parent keep working and are instances of the new class.
+`TypedListOldNamespaceTest` checks all three in separate processes.
+
+**Mandatory for existing consumers: nothing.** Migrate by replacing the
+namespace in `use` statements and parent classes. A consumer that does so must
+require this release or later, because older framework copies only have the
+old names. The old names are deprecated and will be removed in a future
+breaking release.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.
