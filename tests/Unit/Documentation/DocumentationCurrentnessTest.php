@@ -14,7 +14,18 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/consumer-design-interview.md',
     'docs/consumer-modules.md',
     'docs/modeling-rules.md',
+    'docs/agents.md',
     'docs/migration-0.2-to-0.3.md',
+    '.claude/skills/tangible-ddd/SKILL.md',
+  ];
+
+  /**
+   * Consumers' AGENTS.md files link to these inside vendor/tangible/ddd/, so
+   * the Composer download must keep them.
+   */
+  private const SHIPPED_TO_CONSUMERS = [
+    'docs/agents.md',
+    'docs/modeling-rules.md',
     '.claude/skills/tangible-ddd/SKILL.md',
   ];
 
@@ -32,6 +43,7 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/consumer-design-interview.md',
     'docs/consumer-modules.md',
     'docs/modeling-rules.md',
+    'docs/agents.md',
     '.claude/skills/tangible-ddd/SKILL.md',
   ];
 
@@ -102,6 +114,52 @@ final class DocumentationCurrentnessTest extends TestCase {
       'ITransactionalCommand',
       $contents,
       "$file must not imply that every command automatically opens a transaction"
+    );
+  }
+
+  /** @return iterable<string, array{string}> */
+  public static function shipped_files(): iterable {
+    foreach ( self::SHIPPED_TO_CONSUMERS as $file ) {
+      yield $file => [ $file ];
+    }
+  }
+
+  #[DataProvider( 'shipped_files' )]
+  public function test_document_linked_from_consumers_ships_in_the_package( string $file ): void {
+    if ( ! is_dir( self::$root . '/.git' ) && ! is_file( self::$root . '/.git' ) ) {
+      $this->markTestSkipped( 'Not a git checkout; export attributes cannot be read' );
+    }
+
+    // An excluded directory drops everything under it, but check-attr on a
+    // file does not report its directory's attribute, so ask about each one.
+    // The trailing slash lets directory-only patterns such as `docs/` match.
+    $paths = [];
+    $prefix = '';
+    foreach ( explode( '/', $file ) as $segment ) {
+      $prefix  = $prefix === '' ? $segment : "$prefix/$segment";
+      $paths[] = $prefix === $file ? $prefix : "$prefix/";
+    }
+
+    $output = [];
+    $status = 0;
+    exec(
+      'git -C ' . escapeshellarg( self::$root ) . ' check-attr export-ignore -- '
+        . implode( ' ', array_map( 'escapeshellarg', $paths ) ) . ' 2>&1',
+      $output,
+      $status
+    );
+    if ( $status !== 0 ) {
+      $this->markTestSkipped( 'git check-attr failed: ' . implode( "\n", $output ) );
+    }
+
+    $excluded = array_values( array_filter(
+      $output,
+      static fn( string $line ): bool => ! str_ends_with( $line, ': export-ignore: unspecified' )
+    ) );
+    $this->assertSame(
+      [],
+      $excluded,
+      "$file is excluded from the Composer download, which breaks every AGENTS.md that links to it"
     );
   }
 
