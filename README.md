@@ -105,8 +105,11 @@ finish.
 - [Wiring a consumer](docs/wiring-a-consumer.md)
 - [Consumer design interview](docs/consumer-design-interview.md)
 - [Consumer modules](docs/consumer-modules.md)
+- [Modeling rules](docs/modeling-rules.md)
 - [Release and migration ledger](docs/migration-0.2-to-0.3.md)
 - [Canonical agent skill](.claude/skills/tangible-ddd/SKILL.md)
+- [For coding agents](docs/agents.md): the file a consumer's `AGENTS.md`
+  points to inside `vendor/tangible/ddd/`
 
 Historical specs and plans are retained for design provenance and are clearly
 classified in the documentation map. Current source and tests win whenever a

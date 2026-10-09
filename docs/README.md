@@ -26,6 +26,7 @@ first; then the current documents below.
 | [DDDash v2 scope](dashboard/V2-OUTLINE.md) | Implemented unified trace, Aggregate Biography, consumer provenance, and explicit non-goals |
 | [Release and migration ledger](migration-0.2-to-0.3.md) | Version-by-version consumer changes; the old filename is retained for inbound links |
 | [Canonical agent skill](../.claude/skills/tangible-ddd/SKILL.md) | Current modeling decisions and source navigation for coding agents |
+| [For coding agents](agents.md) | Short entry point a consumer's `AGENTS.md` links to inside `vendor/`: what to read, the rules in one line each, and how work is checked |
 
 ## Historical
 
