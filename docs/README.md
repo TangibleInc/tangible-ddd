@@ -12,12 +12,24 @@ produced them.
 When documents disagree, use the installed package version, source, and tests
 first; then the current documents below.
 
+Three places explain *why*, and each kind of reason has one home:
+
+- A **rule** that a check, review, or scanner can enforce goes in
+  [modeling rules](modeling-rules.md), with a short reason.
+- A **decision** that closed off a real alternative goes in an
+  [ADR](adr/), including owner rulings and rejected names.
+- A **historical** document keeps its original reasoning frozen. When one of
+  its decisions is still in force, an ADR restates it and the history stays
+  as the long-form record.
+
 ## Current
 
 | Document | Purpose |
 | --- | --- |
 | [Package README](../README.md) | Requirements, runtime model, capabilities, storage, and quick start |
 | [This documentation map](README.md) | Status vocabulary and navigation |
+| [Glossary](../GLOSSARY.md) | The framework's ubiquitous language: one canonical term per concept, with the names to avoid |
+| [Decision records](adr/) | One-paragraph ADRs: what was decided, why, and which alternatives are closed. Rulings recorded here are not relitigated |
 | [Wiring a consumer](wiring-a-consumer.md) | Complete top-level consumer, DI, middleware, table, and deployment contract |
 | [Consumer design interview](consumer-design-interview.md) | Adaptive questions for discovering invariants, transaction boundaries, orchestration, ownership, and proof before coding |
 | [Modeling rules](modeling-rules.md) | The checkable rules with stable IDs, their reasons, and how each is enforced |
