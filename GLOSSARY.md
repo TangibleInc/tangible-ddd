@@ -14,6 +14,10 @@ only when explaining the `Kind` API or a causal-storage field
 
 ## Integration events
 
+**Announce**:
+To declare, through a hand-written `IAnnouncesIntegration::to_integration()`, the integration record a domain event will produce; the router publishes it.
+_Avoid_: convert, integration source, contract
+
 **Self-publisher**:
 A born-scalar domain event that announces itself as its own integration event.
 
@@ -80,6 +84,10 @@ _Avoid_: CommandReceipt, ActReceipt, Outcome
 
 **Consumer**:
 A plugin that owns its own set of DDD tables through its `IDDDConfig` prefix.
+
+**Consumer module**:
+Separately deployed code under a consumer's namespace with its own container, sharing the host's config, tables, runner and dashboard entry; a sidecar is one way to package one.
+_Avoid_: child consumer, sidecar consumer
 
 **Ledger**:
 The per-version list of what each release demands of consumers: [docs/migration-0.2-to-0.3.md](docs/migration-0.2-to-0.3.md).

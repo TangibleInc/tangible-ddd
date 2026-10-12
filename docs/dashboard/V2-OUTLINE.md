@@ -88,7 +88,10 @@ not additional user-facing features.
   process-resumption edges. Consumer/kind/local-id UIDs prevent table-local ID
   collisions.
 - `TraceTimelinePresenter` produces the dashboard waterfall while preserving
-  unresolved and ambiguous recorded parents as explicit evidence.
+  unresolved and ambiguous recorded parents as explicit evidence. Trace time
+  is a sparse cumulative clock: markers read elapsed-since-start (`+2d 3m`),
+  idle spans get one bounded break and never proportional width or periodic
+  ticks, and an `Nd gap` label means no retained activity, not an idle system.
 - `BiographyQuery` provides the consumer-scoped aggregate finder and retained
   version timeline from `touches`, with optional audit/outbox joins by recorded
   IDs.

@@ -13,6 +13,11 @@ One rule generates everything else: **raise it on whom it happened to.**
 | 2 | Handler-level raise | `$this->event()` via the `RaisesEvents` trait | A coordinator (command handler, `WorkflowHandler`) | `handler_raised_events()` — every call site allowlisted, i.e. reviewed |
 | 3 | Direct bus | `IIntegrationEventBus::publish()` | Transport fan-out only | Trajectory guard in the bus; the outbox row carries the raiser edge (`command_id`) |
 
+Adding a rich domain event for something that already has an integration
+record is a migration, not an addition: the new event announces the
+*existing* record, and the old raise site moves in the same commit. A parallel
+event for the same occurrence silently stops the record being published.
+
 ### Lane 1 — the aggregate diary (the default)
 
 Facts about an aggregate's state belong on the aggregate. Raise them there;
