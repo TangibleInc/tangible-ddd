@@ -9,7 +9,9 @@ final class DocumentationCurrentnessTest extends TestCase {
 
   private const OPERATIONAL = [
     'README.md',
+    'AGENTS.md',
     'GLOSSARY.md',
+    'docs/adr/README.md',
     'docs/README.md',
     'docs/wiring-a-consumer.md',
     'docs/consumer-design-interview.md',
