@@ -136,7 +136,7 @@ alarm is a direct AS action scheduled at suspend time — NOT an outbox row — 
 not freeze it. A pause that outlives a suspended saga's remaining timeout budget fires the
 timeout against events sitting undeliverable in the frozen outbox (`TIMEOUT_PROCEED` judges
 a partial set; `TIMEOUT_FAIL` compensates). Deliberately NOT engineered around (pause-aware
-snooze rejected — derived holds have no interval history; see 0.2.0 spec §6.3 + §10). Ops
+snooze rejected — derived holds have no interval history; see [ADR 0006](adr/0006-awaitall-timeout-is-wall-clock.md)). Ops
 rule: before a long pause, check suspended sagas' deadlines.
 
 ## 7. Hardness (v1 vs later)

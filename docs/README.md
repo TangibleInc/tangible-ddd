@@ -51,7 +51,6 @@ Three places explain *why*, and each kind of reason has one home:
 | [Integration event evolution](integration-event-evolution.md) | 0.1-to-0.2 architecture handoff |
 | [Outbox pause design](outbox-pause-design.md) | Built design record; inspect current source before using its API details |
 | [Dashboard iterations](dashboard/iterations/) | Dated design and reconstruction notes |
-| [Implementation plans and specs](superpowers/) | Dated implementation evidence, not operational guidance |
 
 ## Design only
 
@@ -60,7 +59,12 @@ Three places explain *why*, and each kind of reason has one home:
 | [Outbox transport payload strategies](outbox-transport-payload-strategies.md) | Possible transport optimization; explicitly not a current change |
 | [Multi-item behaviour topology](topology/multi-item-behaviour-topology.md) | Topology exploration rather than a shipped contract |
 
-The directories under `superpowers/` and `dashboard/iterations/` are retained
-as historical collections even when an individual plan describes behavior that
-later shipped. Their dates and decision context remain useful; their examples
-do not outrank current code.
+`dashboard/iterations/` is retained as a historical collection even where an
+individual note describes behavior that later shipped. Its dates and decision
+context remain useful; its examples do not outrank current code.
+
+Implementation specs and plans are not kept in the tree. A spec lives on its
+feature branch under `docs/specs/` and is deleted in the PR that ships it,
+after its lasting decisions move into ADRs, the glossary or current docs; the
+earlier `docs/superpowers/` collection was retired the same way. Git history
+keeps every one of them.
