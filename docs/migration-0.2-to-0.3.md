@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.7
+# Consumer release and migration ledger — through 0.6.8
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -633,6 +633,26 @@ breaking release.
 Documentation: [modeling rules](modeling-rules.md) is new, a checkable list of
 the rules a consumer follows, each with a stable ID (`DDD-L1` and so on) and
 how it is enforced. The agent skill links to it.
+
+## 0.6.8 (documentation for coding agents)
+
+No code changes. This release exists so consumers receive the new
+documentation through Composer.
+
+**Mandatory for existing consumers: nothing.**
+
+- [For coding agents](agents.md) is a short entry point for an agent working in
+  a consumer: what to read for which task, every modeling rule in one line,
+  and how work is checked. A consumer's `AGENTS.md` can point at
+  `vendor/tangible/ddd/docs/agents.md` instead of copying rules that drift
+  from the installed version. The page includes the snippet to paste.
+- The [glossary](../GLOSSARY.md) and the [decision records](adr/README.md)
+  record the framework's terms and the decisions still in force.
+- A documentation test fails if the files consumers link to are ever excluded
+  from the Composer download.
+
+A consumer that links to `docs/agents.md` should require `^0.6.8`, since
+older copies of the package do not have it.
 
 ## How to verify a migration (any version)
 
