@@ -31,13 +31,31 @@ final class FakeProcessRepository implements IProcessRepository {
     return $this->processes[$id] ?? null;
   }
 
+  /**
+   * Race seam: called with the answer after has_ignition() computed it and
+   * before it returns, i.e. in the window between the check and the insert.
+   * A test uses it to let a "second worker" act inside that window.
+   *
+   * @var null|\Closure(string $process_class, string $event_id, bool $answer): void
+   */
+  public ?\Closure $after_has_ignition = null;
+
+  /** @var list<array{0: string, 1: string}> every has_ignition() call */
+  public array $ignition_checks = [];
+
   public function has_ignition(string $process_class, string $event_id): bool {
+    $this->ignition_checks[] = [$process_class, $event_id];
+    $answer = false;
     foreach ($this->processes as $p) {
       if ($p instanceof $process_class && $p->ignited_by_event_id() === $event_id) {
-        return true;
+        $answer = true;
+        break;
       }
     }
-    return false;
+    if ($this->after_has_ignition !== null) {
+      ($this->after_has_ignition)($process_class, $event_id, $answer);
+    }
+    return $answer;
   }
 
   public function find_waiting_for(string $event_class): array {
