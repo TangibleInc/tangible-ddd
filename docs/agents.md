@@ -76,6 +76,17 @@ messages.
   parameter is a breaking change for every subscriber.
 - **DDD-E5** `#[Touches]` goes on the record that is actually published.
 
+**Naming**
+
+- **DDD-N1** Domain and Application code is `snake_case`, private methods
+  included: `get_*`, `is_*`, `has_*` accessors, intent-named state changes.
+  Classes are `PascalCase`; interfaces start with `I`.
+- **DDD-N2** Infra and adapter code that implements a library's API uses that
+  library's naming; otherwise DDD-N1.
+- **DDD-N3** A method implementing a PHP or library signature keeps its name.
+- **DDD-N4** `…\Commands\…\<Name>Command` is handled by
+  `…\CommandHandlers\…\<Name>Handler`; queries likewise.
+
 **Judgment**
 
 - **DDD-J1** Choose the construct by its lifecycle, using the table in the
@@ -106,6 +117,10 @@ messages.
   save deletes the events, and subscribers in other plugins stop hearing about
   them with no error anywhere. If a fact must survive the sealed phase
   (DDD-E3), make it an integration announcement.
+- **Format the way the project does.** Formatting is not a framework rule. If
+  the project runs a formatter, its output is the style. If it does not,
+  follow the overlay, and where the overlay is silent, match the file you are
+  editing. Do not reformat lines you are not otherwise changing.
 - **Keep one home for each kind of class.** Enums, including those a read
   model uses, go in `Domain\Enums`. A query's filter or parameter objects sit
   beside the query. Check where the project actually puts things instead of
