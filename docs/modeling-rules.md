@@ -252,6 +252,65 @@ class references. An aggregate with recorded touches that is renamed overrides
   Biography.
 - **Enforced by:** Conformance: `IntegrationConformance`.
 
+## Naming
+
+These rules hold in every consumer. Formatting (indentation, spacing, brace
+placement) is not among them: each project sets its own, in its overlay or a
+formatter it runs.
+
+Code written before these rules is renamed when it is next changed for another
+reason, not in a sweep.
+
+### DDD-N1: The model is snake_case
+
+In the Domain and Application layers, methods, properties, parameters, and
+variables are `snake_case`, private ones included. Classes, enums, and
+interfaces are `PascalCase`, and interfaces start with `I`
+(`IRenewalTrackerRepository`). Accessors read `get_*`, and boolean questions
+`is_*` or `has_*`. A state change is preferably named for its intent
+(`suspend()`, `roll_over()`) rather than `set_*`.
+
+- **Why:** the model is where the project's vocabulary lives, and the code an
+  agent reads before writing more. One casing in it keeps both consistent;
+  private helpers are where a second casing usually creeps back in.
+- **Enforced by:** Review.
+
+### DDD-N2: Infra and adapters follow the library they wrap
+
+Code in the Infra layer and in adapters that implements or extends a
+library's API uses that library's naming: a Doctrine connection or a Symfony
+normalizer is `camelCase`, as its library is. Code there that wraps no
+`camelCase` library (for example around `wpdb`) uses DDD-N1.
+
+- **Why:** forcing the model's casing onto a library contract breaks the
+  contract; forcing a library's casing onto everything else spreads it into
+  code that has no reason for it.
+- **Enforced by:** Review.
+
+### DDD-N3: Inherited names are kept
+
+A method that implements or overrides a signature from PHP or a library keeps
+that name, in any layer: `offsetGet()`, `jsonSerialize()`, `getIterator()`,
+Tactician's `getClassName()`.
+
+- **Why:** the name is part of a contract the project does not own.
+- **Enforced by:** PHP (a renamed method no longer implements the interface).
+
+### DDD-N4: Handlers are found by name
+
+A command is named `<Name>Command` in a namespace containing a `Commands`
+segment, and its handler is `<Name>Handler` at the same path under
+`CommandHandlers`. Queries follow the same pattern with `Query`, `Queries`,
+and `QueryHandlers`. So
+`Acme\Orders\Application\Commands\Billing\IssueInvoiceCommand` is handled by
+`Acme\Orders\Application\CommandHandlers\Billing\IssueInvoiceHandler`.
+Self-handling commands and queries have no separate handler.
+
+- **Why:** `HandlerClassNameInflector` derives the handler's class name from
+  the message's. A message outside that pattern has no handler the bus can
+  find.
+- **Enforced by:** Runtime, when the message is first dispatched.
+
 ## Judgment
 
 These rules cannot be checked mechanically. Reviews apply them.
@@ -298,8 +357,9 @@ consumer usually means one `LongProcess` is doing what one process should.
 
 ## Consumer overlays
 
-A consumer may add rules for its own conventions (naming, a persistence
-stack, its API format) in a thin local document. It does not copy this one.
+A consumer may add rules for its own conventions (formatting, spelling,
+folder layout, a persistence stack, its API format) in a thin local document.
+It does not copy this one.
 
 - Local rules use the consumer's own ID prefix, for example `LMS-A1`, so a
   report shows which document a rule comes from.
