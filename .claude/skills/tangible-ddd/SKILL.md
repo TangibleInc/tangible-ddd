@@ -29,6 +29,9 @@ Before changing a consumer:
 
 ## Hard invariants
 
+The complete checkable list, with stable IDs and how each rule is enforced, is
+[modeling rules](../../../docs/modeling-rules.md). Cite rule IDs in reviews.
+
 - Every application state change enters through the command bus. A command
   handler may call aggregates, repositories, and domain services; those are
   collaborators inside the command's unit of work, not alternate write doors.
@@ -316,6 +319,8 @@ examples unless the current release ledger explicitly says so.
 - Consumer modules preserve host object identity and never appear as a second
   persistence consumer.
 - Consumer suite, framework conformance, migrations, and dashboard smoke pass.
+- No new violations of the [modeling rules](../../../docs/modeling-rules.md):
+  the consumer's Phan baseline did not grow.
 
 Start with [the package README](../../../README.md) for the capability map and
 [the docs index](../../../docs/README.md) for current versus historical status.

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Domain\ValueObjects\Behaviours;
 
-use TangibleDDD\Infra\Shared\TypedList;
+use TangibleDDD\Domain\Shared\TypedList;
 
 /**
  * @extends TypedList<WorkItem>

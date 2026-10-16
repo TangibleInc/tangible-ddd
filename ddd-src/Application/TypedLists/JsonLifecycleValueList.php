@@ -3,7 +3,7 @@
 namespace TangibleDDD\Application\TypedLists;
 
 use TangibleDDD\Domain\Shared\JsonLifecycleValue;
-use TangibleDDD\Infra\Shared\TypedList;
+use TangibleDDD\Domain\Shared\TypedList;
 
 /**
  * TypedList for JsonLifecycleValue objects.

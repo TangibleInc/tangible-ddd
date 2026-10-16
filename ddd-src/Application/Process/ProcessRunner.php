@@ -373,7 +373,7 @@ final class ProcessRunner {
   }
 
   /**
-   * Await-timeout alarm (wall clock — deliberately not pause-aware, see spec §6.3).
+   * Await-timeout alarm (wall clock — deliberately not pause-aware, see docs/adr/0006-awaitall-timeout-is-wall-clock.md).
    * Stale-timer guard: no-op unless still suspended at the SAME step index.
    */
   public function handle_timeout(int $process_id, int $step_index): void {

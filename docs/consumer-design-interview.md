@@ -200,6 +200,12 @@ integration event for a consistency or time boundary. A rich domain event may
 announce a separate scalar integration twin; a scalar event may announce
 itself.
 
+An integration event must earn its existence: unknown or multiple consumers,
+reach into another plugin, a process awaiting it, or replay value. If its only
+job is to trigger one command in the same plugin, dispatch that command
+asynchronously instead. An integration event nobody listens to is demoted to
+a domain event.
+
 An `IntegrationListener` performs translation only: one typed integration
 event becomes a command or `null`. Domain behavior belongs in the command
 handler. A raw WordPress subscriber is a legitimate foreign integration, but

@@ -4,7 +4,7 @@
 > transition that led to the current model. It is not a current API guide;
 > later source, tests, and operational documentation take precedence.
 
-**Purpose:** Self-contained briefing for a fresh session (human or AI) on the tangible-ddd 0.2.0 event-architecture evolution. Everything here was designed and decided in a multi-day design dialogue (2026-06-29 → 2026-07-04). The formal spec lives at `docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md` in this repo — read it after this for full detail. This document explains the system as it IS, what it BECOMES, and WHY.
+**Purpose:** Self-contained briefing for a fresh session (human or AI) on the tangible-ddd 0.2.0 event-architecture evolution. Everything here was designed and decided in a multi-day design dialogue (2026-06-29 → 2026-07-04). The formal spec (`docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md`) has been removed from the tree; read it from git history (`git log --all -- <that path>`). Its decisions still in force are ADRs [0002](adr/0002-integration-events-scalar-by-definition.md), [0003](adr/0003-integration-event-severed-from-domain-event.md), [0006](adr/0006-awaitall-timeout-is-wall-clock.md), [0014](adr/0014-fan-in-is-owned-by-the-process.md), [0015](adr/0015-announcing-a-record-is-hand-written.md) and [0016](adr/0016-integration-listeners-are-consumer-owned-classes.md). This document explains the system as it IS, what it BECOMES, and WHY.
 
 **Repos involved:**
 - `wp-content/plugins/tangible-ddd` — the framework (this repo). Working checkout was on branch `v3-ddd` with unrelated uncommitted work; the 0.2.0 work targets a new `release/0.2.0` branch (not yet created).
@@ -171,7 +171,7 @@ Composer pins are loose (cred `@dev`, datastream `*`) — consumers float with t
 
 ---
 
-## 5. Decision log (compressed — full table in spec §10)
+## 5. Decision log (compressed — the full table is §10 of the removed 2026-07-03 spec, in git history; live rejections are ADRs 0002, 0003, 0006, 0014–0016)
 
 | Rejected | Why |
 |----------|-----|
@@ -191,7 +191,6 @@ Composer pins are loose (cred `@dev`, datastream `*`) — consumers float with t
 
 ## 6. Current state & next steps
 
-- **Spec**: written + 3 amendments, at `docs/superpowers/specs/2026-07-03-integration-event-taxonomy-and-await-mechanisms-design.md`. **NOT committed** — the tangible-ddd checkout was on `v3-ddd` with unrelated uncommitted work; branch/commit decision pending with the user.
+- **Spec**: committed later, since removed from the tree; read it from git history. Current decisions: ADRs 0002, 0003, 0006, 0014–0016.
 - **Next**: user reviews spec → `writing-plans` skill produces the implementation plan for the framework work → implementation on `release/0.2.0`. The cred consumer (§4) gets its own spec + plan afterward.
-- **Testing priorities** (spec §9): codec round-trip property test; publish guard; AwaitAll unit + runner + timeout + hydration fallback; and the always-missing END-TO-END test — raise → outbox → AS → wrapped payload → process actually wakes, through the real pipe.
-- Session memory for this work: `awaitall-framework-spec` in the project memory dir.
+- **Testing priorities** (2026-07-03 spec §9, in git history): codec round-trip property test; publish guard; AwaitAll unit + runner + timeout + hydration fallback; and the always-missing END-TO-END test — raise → outbox → AS → wrapped payload → process actually wakes, through the real pipe.

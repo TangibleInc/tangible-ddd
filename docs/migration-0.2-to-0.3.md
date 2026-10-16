@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.5
+# Consumer release and migration ledger — through 0.6.8
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -608,6 +608,51 @@ the readouts. Every other admin screen is unaffected.
 **Mandatory for existing consumers: nothing.** Behaviour only widens: wiring
 that previously fataled now skips and logs. Consumers that relied on the fatal
 as an activation-order alarm should watch the log line instead.
+
+## 0.6.7 (typed lists move to the domain; modeling rules)
+
+`TypedList`, `IntList` and `StringList` move from `TangibleDDD\Infra\Shared` to
+`TangibleDDD\Domain\Shared`. They are plain in-memory collections, and the
+[modeling rules](modeling-rules.md) do not let domain code depend on
+infrastructure (DDD-L1). The framework's own `WorkItemList` broke that rule by
+extending the old class.
+
+The old names remain aliases of the new classes, so a plugin that has not
+migrated keeps working against this release. Each new class registers its
+alias when it loads, so type hints, `instanceof` and `catch` with an old name
+hold even when nothing has referenced the old name yet. Subclasses declared
+with an old parent keep working and are instances of the new class.
+`TypedListOldNamespaceTest` checks all three in separate processes.
+
+**Mandatory for existing consumers: nothing.** Migrate by replacing the
+namespace in `use` statements and parent classes. A consumer that does so must
+require this release or later, because older framework copies only have the
+old names. The old names are deprecated and will be removed in a future
+breaking release.
+
+Documentation: [modeling rules](modeling-rules.md) is new, a checkable list of
+the rules a consumer follows, each with a stable ID (`DDD-L1` and so on) and
+how it is enforced. The agent skill links to it.
+
+## 0.6.8 (documentation for coding agents)
+
+No code changes. This release exists so consumers receive the new
+documentation through Composer.
+
+**Mandatory for existing consumers: nothing.**
+
+- [For coding agents](agents.md) is a short entry point for an agent working in
+  a consumer: what to read for which task, every modeling rule in one line,
+  and how work is checked. A consumer's `AGENTS.md` can point at
+  `vendor/tangible/ddd/docs/agents.md` instead of copying rules that drift
+  from the installed version. The page includes the snippet to paste.
+- The [glossary](../GLOSSARY.md) and the [decision records](adr/README.md)
+  record the framework's terms and the decisions still in force.
+- A documentation test fails if the files consumers link to are ever excluded
+  from the Composer download.
+
+A consumer that links to `docs/agents.md` should require `^0.6.8`, since
+older copies of the package do not have it.
 
 ## How to verify a migration (any version)
 
