@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.8
+# Consumer release and migration ledger — through 0.6.9
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -653,6 +653,39 @@ documentation through Composer.
 
 A consumer that links to `docs/agents.md` should require `^0.6.8`, since
 older copies of the package do not have it.
+
+## 0.6.9 (process locks, ignition dedup, outbox delay)
+
+Fixes backported from the `future` line, where they were first written. They
+were prepared on `hotfix/0.6.7` at the start of October and missed both 0.6.7
+and 0.6.8.
+
+- **A process step never runs without its lock.** `with_process_lock` treated
+  a NULL from `GET_LOCK` (a lock query error) as acquired and ran the step
+  unlocked. Only a definite `1` enters now; NULL or a timeout throws
+  `LockingException` before any step runs, nothing is saved, and the wake is
+  not re-queued (Action Scheduler records the failed action). The lock name
+  is unchanged.
+- **A fact ignites a `#[StartsOn]` process once.** The ignition check and the
+  insert ran with nothing between them, so two workers delivering the same
+  fact could both start the process. Both now happen inside the named lock
+  `ddd_ign_` + md5(prefix|class|event_id); the loser returns quietly. No
+  schema change. Manual starts never consult the dedup, and a DLQ replay
+  still mints a new event id and can still ignite twice.
+- **Delayed outbox facts are delayed once.** The relay already withholds a
+  row until its `scheduled_at`, and the Action Scheduler publisher then added
+  `delay_seconds` again, on every retry. It now schedules at
+  `max(now, scheduled_at)`.
+- **`symfony/yaml` is a runtime dependency.** It was in `require-dev`, so a
+  `--no-dev` build dropped it while the framework's own container config
+  needs it.
+
+**Mandatory for existing consumers: nothing**, but two behaviours change:
+
+- Delays halve to their declared value. Actions Action Scheduler had already
+  queued keep the doubled delay.
+- A process wake whose lock query fails, or that times out on the lock, now
+  fails visibly in Action Scheduler instead of running unlocked.
 
 ## How to verify a migration (any version)
 
