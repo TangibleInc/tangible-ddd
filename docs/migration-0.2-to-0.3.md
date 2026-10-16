@@ -687,6 +687,11 @@ and 0.6.8.
 - A process wake whose lock query fails, or that times out on the lock, now
   fails visibly in Action Scheduler instead of running unlocked.
 
+Documentation: the naming rules ([DDD-N1 to DDD-N4](modeling-rules.md#naming))
+are new since 0.6.8. DDD-N1 states the accessor preference the 0.7 line
+already follows: a bare noun (`status()`) over `get_status()` where the
+meaning is clear.
+
 ## How to verify a migration (any version)
 
 - Consumer suite green.

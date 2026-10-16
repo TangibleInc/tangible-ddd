@@ -79,8 +79,10 @@ messages.
 **Naming**
 
 - **DDD-N1** Domain and Application code is `snake_case`, private methods
-  included: `get_*`, `is_*`, `has_*` accessors, intent-named state changes.
-  Classes are `PascalCase`; interfaces start with `I`.
+  included, with `is_*` / `has_*` predicates. Classes are `PascalCase`;
+  interfaces start with `I`. Prefer short names: a bare-noun accessor
+  (`status()`) over `get_status()` where the meaning is clear, intent-named
+  state changes, `find_*()` and `*_of()` lookups.
 - **DDD-N2** Infra and adapter code that implements a library's API uses that
   library's naming; otherwise DDD-N1.
 - **DDD-N3** A method implementing a PHP or library signature keeps its name.

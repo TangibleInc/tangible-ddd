@@ -31,7 +31,7 @@ final class Example implements IExample {
     foreach( $this->ledgers as $ledger ) {
       $ledger->record($points, $reason ?? '');
     }
-    $this->total = (int) $this->total + $points->get_value();
+    $this->total = (int) $this->total + $points->value();
     $this->label = $this->name . ': ' . $this->total;
   }
 }

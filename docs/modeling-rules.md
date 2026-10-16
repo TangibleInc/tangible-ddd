@@ -266,13 +266,25 @@ reason, not in a sweep.
 In the Domain and Application layers, methods, properties, parameters, and
 variables are `snake_case`, private ones included. Classes, enums, and
 interfaces are `PascalCase`, and interfaces start with `I`
-(`IRenewalTrackerRepository`). Accessors read `get_*`, and boolean questions
-`is_*` or `has_*`. A state change is preferably named for its intent
-(`suspend()`, `roll_over()`) rather than `set_*`.
+(`IRenewalTrackerRepository`). Boolean questions are `is_*` or `has_*`.
+
+Names are short and chosen with care. These are preferences, applied in
+review:
+
+- An accessor is a bare noun where the meaning is clear without `get_`:
+  `status()`, `event_id()`, `last_error()`. Keep `get_` where the bare noun
+  would be ambiguous, would read like a verb, or would break a family of
+  existing names (`get_id()`, `get_by_*()`).
+- A state change is named for its intent (`suspend()`, `roll_over()`) rather
+  than `set_*`.
+- Lookups are `find()` or `find_*()`; a keyed lookup ends in `_of()`
+  (`version_of()`, `event_class_of()`).
 
 - **Why:** the model is where the project's vocabulary lives, and the code an
-  agent reads before writing more. One casing in it keeps both consistent;
-  private helpers are where a second casing usually creeps back in.
+  agent reads before writing more. One casing keeps it consistent; private
+  helpers are where a second casing usually creeps back in. `snake_case` keeps
+  the code in PHP's own idiom, and together with dropping prefixes that add
+  nothing, it pushes toward fewer, shorter, more deliberate names.
 - **Enforced by:** Review.
 
 ### DDD-N2: Infra and adapters follow the library they wrap
