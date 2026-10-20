@@ -17,27 +17,98 @@ What the bundle gives you, all on one Doctrine DBAL connection to Postgres 16:
 
 ## 1. Install
 
-In the app's `composer.json`. Paths are relative to the app, and the monorepo checkout here is `../tangible-ddd`:
+The core and Symfony packages are subdirectories of this monorepo, not
+published standalone packages. A Composer `path` repository only reads an
+existing directory: it does **not** clone GitHub or fetch the revision in
+`composer.lock`. A VCS repository pointing at the root provides `tangible/ddd`
+(the WordPress bundle), not these two subpackages.
+
+For reproducible consumer installs, keep a reviewed full commit SHA in the
+application's `ddd-revision`, and bootstrap an ignored `.deps/tangible-ddd`
+checkout **before** Composer resolves its path repositories. Do not pin only a
+moving branch. For example, save this as the application's `bin/ensure-ddd.sh`:
+
+```sh
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+revision=$(cat ddd-revision)
+# Require a full SHA before running Git with the value.
+[ "${#revision}" -eq 40 ] || { echo 'ddd-revision must be a full SHA' >&2; exit 1; }
+case "$revision" in *[!0-9a-f]*) echo 'Invalid ddd-revision' >&2; exit 1;; esac
+source_dir=.deps/tangible-ddd
+if [ ! -e "$source_dir" ]; then
+    mkdir -p .deps
+    staging=$(mktemp -d .deps/tangible-ddd.download-XXXXXX)
+    git clone --no-checkout https://github.com/TangibleInc/tangible-ddd.git "$staging"
+    git -C "$staging" checkout --detach "$revision"
+    mv "$staging" "$source_dir"
+fi
+[ "$(git -c safe.directory="$(pwd)/$source_dir" -C "$source_dir" rev-parse HEAD)" = "$revision" ] || {
+    echo 'Existing tangible-ddd checkout differs from ddd-revision; review it manually.' >&2
+    exit 1
+}
+[ -z "$(git -c safe.directory="$(pwd)/$source_dir" -C "$source_dir" status --porcelain --untracked-files=normal -- packages/ddd-core packages/ddd-symfony)" ] || {
+    echo 'Local DDD package changes must be reviewed before installing.' >&2
+    exit 1
+}
+```
+
+Commit the script and pin to the consumer; ignore `/.deps/`. Git must be
+available where Composer runs, and the first install needs HTTPS access to
+GitHub. Subsequent installs use the verified local checkout without fetching.
+A failed download may leave a `.download-*` directory, but it is never used
+as a package. Existing checkouts are never reset or switched automatically.
+
+In the application's `composer.json` (paths relative to that file):
 
 ```json
 {
     "repositories": [
-        { "type": "path", "url": "../tangible-ddd/packages/ddd-core",    "options": { "symlink": true } },
-        { "type": "path", "url": "../tangible-ddd/packages/ddd-symfony", "options": { "symlink": true } }
+        {
+            "type": "path",
+            "url": ".deps/tangible-ddd/packages/ddd-core",
+            "options": { "symlink": false, "versions": { "tangible/ddd-core": "dev-future" } }
+        },
+        {
+            "type": "path",
+            "url": ".deps/tangible-ddd/packages/ddd-symfony",
+            "options": { "symlink": false, "versions": { "tangible/ddd-symfony": "dev-future" } }
+        }
     ],
     "require": {
-        "tangible/ddd-core": "*@dev",
-        "tangible/ddd-symfony": "*@dev",
+        "tangible/ddd-core": "dev-future",
+        "tangible/ddd-symfony": "dev-future",
         "league/tactician": "^2.0-rc1",
         "doctrine/doctrine-bundle": "^2.13",
         "symfony/doctrine-messenger": "7.4.*",
         "symfony/console": "7.4.*"
+    },
+    "scripts": {
+        "pre-install-cmd": ["sh bin/ensure-ddd.sh"],
+        "pre-update-cmd": ["sh bin/ensure-ddd.sh"]
     }
 }
 ```
 
-- `league/tactician ^2.0-rc1` must be restated in the root manifest, because Composer honours the RC flag only there (register O20).
-- `*@dev` accepts the branch version the path repository reports (`dev-extraction/ddd-packages` or a wave branch).
+Merge these hooks with existing application scripts, then run `composer install`
+(or `composer update` when creating the first lock file). Keep scripts enabled.
+Composer executes only the root application's scripts; putting the bootstrap in
+this library's Composer scripts cannot bootstrap a consumer.
+
+- The explicit path versions make detached checkouts resolve consistently and
+  satisfy `ddd-symfony`'s `self.version` dependency on core. The version label is
+  not the source pin: the bootstrap enforces `ddd-revision`.
+- `symlink: false` copies reviewed packages into `vendor/`; switching a source
+  checkout does not silently change running code.
+- `league/tactician ^2.0-rc1` must be restated in the root manifest, because
+  Composer honours the RC flag only there (register O20).
+- In Docker, keep `.deps/` inside the mounted application directory so the hook
+  can create it. Do not require a bind mount of an absent sibling checkout:
+  Docker validates bind mounts before Composer can run.
+- To upgrade, review the new source, switch the clean managed checkout manually,
+  update `ddd-revision`, refresh both packages and the lock file, review schema
+  changes, and run the consumer's integration tests.
 
 Register the bundle in `config/bundles.php`:
 

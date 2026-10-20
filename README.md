@@ -13,6 +13,11 @@ From 0.7 it ships as four packages in this repository:
 
 0.7.0 is prepared and not released. See [CHANGELOG.md](CHANGELOG.md) for what changed since 0.6.x and how to migrate. Rolling a site back to 0.6.x is covered by [docs/runbooks/rollback.md](docs/runbooks/rollback.md).
 
+For unpublished Symfony packages, follow the [consumer installation guide](examples/symfony/README.md#1-install):
+Composer path repositories need a checkout, so the application's install/update
+hooks must fetch and verify a pinned revision before package resolution. Requiring
+the GitHub monorepo root installs the WordPress bundle, not `ddd-symfony`.
+
 ## Using tangible-ddd 0.7 on WordPress
 
 ### Requirements
