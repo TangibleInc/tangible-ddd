@@ -61,6 +61,10 @@ _Avoid_: Gatherable
 A relay-lifecycle pause `{holder, selector, until}` that keeps matching rows out of the feed without changing them.
 _Avoid_: paused (as a row status)
 
+**Settle**:
+To run, now, the async work already due across every consumer (outbox rows and their consumers' due Action Scheduler actions), pass after pass, until nothing is left: `wp ddd settle`, `POST tangible-ddd/v1/settle`. Work scheduled for later and held rows stay put.
+_Avoid_: drain, flush (drain is the unit of work's seal-time bracket)
+
 ## Write accounting
 
 **Touches**:

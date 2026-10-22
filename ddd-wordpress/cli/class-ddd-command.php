@@ -119,6 +119,48 @@ class DDD_Command {
     ) );
   }
 
+  /**
+   * Settle the async work that is already due, now.
+   *
+   * Relays every consumer's outbox and runs their due Action Scheduler
+   * actions (outbox delivery, process steps, recurring sweeps), pass after
+   * pass, until a pass finds nothing left. Work scheduled for later, held
+   * rows and rows waiting out a retry backoff are left alone.
+   *
+   * ## OPTIONS
+   *
+   * [--max-passes=<n>]
+   * : Stop after this many passes even if work remains.
+   * ---
+   * default: 25
+   * ---
+   *
+   * ## EXAMPLES
+   *
+   *     wp ddd settle
+   */
+  public function settle( $args, $assoc_args ) {
+    $max_passes = (int) ( $assoc_args['max-passes'] ?? \TangibleDDD\Infra\Services\DueWorkSettler::DEFAULT_MAX_PASSES );
+    if( $max_passes < 1 ) {
+      WP_CLI::error('--max-passes must be at least 1.');
+    }
+
+    $result = \TangibleDDD\WordPress\settle($max_passes);
+    $summary = sprintf(
+      'Outbox rows relayed: %d. Actions run: %d. Passes: %d.',
+      $result->outbox_rows,
+      $result->actions_run,
+      $result->passes
+    );
+
+    if( !$result->settled ) {
+      WP_CLI::warning('Stopped at the pass limit with work still due. ' . $summary);
+      return;
+    }
+
+    WP_CLI::success('Settled. ' . $summary);
+  }
+
   private function run_init( $args, $assoc_args ) {
     $prefix = $assoc_args['prefix'] ?? null;
     $path = $assoc_args['plugin-path'] ?? getcwd();

@@ -3,7 +3,7 @@
  * Plugin Name: Tangible DDD
  * Plugin URI: https://tangible.one
  * Description: Domain-Driven Design framework for WordPress plugins
- * Version: 0.6.9
+ * Version: 0.6.10
  * Author: Tangible
  * Author URI: https://tangible.one
  * License: MIT
@@ -38,7 +38,7 @@ declare(strict_types=1);
 // Guarded: the first copy to load wins the constant (oldest-loads-first is fine;
 // the registry, not the constant, determines the winner).
 if (!defined('TANGIBLE_DDD_VERSION')) {
-    define('TANGIBLE_DDD_VERSION', '0.6.9');
+    define('TANGIBLE_DDD_VERSION', '0.6.10');
 }
 
 // ─── Tangible_DDD_Versions registry (defined once, first copy wins the class) ─
@@ -223,42 +223,42 @@ if (!class_exists('Tangible_DDD_Versions', false)) {
 } // if (!class_exists('Tangible_DDD_Versions'))
 
 // ─── Version-named register function (guarded — safe in N copies) ────────────
-// Slug: 0.6.9 → 0_6_9  (dots and hyphens → underscores)
-if (!function_exists('tangible_ddd_register_0_6_9')) {
+// Slug: 0.6.10 → 0_6_10  (dots and hyphens → underscores)
+if (!function_exists('tangible_ddd_register_0_6_10')) {
 
     /**
-     * Register this copy (0.6.9) into Tangible_DDD_Versions.
+     * Register this copy (0.6.10) into Tangible_DDD_Versions.
      * Hooked at plugins_loaded priority 0 so all copies register before pri-1 wins.
      */
-    function tangible_ddd_register_0_6_9(): void
+    function tangible_ddd_register_0_6_10(): void
     {
         // Pass a closure so the callable type check passes even when this register
-        // function is invoked before tangible_ddd_initialize_0_6_9() is defined
+        // function is invoked before tangible_ddd_initialize_0_6_10() is defined
         // (which can happen in unit-test context where add_action is absent and we
         // self-register immediately at file-include time).
         Tangible_DDD_Versions::instance()->register(
-            '0.6.9',
+            '0.6.10',
             __DIR__,
             static function (string $path): void {
-                tangible_ddd_initialize_0_6_9($path);
+                tangible_ddd_initialize_0_6_10($path);
             }
         );
     }
 
     if (function_exists('add_action')) {
-        add_action('plugins_loaded', 'tangible_ddd_register_0_6_9', 0, 0);
+        add_action('plugins_loaded', 'tangible_ddd_register_0_6_10', 0, 0);
     } else {
         // Outside WP (unit tests / direct require with no hook system):
         // self-register immediately.  initialize_latest() is NOT called here
         // so that N copies included during tests can each register first;
         // test code can call Tangible_DDD_Versions::instance()->initialize_latest()
         // explicitly, or the bootstrap triggers it below.
-        tangible_ddd_register_0_6_9();
+        tangible_ddd_register_0_6_10();
     }
 }
 
 // ─── Version-named initializer (guarded — the winner calls this) ──────────────
-if (!function_exists('tangible_ddd_initialize_0_6_9')) {
+if (!function_exists('tangible_ddd_initialize_0_6_10')) {
 
     /**
      * Boot this copy of tangible-ddd as the site winner.
@@ -269,7 +269,7 @@ if (!function_exists('tangible_ddd_initialize_0_6_9')) {
      *
      * @param string $path Absolute path to the winning ddd plugin root.
      */
-    function tangible_ddd_initialize_0_6_9(string $path): void
+    function tangible_ddd_initialize_0_6_10(string $path): void
     {
         // (a) Prepend autoloader — winner's classes beat consumer psr-4 maps.
         spl_autoload_register(
@@ -318,6 +318,7 @@ if (!function_exists('tangible_ddd_initialize_0_6_9')) {
             'ddd-wordpress/integration-events.php',
             'ddd-wordpress/infrastructure-events.php',
             'ddd-wordpress/dashboard.php',
+            'ddd-wordpress/settle.php',
             // Executes WP_CLI::add_command (self-guarded on WP_CLI). Must be
             // required explicitly — procedural side-effect files are invisible
             // to the class autoloader, so "left to autoload" meant "never
@@ -341,6 +342,12 @@ if (!function_exists('tangible_ddd_initialize_0_6_9')) {
             && function_exists('TangibleDDD\\WordPress\\register_dashboard')
         ) {
             \TangibleDDD\WordPress\register_dashboard($path);
+        }
+        if (
+            function_exists('add_action')
+            && function_exists('TangibleDDD\\WordPress\\register_settle_route')
+        ) {
+            \TangibleDDD\WordPress\register_settle_route();
         }
     }
 }
@@ -405,6 +412,6 @@ if (
     && function_exists('doing_action') && !doing_action('plugins_loaded')
     && !Tangible_DDD_Versions::instance()->is_initialized()
 ) {
-    tangible_ddd_register_0_6_9();
+    tangible_ddd_register_0_6_10();
     Tangible_DDD_Versions::instance()->initialize_latest();
 }
