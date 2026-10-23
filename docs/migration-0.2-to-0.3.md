@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.10
+# Consumer release and migration ledger — through 0.6.11
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -710,6 +710,19 @@ meaning is clear.
 **Mandatory for existing consumers: nothing.** An outbox queue named outside
 the consumer's `as_group()` prefix is relayed but its delivery actions are not
 run by settle; Action Scheduler still runs them on its own schedule.
+
+## 0.6.11 (settle runs outbox deliveries)
+
+- **Settle now runs the outbox's delivery actions.** The outbox repositories
+  queue deliveries on the raw prefix (`<prefix>-outbox`), while `as_group()`
+  may hyphenate it (`tangible_lms` gives `tangible-lms-…`). 0.6.10 searched
+  only the `as_group('')` spelling, so for any prefix with an underscore it
+  relayed the rows and left their deliveries to Action Scheduler: settle
+  answered `settled: true` while the reactions were still waiting. Both
+  spellings are searched now.
+
+**Mandatory for existing consumers: nothing.** A consumer on 0.6.10 that
+calls settle should move to 0.6.11.
 
 ## How to verify a migration (any version)
 
