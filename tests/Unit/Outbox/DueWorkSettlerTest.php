@@ -93,7 +93,10 @@ class DueWorkSettlerTest extends TestCase {
     $settler->settle();
 
     $this->assertSame(['test', 'acme_orders'], $relayed_prefixes);
-    $this->assertSame(['test-', 'acme-orders-'], $searched);
+    // acme_orders' as_group() hyphenates its prefix, but the outbox
+    // repositories queue deliveries on the raw prefix ('acme_orders-outbox'),
+    // so both spellings are searched; 'test' spells both the same.
+    $this->assertSame(['test-', 'acme-orders-', 'acme_orders-'], $searched);
   }
 
   public function test_result_serializes_for_the_rest_route(): void {

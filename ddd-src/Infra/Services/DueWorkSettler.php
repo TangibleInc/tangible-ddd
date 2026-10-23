@@ -10,8 +10,8 @@ use TangibleDDD\Infra\Consumers\ConsumerHandle;
  *
  * A pass relays one outbox batch for every consumer, then runs the due,
  * unclaimed, pending Action Scheduler actions in the consumers' own groups
- * (`<prefix>-…`: outbox delivery, process steps, the consumer's recurring
- * sweeps). Delivering one event can enqueue the next, so passes repeat
+ * (`as_group()`'s and the outbox queue's `<prefix>-…`: outbox delivery,
+ * process steps, the consumer's recurring sweeps). Delivering one event can enqueue the next, so passes repeat
  * until one does nothing or the pass budget runs out.
  *
  * Only due work runs: rows under a hold, rows and actions scheduled for
@@ -55,10 +55,15 @@ final class DueWorkSettler {
   }
 
   public function settle(int $max_passes = self::DEFAULT_MAX_PASSES): SettleResult {
+    // Two spellings of a consumer's groups: as_group() (which may turn the
+    // prefix's underscores into hyphens) and the outbox queue the outbox
+    // repositories write, the raw prefix plus '-outbox'.
     $group_prefixes = [];
     foreach( $this->consumers as $handle ) {
       $group_prefixes[] = $handle->config()->as_group('');
+      $group_prefixes[] = $handle->prefix() . '-';
     }
+    $group_prefixes = array_values(array_unique($group_prefixes));
 
     $passes = 0;
     $rows = 0;
