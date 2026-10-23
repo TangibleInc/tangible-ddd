@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.9
+# Consumer release and migration ledger — through 0.6.10
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -691,6 +691,25 @@ Documentation: the naming rules ([DDD-N1 to DDD-N4](modeling-rules.md#naming))
 are new since 0.6.8. DDD-N1 states the accessor preference the 0.7 line
 already follows: a bare noun (`status()`) over `get_status()` where the
 meaning is clear.
+
+## 0.6.10 (settle due work on demand)
+
+- **`wp ddd settle` and `POST tangible-ddd/v1/settle`** run the async work
+  that is already due, now. Each pass relays one outbox batch per consumer,
+  then runs the due, unclaimed, pending Action Scheduler actions whose group
+  starts with a consumer's `as_group('')` (outbox delivery, process steps,
+  the consumer's own recurring sweeps). Passes repeat until one finds nothing,
+  up to `--max-passes` / `max_passes` (default 25). The REST route needs
+  `manage_options`.
+- The same code runs as under WP-Cron; only the wait goes. Rows under a hold,
+  rows and actions scheduled for later, and rows waiting out a retry backoff
+  are left alone.
+- The use it was built for: end-to-end tests that used to poll `wp-cron.php`
+  until a reaction landed, waiting up to a minute per hop.
+
+**Mandatory for existing consumers: nothing.** An outbox queue named outside
+the consumer's `as_group()` prefix is relayed but its delivery actions are not
+run by settle; Action Scheduler still runs them on its own schedule.
 
 ## How to verify a migration (any version)
 
