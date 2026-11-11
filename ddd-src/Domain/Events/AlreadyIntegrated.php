@@ -2,7 +2,9 @@
 
 namespace TangibleDDD\Domain\Events;
 
-final class AlreadyIntegrated extends \LogicException {
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
+final class AlreadyIntegrated extends IncorrectUsage {
   public function __construct(string $event_class, string $event_id) {
     parent::__construct(
       "$event_class (event_id: $event_id) already traveled — you are re-raising a reconstruction. " .

@@ -3,6 +3,7 @@
 namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Domain\Events\IDomainEvent;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * The blessed handler-level raise — $this->event() for application code
@@ -28,7 +29,7 @@ trait RaisesEvents {
   protected function event(IDomainEvent $event): void {
     $events = $this->events_uow();
     if ($events === null) {
-      throw new \LogicException(sprintf(
+      throw new IncorrectUsage(sprintf(
         '%s raised an act event but no EventsUnitOfWork was injected — pass the '
         . 'consumer\'s live tangible.events_unit_of_work service to the constructor.',
         static::class

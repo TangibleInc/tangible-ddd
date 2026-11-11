@@ -3,6 +3,7 @@
 namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Domain\Events\Touches;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 
 /**
@@ -43,7 +44,7 @@ final class Footprint {
         $param = $touches->id ?? $local . '_id';
         $ref = new \ReflectionClass($event);
         if (!$ref->hasProperty($param) || !$ref->getProperty($param)->isPublic()) {
-          throw new \LogicException(sprintf(
+          throw new IncorrectUsage(sprintf(
             '%s touches %s but has no public "%s" property to carry the subject id.',
             get_class($event),
             $aggregate,

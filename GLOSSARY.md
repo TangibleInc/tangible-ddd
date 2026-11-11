@@ -96,6 +96,15 @@ _Avoid_: child consumer, sidecar consumer
 **Ledger**:
 The per-version list of what each release demands of consumers: [docs/migration-0.2-to-0.3.md](docs/migration-0.2-to-0.3.md).
 
+## Errors
+
+**Incorrect usage**:
+A programming error: code wired or used in a way the framework forbids. Thrown as `IncorrectUsage`, an `\Error`, so `catch (\Exception)` cannot swallow it ([ADR 0018](docs/adr/0018-incorrect-usage-is-an-error.md)).
+_Avoid_: LogicException, misuse exception
+
+**Invariant violation**:
+A domain rule that failed, thrown as `InvariantException`. Recoverable at the edge of the operation, unlike incorrect usage.
+
 ## Trace vocabulary (framework-internal)
 
 **Kind**:

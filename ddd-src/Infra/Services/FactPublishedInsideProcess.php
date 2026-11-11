@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Infra\Services;
 
-use TangibleDDD\Application\Exceptions\ApplicationException;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * An integration event was published from inside a process wake with no
@@ -13,7 +13,7 @@ use TangibleDDD\Application\Exceptions\ApplicationException;
  * trace. Steps sequence commands; the command's handler is where facts are
  * announced — Result(commands: [...]) is the step's only legal effect.
  */
-final class FactPublishedInsideProcess extends ApplicationException {
+final class FactPublishedInsideProcess extends IncorrectUsage {
 
   public function __construct(string $event_class, string $inside_process_id) {
     parent::__construct(sprintf(

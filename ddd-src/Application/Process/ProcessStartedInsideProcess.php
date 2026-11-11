@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Process;
 
-use TangibleDDD\Application\Exceptions\ApplicationException;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * ProcessRunner::start() was called inside another process's wake bracket —
@@ -15,7 +15,7 @@ use TangibleDDD\Application\Exceptions\ApplicationException;
  * announces a Fact, and the child declares #[StartsOn(ThatFact::class)] —
  * every hop recorded, replay-safe (ignited_by dedup), human-door included.
  */
-final class ProcessStartedInsideProcess extends ApplicationException {
+final class ProcessStartedInsideProcess extends IncorrectUsage {
 
   public function __construct(string $process_class, string $inside_process_id) {
     parent::__construct(sprintf(

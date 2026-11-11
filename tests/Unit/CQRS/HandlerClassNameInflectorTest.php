@@ -5,6 +5,7 @@ namespace TangibleDDD\Tests\Unit\CQRS;
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\CQRS\HandlerClassNameInflector;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * The bus naming convention, shipped ONCE (0.2.5c). Every consumer's
@@ -39,7 +40,7 @@ class HandlerClassNameInflectorTest extends TestCase {
   }
 
   public function test_neither_command_nor_query_throws(): void {
-    $this->expectException(\LogicException::class);
+    $this->expectException(IncorrectUsage::class);
 
     $this->inflector->getClassName('Acme\\X\\Domain\\Services\\SomethingService');
   }

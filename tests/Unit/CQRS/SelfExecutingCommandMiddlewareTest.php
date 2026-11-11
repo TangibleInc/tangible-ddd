@@ -12,6 +12,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandHasNoHandler;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandWrapsHandler;
 use TangibleDDD\Application\Exceptions\UnresolvableHandleDependency;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * The self-handling command middleware (spec §14 item 1, 0.6.0 target).
@@ -257,7 +258,7 @@ class SelfExecutingCommandMiddlewareTest extends TestCase {
     try {
       $middleware->execute($command, $this->fail_next());
       $this->fail('a raise without a unit of work must throw');
-    } catch (\LogicException $e) {
+    } catch (IncorrectUsage $e) {
       $this->assertStringContainsString(SelfRaisingProbeCommand::class, $e->getMessage());
     }
   }

@@ -8,6 +8,7 @@ use League\Tactician\CommandBus;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 
@@ -40,7 +41,7 @@ function boot_module(
   callable $di_getter,
 ): void {
   if (\did_action('init') > 0) {
-    throw new \LogicException(
+    throw new IncorrectUsage(
       'DDD modules must be registered before WordPress init begins',
     );
   }
@@ -56,7 +57,7 @@ function boot_module(
       );
     }
     if ($existing['wired']) {
-      throw new \LogicException("DDD module \"$root\" is already wired at init priority 3");
+      throw new IncorrectUsage("DDD module \"$root\" is already wired at init priority 3");
     }
   }
 
@@ -90,7 +91,7 @@ function wire_module(string $host_prefix, string $namespace_root): void {
   $boot = $state['boots'][$namespace_root] ?? null;
 
   if ($boot === null || $boot['host_prefix'] !== $host_prefix) {
-    throw new \LogicException(
+    throw new IncorrectUsage(
       "DDD module \"$namespace_root\" is not registered for consumer \"$host_prefix\"",
     );
   }
@@ -101,7 +102,7 @@ function wire_module(string $host_prefix, string $namespace_root): void {
   $modules = ConsumerRegistry::modules_for($host_prefix);
   $module = $modules[$namespace_root] ?? null;
   if ($module === null) {
-    throw new \LogicException("DDD module route \"$namespace_root\" is missing");
+    throw new IncorrectUsage("DDD module route \"$namespace_root\" is missing");
   }
 
   $container = $module->container();
@@ -216,7 +217,7 @@ function validate_module_process_entries(
     $prior = $catalog[$class] ?? null;
     if ($prior !== null) {
       if ($prior['metadata'] !== $metadata) {
-        throw new \LogicException(
+        throw new IncorrectUsage(
           "LongProcess \"$class\" metadata conflicts with {$prior['owner']}",
         );
       }

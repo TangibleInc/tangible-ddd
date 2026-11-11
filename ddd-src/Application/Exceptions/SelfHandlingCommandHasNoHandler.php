@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * A self-handling class (SelfHandlingCommand or SelfHandlingQuery) reached
  * its bus without declaring the handle() it promises. The whole point of the
@@ -18,7 +20,7 @@ namespace TangibleDDD\Application\Exceptions;
  * (The class name predates the query twin and stays — renaming a thrown
  * exception is a break with no behavior attached; the message covers both.)
  */
-final class SelfHandlingCommandHasNoHandler extends ApplicationException {
+final class SelfHandlingCommandHasNoHandler extends IncorrectUsage {
 
   public function __construct(string $command) {
     parent::__construct(sprintf(

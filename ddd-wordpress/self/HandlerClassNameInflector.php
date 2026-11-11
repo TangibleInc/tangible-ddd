@@ -3,6 +3,7 @@
 namespace TangibleDDD\WordPress\SelfConsumer;
 
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * Tactician naming-convention mapper for the self-consumer.
@@ -34,7 +35,7 @@ class HandlerClassNameInflector implements ClassNameInflector {
         } elseif ($this->isQuery($commandClassName)) {
             $values = $this->query_values;
         } else {
-            throw new \LogicException('Command/Query bus expects either a Command or a Query class name');
+            throw new IncorrectUsage('Command/Query bus expects either a Command or a Query class name');
         }
 
         $handler_name = str_replace($values['plural'], "{$values['singular']}Handlers", $commandClassName);

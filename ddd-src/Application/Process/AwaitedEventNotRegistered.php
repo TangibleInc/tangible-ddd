@@ -2,7 +2,9 @@
 
 namespace TangibleDDD\Application\Process;
 
-final class AwaitedEventNotRegistered extends \LogicException {
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
+final class AwaitedEventNotRegistered extends IncorrectUsage {
   public function __construct(string $event_class, string $process_class) {
     parent::__construct(
       "$process_class suspends on $event_class, but no wake-up hook is registered for it. " .

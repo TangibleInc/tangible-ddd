@@ -7,6 +7,7 @@ use TangibleDDD\Application\EventHandlers\WordPressActionHandler;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IDomainEvent;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * The act lane reaches domain-event handlers (0.6.4): WordPressActionHandler
@@ -38,7 +39,7 @@ class WordPressActionHandlerRaisesTest extends TestCase {
     try {
       do_action(SecondSourceThingHappened::action(), 3);
       $this->fail('a raise without a unit of work must never silently drop the moment');
-    } catch (\LogicException $e) {
+    } catch (IncorrectUsage $e) {
       $this->assertStringContainsString(UnwiredRaisingHandler::class, $e->getMessage());
     }
   }

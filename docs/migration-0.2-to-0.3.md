@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.11
+# Consumer release and migration ledger — through 0.6.12
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -723,6 +723,39 @@ run by settle; Action Scheduler still runs them on its own schedule.
 
 **Mandatory for existing consumers: nothing.** A consumer on 0.6.10 that
 calls settle should move to 0.6.11.
+
+## 0.6.12 (programming errors are `\Error`s)
+
+- **New root `TangibleDDD\Domain\Exceptions\IncorrectUsage extends \Error`**
+  ([ADR 0018](adr/0018-incorrect-usage-is-an-error.md)). These now extend it:
+  `CommandDispatchedInsideCommand`, `DomainEventAfterSealException`,
+  `SelfHandlingCommandHasNoHandler`, `SelfHandlingCommandWrapsHandler`,
+  `UnresolvableHandleDependency`, `ProcessStartedInsideCommand`,
+  `ProcessStartedInsideProcess`, `FactPublishedInsideProcess` (were
+  `ApplicationException`); `AlreadyIntegrated`, `AwaitedEventNotRegistered`,
+  `TouchesNonAggregate` (were `\LogicException`); `NonReversibleValue` (was
+  `\DomainException`). The framework's bare `throw new \LogicException(...)`
+  sites (consumer registry, modules, inflectors, `RaisesEvents`, `Footprint`)
+  and `JsonLifecycleValue::to_json()`'s misuse throw (was
+  `InvariantException`) throw `IncorrectUsage` with the same messages.
+- **Behaviour change:** `catch (\Exception)`, `catch (ApplicationException)`,
+  `catch (\LogicException)` and `catch (\DomainException)` no longer catch
+  these. Catching by the exact class still works.
+- `Infra\Exceptions\IncorrectUsageException` is deprecated and now extends
+  `IncorrectUsage`; throw and catch the new class.
+- Unchanged: `ApplicationException`, `WPErrorException`, `InvariantException`,
+  `BusinessConstraintException`, `RefNotFoundException`,
+  `TypeMismatchException`, `WorkflowException`, `LockingException`,
+  `QueryException`, `NoConsumerOwnsClass`.
+
+**Mandatory for existing consumers:** search for code that catches one of the
+moved classes through its old parent and relies on it, typically a test
+asserting `expectException(ApplicationException::class)` or
+`(\LogicException::class)` around one of the guards above, and change it to
+`IncorrectUsage` or the exact class. A broad `catch (\Exception)` around a
+hook callback needs no change: it now lets programming errors through, which
+is the intent. Cred: its `expectException(ApplicationException::class)`
+assertions cover its own handlers' validation and are unaffected.
 
 ## How to verify a migration (any version)
 

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Process;
 
-use TangibleDDD\Application\Exceptions\ApplicationException;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * ProcessRunner::start() was called inside a command's bus pass.
@@ -14,7 +14,7 @@ use TangibleDDD\Application\Exceptions\ApplicationException;
  * saga records the intent as an integration event; the saga declares
  * #[StartsOn(ThatEvent::class)] and ignites at drain time.
  */
-final class ProcessStartedInsideCommand extends ApplicationException {
+final class ProcessStartedInsideCommand extends IncorrectUsage {
 
   public function __construct(string $process_class, string $inside) {
     parent::__construct(sprintf(
