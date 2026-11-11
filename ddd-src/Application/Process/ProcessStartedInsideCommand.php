@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Process;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * ProcessRunner::start() was called inside a command's bus pass.

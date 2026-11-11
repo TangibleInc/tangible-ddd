@@ -59,8 +59,9 @@ layer does not matter.
 ### DDD-L1: The domain depends on nothing outside itself
 
 Code in the Domain layer references only the consumer's own Domain code, the
-`TangibleDDD\Domain` contracts, PHP itself, and the pure libraries the
-consumer lists. It does not reference the consumer's Application, Infra, or
+`TangibleDDD\Domain` contracts, `TangibleDDD\IncorrectUsage` (the programming
+error any layer may throw, [ADR 0018](adr/0018-incorrect-usage-is-an-error.md)),
+PHP itself, and the pure libraries the consumer lists. It does not reference the consumer's Application, Infra, or
 adapter code, WordPress functions or classes, or persistence libraries.
 
 A **pure library** does its work in memory: it has no WordPress, I/O, or

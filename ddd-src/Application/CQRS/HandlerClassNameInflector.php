@@ -3,7 +3,7 @@
 namespace TangibleDDD\Application\CQRS;
 
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * The bus naming convention, shipped once (0.2.5c):

@@ -3,7 +3,7 @@
 namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Domain\Events\Touches;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 
 /**

@@ -3,7 +3,7 @@
 namespace TangibleDDD\Infra\Persistence\Select;
 
 use MakinaCorpus\QueryBuilder\Query\Select;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * Base class for MakinaCorpus QueryBuilder-based selects.

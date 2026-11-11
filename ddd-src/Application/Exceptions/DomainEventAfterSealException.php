@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * Thrown when a plain domain event is recorded after the unit of work has been

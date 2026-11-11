@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Infra\Services;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * An integration event was published from inside a process wake with no

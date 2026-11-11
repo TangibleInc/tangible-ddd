@@ -7,7 +7,7 @@ use TangibleDDD\Application\EventHandlers\WordPressActionHandler;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Domain\Events\DomainEvent;
 use TangibleDDD\Domain\Events\IDomainEvent;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * The act lane reaches domain-event handlers (0.6.4): WordPressActionHandler

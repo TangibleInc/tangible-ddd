@@ -3,7 +3,7 @@
 namespace TangibleDDD\WordPress\SelfConsumer;
 
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * Tactician naming-convention mapper for the self-consumer.

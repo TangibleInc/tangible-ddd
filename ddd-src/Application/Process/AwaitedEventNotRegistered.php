@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Process;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 final class AwaitedEventNotRegistered extends IncorrectUsage {
   public function __construct(string $event_class, string $process_class) {

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Domain\Events;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 final class NonReversibleValue extends IncorrectUsage {
   public function __construct(string $event_class, string $param, string $actual_type) {

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Domain\Events;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * #[Touches] referenced a class that is not an Aggregate — a wiring bug,

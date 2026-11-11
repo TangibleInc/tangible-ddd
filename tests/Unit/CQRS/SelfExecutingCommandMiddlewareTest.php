@@ -12,7 +12,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandHasNoHandler;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandWrapsHandler;
 use TangibleDDD\Application\Exceptions\UnresolvableHandleDependency;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * The self-handling command middleware (spec §14 item 1, 0.6.0 target).
