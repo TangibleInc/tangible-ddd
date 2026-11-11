@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Infra\Consumers;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 use TangibleDDD\Infra\IDDDConfig;
 
 /**
@@ -31,7 +32,7 @@ final class ConsumerRegistry {
     $existing = self::$consumers[$config->prefix()] ?? null;
     if ($existing !== null && self::has_modules_for($config->prefix())) {
       if (!$existing->matches_registration($config, $di_getter, $label, $namespace_root)) {
-        throw new \LogicException(
+        throw new IncorrectUsage(
           "DDD consumer \"{$config->prefix()}\" cannot be replaced after modules are registered",
         );
       }
@@ -237,7 +238,7 @@ final class ConsumerRegistry {
       $partitions_module = self::namespace_contains($module_root, $candidate_root);
 
       if ($ties_or_outranks_host || $partitions_module) {
-        throw new \LogicException(
+        throw new IncorrectUsage(
           "DDD consumer \"{$candidate->prefix()}\" namespace \"$candidate_root\" "
           . "would invalidate or partition module \"$module_root\" owned by consumer \"{$module['host_prefix']}\"",
         );

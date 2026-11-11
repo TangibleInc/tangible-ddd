@@ -119,6 +119,10 @@ messages.
   save deletes the events, and subscribers in other plugins stop hearing about
   them with no error anywhere. If a fact must survive the sealed phase
   (DDD-E3), make it an integration announcement.
+- **Don't catch a programming error.** The framework throws `IncorrectUsage`
+  (an `\Error`) when code is wired wrong. `catch (\Exception)` does not stop
+  it, and that is the point: fix the wiring. Throw `IncorrectUsage` yourself
+  for misuse; keep `InvariantException` for domain rules.
 - **Format the way the project does.** Formatting is not a framework rule. If
   the project runs a formatter, its output is the style. If it does not,
   follow the overlay, and where the overlay is silent, match the file you are

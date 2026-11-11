@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * A SelfHandlingCommand's or SelfHandlingQuery's handle() parameter could
  * not be method-injected.
@@ -14,7 +16,7 @@ namespace TangibleDDD\Application\Exceptions;
  * The fix: give the parameter a resolvable class type (a service the
  * container knows), or a default value.
  */
-final class UnresolvableHandleDependency extends ApplicationException {
+final class UnresolvableHandleDependency extends IncorrectUsage {
 
   public function __construct(string $command, string $parameter) {
     parent::__construct(sprintf(

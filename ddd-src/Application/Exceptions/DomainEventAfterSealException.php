@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * Thrown when a plain domain event is recorded after the unit of work has been
  * sealed — i.e. from inside an event handler, during the publish/drain phase.
@@ -13,7 +15,7 @@ namespace TangibleDDD\Application\Exceptions;
  * domain event from a handler would re-enter synchronous in-process dispatch
  * and risk an unbounded cascade within the same transaction.
  */
-class DomainEventAfterSealException extends ApplicationException {
+class DomainEventAfterSealException extends IncorrectUsage {
   public function __construct(string $event_class) {
     parent::__construct(sprintf(
       'Domain event %s was recorded after the unit of work was sealed. '

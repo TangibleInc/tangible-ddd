@@ -3,7 +3,7 @@
 namespace TangibleDDD\Domain\Shared;
 
 use stdClass;
-use TangibleDDD\Domain\Exceptions\InvariantException;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * Base class for value objects with JSON lifecycle preservation.
@@ -129,7 +129,7 @@ abstract class JsonLifecycleValue implements IJsonSerializable {
    */
   public function to_json(bool $as_string = true): string|stdClass|array {
     if (!isset($this->init_state)) {
-      throw new InvariantException(
+      throw new IncorrectUsage(
         'JsonLifecycleValue objects created outside from_json() cannot be serialized. ' .
         'Use DirectJsonLifecycleValue if you need direct instantiation.'
       );

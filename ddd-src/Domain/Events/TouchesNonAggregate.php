@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Domain\Events;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * #[Touches] referenced a class that is not an Aggregate — a wiring bug,
  * named with both parties (house exception style). Thrown by the attribute
@@ -9,7 +11,7 @@ namespace TangibleDDD\Domain\Events;
  * conformance scan (the hard gate), tolerated by the harvest (which never
  * throws — post-commit decoration).
  */
-final class TouchesNonAggregate extends \LogicException {
+final class TouchesNonAggregate extends IncorrectUsage {
 
   public function __construct(string $not_an_aggregate) {
     parent::__construct(sprintf(

@@ -134,7 +134,10 @@ integration event.
 - **Why:** a command that sends a command hides a second unit of work inside
   the first, and nests transactions and correlation in ways the middleware
   does not model.
-- **Enforced by:** Phan (planned).
+- **Enforced by:** Runtime — `CorrelationMiddleware` throws
+  `CommandDispatchedInsideCommand`, an `IncorrectUsage` (`\Error`), so a
+  surrounding `catch (\Exception)` cannot hide it ([ADR 0018](adr/0018-incorrect-usage-is-an-error.md)).
+  Phan (planned) for the static case.
 
 ### DDD-M2: Queries only read
 

@@ -2,11 +2,11 @@
 
 namespace TangibleDDD\Infra\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
- * Thrown when code is used incorrectly by the developer.
- *
- * This indicates a programming error, not a runtime condition.
- * Examples: missing configuration, incorrect method call order, invalid arguments.
+ * @deprecated 0.6.12 Throw and catch \TangibleDDD\Domain\Exceptions\IncorrectUsage.
+ * Kept so an existing catch (IncorrectUsageException) still compiles and still matches.
  */
-class IncorrectUsageException extends \Exception {
+class IncorrectUsageException extends IncorrectUsage {
 }

@@ -3,6 +3,7 @@
 namespace TangibleDDD\Application\CQRS;
 
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * The bus naming convention, shipped once (0.2.5c):
@@ -34,7 +35,7 @@ class HandlerClassNameInflector implements ClassNameInflector {
     } elseif ($this->isQuery($commandClassName)) {
       $values = $this->query_values;
     } else {
-      throw new \LogicException('Command/Query bus expects either a Command or a Query');
+      throw new IncorrectUsage('Command/Query bus expects either a Command or a Query');
     }
 
     $handler_name = str_replace($values['plural'], "{$values['singular']}Handlers", $commandClassName);

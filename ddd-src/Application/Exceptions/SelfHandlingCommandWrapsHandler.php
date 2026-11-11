@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * A SelfHandlingCommand's (or SelfHandlingQuery's) handle() asked for an
  * ICommandHandler to be method-injected — a self-handling command wrapping a
@@ -15,7 +17,7 @@ namespace TangibleDDD\Application\Exceptions;
  * paired with its handler through the command bus's handler resolver
  * (two-class shape). Never both.
  */
-final class SelfHandlingCommandWrapsHandler extends ApplicationException {
+final class SelfHandlingCommandWrapsHandler extends IncorrectUsage {
 
   public function __construct(string $command, string $handler_type) {
     parent::__construct(sprintf(

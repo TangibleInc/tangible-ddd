@@ -3,7 +3,7 @@
 namespace TangibleDDD\Infra\Persistence\Select;
 
 use MakinaCorpus\QueryBuilder\Query\Select;
-use TangibleDDD\Infra\Exceptions\IncorrectUsageException;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 
 /**
  * Base class for MakinaCorpus QueryBuilder-based selects.
@@ -66,10 +66,10 @@ abstract class QueryBuilderSelect implements ISelect {
   }
 
   /**
-   * @throws IncorrectUsageException Always - use repository hydrate() instead
+   * @throws IncorrectUsage Always - use repository hydrate() instead
    */
   public function items(): array {
-    throw new IncorrectUsageException(
+    throw new IncorrectUsage(
       'QueryBuilderSelect cannot hydrate itself. ' .
       'Pass the select to a repository hydrate() method that knows the domain types.'
     );

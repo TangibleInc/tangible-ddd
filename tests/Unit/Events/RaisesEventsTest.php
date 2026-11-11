@@ -8,6 +8,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Events\RaisesEvents;
 use TangibleDDD\Domain\BehaviourWorkflow;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionResult;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItem;
@@ -38,8 +39,8 @@ class RaisesEventsTest extends TestCase {
 
     try {
       $raiser->raise(new FakeDomainEvent(1));
-      $this->fail('a null unit of work must be a loud LogicException, not a silent drop');
-    } catch (\LogicException $e) {
+      $this->fail('a null unit of work must be a loud IncorrectUsage, not a silent drop');
+    } catch (IncorrectUsage $e) {
       $this->assertStringContainsString('EventsUnitOfWork', $e->getMessage());
     }
   }
@@ -61,7 +62,7 @@ class RaisesEventsTest extends TestCase {
       public function raise(\TangibleDDD\Domain\Events\IDomainEvent $e): void { $this->event($e); }
     };
 
-    $this->expectException(\LogicException::class);
+    $this->expectException(IncorrectUsage::class);
     $this->expectExceptionMessageMatches('/EventsUnitOfWork/');
     $handler->raise(new FakeDomainEvent(1));
   }

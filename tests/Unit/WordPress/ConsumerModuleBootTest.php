@@ -16,6 +16,7 @@ use Tangible\LMS\Extension\SuperTrace\Application\Process\SuperTraceProcess;
 use Tangible\LMS\Extension\SuperTrace\Domain\Events\TraceRecorded;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DDDConfig;
 use TangibleDDD\Infra\IDDDConfig;
@@ -145,7 +146,7 @@ final class ConsumerModuleBootTest extends TestCase
                     self::MODULE_ROOT,
                     fn (): ModuleLifecycleContainer => $this->moduleContainer(),
                 );
-            } catch (\LogicException $error) {
+            } catch (IncorrectUsage $error) {
                 $caught = $error;
             } finally {
                 $callbackCounts[] = count($this->callbacksAt('init', 3));
@@ -155,7 +156,7 @@ final class ConsumerModuleBootTest extends TestCase
 
         do_action('init');
 
-        self::assertInstanceOf(\LogicException::class, $caught);
+        self::assertInstanceOf(IncorrectUsage::class, $caught);
         self::assertStringContainsString('before WordPress init begins', $caught->getMessage());
         self::assertSame([], ConsumerRegistry::modules_for($this->hostPrefix));
         self::assertCount(2, $callbackCounts);
@@ -247,7 +248,7 @@ final class ConsumerModuleBootTest extends TestCase
         );
         $this->run_callbacks_at('init', 3);
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(IncorrectUsage::class);
         $this->expectExceptionMessage('already wired');
 
         boot_module(
@@ -435,7 +436,7 @@ final class ConsumerModuleBootTest extends TestCase
         ]);
         boot_module($this->hostPrefix, self::MODULE_ROOT, static fn (): ModuleLifecycleContainer => $module);
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(IncorrectUsage::class);
         $this->expectExceptionMessage(SuperTraceProcess::class);
 
         try {
@@ -470,7 +471,7 @@ final class ConsumerModuleBootTest extends TestCase
         try {
             $callbacks[1]();
             self::fail('The later conflicting module must fail.');
-        } catch (\LogicException $error) {
+        } catch (IncorrectUsage $error) {
             self::assertStringContainsString(SuperTraceProcess::class, $error->getMessage());
             self::assertNotContains(RecordTraceWhenTraceRecorded::class, $second->getCalls);
         }
@@ -595,7 +596,7 @@ final class ConsumerModuleBootTest extends TestCase
             static fn (): ModuleLifecycleContainer => new ModuleLifecycleContainer(),
         );
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(IncorrectUsage::class);
         $this->expectExceptionMessage('cannot be replaced after modules are registered');
 
         ConsumerRegistry::add(
@@ -617,7 +618,7 @@ final class ConsumerModuleBootTest extends TestCase
             fn (): ModuleLifecycleContainer => $this->moduleContainer(),
         );
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(IncorrectUsage::class);
         $this->expectExceptionMessage('would invalidate or partition module');
 
         try {
@@ -679,7 +680,7 @@ final class ConsumerModuleBootTest extends TestCase
             fn (): ModuleLifecycleContainer => $this->moduleContainer(),
         );
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(IncorrectUsage::class);
         $this->expectExceptionMessage('would invalidate or partition module');
 
         try {

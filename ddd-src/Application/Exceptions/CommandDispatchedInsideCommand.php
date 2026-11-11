@@ -2,6 +2,8 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
+use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+
 /**
  * A command was dispatched while another command's bus pass was still open.
  *
@@ -17,7 +19,7 @@ namespace TangibleDDD\Application\Exceptions;
  *    and let a listener dispatch the command at drain time;
  *  - a saga wants the command → emit it via Result->commands.
  */
-final class CommandDispatchedInsideCommand extends ApplicationException {
+final class CommandDispatchedInsideCommand extends IncorrectUsage {
 
   public function __construct(string $attempted, string $inside) {
     parent::__construct(sprintf(
