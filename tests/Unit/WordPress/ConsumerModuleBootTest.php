@@ -16,7 +16,7 @@ use Tangible\LMS\Extension\SuperTrace\Application\Process\SuperTraceProcess;
 use Tangible\LMS\Extension\SuperTrace\Domain\Events\TraceRecorded;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\DDDConfig;
 use TangibleDDD\Infra\IDDDConfig;

@@ -8,7 +8,7 @@ use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Events\RaisesEvents;
 use TangibleDDD\Domain\BehaviourWorkflow;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BaseBehaviourConfig;
 use TangibleDDD\Domain\ValueObjects\Behaviours\BehaviourExecutionResult;
 use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItem;

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * A SelfHandlingCommand's or SelfHandlingQuery's handle() parameter could

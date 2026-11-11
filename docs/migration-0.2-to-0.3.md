@@ -726,7 +726,7 @@ calls settle should move to 0.6.11.
 
 ## 0.6.12 (programming errors are `\Error`s)
 
-- **New root `TangibleDDD\Domain\Exceptions\IncorrectUsage extends \Error`**
+- **New root `TangibleDDD\IncorrectUsage extends \Error`**
   ([ADR 0018](adr/0018-incorrect-usage-is-an-error.md)). These now extend it:
   `CommandDispatchedInsideCommand`, `DomainEventAfterSealException`,
   `SelfHandlingCommandHasNoHandler`, `SelfHandlingCommandWrapsHandler`,

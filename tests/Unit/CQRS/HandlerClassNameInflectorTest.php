@@ -5,7 +5,7 @@ namespace TangibleDDD\Tests\Unit\CQRS;
 use League\Tactician\Handler\Mapping\ClassName\ClassNameInflector;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\CQRS\HandlerClassNameInflector;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * The bus naming convention, shipped ONCE (0.2.5c). Every consumer's

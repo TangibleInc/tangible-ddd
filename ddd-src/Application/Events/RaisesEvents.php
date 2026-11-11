@@ -3,7 +3,7 @@
 namespace TangibleDDD\Application\Events;
 
 use TangibleDDD\Domain\Events\IDomainEvent;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * The blessed handler-level raise — $this->event() for application code

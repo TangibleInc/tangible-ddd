@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Domain\Events;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 final class AlreadyIntegrated extends IncorrectUsage {
   public function __construct(string $event_class, string $event_id) {

@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * A self-handling class (SelfHandlingCommand or SelfHandlingQuery) reached

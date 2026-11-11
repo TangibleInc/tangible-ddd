@@ -1,6 +1,6 @@
 <?php
 
-namespace TangibleDDD\Domain\Exceptions;
+namespace TangibleDDD;
 
 /**
  * The code is wired or used wrong: a programming error, never a runtime
@@ -13,8 +13,8 @@ namespace TangibleDDD\Domain\Exceptions;
  * InvariantException; runtime and infrastructure failures stay \Exception.
  * Throw this for a misuse instead of \LogicException.
  *
- * It lives in Domain\Exceptions so every layer, the domain included
- * (DDD-L1), may throw it.
+ * It belongs to no layer: misuse can happen in any of them, so it sits at
+ * the framework root and DDD-L1 names it as a dependency the domain may take.
  */
 class IncorrectUsage extends \Error {
 }

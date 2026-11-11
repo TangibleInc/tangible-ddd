@@ -39,8 +39,9 @@ messages.
 
 **Layers**
 
-- **DDD-L1** The domain depends only on itself, `TangibleDDD\Domain`, PHP, and
-  the pure libraries the project lists. No WordPress, no persistence.
+- **DDD-L1** The domain depends only on itself, `TangibleDDD\Domain`,
+  `TangibleDDD\IncorrectUsage`, PHP, and the pure libraries the project lists.
+  No WordPress, no persistence.
 - **DDD-L2** Only domain services (classes implementing `IDomainService`) use
   repositories. Aggregates, entities, and value objects never do.
 - **DDD-L3** Repository interfaces live in the domain and speak domain types.

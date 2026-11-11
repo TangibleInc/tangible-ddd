@@ -3,7 +3,7 @@
 namespace TangibleDDD\Domain\Shared;
 
 use stdClass;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * Base class for value objects with JSON lifecycle preservation.

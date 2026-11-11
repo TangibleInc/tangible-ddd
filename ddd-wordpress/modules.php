@@ -8,7 +8,7 @@ use League\Tactician\CommandBus;
 use TangibleDDD\Application\Process\LongProcess;
 use TangibleDDD\Application\Process\LongProcessCatalog;
 use TangibleDDD\Application\Process\ProcessRunner;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\ConsumerRegistry;
 use TangibleDDD\Infra\IDDDConfig;
 

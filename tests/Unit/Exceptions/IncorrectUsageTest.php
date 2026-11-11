@@ -6,7 +6,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TangibleDDD\Application\Exceptions\ApplicationException;
 use TangibleDDD\Domain\Exceptions\InvariantException;
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 use TangibleDDD\Infra\Consumers\NoConsumerOwnsClass;
 use TangibleDDD\Infra\Exceptions\IncorrectUsageException;
 

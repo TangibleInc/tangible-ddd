@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\Exceptions;
 
-use TangibleDDD\Domain\Exceptions\IncorrectUsage;
+use TangibleDDD\IncorrectUsage;
 
 /**
  * A command was dispatched while another command's bus pass was still open.
