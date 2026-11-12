@@ -83,6 +83,24 @@ class IntentWindowsTest extends TestCase {
     $this->assertSame(__FILE__ . ':' . $line, $captured[0]->origin);
   }
 
+  /** ABSPATH is not defined in the unit suite, so the origins above stay absolute. */
+  public function test_origin_under_the_site_root_is_relative_to_it(): void {
+    $this->assertSame(
+      'wp-content/plugins/cred/hooks.php',
+      IntentWindows::site_path('/var/www/html/wp-content/plugins/cred/hooks.php', '/var/www/html/')
+    );
+    $this->assertSame(
+      'wp-content/plugins/cred/hooks.php',
+      IntentWindows::site_path('/var/www/html/wp-content/plugins/cred/hooks.php', '/var/www/html')
+    );
+  }
+
+  public function test_origin_outside_the_site_root_stays_absolute(): void {
+    $this->assertSame('/opt/lib/hooks.php', IntentWindows::site_path('/opt/lib/hooks.php', '/var/www/html/'));
+    $this->assertSame('/var/www/html2/x.php', IntentWindows::site_path('/var/www/html2/x.php', '/var/www/html/'));
+    $this->assertSame('/opt/lib/hooks.php', IntentWindows::site_path('/opt/lib/hooks.php', null));
+  }
+
   public function test_origin_of_a_real_send_is_the_senders_call_site(): void {
     IntentWindows::watch('act1');
     FakeSelfSendingCommand::$bus = new CommandBus(new FakeCapturingMiddleware('act1'));

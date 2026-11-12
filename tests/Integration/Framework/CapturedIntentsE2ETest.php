@@ -103,7 +103,9 @@ final class CapturedIntentsE2ETest extends CommandIntegrationTestCase
                 actor_id: 1,
                 fields:   [],
             );
-            self::$send_site = __FILE__ . ':' . (__LINE__ + 1);
+            // The origin is relative to ABSPATH: the plugin lives under it.
+            self::$send_site = 'wp-content/plugins/' . basename(dirname(__DIR__, 3))
+                . '/tests/Integration/Framework/' . basename(__FILE__) . ':' . (__LINE__ + 1);
             $command->send();
         };
         add_action(self::ACTION, $this->listener, 10, 0);

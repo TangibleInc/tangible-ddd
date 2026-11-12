@@ -104,10 +104,11 @@ final class IntentWindows {
    * file:line is the sender's call site; otherwise handle() was called
    * directly and its own file:line is. With no dispatch frame at all (a
    * direct try_capture call), the first frame outside the ddd package and
-   * Tactician.
+   * Tactician. The path is relative to ABSPATH when it lies under it.
    */
   private static function origin(): string {
     $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    $root = defined('ABSPATH') ? (string) ABSPATH : null;
 
     foreach( $frames as $i => $frame ) {
       if( ($frame['class'] ?? null) !== CommandBus::class || $frame['function'] !== 'handle' ) {
@@ -119,7 +120,7 @@ final class IntentWindows {
         && is_a($caller['class'] ?? '', ICommand::class, true);
       $site = $sent ? $caller : $frame;
       if( isset($site['file'], $site['line']) ) {
-        return $site['file'] . ':' . $site['line'];
+        return self::site_path($site['file'], $root) . ':' . $site['line'];
       }
     }
 
@@ -129,9 +130,22 @@ final class IntentWindows {
       if( isset($frame['file'], $frame['line'])
         && !str_starts_with($frame['file'], $package)
         && !str_contains($frame['file'], $tactician) ) {
-        return $frame['file'] . ':' . $frame['line'];
+        return self::site_path($frame['file'], $root) . ':' . $frame['line'];
       }
     }
     return 'unknown';
+  }
+
+  /**
+   * $file relative to the WordPress root ($root, normally ABSPATH) when it
+   * lies under it, so an origin reads the same on every host; otherwise the
+   * absolute path PHP reports.
+   */
+  public static function site_path(string $file, ?string $root): string {
+    if( $root === null || $root === '' ) {
+      return $file;
+    }
+    $prefix = rtrim($root, '/\\') . DIRECTORY_SEPARATOR;
+    return str_starts_with($file, $prefix) ? substr($file, strlen($prefix)) : $file;
   }
 }
