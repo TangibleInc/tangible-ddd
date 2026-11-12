@@ -38,6 +38,11 @@ services:
   TangibleDDD\Application\Persistence\TransactionMiddleware: ~
 
   # ============================================
+  # Intents (sends captured from foreign code; checked at the act's end)
+  # ============================================
+  TangibleDDD\Application\Intents\IntentsMiddleware: ~
+
+  # ============================================
   # Command Audit
   # ============================================
   TangibleDDD\Application\Logging\Redactor: ~

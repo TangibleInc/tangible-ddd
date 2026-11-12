@@ -7,6 +7,7 @@ services:
     arguments:
       - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
       - '@TangibleDDD\Application\Persistence\TransactionMiddleware'
+      - '@TangibleDDD\Application\Intents\IntentsMiddleware'
       - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
       - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
