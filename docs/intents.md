@@ -45,8 +45,10 @@ $captured->of(SomeCommand::class)->reject('done in-band by this act');
   context it was sent under, and its origin. The sender gets `null` back, as
   from any void handler. No act opens for it: no audit row, no transaction.
 - The origin is the `file:line` of the sender's `->send()` call, found from
-  the innermost `League\Tactician\CommandBus::handle` frame, or of the
-  `handle()` call itself when the command was handed to the bus directly.
+  the innermost `League\Tactician\CommandBus::handle` frame; failing that, the
+  `handle()` call itself (the command was handed to the bus directly); with no
+  `handle()` frame, the first frame outside `ddd-src/` and
+  `vendor/league/tactician`; and `unknown` only after that.
 - Only an `ICommand` is captured. Any other message sent on the bus inside a
   window still throws `CommandDispatchedInsideCommand`.
 - Windows nest. The innermost open window captures, and each window returns
@@ -146,7 +148,8 @@ The act's `command_audit` row records its decisions in the `intents` column
 ```
 
 `decision` is `fulfilled`, `rejected` or `undecided`; only a rejection has a
-`reason`. The origin is the absolute path PHP reports. Undecided intents are recorded as `"decision": "undecided"` on the failed act's
-row, so a failure can be read from the audit alone. The column stays `NULL` for
-acts without intents, and a consumer that hasn't migrated to v8 yet keeps
-writing its audit rows without it. The captured command has no row of its own.
+`reason`. The origin is the absolute path PHP reports. Undecided intents are
+recorded as `"decision": "undecided"` on the failed act's row, so a failure
+can be read from the audit alone. The column stays `NULL` for acts without
+intents, and a consumer that hasn't migrated to v8 yet keeps writing its
+audit rows without it. The captured command has no row of its own.

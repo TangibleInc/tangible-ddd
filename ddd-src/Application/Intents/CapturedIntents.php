@@ -25,7 +25,13 @@ final class CapturedIntents implements \Countable, \IteratorAggregate {
   }
 
   /**
-   * Mark every intent fulfilled and return their commands for the act to send.
+   * Mark every intent fulfilled and return their commands, so the act can
+   * read what was asked and carry the work out in-band: call the domain
+   * service the command's handler would call. Do not send them; a send inside
+   * the act, outside a window, throws CommandDispatchedInsideCommand.
+   *
+   * Decides all or none: if any intent is already decided, throws
+   * IntentAlreadyDecided and decides none.
    *
    * @return list<ICommand>
    */
@@ -39,6 +45,11 @@ final class CapturedIntents implements \Countable, \IteratorAggregate {
     return $commands;
   }
 
+  /**
+   * Mark every intent rejected with $reason: the act decides against them.
+   * An empty (or blank) reason is IncorrectUsage. Decides all or none: if any
+   * intent is already decided, throws IntentAlreadyDecided and decides none.
+   */
   public function reject(string $reason): void {
     $reason = trim($reason);
     if( $reason === '' ) {

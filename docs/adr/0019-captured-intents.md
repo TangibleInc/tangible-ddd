@@ -1,5 +1,5 @@
 ---
-status: accepted (owner design, 2026-11-12)
+status: accepted (2026-11-12)
 ---
 
 # A command sent from foreign code inside an act is captured only in a declared window, and every capture is decided before the act ends
