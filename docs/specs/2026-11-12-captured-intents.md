@@ -113,7 +113,7 @@ with `reset()` for tests and workers. Its methods are used only by `CorrelationM
 
 - `watch(string $act_id)` / `unwatch(string $act_id)`: called by `IntentsMiddleware`
 - `open(string $act_id)` / `close(string $act_id): CapturedIntents`: called by `Intents::capture()`
-- `try_capture(object $command, string $origin): bool`: called by the guard
+- `try_capture(string $act_id, object $command): bool`: called by the guard; computes the origin itself
 - `undecided(string $act_id): list<CapturedIntent>`
 - `record(string $act_id): array`: decisions for the audit
 
@@ -124,7 +124,7 @@ the enclosing act before a new one opens. It changes from "throw" to "capture, e
 
 ```php
 if ($enclosing->cause?->kind === Kind::Act) {
-  if (IntentWindows::try_capture($command, $origin)) {
+  if (IntentWindows::try_capture($enclosing->cause->id, $command)) {
     return null;                       // not run: no act, no audit row, no transaction
   }
   throw new CommandDispatchedInsideCommand(...);   // unchanged message and meaning
@@ -136,8 +136,12 @@ if ($enclosing->cause?->kind === Kind::Act) {
   An intent's contract is a command value, and a foreign message object has no shape we can decide on.
 - The sender gets `null` back, which is what a void command handler returns. Foreign code that reads
   a command's return value will see `null`, as it would from any void handler.
-- `$origin` is the first frame outside `League\Tactician` and `TangibleDDD\Application`, taken from
-  `debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)`.
+- The origin is computed inside `try_capture()` from `debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)`,
+  anchored on the dispatch: the innermost `League\Tactician\CommandBus::handle` frame. If the frame
+  that called it is `send()` on an `ICommand` (the `CommandBusAware` trait), the origin is that
+  `send()` call's file:line, the sender's call site; otherwise it is the `handle()` call's own
+  file:line. With no `handle` frame (a direct `try_capture()` call), it is the first frame outside
+  the ddd package and `vendor/league/tactician`; `unknown` only after that.
 
 Where master differs from the design notes: the notes had the guard asking `IntentWindows::hold()`
 from a separate middleware. On master the guard and the act bracket are one owner,

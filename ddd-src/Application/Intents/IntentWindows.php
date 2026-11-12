@@ -2,6 +2,7 @@
 
 namespace TangibleDDD\Application\Intents;
 
+use League\Tactician\CommandBus;
 use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Correlation\Correlation;
 
@@ -44,14 +45,20 @@ final class IntentWindows {
 
   /** Pop the innermost window; returns only the intents captured in it. */
   public static function close(string $act_id): CapturedIntents {
-    $window = array_pop(self::$windows[$act_id]) ?? [];
+    if( empty(self::$windows[$act_id]) ) {
+      return new CapturedIntents([]);
+    }
+    $window = array_pop(self::$windows[$act_id]);
     if( empty(self::$windows[$act_id]) ) {
       unset(self::$windows[$act_id]);
     }
     return new CapturedIntents($window);
   }
 
-  /** Capture $command into the act's innermost window, if there is one. */
+  /**
+   * Capture $command into the act's innermost window, if there is one. The
+   * open window, not the watch, gates capture.
+   */
   public static function try_capture(string $act_id, object $command): bool {
     if( empty(self::$windows[$act_id]) || !$command instanceof ICommand ) {
       return false;
@@ -90,24 +97,41 @@ final class IntentWindows {
   }
 
   /**
-   * file:line of the first call made from code outside Tactician and the
-   * framework's Application layer: the foreign code that sent the command.
-   * A frame's file/line is where that frame's function was CALLED, so the
-   * caller's class is the next frame's.
+   * file:line where the foreign code sent the command, anchored on the
+   * dispatch: the innermost CommandBus::handle frame. A frame's file/line is
+   * where that frame's function was CALLED. If handle() was called by a
+   * send() on an ICommand (the CommandBusAware trait), the send frame's
+   * file:line is the sender's call site; otherwise handle() was called
+   * directly and its own file:line is. With no dispatch frame at all (a
+   * direct try_capture call), the first frame outside the ddd package and
+   * Tactician.
    */
   private static function origin(): string {
     $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+
     foreach( $frames as $i => $frame ) {
-      $caller = $frames[$i + 1]['class'] ?? '';
-      if( isset($frame['file'], $frame['line']) && !self::is_internal($caller) ) {
+      if( ($frame['class'] ?? null) !== CommandBus::class || $frame['function'] !== 'handle' ) {
+        continue;
+      }
+      $caller = $frames[$i + 1] ?? null;
+      $sent = $caller !== null
+        && $caller['function'] === 'send'
+        && is_a($caller['class'] ?? '', ICommand::class, true);
+      $site = $sent ? $caller : $frame;
+      if( isset($site['file'], $site['line']) ) {
+        return $site['file'] . ':' . $site['line'];
+      }
+    }
+
+    $package = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR;
+    $tactician = DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'league' . DIRECTORY_SEPARATOR . 'tactician' . DIRECTORY_SEPARATOR;
+    foreach( $frames as $frame ) {
+      if( isset($frame['file'], $frame['line'])
+        && !str_starts_with($frame['file'], $package)
+        && !str_contains($frame['file'], $tactician) ) {
         return $frame['file'] . ':' . $frame['line'];
       }
     }
     return 'unknown';
-  }
-
-  private static function is_internal(string $class): bool {
-    return str_starts_with($class, 'League\\Tactician\\')
-      || str_starts_with($class, 'TangibleDDD\\Application\\');
   }
 }

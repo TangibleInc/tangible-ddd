@@ -2,7 +2,10 @@
 
 namespace TangibleDDD\Tests\Unit\Intents;
 
+use League\Tactician\CommandBus;
 use PHPUnit\Framework\TestCase;
+use TangibleDDD\Tests\Fakes\Intents\FakeCapturingMiddleware;
+use TangibleDDD\Tests\Fakes\Intents\FakeSelfSendingCommand;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Correlation\TraceContext;
 use TangibleDDD\Application\Intents\CaptureOutsideAct;
@@ -78,6 +81,40 @@ class IntentWindowsTest extends TestCase {
     $captured = IntentWindows::close('act1')->all();
 
     $this->assertSame(__FILE__ . ':' . $line, $captured[0]->origin);
+  }
+
+  public function test_origin_of_a_real_send_is_the_senders_call_site(): void {
+    IntentWindows::watch('act1');
+    FakeSelfSendingCommand::$bus = new CommandBus(new FakeCapturingMiddleware('act1'));
+    IntentWindows::open('act1');
+
+    $send = function() {
+      $command = new FakeSelfSendingCommand();
+      $line = __LINE__ + 1;
+      $command->send();
+      return $line;
+    };
+    $line = $send();
+    $captured = IntentWindows::close('act1')->all();
+    FakeSelfSendingCommand::$bus = null;
+
+    $this->assertCount(1, $captured);
+    $this->assertSame(__FILE__ . ':' . $line, $captured[0]->origin);
+  }
+
+  public function test_origin_of_a_direct_bus_handle_is_the_handle_call(): void {
+    IntentWindows::watch('act1');
+    $bus = new CommandBus(new FakeCapturingMiddleware('act1'));
+    IntentWindows::open('act1');
+    $line = __LINE__ + 1;
+    $bus->handle(new FakeCapturingCommand(1));
+    $captured = IntentWindows::close('act1')->all();
+
+    $this->assertSame(__FILE__ . ':' . $line, $captured[0]->origin);
+  }
+
+  public function test_closing_an_act_with_no_open_window_returns_nothing(): void {
+    $this->assertCount(0, IntentWindows::close('act1'));
   }
 
   public function test_a_throwing_call_leaves_its_intents_undecided(): void {
