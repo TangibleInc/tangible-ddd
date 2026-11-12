@@ -113,6 +113,7 @@ arguments have repeatedly drifted as framework constructors evolved.
 | `TangibleDDD\Infra\IDDDConfig` | Alias to this consumer's config |
 | `CorrelationMiddleware` | Outermost command scope, nesting guard, correlation, audit |
 | `TransactionMiddleware` | Framework wpdb transaction for `ITransactionalCommand`, or a consumer-specific transaction middleware with an explicitly verified gate |
+| `IntentsMiddleware` | Lets `Intents::capture()` open a window in the act; fails the act, inside the transaction, if a captured intent is left undecided ([captured intents](intents.md)) |
 | `EventsUnitOfWork` | Collects aggregate domain events |
 | `IDomainEventDispatcher` | `WordPressEventDispatcher` |
 | `DomainEventsPublishMiddleware` | Drains domain events before transaction commit |
@@ -141,10 +142,16 @@ The command middleware order is outermost to innermost:
 ```text
 CorrelationMiddleware
   -> TransactionMiddleware
+  -> IntentsMiddleware
   -> DomainEventsPublishMiddleware
   -> SelfExecutingCommandMiddleware
   -> CommandHandlerMiddleware
 ```
+
+`IntentsMiddleware` (from 0.6.13) goes on every command bus, right after
+`TransactionMiddleware`, so its end-of-act check runs after synchronous
+domain-event handlers and inside the transaction. A bus without it runs every
+command as before, but `Intents::capture()` throws `IntentsMiddlewareMissing`.
 
 The stock `TransactionMiddleware` starts a database transaction only when the
 message implements `ITransactionalCommand`. For such a command, the transaction

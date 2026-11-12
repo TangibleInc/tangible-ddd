@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.12
+# Consumer release and migration ledger — through 0.6.13
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -756,6 +756,36 @@ asserting `expectException(ApplicationException::class)` or
 hook callback needs no change: it now lets programming errors through, which
 is the intent. Cred: its `expectException(ApplicationException::class)`
 assertions cover its own handlers' validation and are unaffected.
+
+## 0.6.13 (captured intents)
+
+- **`Intents::capture(callable $call): CapturedIntents`**
+  ([ADR 0019](adr/0019-captured-intents.md), [captured intents](intents.md)).
+  A handler wraps a call into foreign code in it; a command that code sends
+  inside the window is captured as an intent instead of throwing
+  `CommandDispatchedInsideCommand`. The handler decides each one with
+  `fulfil()` or `reject($reason)` (narrow with `of($class)`), and an act that
+  ends with one undecided throws `UndecidedIntents`. Outside a window nothing
+  changes.
+- **New `IntentsMiddleware`** on the command bus, between
+  `TransactionMiddleware` and `DomainEventsPublishMiddleware`. The framework's
+  own buses and the `wp ddd init` scaffold carry it. Never on the query bus.
+- **Schema v8:** `command_audit` gains `intents JSON NULL`, added by the
+  per-prefix self-healing migration. An act with intents records its
+  decisions there; other rows leave it `NULL`. Audit rows keep being written
+  before the column exists.
+- New `IncorrectUsage` errors in `TangibleDDD\Application\Intents`:
+  `UndecidedIntents`, `CaptureOutsideAct`, `IntentsMiddlewareMissing`,
+  `IntentAlreadyDecided`.
+
+**Mandatory for existing consumers** that define their own command bus (Cred,
+Datastream, Notifications Pro): add
+`'@TangibleDDD\Application\Intents\IntentsMiddleware'` to the command bus
+right after `TransactionMiddleware`, and register the service
+(`TangibleDDD\Application\Intents\IntentsMiddleware: ~`, autowired). Until
+then every command runs as before, but `Intents::capture()` throws
+`IntentsMiddlewareMissing`. No code change otherwise; the v8 column arrives on
+the next request, through the existing migration trigger.
 
 ## How to verify a migration (any version)
 

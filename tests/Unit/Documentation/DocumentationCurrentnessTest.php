@@ -19,6 +19,7 @@ final class DocumentationCurrentnessTest extends TestCase {
     'docs/modeling-rules.md',
     'docs/agents.md',
     'docs/migration-0.2-to-0.3.md',
+    'docs/intents.md',
     '.claude/skills/tangible-ddd/SKILL.md',
   ];
 

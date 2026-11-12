@@ -479,6 +479,9 @@ services:
   # Transaction middleware
   TangibleDDD\\Application\\Persistence\\TransactionMiddleware: ~
 
+  # Intents (sends captured from foreign code; checked at the act's end)
+  TangibleDDD\\Application\\Intents\\IntentsMiddleware: ~
+
   # Domain Event Dispatcher (no constructor — arguments here would be
   # silently discarded by PHP)
   TangibleDDD\\Application\\Events\\IDomainEventDispatcher:
@@ -585,16 +588,19 @@ services:
   # Tactician Command Bus
   # Middleware order:
   # 1. CorrelationMiddleware - THE ACT BRACKET: guard + scope + audit record
-  # 2. TransactionMiddleware - starts database transaction
-  # 3. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
-  # 4. SelfExecutingCommandMiddleware - runs a SelfHandlingCommand's own handle()
+  # 2. TransactionMiddleware - starts database transaction (for ITransactionalCommand)
+  # 3. IntentsMiddleware - watches the act so Intents::capture() can open a
+  #    window; fails the act (inside the transaction) on undecided intents
+  # 4. DomainEventsPublishMiddleware - publishes events (writes to outbox inside transaction)
+  # 5. SelfExecutingCommandMiddleware - runs a SelfHandlingCommand's own handle()
   #    (terminal for those; short-circuits before the naming-convention resolver)
-  # 5. CommandHandlerMiddleware - executes the handler (plain commands)
+  # 6. CommandHandlerMiddleware - executes the handler (plain commands)
   League\\Tactician\\CommandBus:
     public: true
     arguments:
       - '@TangibleDDD\\Application\\Correlation\\CorrelationMiddleware'
       - '@TangibleDDD\\Application\\Persistence\\TransactionMiddleware'
+      - '@TangibleDDD\\Application\\Intents\\IntentsMiddleware'
       - '@TangibleDDD\\Application\\Events\\DomainEventsPublishMiddleware'
       - '@TangibleDDD\\Application\\CQRS\\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'

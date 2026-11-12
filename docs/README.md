@@ -35,6 +35,7 @@ Three places explain *why*, and each kind of reason has one home:
 | [Modeling rules](modeling-rules.md) | The checkable rules with stable IDs, their reasons, and how each is enforced |
 | [Consumer modules](consumer-modules.md) | Host/module lifecycle, separate-container bridge, routing, and process overlay |
 | [Eventing lanes](eventing-lanes.md) | The three raising lanes, reschedule-via-fact, the WorkflowHandler phase lock, and the replay-not-splice rule |
+| [Captured intents](intents.md) | Calling foreign code that sends a command from inside an act: the capture window, and fulfilling or rejecting what it captured |
 | [DDDash v2 scope](dashboard/V2-OUTLINE.md) | Implemented unified trace, Aggregate Biography, consumer provenance, and explicit non-goals |
 | [Release and migration ledger](migration-0.2-to-0.3.md) | Version-by-version consumer changes; the old filename is retained for inbound links |
 | [Canonical agent skill](../.claude/skills/tangible-ddd/SKILL.md) | Current modeling decisions and source navigation for coding agents |
