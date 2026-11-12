@@ -39,9 +39,12 @@ class IntentsMiddlewareTest extends TestCase {
   /** @var array<class-string, callable> */
   private array $handlers = [];
 
+  private bool $update_throws = false;
+
   private CommandBus $bus;
 
   protected function setUp(): void {
+    $this->update_throws = false;
     Correlation::reset();
     Reactions::reset();
     IntentWindows::reset();
@@ -71,13 +74,22 @@ class IntentsMiddlewareTest extends TestCase {
     };
 
     $wpdb = $this->createMock(\wpdb::class);
-    $wpdb->method('get_var')->willReturn($audit_enabled ? $config->table('command_audit') : null);
+    // The audit table exists (SHOW TABLES) and so does its intents column
+    // (information_schema count).
+    $wpdb->method('get_var')->willReturnCallback(
+      fn(string $sql) => str_contains($sql, 'information_schema.COLUMNS')
+        ? 1
+        : ($audit_enabled ? $config->table('command_audit') : null)
+    );
     $wpdb->method('prepare')->willReturnArgument(0);
     $wpdb->method('insert')->willReturnCallback(function($table, $row) {
       $this->inserts[] = $row;
       return true;
     });
     $wpdb->method('update')->willReturnCallback(function($table, $row) {
+      if( $this->update_throws ) {
+        throw new \RuntimeException('audit write failed');
+      }
       $this->updates[] = $row;
       return true;
     });
@@ -289,6 +301,30 @@ class IntentsMiddlewareTest extends TestCase {
 
     $this->assertSame('error', $this->updates[0]['status']);
     $this->assertSame('undecided', $this->audited_intents()[0]['decision']);
+  }
+
+  public function test_act_state_is_forgotten_when_the_audit_write_throws(): void {
+    $this->make_bus('intm11');
+    $this->update_throws = true;
+    $act_id = null;
+    $this->handle(FakeOuterCommand::class, function() use (&$act_id) {
+      $act_id = Correlation::current()->cause->id;
+      $captured = Intents::capture(function() {
+        $this->bus->handle(new FakeInnerCommand());
+      });
+      $captured->reject('mine');
+      return 'ok';
+    });
+
+    try {
+      $this->bus->handle(new FakeOuterCommand());
+      $this->fail('the audit failure surfaces as it does today');
+    } catch (\RuntimeException $e) {
+      $this->assertSame('audit write failed', $e->getMessage());
+    }
+
+    $this->assertNotNull($act_id);
+    $this->assertSame([], IntentWindows::record($act_id));
   }
 
   public function test_act_state_is_forgotten_even_with_audit_disabled(): void {

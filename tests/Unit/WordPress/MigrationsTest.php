@@ -44,12 +44,40 @@ class MigrationsTest extends TestCase {
     $this->assertSame([], ddd_pending_migrations(3, 2));
   }
 
-  public function test_current_schema_version_is_7(): void {
+  public function test_current_schema_version_is_8(): void {
     // Regression guard for the v3-fast-path bug lineage: bumping the schema
-    // (v7 = the workflow meta side table) must move this constant, or
-    // consumers' fast-paths treat themselves as current and never create
-    // the table.
-    $this->assertSame(7, DDD_SCHEMA_VERSION);
+    // (v8 = command_audit.intents) must move this constant, or consumers'
+    // fast-paths treat themselves as current and never add the column.
+    $this->assertSame(8, DDD_SCHEMA_VERSION);
+  }
+
+  public function test_v8_migration_adds_the_intents_column(): void {
+    $migrations = ddd_explicit_migrations();
+    $this->assertArrayHasKey(8, $migrations);
+
+    $spy = new class extends \wpdb {
+      public array $queries = [];
+      public int $exists = 0;
+      public function get_var(?string $query = null, int $x = 0, int $y = 0) {
+        return $this->exists;
+      }
+      public function query(string $query) {
+        $this->queries[] = $query;
+        return true;
+      }
+    };
+    $GLOBALS['wpdb'] = $spy;
+
+    $migrations[8](new FakeDDDConfig());
+    $this->assertCount(1, $spy->queries);
+    $this->assertStringContainsString('wp_test_command_audit', $spy->queries[0]);
+    $this->assertStringContainsString('ADD COLUMN `intents` JSON NULL', $spy->queries[0]);
+    $this->assertStringContainsString('AFTER `environment`', $spy->queries[0]);
+
+    $spy->queries = [];
+    $spy->exists = 1;
+    $migrations[8](new FakeDDDConfig());
+    $this->assertSame([], $spy->queries, 'nothing when the column is present');
   }
 
   public function test_v6_migration_installs_the_touches_table(): void {

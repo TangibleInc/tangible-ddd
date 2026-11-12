@@ -25,6 +25,37 @@ function command_audit_enabled(IDDDConfig $config): bool {
 }
 
 /**
+ * Whether command_audit has its intents column (schema v8). A consumer that
+ * has not migrated yet must keep finalising its audit rows, so the intents
+ * write is skipped until the column exists. Only a positive answer is
+ * cached per prefix: a long-lived worker that outlives the migration must
+ * start writing intents without a restart.
+ */
+function command_audit_has_intents_column(IDDDConfig $config): bool {
+  static $present = [];
+  $prefix = $config->prefix();
+
+  if (isset($present[$prefix])) {
+    return true;
+  }
+
+  global $wpdb;
+
+  $found = (int) $wpdb->get_var($wpdb->prepare(
+    'SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+    $config->table('command_audit'),
+    'intents'
+  ));
+  if ($found > 0) {
+    $present[$prefix] = true;
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Write the initial audit record when command starts.
  */
 function command_audit_preflight(IDDDConfig $config, array $data): void {
@@ -64,7 +95,7 @@ function command_audit_finalise(IDDDConfig $config, array $data): void {
     'events' => wp_json_encode($data['events'] ?? null, JSON_UNESCAPED_SLASHES),
     'error' => wp_json_encode($data['error'] ?? null, JSON_UNESCAPED_SLASHES),
   ];
-  if( !empty($data['intents']) ) {
+  if( !empty($data['intents']) && command_audit_has_intents_column($config) ) {
     $row['intents'] = wp_json_encode($data['intents'], JSON_UNESCAPED_SLASHES);
   }
 
