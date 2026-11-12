@@ -166,6 +166,16 @@ final class CapturedIntentsE2ETest extends CommandIntegrationTestCase
         $this->assertSame('0', $this->captured_event_count(), 'The captured command must not have run');
 
         $this->assertSame(8, (int) get_option(ddd_schema_version_key($this->config)));
+        $this->assertSame(
+            '1',
+            $this->wpdb->get_var($this->wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+                $this->config->table('command_audit'),
+                'intents',
+            )),
+            'The v8 migration must have added command_audit.intents',
+        );
     }
 
     public function test_undecided_foreign_send_fails_the_act(): void
