@@ -6,6 +6,7 @@ use League\Tactician\Middleware;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
+use TangibleDDD\Application\Intents\IntentWindows;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
 use Throwable;
@@ -39,7 +40,13 @@ final class CorrelationMiddleware implements Middleware {
     $enclosing = $this->enclosing_context();
 
     // No command inside a command — acts are the atomic moments and never nest.
+    // The one exception: inside a window the act declared with
+    // Intents::capture(), a command is captured as an intent, not run. The
+    // sender gets null; no act, no audit row, no transaction.
     if ($enclosing->cause?->kind === Kind::Act) {
+      if( IntentWindows::try_capture($enclosing->cause->id, $command) ) {
+        return null;
+      }
       throw new CommandDispatchedInsideCommand(
         get_class($command),
         $enclosing->cause->label ?? $enclosing->cause->id
@@ -102,8 +109,10 @@ final class CorrelationMiddleware implements Middleware {
             'reactions' => Reactions::of($e),
           ], $this->events->published()),
           'error' => $error,
+          'intents' => IntentWindows::record($command_id),
         ]);
       }
+      IntentWindows::forget($command_id);
     }
   }
 

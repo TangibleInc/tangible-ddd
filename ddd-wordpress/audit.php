@@ -64,6 +64,9 @@ function command_audit_finalise(IDDDConfig $config, array $data): void {
     'events' => wp_json_encode($data['events'] ?? null, JSON_UNESCAPED_SLASHES),
     'error' => wp_json_encode($data['error'] ?? null, JSON_UNESCAPED_SLASHES),
   ];
+  if( !empty($data['intents']) ) {
+    $row['intents'] = wp_json_encode($data['intents'], JSON_UNESCAPED_SLASHES);
+  }
 
   $wpdb->update($table, $row, ['command_id' => (string) $data['command_id']]);
 }
