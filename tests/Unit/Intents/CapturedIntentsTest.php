@@ -62,6 +62,29 @@ class CapturedIntentsTest extends TestCase {
     $subset->fulfil();
   }
 
+  /** The decided intent is the set's last, so a per-intent check alone would decide $a first. */
+  public function test_reject_decides_all_or_none(): void {
+    $this->intents->of(B::class)->reject('mine');
+
+    try {
+      $this->intents->reject('x');
+      $this->fail('Expected IntentAlreadyDecided');
+    } catch( IntentAlreadyDecided $e ) {
+      $this->assertSame(Decision::undecided, $this->a->decision());
+    }
+  }
+
+  public function test_fulfil_decides_all_or_none(): void {
+    $this->intents->of(B::class)->fulfil();
+
+    try {
+      $this->intents->fulfil();
+      $this->fail('Expected IntentAlreadyDecided');
+    } catch( IntentAlreadyDecided $e ) {
+      $this->assertSame(Decision::undecided, $this->a->decision());
+    }
+  }
+
   public function test_empty_reason_is_incorrect_usage(): void {
     try {
       $this->intents->reject('  ');

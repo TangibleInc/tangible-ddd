@@ -13,6 +13,7 @@ use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
 use TangibleDDD\Application\Intents\IntentWindows;
 use TangibleDDD\Application\Intents\Intents;
 use TangibleDDD\Application\Intents\IntentsMiddleware;
+use TangibleDDD\Application\Intents\IntentsMiddlewareMisplaced;
 use TangibleDDD\Application\Intents\UndecidedIntents;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Application\Persistence\TransactionMiddleware;
@@ -325,6 +326,23 @@ class IntentsMiddlewareTest extends TestCase {
 
     $this->assertNotNull($act_id);
     $this->assertSame([], IntentWindows::record($act_id));
+  }
+
+  public function test_outside_correlation_middleware_throws_without_minting_a_context(): void {
+    $middleware = new IntentsMiddleware();
+    $ran = false;
+
+    try {
+      $middleware->execute(new FakeOuterCommand(), function() use (&$ran) {
+        $ran = true;
+      });
+      $this->fail('IntentsMiddleware outside an act scope must throw');
+    } catch (IntentsMiddlewareMisplaced $e) {
+      $this->assertStringContainsString('CorrelationMiddleware', $e->getMessage());
+    }
+
+    $this->assertFalse($ran, 'the command is not run');
+    $this->assertNull(Correlation::peek(), 'no root context is left behind');
   }
 
   public function test_act_state_is_forgotten_even_with_audit_disabled(): void {
