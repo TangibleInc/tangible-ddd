@@ -6,6 +6,8 @@ use PHPUnit\Framework\TestCase;
 use TangibleDDD\Infra\IDDDConfig;
 
 use function TangibleDDD\WordPress\command_audit_finalise;
+use function TangibleDDD\WordPress\command_audit_has_intents_column;
+use function TangibleDDD\WordPress\ddd_column_exists;
 
 /**
  * command_audit_finalise() writes the act's intents only when there are some
@@ -36,12 +38,19 @@ class AuditIntentsTest extends TestCase {
     };
   }
 
+  private int $column_queries = 0;
+
   private function wpdb(bool $has_column): void {
+    $this->column_queries = 0;
     $wpdb = $this->createMock(\wpdb::class);
     $wpdb->method('prepare')->willReturnArgument(0);
-    $wpdb->method('get_var')->willReturnCallback(
-      fn(string $sql) => str_contains($sql, 'information_schema.COLUMNS') ? ($has_column ? 1 : 0) : null
-    );
+    $wpdb->method('get_var')->willReturnCallback(function(string $sql) use ($has_column) {
+      if( !str_contains($sql, 'information_schema.COLUMNS') ) {
+        return null;
+      }
+      $this->column_queries++;
+      return $has_column ? 1 : 0;
+    });
     $wpdb->method('update')->willReturnCallback(function($table, $row) {
       $this->updates[] = $row;
       return true;
@@ -83,5 +92,31 @@ class AuditIntentsTest extends TestCase {
     $this->assertCount(1, $this->updates);
     $this->assertArrayNotHasKey('intents', $this->updates[0]);
     $this->assertSame('success', $this->updates[0]['status']);
+  }
+
+  public function test_present_column_is_cached_per_prefix(): void {
+    $this->wpdb(true);
+
+    $this->assertTrue(command_audit_has_intents_column($this->config('aud4')));
+    $this->assertTrue(command_audit_has_intents_column($this->config('aud4')));
+
+    $this->assertSame(1, $this->column_queries, 'the second call does not re-query');
+  }
+
+  public function test_missing_column_is_not_cached(): void {
+    $this->wpdb(false);
+
+    $this->assertFalse(command_audit_has_intents_column($this->config('aud5')));
+    $this->assertFalse(command_audit_has_intents_column($this->config('aud5')));
+
+    $this->assertSame(2, $this->column_queries, 'a worker that outlives the migration must see the column');
+  }
+
+  public function test_column_exists_reads_information_schema(): void {
+    $this->wpdb(true);
+    $this->assertTrue(ddd_column_exists('wp_x_command_audit', 'intents'));
+
+    $this->wpdb(false);
+    $this->assertFalse(ddd_column_exists('wp_x_command_audit', 'intents'));
   }
 }

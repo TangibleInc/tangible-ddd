@@ -39,15 +39,7 @@ function command_audit_has_intents_column(IDDDConfig $config): bool {
     return true;
   }
 
-  global $wpdb;
-
-  $found = (int) $wpdb->get_var($wpdb->prepare(
-    'SELECT COUNT(*) FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
-    $config->table('command_audit'),
-    'intents'
-  ));
-  if ($found > 0) {
+  if( ddd_column_exists($config->table('command_audit'), 'intents') ) {
     $present[$prefix] = true;
     return true;
   }
