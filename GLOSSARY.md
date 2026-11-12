@@ -101,11 +101,14 @@ The per-version list of what each release demands of consumers: [docs/migration-
 How an act handles a command that foreign code sends inside it ([ADR 0019](docs/adr/0019-captured-intents.md), [docs/intents.md](docs/intents.md)).
 
 **Intent**:
-A command held as a value instead of being run, together with the trace context it was sent under and the `file:line` it was sent from.
+A command held as a value instead of being run, together with the trace context it was sent under.
 _Avoid_: receipt, proposal, held command
 
+**Captured intent**:
+An intent captured inside a window, which also carries its origin: the `file:line` it was sent from.
+
 **Window**:
-The span an act declares with `Intents::capture()` around a call into foreign code. A command sent inside it is captured as an intent instead of throwing `CommandDispatchedInsideCommand`.
+The span an act declares with `Intents::capture()` around a call into foreign code. A command sent inside it is captured as an intent instead of throwing `CommandDispatchedInsideCommand`. A valve for sends from foreign code, not an exception that permits nesting.
 
 **Decision**:
 What the act does with a captured intent; every intent needs one before the act ends. **Fulfil**: the act does the work in-band, itself. **Reject**: the act decides against it, with a reason. **Defer** (it becomes its own act later) is planned, not built.
@@ -127,6 +130,9 @@ Incorrect usage: `Intents::capture()` called with no act open.
 
 **IntentsMiddlewareMissing**:
 Incorrect usage: `Intents::capture()` called in an act whose command bus lacks `IntentsMiddleware`.
+
+**IntentsMiddlewareMisplaced**:
+Incorrect usage: `IntentsMiddleware` ran with no act open, because it is not inside `CorrelationMiddleware` on its bus.
 
 **IntentAlreadyDecided**:
 Incorrect usage: fulfilling or rejecting an intent that already has a decision.

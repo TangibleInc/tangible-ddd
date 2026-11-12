@@ -1,6 +1,6 @@
 # Wiring a consumer to Tangible DDD
 
-> **Status: CURRENT FOR 0.6.13.** This is the supported top-level consumer
+> **Status: CURRENT FOR 0.6.2.** This is the supported top-level consumer
 > contract. Check the installed package version, source, and tests when working
 > on an older consumer or when this guide disagrees with executable behavior.
 

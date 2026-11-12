@@ -1,6 +1,6 @@
 # Consumer modules
 
-> **Status: CURRENT FOR 0.6.13.** This guide defines the supported contract for
+> **Status: CURRENT FOR 0.6.2.** This guide defines the supported contract for
 > extending an existing Tangible DDD consumer from separately deployed code.
 > Verify the installed host and module versions, containers, and service IDs
 > before applying it to a real plugin.

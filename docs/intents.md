@@ -6,10 +6,15 @@
 
 An act never nests ([DDD-M1](modeling-rules.md#ddd-m1-one-command-one-intent)).
 A command sent while an act is open throws `CommandDispatchedInsideCommand`, an
-`IncorrectUsage` that `catch (\Exception)` cannot swallow. That stays the rule
-for your own code. This page is about the one exception: a handler that has to
-call code it doesn't own, which sends a command from inside it, usually from a
-WordPress hook.
+`IncorrectUsage` that `catch (\Exception)` cannot swallow. Captured intents
+don't change that. A window is not a way to dispatch from a handler: commands
+still can't be sent inside commands. It is a valve for when it happens anyway,
+because a handler has to call code it doesn't own that sends a command,
+usually from a WordPress hook.
+
+Never open a window around your own code. Reach for one only when foreign code
+sends through a hook you can't change, and when you own the sending code,
+remove the send at its source instead.
 
 ## When to use a window
 
@@ -25,7 +30,8 @@ Use `Intents::capture()` when all of these are true:
 Don't use a window for your own code. If your handler wants a side effect
 now, call a domain service in-band; if it wants follow-on work, record an
 integration event and let a listener send the command. A window is not a way
-around DDD-M1, it is a declared, audited exception to it.
+around DDD-M1: it contains a send DDD-M1 couldn't prevent, and makes the act
+record what it decided about it.
 
 ## How it works
 
@@ -48,7 +54,8 @@ $captured->of(SomeCommand::class)->reject('done in-band by this act');
   the innermost `League\Tactician\CommandBus::handle` frame; failing that, the
   `handle()` call itself (the command was handed to the bus directly); with no
   `handle()` frame, the first frame outside `ddd-src/` and
-  `vendor/league/tactician`; and `unknown` only after that.
+  `vendor/league/tactician`; and `unknown` only after that. The path is
+  relative to `ABSPATH` when the file lies under it.
 - Only an `ICommand` is captured. Any other message sent on the bus inside a
   window still throws `CommandDispatchedInsideCommand`.
 - Windows nest. The innermost open window captures, and each window returns
@@ -114,6 +121,18 @@ If a later LearnDash or Cred version starts sending a second command from the
 same hook, the item fails with `UndecidedIntents` naming it, instead of
 dropping it silently.
 
+Every command sent inside the window is captured, whoever sends it, not only
+the one the act is thinking of. Other plugins listen on the same hook:
+tangible-datastream's LearnDash event source hooks `learndash_course_completed`
+and sends `RecordCapturedEventCommand`, so on a site where it is active the
+example above fails with `UndecidedIntents` naming that command. The act must
+decide each intent: reject what it doesn't own, with a reason (here,
+datastream's capture of the event is lost, as it is today when the guard
+throws), and don't blanket-reject with `of(ICommand::class)`, which would also
+swallow whatever a later version starts sending. Commands the act neither does
+nor owns, but which should still happen, are the first pressure toward
+**defer**.
+
 ## Errors
 
 All are `IncorrectUsage` (`\Error`), in `TangibleDDD\Application\Intents`.
@@ -122,6 +141,7 @@ All are `IncorrectUsage` (`\Error`), in `TangibleDDD\Application\Intents`.
 | --- | --- |
 | `CaptureOutsideAct` | `Intents::capture()` with no act open |
 | `IntentsMiddlewareMissing` | `Intents::capture()` in an act whose command bus lacks `IntentsMiddleware` |
+| `IntentsMiddlewareMisplaced` | `IntentsMiddleware` runs with no act open: it is not inside `CorrelationMiddleware` on its bus |
 | `UndecidedIntents` | an act ends with a captured intent undecided |
 | `IntentAlreadyDecided` | deciding an intent a second time |
 
@@ -143,12 +163,13 @@ The act's `command_audit` row records its decisions in the `intents` column
 
 ```json
 { "command": "Tangible\\Cred\\Application\\Commands\\IssueCompletionEarningsCommand",
-  "origin": "/var/www/html/wp-content/plugins/tangible-cred/includes/hooks/completion.php:42",
+  "origin": "wp-content/plugins/tangible-cred/includes/hooks/completion.php:42",
   "decision": "rejected", "reason": "issued by bulk issuance #12" }
 ```
 
 `decision` is `fulfilled`, `rejected` or `undecided`; only a rejection has a
-`reason`. The origin is the absolute path PHP reports. Undecided intents are
+`reason`. The origin's path is relative to `ABSPATH` when the file lies under
+it, and the absolute path PHP reports otherwise. Undecided intents are
 recorded as `"decision": "undecided"` on the failed act's row, so a failure
 can be read from the audit alone. The column stays `NULL` for acts without
 intents, and a consumer that hasn't migrated to v8 yet keeps writing its

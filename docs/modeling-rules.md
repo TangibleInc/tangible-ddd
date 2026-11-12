@@ -138,9 +138,10 @@ integration event.
 - **Enforced by:** Runtime — `CorrelationMiddleware` throws
   `CommandDispatchedInsideCommand`, an `IncorrectUsage` (`\Error`), so a
   surrounding `catch (\Exception)` cannot hide it ([ADR 0018](adr/0018-incorrect-usage-is-an-error.md)).
-  The one sanctioned exception is `Intents::capture()`: a command that
-  foreign code sends inside the window it declares is captured as an intent,
-  and the act must fulfil or reject each one before it ends
+  `Intents::capture()` is a containment valve for sends from foreign code,
+  not an exception that permits nesting: a command that foreign code sends
+  inside the window it declares is captured as an intent, and the act must
+  fulfil or reject each one before it ends
   ([captured intents](intents.md), [ADR 0019](adr/0019-captured-intents.md)).
   Phan (planned) for the static case.
 

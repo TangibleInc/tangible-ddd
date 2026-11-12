@@ -776,16 +776,19 @@ assertions cover its own handlers' validation and are unaffected.
   before the column exists.
 - New `IncorrectUsage` errors in `TangibleDDD\Application\Intents`:
   `UndecidedIntents`, `CaptureOutsideAct`, `IntentsMiddlewareMissing`,
-  `IntentAlreadyDecided`.
+  `IntentsMiddlewareMisplaced`, `IntentAlreadyDecided`.
 
-**Mandatory for existing consumers** that define their own command bus (Cred,
+**For existing consumers** that define their own command bus (Cred,
 Datastream, Notifications Pro): add
 `'@TangibleDDD\Application\Intents\IntentsMiddleware'` to the command bus
 right after `TransactionMiddleware`, and register the service
-(`TangibleDDD\Application\Intents\IntentsMiddleware: ~`, autowired). Until
-then every command runs as before, but `Intents::capture()` throws
-`IntentsMiddlewareMissing`. No code change otherwise; the v8 column arrives on
-the next request, through the existing migration trigger.
+(`TangibleDDD\Application\Intents\IntentsMiddleware: ~`, autowired). It is
+required on any command bus whose handlers call `Intents::capture()`, and
+recommended on every command bus. Without it every command runs as before,
+but `Intents::capture()` throws `IntentsMiddlewareMissing`. A bus that only
+sends a command which another act captures doesn't need it: the capture
+happens on the capturing act's bus. No code change otherwise; the v8 column
+arrives on the next request, through the existing migration trigger.
 
 ## How to verify a migration (any version)
 
