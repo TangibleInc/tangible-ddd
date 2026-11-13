@@ -99,6 +99,23 @@ decide them. A handler that catches the throw and carries on still fails at the
 end of the act. Catching the call's failure doesn't make the commands it sent
 disappear.
 
+When a failure inside the call should fail only part of the act's work (one
+item of a batch), catch it inside the callable instead, so `capture()` returns
+the set, decide every intent with a reason that names the failure, then rethrow
+or record the failure where it belongs:
+
+```php
+$failure = null;
+$captured = Intents::capture(function() use (&$failure) {
+  try { $content_repo->complete_content($user_id, $course_id, $date); }
+  catch( \Throwable $e ) { $failure = $e; }
+});
+if( $failure ) {
+  $captured->reject('course completion failed: ' . $failure->getMessage());
+  throw $failure;   // the item's own failure handling takes it from here
+}
+```
+
 ## Example: Cred's bulk issue
 
 Cred's bulk issue completes a LearnDash course for each item of a workflow.
@@ -106,7 +123,7 @@ Completing makes LearnDash fire `learndash_course_completed` synchronously, and
 Cred's own completion hook (`tgbl_cred_hook_ld_course_completed_fn`), an entry
 point that normally runs as its own act, is re-entered and sends
 `IssueCompletionEarningsCommand`. Inside the bulk run that send is a
-nested command and fails the item, but the bulk run is already issuing that
+nested command and throws `CommandDispatchedInsideCommand`, but the bulk run is already issuing that
 earning itself, with its own origin and date. Unhooking the listener around the
 call would be invisible in the audit and would drop anything else the hook
 sends. Instead:
@@ -122,8 +139,10 @@ $captured->of(IssueCompletionEarningsCommand::class)
 ```
 
 If a later LearnDash or Cred version starts sending a second command from the
-same hook, the item fails with `UndecidedIntents` naming it, instead of
-dropping it silently.
+same hook, the act (every item it ran, not only this one) fails with
+`UndecidedIntents` naming it, instead of dropping it silently. Cred's real
+handler rejects whatever else it captured with a reason and records it on the
+item, so one item's surprise never fails its batch.
 
 Every command sent inside the window is captured, whoever sends it, not only
 the one the act is thinking of. Other plugins listen on the same hook:
