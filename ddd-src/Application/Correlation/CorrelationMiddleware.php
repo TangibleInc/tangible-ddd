@@ -6,6 +6,7 @@ use League\Tactician\Middleware;
 use TangibleDDD\Application\Events\EventsUnitOfWork;
 use TangibleDDD\Application\Events\Reactions;
 use TangibleDDD\Application\Exceptions\CommandDispatchedInsideCommand;
+use TangibleDDD\Application\Intents\IntentWindows;
 use TangibleDDD\Application\Logging\Redactor;
 use TangibleDDD\Infra\IDDDConfig;
 use Throwable;
@@ -39,7 +40,14 @@ final class CorrelationMiddleware implements Middleware {
     $enclosing = $this->enclosing_context();
 
     // No command inside a command — acts are the atomic moments and never nest.
+    // The one valve: inside a window the act declared with Intents::capture(),
+    // a command sent by one of our entry points, re-entered through foreign
+    // code, is captured as an intent, not run. A handler that sends is still
+    // a violation. The sender gets null; no act, no audit row, no transaction.
     if ($enclosing->cause?->kind === Kind::Act) {
+      if( IntentWindows::try_capture($enclosing->cause->id, $command) ) {
+        return null;
+      }
       throw new CommandDispatchedInsideCommand(
         get_class($command),
         $enclosing->cause->label ?? $enclosing->cause->id
@@ -88,21 +96,29 @@ final class CorrelationMiddleware implements Middleware {
       throw $e;
 
     } finally {
-      if ($audit) {
-        // Names only — touches live in the touches table (the bus writes
-        // it at publication; JOIN via command_id when you want them
-        // together — owner ruling 2026-07-19: no duplication).
-        command_audit_finalise($this->config, [
-          'command_id' => $command_id,
-          'status' => $status,
-          'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
-          'peak_memory_bytes' => memory_get_peak_usage(true),
-          'events' => array_map(static fn ($e) => [
-            'name' => $e::name(),
-            'reactions' => Reactions::of($e),
-          ], $this->events->published()),
-          'error' => $error,
-        ]);
+      // forget() must run even if the audit write (or building its
+      // arguments) throws: a long-lived worker would otherwise retain the
+      // act's captured intents.
+      try {
+        if ($audit) {
+          // Names only — touches live in the touches table (the bus writes
+          // it at publication; JOIN via command_id when you want them
+          // together — owner ruling 2026-07-19: no duplication).
+          command_audit_finalise($this->config, [
+            'command_id' => $command_id,
+            'status' => $status,
+            'duration_ms' => (int) round((microtime(true) - $start_ts) * 1000),
+            'peak_memory_bytes' => memory_get_peak_usage(true),
+            'events' => array_map(static fn ($e) => [
+              'name' => $e::name(),
+              'reactions' => Reactions::of($e),
+            ], $this->events->published()),
+            'error' => $error,
+            'intents' => IntentWindows::record($command_id),
+          ]);
+        }
+      } finally {
+        IntentWindows::forget($command_id);
       }
     }
   }

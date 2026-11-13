@@ -168,6 +168,7 @@ function install_command_audit_table(IDDDConfig $config): void {
     events JSON NULL,
     error JSON NULL,
     environment JSON NULL,
+    intents JSON NULL,
     UNIQUE KEY uniq_command_id (command_id),
     KEY idx_correlation_id (correlation_id),
     KEY idx_started_at (started_at),

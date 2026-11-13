@@ -129,10 +129,15 @@ The supported command chain is:
 ```text
 CorrelationMiddleware
   -> TransactionMiddleware
+  -> IntentsMiddleware
   -> DomainEventsPublishMiddleware
   -> SelfExecutingCommandMiddleware
   -> CommandHandlerMiddleware
 ```
+
+`IntentsMiddleware` (0.6.13) lets a handler wrap a call into foreign code in
+`Intents::capture()` and fails the act if it leaves a captured command
+undecided; see `docs/intents.md`.
 
 The stock `TransactionMiddleware` opens a wpdb transaction only for a command
 implementing `ITransactionalCommand`. A plain or self-handling command must add

@@ -218,6 +218,11 @@ services with `service_for()` rather than constructing lookalikes:
 | `IOutboxRepository` | Preserves the host transaction and storage implementation. |
 | `ProcessRunner` | Owns host process registration and continuation state. |
 
+`IntentsMiddleware` is not in this table: it holds no state of its own (the
+act's capture windows live in the static `IntentWindows`, keyed by the act),
+so the module registers its own instance, autowired, as a normal consumer
+does.
+
 The framework service IDs above are common when the host uses the stock
 wiring. The transaction ID is not. LMS and Quiz use their own Doctrine
 transaction middleware; wpdb consumers commonly use
@@ -288,8 +293,11 @@ mutation is never the workaround.
 
 ## Module buses and resources
 
-The module command bus reuses the host's three outer middleware instances but
-keeps self-handling and naming-convention resolution module-local:
+The module command bus reuses the host's correlation, transaction, and
+event-publication middleware instances, puts its own `IntentsMiddleware`
+right after the transaction (it goes on every command bus, see
+[captured intents](intents.md)), and keeps self-handling and
+naming-convention resolution module-local:
 
 ```yaml
 services:
@@ -297,9 +305,12 @@ services:
     arguments:
       - '@TangibleDDD\Application\Correlation\CorrelationMiddleware'
       - '@super_trace.host_transaction'
+      - '@TangibleDDD\Application\Intents\IntentsMiddleware'
       - '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware'
       - '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware'
       - '@tactician.middleware.command_handler'
+
+  TangibleDDD\Application\Intents\IntentsMiddleware: ~
 
   TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware:
     arguments: ['@service_container']

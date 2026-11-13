@@ -28,6 +28,7 @@ use TangibleDDD\Application\Events\EventsUnitOfWork;
  *     a reset, subsequent tests find a sealed UoW and throw on save().
  *   - Correlation facade: static state; a leftover scope from a previous
  *     command would pollute the audit trail of the next.
+ *   - IntentWindows: static capture windows and intents keyed by act id.
  */
 abstract class CommandIntegrationTestCase extends TestCase
 {
@@ -61,7 +62,7 @@ abstract class CommandIntegrationTestCase extends TestCase
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
     /**
-     * Reset both shared framework singletons (EventsUnitOfWork + the Correlation facade).
+     * Reset the shared framework singletons (EventsUnitOfWork, the Correlation facade, IntentWindows).
      *
      * Called in both setUp and tearDown — before and after — so a test that throws
      * mid-command still leaves things clean for the next test.
@@ -73,6 +74,7 @@ abstract class CommandIntegrationTestCase extends TestCase
             ->reset();
 
         \TangibleDDD\Application\Correlation\Correlation::reset();
+        \TangibleDDD\Application\Intents\IntentWindows::reset();
     }
 
     /**

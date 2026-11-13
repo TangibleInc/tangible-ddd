@@ -35,8 +35,9 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 4: long_processes gains await_mechanism
  *  - 7: behaviour_workflows_meta side table; JSON meta column write-dead,
  *       existing values pivoted into rows
+ *  - 8: command_audit gains intents
  */
-const DDD_SCHEMA_VERSION = 7;
+const DDD_SCHEMA_VERSION = 8;
 
 /**
  * Per-prefix option holding the installed schema version.
@@ -146,7 +147,28 @@ function ddd_explicit_migrations(): array {
         }
       }
     },
+
+    // v8 — intents on command_audit: the decisions an act made about the
+    // commands it captured. Additive; dbDelta covers fresh installs, the
+    // explicit entry guarantees the column for consumers already at v7.
+    8 => static function (IDDDConfig $config): void {
+      ddd_add_column_if_missing($config->table('command_audit'), 'intents', 'JSON NULL', 'environment');
+    },
   ];
+}
+
+/**
+ * Whether $table has $column, read from information_schema. Uncached.
+ */
+function ddd_column_exists(string $table, string $column): bool {
+  global $wpdb;
+
+  return (int) $wpdb->get_var($wpdb->prepare(
+    'SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+    $table,
+    $column
+  )) > 0;
 }
 
 /**
@@ -155,14 +177,7 @@ function ddd_explicit_migrations(): array {
 function ddd_add_column_if_missing(string $table, string $column, string $definition, ?string $after = null): void {
   global $wpdb;
 
-  $exists = (int) $wpdb->get_var($wpdb->prepare(
-    'SELECT COUNT(*) FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
-    $table,
-    $column
-  ));
-
-  if ($exists > 0) {
+  if( ddd_column_exists($table, $column) ) {
     return;
   }
 

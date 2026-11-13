@@ -55,7 +55,9 @@ messages.
 
 - **DDD-M1** A command handler or synchronous event handler never sends a
   command. Do same-transaction work directly; start later work from an
-  integration event.
+  integration event. When foreign code you call re-enters one of our own
+  entry points that sends one, wrap the call in `Intents::capture()` and
+  decide what it sent ([captured intents](intents.md)).
 - **DDD-M2** Queries only read.
 - **DDD-M3** An integration listener only turns the event into a command, or
   `null`. It has no dependencies and makes no decisions.

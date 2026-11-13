@@ -96,6 +96,23 @@ _Avoid_: child consumer, sidecar consumer
 **Ledger**:
 The per-version list of what each release demands of consumers: [docs/migration-0.2-to-0.3.md](docs/migration-0.2-to-0.3.md).
 
+## Intents
+
+How an act handles a command that one of our own entry points sends when foreign code re-enters it inside the act ([ADR 0019](docs/adr/0019-captured-intents.md), [docs/intents.md](docs/intents.md)).
+
+**Intent**:
+A command held as a value instead of being run, together with the trace context it was sent under.
+_Avoid_: receipt, proposal, held command
+
+**Captured intent**:
+An intent captured inside a window, which also carries its origin: the `file:line` it was sent from.
+
+**Window**:
+The span an act declares with `Intents::capture()` around a call into foreign code. A command sent inside it is captured as an intent instead of throwing `CommandDispatchedInsideCommand`. A containment valve for our own entry points re-entered through foreign code, not a licence to send from a handler.
+
+**Decision**:
+What the act does with a captured intent; every intent needs one before the act ends. **Fulfil**: the act does the work in-band, itself. **Reject**: the act decides against it, with a reason. **Defer** (it becomes its own act later) is planned, not built.
+
 ## Errors
 
 **Incorrect usage**:
@@ -104,6 +121,21 @@ _Avoid_: LogicException, misuse exception
 
 **Invariant violation**:
 A domain rule that failed, thrown as `InvariantException`. Recoverable at the edge of the operation, unlike incorrect usage.
+
+**UndecidedIntents**:
+Incorrect usage: an act ended with a captured intent nobody decided. Its message names each command class and origin.
+
+**CaptureOutsideAct**:
+Incorrect usage: `Intents::capture()` called with no act open.
+
+**IntentsMiddlewareMissing**:
+Incorrect usage: `Intents::capture()` called in an act whose command bus lacks `IntentsMiddleware`.
+
+**IntentsMiddlewareMisplaced**:
+Incorrect usage: `IntentsMiddleware` ran with no act open, because it is not inside `CorrelationMiddleware` on its bus.
+
+**IntentAlreadyDecided**:
+Incorrect usage: fulfilling or rejecting an intent that already has a decision.
 
 ## Trace vocabulary (framework-internal)
 

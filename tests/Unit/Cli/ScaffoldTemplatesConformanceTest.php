@@ -221,6 +221,40 @@ final class ScaffoldTemplatesConformanceTest extends TestCase {
     $this->assertStringNotContainsString( 'AcmeOrders\WordPress\DI\HandlerClassNameInflector', $yaml );
   }
 
+  /**
+   * The scaffold's command bus is the one a new consumer runs first. Without
+   * IntentsMiddleware its first Intents::capture() throws
+   * IntentsMiddlewareMissing, so the chain is pinned whole, in the order
+   * IntentsMiddlewareWiringTest pins for the framework's own buses. The
+   * query bus never carries it: queries are not acts.
+   */
+  public function test_command_bus_runs_intents_between_transaction_and_event_publishing(): void {
+    $services = Yaml::parse( self::$templates['ddd-wordpress/di/tactician.yaml'] )['services'];
+
+    $this->assertSame(
+      [
+        '@TangibleDDD\Application\Correlation\CorrelationMiddleware',
+        '@TangibleDDD\Application\Persistence\TransactionMiddleware',
+        '@TangibleDDD\Application\Intents\IntentsMiddleware',
+        '@TangibleDDD\Application\Events\DomainEventsPublishMiddleware',
+        '@TangibleDDD\Application\CQRS\SelfExecutingCommandMiddleware',
+        '@tactician.middleware.command_handler',
+      ],
+      $services['League\Tactician\CommandBus']['arguments'],
+    );
+    $this->assertNotContains(
+      '@TangibleDDD\Application\Intents\IntentsMiddleware',
+      $services['tactician.query_bus']['arguments'],
+    );
+
+    $registered = Yaml::parse( self::$templates['ddd-wordpress/di/services.yaml'] )['services'];
+    $this->assertArrayHasKey(
+      'TangibleDDD\Application\Intents\IntentsMiddleware',
+      $registered,
+      'the middleware the bus references is registered (autowired)',
+    );
+  }
+
   public function test_long_processes_are_compiled_into_the_generated_consumer_catalog(): void {
     $this->assertArrayHasKey( 'ddd-src/Application/Process/.gitkeep', self::$templates );
 
