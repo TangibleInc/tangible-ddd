@@ -23,8 +23,8 @@ use function TangibleDDD\WordPress\ddd_schema_version_key;
 use function TangibleDDD\WordPress\register_process_hooks;
 
 /**
- * Schema v9 and AW2 on WordPress (wave 5, CR-W5CC-7): `{prefix}_ddd_wakeups`
- * gains a nullable `fact` column, a v9 consumer's runner gets the
+ * Schema v10 and AW2 on WordPress (wave 5, CR-W5CC-7): `{prefix}_ddd_wakeups`
+ * gains a nullable `fact` column, a v10 consumer's runner gets the
  * WpdbParkingScheduler (ICarriesFacts), and an answer whose process lock is
  * taken is parked as a fact-carrying ResumeRetry intent on the
  * `{prefix}_ddd_wakeup` hook instead of failing its resume subscriber; the
@@ -39,34 +39,39 @@ final class WpParkedFactV9Test extends V8TestCase {
     return ['class' => V8Fact::class, 'payload' => ['z' => 1, 'n' => 9, 'a' => ['f' => 1.5, 'u' => "na\u{00EF}ve"]], 'event_id' => self::EVENT_ID];
   }
 
-  public function test_a_fresh_install_migrates_to_v9_with_the_fact_column(): void {
+  public function test_a_fresh_install_migrates_to_v10_with_the_fact_column(): void {
     ddd_maybe_migrate($this->config);
 
-    self::assertSame(9, (int) get_option(ddd_schema_version_key($this->config)));
+    self::assertSame(10, (int) get_option(ddd_schema_version_key($this->config)));
     self::assertTrue($this->columnExists($this->table('ddd_wakeups'), 'fact'));
   }
 
-  public function test_a_v8_consumer_gains_the_fact_column_at_v9(): void {
-    $this->installV8();
+  public function test_a_v9_consumer_gains_the_fact_column_at_v10(): void {
+    $this->installV9();
     $this->wpdb->query("ALTER TABLE `{$this->table('ddd_wakeups')}` DROP COLUMN `fact`");
-    self::assertFalse($this->columnExists($this->table('ddd_wakeups'), 'fact'), 'a table as v8 shipped it');
+    self::assertFalse($this->columnExists($this->table('ddd_wakeups'), 'fact'), 'a table as v9 shipped it');
 
     ddd_maybe_migrate($this->config);
 
     self::assertTrue($this->columnExists($this->table('ddd_wakeups'), 'fact'));
-    self::assertSame(9, (int) get_option(ddd_schema_version_key($this->config)));
+    self::assertSame(10, (int) get_option(ddd_schema_version_key($this->config)));
   }
 
-  public function test_the_factory_serves_the_parking_scheduler_only_at_v9(): void {
+  public function test_the_factory_serves_the_parking_scheduler_only_at_v10(): void {
     $this->installCurrent();
     $scheduler = HostDefaults::for(IWakeupScheduler::class, $this->config);
     self::assertInstanceOf(WpdbParkingScheduler::class, $scheduler);
     self::assertInstanceOf(ICarriesFacts::class, $scheduler);
 
+    update_option(ddd_schema_version_key($this->config), 9, false);
+    $v9 = HostDefaults::for(IWakeupScheduler::class, $this->config);
+    self::assertInstanceOf(WpdbWakeupScheduler::class, $v9);
+    self::assertNotInstanceOf(ICarriesFacts::class, $v9, 'v9 keeps the wave-3 delivery retry');
+
+    // 0.6.13's v8 (command_audit.intents) has no intent table: a consumer
+    // still at 8 stays on the 0.6 Action Scheduler path.
     update_option(ddd_schema_version_key($this->config), 8, false);
-    $v8 = HostDefaults::for(IWakeupScheduler::class, $this->config);
-    self::assertInstanceOf(WpdbWakeupScheduler::class, $v8);
-    self::assertNotInstanceOf(ICarriesFacts::class, $v8, 'v8 keeps the wave-3 delivery retry');
+    self::assertInstanceOf(\TangibleDDD\WordPress\Adapter\ActionSchedulerWakeupScheduler::class, HostDefaults::for(IWakeupScheduler::class, $this->config));
   }
 
   public function test_a_parked_fact_round_trips_through_the_intent_row(): void {
@@ -83,8 +88,8 @@ final class WpParkedFactV9Test extends V8TestCase {
     self::assertSame([['key' => $intent->key]], array_column($this->pendingActions('ddd8it_ddd_wakeup'), 'args'), 'the projection stays the key');
   }
 
-  public function test_an_intent_without_a_fact_stores_null_and_works_on_a_v8_table(): void {
-    $this->installV8();
+  public function test_an_intent_without_a_fact_stores_null_and_works_on_a_v9_table(): void {
+    $this->installV9();
     $this->wpdb->query("ALTER TABLE `{$this->table('ddd_wakeups')}` DROP COLUMN `fact`");
     $scheduler = new WpdbWakeupScheduler($this->config);
 

@@ -109,7 +109,7 @@ final class ReserveStockOnOrderPlaced extends IntegrationListener {
 }
 ```
 
-What 0.7 adds, once the consumer is at schema v8:
+What 0.7 adds, once the consumer is at schema v9:
 
 - **Isolation.** Each DDD-registered callback runs behind a per-subscriber delivery ledger. If one listener throws, the error is logged and recorded, and the rest of the hook's callbacks still run. Raw `add_action` callbacks are outside this guarantee.
 - **Retries are opt-in.** By default a failing listener gets one attempt, as in 0.6. The ledger then marks it exhausted, and `wp ddd ops` lists it. A listener that declares `#[Retries(n)]` (`TangibleDDD\WordPress\Retries`) gets n + 1 attempts through `{prefix}_ddd_redeliver`, with backoff 30 s × 2ⁿ capped at 3600 s. The option `{prefix}_ddd_delivery_attempts` sets the number for a whole consumer, and the filter `tangible_ddd_delivery_attempts` has the last word. Process ignition and resume always keep 5 attempts. This lands in wave 5: see the [CHANGELOG](CHANGELOG.md). Opt in only when the command can run again for the same fact.
@@ -225,9 +225,9 @@ For a prefix such as `acme_orders`, the framework maintains these WordPress tabl
 - `acme_orders_command_audit`
 - `acme_orders_touches`
 - `acme_orders_behaviour_workflows`, `acme_orders_behaviour_workflows_meta`, `acme_orders_behaviour_workflow_items`
-- from schema v8 (0.7): `acme_orders_ddd_wakeups`, `acme_orders_ddd_delivery_ledger`, `acme_orders_ddd_relay_pauses`
+- from schema v9 (0.7): `acme_orders_ddd_wakeups`, `acme_orders_ddd_delivery_ledger`, `acme_orders_ddd_relay_pauses`
 
-Schema v8 is additive only, and a 0.6 copy tolerates it.
+Schema v8 (`command_audit.intents`, shared with 0.6.13), v9 and v10 are additive only, and a 0.6 copy tolerates them.
 
 ## Dashboard
 

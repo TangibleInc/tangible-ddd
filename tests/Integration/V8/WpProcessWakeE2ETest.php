@@ -19,7 +19,7 @@ use function TangibleDDD\WordPress\register_process_hooks;
 
 /**
  * The 0.6 ProcessRunner construction (config, repository) on a migrated
- * consumer resolves the v8 ports through HostDefaults; a suspended
+ * consumer resolves the v9 ports through HostDefaults; a suspended
  * process's timeout is a durable intent projected to the legacy AS hook,
  * and the AS callback brackets the intent (firing → done; failed → back to
  * pending and re-projected by a relay tick).
@@ -30,7 +30,7 @@ final class WpProcessWakeE2ETest extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     V8AwaitingProcess::$finished = 0;
     $this->runner = new ProcessRunner($this->config, new ProcessRepository($this->config));
     $this->runner->register_event(V8Fact::class);
@@ -60,7 +60,7 @@ final class WpProcessWakeE2ETest extends V8TestCase {
     \ActionScheduler::runner()->process_action($actionId, 'ddd-v8-test');
   }
 
-  public function test_the_runner_resolves_the_v8_ports(): void {
+  public function test_the_runner_resolves_the_v9_ports(): void {
     self::assertInstanceOf(WpdbProcessStore::class, HostDefaults::for(IProcessStore::class, $this->config, new ProcessRepository($this->config)));
     self::assertInstanceOf(WpdbWakeupScheduler::class, HostDefaults::for(IWakeupScheduler::class, $this->config));
   }

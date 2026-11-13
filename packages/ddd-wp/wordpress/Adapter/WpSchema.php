@@ -7,14 +7,14 @@ namespace TangibleDDD\WordPress\Adapter;
 use TangibleDDD\Infra\IConsumerIdentity;
 
 /**
- * The schema gate of the v8 adapters: the installed framework schema
+ * The schema gate of the v9 adapters: the installed framework schema
  * version of a consumer prefix, read from the same per-prefix option
  * `{prefix}_ddd_schema_version` the migrator writes (migrations.php,
  * ddd_schema_version_key()).
  *
- * The v8 code paths (claim_token claims and fencing, the intent table, the
+ * The v9 code paths (claim_token claims and fencing, the intent table, the
  * delivery ledger, the version-fenced process store) are wired only for a
- * consumer whose v8 migration has run; until then (the request between a
+ * consumer whose v9 migration has run; until then (the request between a
  * deploy and its first init:3 / admin_init migration, or a consumer that
  * never migrates) the 0.6-schema paths stay in use.
  *
@@ -23,10 +23,15 @@ use TangibleDDD\Infra\IConsumerIdentity;
  */
 final class WpSchema {
 
-  public const V8 = 8;
+  /**
+   * Durable contracts (wave 3). 9, not 8: 0.6.13 ships its own v8
+   * (command_audit.intents), so a consumer at 8 may have none of the
+   * durable-contract tables.
+   */
+  public const V9 = 9;
 
   /** Wave 5 (AW2): `{prefix}_ddd_wakeups.fact`, the fact a parked resume carries. */
-  public const V9 = 9;
+  public const V10 = 10;
 
   /** @var array<string, bool> table => reachable, for the request (outbox_enabled(), processes_enabled()) */
   private static array $reachable = [];
@@ -50,12 +55,12 @@ final class WpSchema {
     return self::installed($consumer) >= $version;
   }
 
-  public static function is_v8(IConsumerIdentity|string $consumer): bool {
-    return self::at_least($consumer, self::V8);
-  }
-
   public static function is_v9(IConsumerIdentity|string $consumer): bool {
     return self::at_least($consumer, self::V9);
+  }
+
+  public static function is_v10(IConsumerIdentity|string $consumer): bool {
+    return self::at_least($consumer, self::V10);
   }
 
   /**

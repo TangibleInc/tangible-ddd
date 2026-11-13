@@ -23,7 +23,7 @@ use TangibleDDD\WordPress\Adapter\WpStrandedRepairs;
  * stranded `running` row `resume-stranded` / `fail-stranded`, and
  * WpStrandedRepairs (behind `wp ddd ops --resume-stranded=<id>` /
  * `--fail-stranded=<id>`) dispatches core's ResumeStrandedProcess /
- * FailStrandedProcess on the v8 ports.
+ * FailStrandedProcess on the v9 ports.
  */
 final class WpStrandedRepairV8Test extends V8TestCase {
 
@@ -33,7 +33,7 @@ final class WpStrandedRepairV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     HostDefaults::provide(IClock::class, $this->clock);
     $this->store = new WpdbProcessStore(new ProcessRepository($this->config), $this->config, $this->clock);

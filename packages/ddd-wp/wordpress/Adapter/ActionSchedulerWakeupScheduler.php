@@ -14,7 +14,7 @@ use TangibleDDD\Runtime\Scheduling\WakeupIntent;
  * Transitional wave-2 IWakeupScheduler on WordPress (register 3.6, section
  * 8): every intent becomes an Action Scheduler action AT SCHEDULE TIME, on
  * the legacy hook with the legacy ASSOCIATIVE args (R4), in the consumer's
- * `processes` group. There is no intent table until schema v8 (wave 3), so
+ * `processes` group. There is no intent table until schema v9 (wave 3), so
  * the AS action is the only record:
  *
  * - Timeout  → as_schedule_single_action(due_at, `{prefix}_await_timeout`,

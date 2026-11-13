@@ -26,7 +26,7 @@ use TangibleDDD\Tests\Compat\Rollback\Support\RollbackTestCase;
  * (2) upgrade → rollback → a 0.6 ignition → roll-forward → redelivery of
  *     the same fact: no second process (insertIgnited's
  *     ignited_by_event_id check for rows a 0.6 copy wrote).
- * (3) upgrade with 0.6-queued continuations and timeouts: the v8 migration
+ * (3) upgrade with 0.6-queued continuations and timeouts: the v9 migration
  *     backfills their intent rows, and N neither re-projects them nor
  *     loses them.
  */
@@ -87,7 +87,7 @@ final class SequencesRollback extends RollbackTestCase {
   }
 
   #[DataProvider('legacyVersions')]
-  public function test_sequence_3_the_v8_migration_backfills_intents_for_0_6_queued_wakes(string $version): void {
+  public function test_sequence_3_the_v9_migration_backfills_intents_for_0_6_queued_wakes(string $version): void {
     $legacy = $this->legacy($version);
     $legacy->run('migrate');
     $this->legacyIdBase();

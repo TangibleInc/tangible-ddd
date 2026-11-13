@@ -16,7 +16,7 @@ use TangibleDDD\Runtime\Support\Log;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
- * The wp IWakeupScheduler on schema v8 (register 3.6, 5.1, 5.3; ruling on
+ * The wp IWakeupScheduler on schema v9 (register 3.6, 5.1, 5.3; ruling on
  * rollback with pending durable rows).
  *
  * The `{prefix}_ddd_wakeups` row is the recovery ledger and the fencing
@@ -63,13 +63,13 @@ use TangibleDDD\Runtime\SystemClock;
  * relay tick. A 0.6 copy never reads the table. Every failed storage write
  * throws \RuntimeException.
  *
- * Wave 5 (AW2, schema v9): the `fact` column keeps WakeupIntent::$fact; it
- * is written only for an intent that carries one (so a v8 table keeps
+ * Wave 5 (AW2, schema v10): the `fact` column keeps WakeupIntent::$fact; it
+ * is written only for an intent that carries one (so a v9 table keeps
  * working for every other intent) and returned by claim_due(), begin_key()
  * and intent(). The ResumeRetry projection stays `['key' => …]`: the
  * `{prefix}_ddd_wakeup` callback re-reads the row, fact included. This class
  * does not declare ICarriesFacts: the runner parks a contended fact resume
- * only on WpdbParkingScheduler, which WpHostPortFactory serves to a v9
+ * only on WpdbParkingScheduler, which WpHostPortFactory serves to a v10
  * consumer.
  */
 class WpdbWakeupScheduler implements IWakeupScheduler {

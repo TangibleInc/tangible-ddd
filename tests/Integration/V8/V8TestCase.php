@@ -15,10 +15,11 @@ use function TangibleDDD\WordPress\ddd_schema_version_key;
 use function TangibleDDD\WordPress\install_tables;
 
 /**
- * Base for the schema v8 integration tests (real WordPress, MySQL 8, the
- * real Action Scheduler).
+ * Base for the schema v9 (durable contracts; "V8" in these class names is the
+ * wave 3 working name, before the renumbering above 0.6.13's v8) integration
+ * tests (real WordPress, MySQL 8, the real Action Scheduler).
  *
- * Unlike IntegrationTestCase there is NO outer transaction: the v8 adapters
+ * Unlike IntegrationTestCase there is NO outer transaction: the v9 adapters
  * open their own (claim, dead-letter, intents), and a raw START TRANSACTION
  * by the test would be committed implicitly by the first of them. Instead
  * every test runs on the consumer prefix `ddd8it`, whose tables, options and
@@ -52,16 +53,16 @@ abstract class V8TestCase extends TestCase {
     parent::tearDown();
   }
 
-  /** A fresh v8 install, as an activation or the first admin_init would leave it. */
-  protected function installV8(): void {
+  /** A fresh v9 (durable contracts) install, as an activation or the first admin_init would leave it. */
+  protected function installV9(): void {
     if (!function_exists('dbDelta')) {
       require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     }
     install_tables($this->config);
-    update_option(ddd_schema_version_key($this->config), 8, false);
+    update_option(ddd_schema_version_key($this->config), 9, false);
   }
 
-  /** A fresh install at the current schema (v9 since wave 5: the parked-fact column). */
+  /** A fresh install at the current schema (v10 since wave 5: the parked-fact column). */
   protected function installCurrent(): void {
     if (!function_exists('dbDelta')) {
       require_once ABSPATH . 'wp-admin/includes/upgrade.php';

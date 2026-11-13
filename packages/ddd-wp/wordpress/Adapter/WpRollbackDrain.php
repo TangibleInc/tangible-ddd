@@ -74,7 +74,7 @@ final class WpRollbackDrain {
   }
 
   private function wakeups(): ?WpdbWakeupScheduler {
-    if (!WpSchema::is_v8($this->config) || !function_exists('as_has_scheduled_action')) {
+    if (!WpSchema::is_v9($this->config) || !function_exists('as_has_scheduled_action')) {
       return null;
     }
     $scheduler = \TangibleDDD\Runtime\HostDefaults::for(\TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $this->config);

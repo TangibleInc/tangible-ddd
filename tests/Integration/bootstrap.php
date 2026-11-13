@@ -86,8 +86,8 @@ unset($_datastream_ref);
 // ── Action Scheduler ─────────────────────────────────────────────────────────
 // The real AS from the distribution's vendor/, initialized through its own
 // "loaded after plugins_loaded" branch (as the conformance host does). The
-// schema v8 tests (tests/Integration/V8) need the real store: wakeup intents
-// are projected to AS actions, redeliveries are AS actions, and the v8
+// schema v9 tests (tests/Integration/V8) need the real store: wakeup intents
+// are projected to AS actions, redeliveries are AS actions, and the v9
 // migration backfills intents from pending actions.
 if (!function_exists('as_schedule_single_action')) {
     require_once dirname(__DIR__, 2) . '/vendor/woocommerce/action-scheduler/action-scheduler.php';

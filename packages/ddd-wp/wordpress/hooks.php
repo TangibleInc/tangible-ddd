@@ -171,7 +171,7 @@ function register_hooks(IDDDConfig $config, callable $di_getter, ?string $label 
 
 /**
  * Register the handler-retry hook `{prefix}_ddd_redeliver` (register 3.6,
- * 5.1; schema v8): Action Scheduler runs it with ['hook', 'event_class',
+ * 5.1; schema v9): Action Scheduler runs it with ['hook', 'event_class',
  * 'payload'] to re-run the DDD subscribers of one fact that failed, through
  * the delivery ledger (WpLedgeredDelivery). It has no callback under 0.6,
  * so pending redeliveries are lost on a rollback unless
@@ -242,7 +242,7 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
     return;
   }
 
-  // Schema v8: each wake brackets its intent rows (firing → done, or back
+  // Schema v9: each wake brackets its intent rows (firing → done, or back
   // to pending with the error so a relay tick re-projects it). On the 0.6
   // schema WpWakeBracket just runs the wake.
   add_action($config->hook('process_continue'), function(int $process_id) use ($config, $di_getter) {
@@ -280,7 +280,7 @@ function register_process_hooks(IDDDConfig $config, callable $di_getter): void {
     }
   }, 10, 2);
 
-  // Schema v8 only: ResumeRetry intents ({prefix}_ddd_wakeup, ['key' => …]).
+  // Schema v9 only: ResumeRetry intents ({prefix}_ddd_wakeup, ['key' => …]).
   // No 0.6 callback exists for this hook, so these are lost on a rollback,
   // like {prefix}_ddd_redeliver (register 3.6).
   add_action($config->hook('ddd_wakeup'), function(string $key) use ($config, $di_getter) {
@@ -319,7 +319,7 @@ function register_outbox_hooks(IDDDConfig $config, callable $di_getter): void {
     }
   });
 
-  // Process outbox batch: one relay tick (WpRelayTick). On a schema v8
+  // Process outbox batch: one relay tick (WpRelayTick). On a schema v9
   // consumer with the framework outbox, the fenced port-form relay over
   // Action Scheduler, then wakeup re-projection and the stranded scan;
   // otherwise the container's 0.6-form OutboxProcessor, as before.

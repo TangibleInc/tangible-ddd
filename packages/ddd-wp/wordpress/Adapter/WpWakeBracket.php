@@ -23,7 +23,7 @@ use TangibleDDD\Runtime\Support\Log;
  * is logged, not rethrown: the action completes and the worker continues
  * (decode.unknown-class).
  *
- * On a consumer without schema v8 (no intent table) it only runs the wake.
+ * On a consumer without schema v9 (no intent table) it only runs the wake.
  */
 final class WpWakeBracket {
 

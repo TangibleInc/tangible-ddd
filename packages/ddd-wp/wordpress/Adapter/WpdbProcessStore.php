@@ -19,7 +19,7 @@ use TangibleDDD\Runtime\Process\StrandedProcess;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
- * The wp IProcessStore on schema v8 (register 3.7, 3.8, 5.3; X7 and the
+ * The wp IProcessStore on schema v9 (register 3.7, 3.8, 5.3; X7 and the
  * ruling on #76), over `{prefix}_long_processes` of the framework's own
  * ProcessRepository (whose 0.6 column mapping and hydration it reuses).
  *

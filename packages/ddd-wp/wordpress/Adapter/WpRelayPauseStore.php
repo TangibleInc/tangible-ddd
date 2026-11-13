@@ -12,13 +12,13 @@ use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
- * The wp IRelayPauseStore (register 3.4, C25; schema v8): one row per
+ * The wp IRelayPauseStore (register 3.4, C25; schema v9): one row per
  * (holder, selector) in `{prefix}_ddd_relay_pauses`, selectors exact, `*`
  * or globs (`acme_order_*`), `until_at` NULL = until released.
  *
  * The 0.6 option `{prefix}_outbox_pauses` (holder => {selector, until}) is
  * READ beside the rows until it is drained: a hold set by a 0.6 copy (or
- * before the upgrade) keeps pausing the v8 relay, and holds written here
+ * before the upgrade) keeps pausing the v9 relay, and holds written here
  * never touch the option, so a 0.6 winner after a rollback sees only its
  * own holds. The option's selectors are matched with the same glob rule (a
  * superset of 0.6's exact-or-`*` match).
@@ -93,10 +93,10 @@ final class WpRelayPauseStore implements IRelayPauseStore {
     ));
     $db->suppress_errors($suppress);
     if ($db->last_error !== '') {
-      if (WpSchema::is_v8($this->config)) {
+      if (WpSchema::is_v9($this->config)) {
         throw new \RuntimeException("Relay pause read failed on {$this->table()}: {$db->last_error}");
       }
-      // Before the v8 migration the table may not exist yet (no hold can
+      // Before the v9 migration the table may not exist yet (no hold can
       // be in it then): the 0.6 option is the whole truth.
       $rows = [];
     }

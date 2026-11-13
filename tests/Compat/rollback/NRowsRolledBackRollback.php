@@ -23,7 +23,7 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
 use TangibleDDD\WordPress\Adapter\WpRollbackDrain;
 
 /**
- * Register 7.3, second half: N WRITES (schema v8, its own paths), then the
+ * Register 7.3, second half: N WRITES (schema v9, its own paths), then the
  * winner switches back to a legacy copy (L-0.6.6, L-0.6.5, L-0.6.2), whose
  * queued work drains and decodes.
  *

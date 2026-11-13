@@ -15,21 +15,22 @@ use function TangibleDDD\WordPress\ddd_schema_installed;
 use const TangibleDDD\WordPress\DDD_SCHEMA_VERSION;
 
 /**
- * Schema v8 (register section 8 wave 3 wp bullet, R5): a fresh install, and
- * an upgrade of a v7 database that holds pending rows left by a 0.6 winner.
+ * Schema v9, durable contracts (register section 8 wave 3 wp bullet, R5): a
+ * fresh install, an upgrade of a v7 database that holds pending rows left by
+ * a 0.6 winner, and an upgrade of a 0.6.13 database (v8: command_audit.intents).
  */
 final class SchemaV8MigrationTest extends V8TestCase {
 
   private const E1 = '9b2c7a3e-5d1f-4c6a-8e2b-1f0a3c5d7e91';
   private const E2 = '0c1d2e3f-4a5b-4c6d-8e7f-8091a2b3c4d5';
 
-  private const V8_TABLES = ['ddd_wakeups', 'ddd_delivery_ledger', 'ddd_relay_pauses'];
+  private const V9_TABLES = ['ddd_wakeups', 'ddd_delivery_ledger', 'ddd_relay_pauses'];
 
-  public function test_a_fresh_install_creates_every_v8_table_and_column(): void {
+  public function test_a_fresh_install_creates_every_v9_table_and_column(): void {
     ddd_maybe_migrate($this->config);
 
-    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
-    foreach (self::V8_TABLES as $t) {
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v10 since wave 5)');
+    foreach (self::V9_TABLES as $t) {
       self::assertTrue($this->tableExists($this->table($t)), "$t created");
     }
     self::assertTrue($this->columnExists($this->table('integration_outbox'), 'claim_token'));
@@ -37,8 +38,9 @@ final class SchemaV8MigrationTest extends V8TestCase {
       self::assertTrue($this->columnExists($this->table('long_processes'), $c), "long_processes.$c");
     }
     self::assertSame(['process_class', 'ignition_key'], $this->uniqueIgnitionColumns());
+    self::assertSame('environment', $this->columnBefore($this->table('command_audit'), 'intents'), 'v8: command_audit.intents, AFTER environment as 0.6.13 has it');
 
-    $report = get_option($this->config->option('ddd_v8_migration_report'));
+    $report = get_option($this->config->option('ddd_v9_migration_report'));
     self::assertSame(0, $report['ignition_backfilled']);
     self::assertSame([], $report['ignition_duplicates']);
     self::assertSame(0, $report['wakeups_backfilled']);
@@ -62,10 +64,11 @@ final class SchemaV8MigrationTest extends V8TestCase {
 
     ddd_maybe_migrate($this->config);
 
-    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
-    foreach (self::V8_TABLES as $t) {
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v10 since wave 5)');
+    foreach (self::V9_TABLES as $t) {
       self::assertTrue($this->tableExists($this->table($t)), "$t created on upgrade");
     }
+    self::assertSame('environment', $this->columnBefore($this->table('command_audit'), 'intents'), 'v8 ran on the way: command_audit.intents AFTER environment');
 
     // Nothing deleted, nothing re-statused.
     self::assertSame(
@@ -85,7 +88,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     self::assertNull($keys[$scheduled]);
     self::assertNull($keys[$fromCli], "X7: a #[StartsOn] class started with source <> 'event' is not on the ignition path");
 
-    $report = get_option($this->config->option('ddd_v8_migration_report'));
+    $report = get_option($this->config->option('ddd_v9_migration_report'));
     self::assertSame(1, $report['ignition_backfilled']);
     self::assertSame(3, $report['ignition_skipped']);
     self::assertSame([['process_class' => V8IgnitedProcess::class, 'event_id' => self::E1, 'kept' => $first, 'duplicate' => $dup]], $report['ignition_duplicates']);
@@ -104,7 +107,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     // The 0.6 pause option is kept (still read until drained).
     self::assertSame(['ops' => ['selector' => 'v8.fact', 'until' => -1]], get_option($this->config->option('outbox_pauses')));
 
-    // The upgraded tables serve the v8 adapters: the 0.6 pending row is
+    // The upgraded tables serve the v9 adapters: the 0.6 pending row is
     // held by the 0.6 pause, then claimed with a token once it is released.
     $store = new \TangibleDDD\WordPress\Adapter\WpdbOutboxStore(
       new \TangibleDDD\Infra\Persistence\OutboxRepository($this->config, new \TangibleDDD\Application\Outbox\OutboxConfig()),
@@ -117,7 +120,33 @@ final class SchemaV8MigrationTest extends V8TestCase {
     self::assertTrue($store->accept($claim, '1'));
   }
 
-  public function test_the_v8_migration_is_idempotent(): void {
+  public function test_an_upgrade_from_0_6_13_at_v8_still_runs_the_durable_contracts(): void {
+    // A 0.6.13 database: the 0.6.6 tables plus command_audit.intents, schema
+    // option 8. Before the renumbering, durable contracts were v8 and this
+    // site skipped them (tables, ignition keys, wakeup intents).
+    SchemaV7::install($this->config);
+    $this->wpdb->query("ALTER TABLE `{$this->table('command_audit')}` ADD COLUMN `intents` JSON NULL AFTER `environment`");
+    update_option(\TangibleDDD\WordPress\ddd_schema_version_key($this->config), 8, false);
+    $first = SchemaV7::process($this->config, V8IgnitedProcess::class, 'suspended', 1, self::E1);
+    as_schedule_single_action(time() + 3600, $this->config->hook('await_timeout'), ['process_id' => $first, 'step_index' => 1], $this->config->as_group('processes'));
+    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::is_v9($this->config), 'a 0.6.13 consumer is not on the durable-contract adapters');
+
+    ddd_maybe_migrate($this->config);
+
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config));
+    self::assertFalse(get_option($this->config->option('ddd_migration_error')));
+    foreach (self::V9_TABLES as $t) {
+      self::assertTrue($this->tableExists($this->table($t)), "$t created on upgrade from 0.6.13");
+    }
+    self::assertTrue($this->columnExists($this->table('integration_outbox'), 'claim_token'));
+    self::assertTrue($this->columnExists($this->table('ddd_wakeups'), 'fact'), 'v10 ran too');
+    self::assertSame(1, (int) $this->wpdb->get_var("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$this->table('command_audit')}' AND COLUMN_NAME = 'intents'"), 'v8 is not re-applied');
+    self::assertSame(IgnitionKey::for(self::E1, V8IgnitedProcess::class), $this->wpdb->get_var("SELECT ignition_key FROM `{$this->table('long_processes')}` WHERE id = $first"));
+    $report = get_option($this->config->option('ddd_v9_migration_report'));
+    self::assertSame([1, 1], [$report['ignition_backfilled'], $report['wakeups_backfilled']]);
+  }
+
+  public function test_the_v9_migration_is_idempotent(): void {
     SchemaV7::install($this->config);
     $first = SchemaV7::process($this->config, V8IgnitedProcess::class, 'suspended', 1, self::E1);
     as_schedule_single_action(time() + 60, $this->config->hook('await_timeout'), ['process_id' => $first, 'step_index' => 1]);
@@ -129,12 +158,12 @@ final class SchemaV8MigrationTest extends V8TestCase {
 
     self::assertSame(1, (int) $this->wpdb->get_var("SELECT COUNT(*) FROM `{$this->table('ddd_wakeups')}`"));
     self::assertSame(IgnitionKey::for(self::E1, V8IgnitedProcess::class), $this->wpdb->get_var("SELECT ignition_key FROM `{$this->table('long_processes')}`"));
-    $report = get_option($this->config->option('ddd_v8_migration_report'));
+    $report = get_option($this->config->option('ddd_v9_migration_report'));
     self::assertSame([0, [], 0], [$report['ignition_backfilled'], $report['ignition_duplicates'], $report['wakeups_backfilled']]);
   }
 
-  public function test_every_column_v8_adds_to_a_0_6_table_is_nullable_or_defaulted(): void {
-    // R5, read off the migrated schema itself: whatever ddd_migrate_v8()
+  public function test_every_column_v8_to_v10_add_to_a_0_6_table_is_nullable_or_defaulted(): void {
+    // R5, read off the migrated schema itself: whatever ddd_migrate_v9()
     // or tables.php add to a table a 0.6 winner writes, its INSERT (which
     // names none of them) must still succeed.
     SchemaV7::install($this->config);
@@ -144,7 +173,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
     }
 
     ddd_maybe_migrate($this->config);
-    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v10 since wave 5)');
 
     $added = [];
     foreach ($before as $t => $columns) {
@@ -160,7 +189,7 @@ final class SchemaV8MigrationTest extends V8TestCase {
       }
     }
     sort($added);
-    self::assertSame(['integration_outbox.claim_token', 'long_processes.ignition_key', 'long_processes.quarantine_reason', 'long_processes.start_path', 'long_processes.version'], $added);
+    self::assertSame(['command_audit.intents', 'integration_outbox.claim_token', 'long_processes.ignition_key', 'long_processes.quarantine_reason', 'long_processes.start_path', 'long_processes.version'], $added);
   }
 
   public function test_a_missing_unique_ignition_key_fails_the_migration_without_bumping_the_version(): void {
@@ -179,9 +208,9 @@ final class SchemaV8MigrationTest extends V8TestCase {
       $this->wpdb->suppress_errors($suppress);
     }
 
-    self::assertSame(7, ddd_schema_installed($this->config), 'the v8 adapters stay off without their ignition gate');
+    self::assertSame(7, ddd_schema_installed($this->config), 'the v9 adapters stay off without their ignition gate');
     self::assertStringContainsString('uniq_ignition_key', (string) get_option($this->config->option('ddd_migration_error')));
-    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::is_v8($this->config));
+    self::assertFalse(\TangibleDDD\WordPress\Adapter\WpSchema::is_v9($this->config));
 
     // Throttled: the next requests do not re-run dbDelta and the failing
     // migration until the retry time passes.
@@ -195,13 +224,13 @@ final class SchemaV8MigrationTest extends V8TestCase {
     $this->wpdb->query("UPDATE `{$this->table('long_processes')}` SET ignition_key = NULL");
     update_option($this->config->option('ddd_migration_retry_at'), time() - 1, false);
     ddd_maybe_migrate($this->config);
-    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v9 since wave 5)');
+    self::assertSame(DDD_SCHEMA_VERSION, ddd_schema_installed($this->config), 'the current version (v10 since wave 5)');
     self::assertFalse(get_option($this->config->option('ddd_migration_retry_at')));
   }
 
   public function test_a_0_6_winner_still_writes_after_the_upgrade(): void {
     // Rollback safety (R5, B18): the 0.6 repository's INSERT names none of
-    // the v8 columns, and every one of them is nullable or defaulted.
+    // the v9 columns, and every one of them is nullable or defaulted.
     ddd_maybe_migrate($this->config);
     $p = new V8ManualProcess(3);
     $p->initialize_lifecycle('33333333-3333-4333-8333-333333333333', \TangibleDDD\Application\Process\ProcessSteps::from_reflection([new \ReflectionMethod($p, 'react')], []));
@@ -221,6 +250,13 @@ final class SchemaV8MigrationTest extends V8TestCase {
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION',
       $table
     ));
+  }
+
+  /** The column just before $column in $table (ordinal order), or null. */
+  private function columnBefore(string $table, string $column): ?string {
+    $names = array_column($this->columns($table), 'COLUMN_NAME');
+    $at = array_search($column, $names, true);
+    return $at === false || $at === 0 ? null : $names[$at - 1];
   }
 
   /** @return list<string> */

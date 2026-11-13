@@ -98,7 +98,7 @@ function install_outbox_tables(IDDDConfig $config): void {
 }
 
 /**
- * Install the relay pause rows table (schema v8, register 3.4 / C25): one
+ * Install the relay pause rows table (schema v9, register 3.4 / C25): one
  * row per (holder, selector); `until_at` NULL = until released. The 0.6
  * `{prefix}_outbox_pauses` option is still read beside it until drained, so
  * a 0.6 copy's pause keeps holding and a rollback keeps the legacy holds.
@@ -123,7 +123,7 @@ function install_relay_pauses_table(IDDDConfig $config): void {
 }
 
 /**
- * Install the durable wakeup intents table (schema v8, register 3.6, 5.3).
+ * Install the durable wakeup intents table (schema v9, register 3.6, 5.3).
  *
  * One row per intent, unique on its idempotency key. The row is the
  * recovery ledger and the fencing source; the Action Scheduler action on
@@ -132,7 +132,7 @@ function install_relay_pauses_table(IDDDConfig $config): void {
  *
  * status: pending (armed) | firing (its wake is running) | done | cancelled.
  *
- * fact (schema v9, wave 5 AW2): the fact a parked resume carries
+ * fact (schema v10, wave 5 AW2): the fact a parked resume carries
  * (WakeupIntent::$fact as JSON), NULL for every other intent.
  */
 function install_wakeups_table(IDDDConfig $config): void {
@@ -171,7 +171,7 @@ function install_wakeups_table(IDDDConfig $config): void {
 }
 
 /**
- * Install the per-subscriber delivery ledger (schema v8, register 3.5, 5.1;
+ * Install the per-subscriber delivery ledger (schema v9, register 3.5, 5.1;
  * CR-1): one row per (subscriber, event_id). `subscriber_key` is
  * sha1(subscriber_id), so long ids stay uniquely indexable.
  *
@@ -213,12 +213,12 @@ function install_delivery_ledger_table(IDDDConfig $config): void {
  * - steps: JSON with ProcessSteps state
  * - payload: JSON with polymorphic format {_class, _data}
  * - step_index + step_name: denormalized for debugging/querying
- * - version (v8): the fence every save checks (register 3.7, 3.8)
- * - ignition_key (v8): uuid5(event_id, process_class), set ONLY by the
+ * - version (v9): the fence every save checks (register 3.7, 3.8)
+ * - ignition_key (v9): uuid5(event_id, process_class), set ONLY by the
  *   #[StartsOn] ignition path; UNIQUE (process_class, ignition_key) is the
  *   ignition gate (X7). NULL for manual starts (never deduped).
- * - quarantine_reason (v8): set with status `failed` for an undecodable row
- * - start_path (v8): `ignition` | `manual` on rows the v8 store inserts,
+ * - quarantine_reason (v9): set with status `failed` for an undecodable row
+ * - start_path (v9): `ignition` | `manual` on rows the v9 store inserts,
  *   NULL on rows a 0.6 copy wrote; the wp ignition check on
  *   ignited_by_event_id counts only the NULL ones, so a manual start inside
  *   a drain never blocks a later #[StartsOn] ignition of its class
@@ -295,6 +295,7 @@ function install_command_audit_table(IDDDConfig $config): void {
     events JSON NULL,
     error JSON NULL,
     environment JSON NULL,
+    intents JSON NULL,
     UNIQUE KEY uniq_command_id (command_id),
     KEY idx_correlation_id (correlation_id),
     KEY idx_started_at (started_at),

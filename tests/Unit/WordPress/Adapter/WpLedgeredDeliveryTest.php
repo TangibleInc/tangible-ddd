@@ -10,7 +10,7 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
 
 /**
  * The pure parts of the wp per-callback invoker: subscriber ids, the hook's
- * owning prefix, and the 0.6 semantics it keeps when no v8 ledger applies
+ * owning prefix, and the 0.6 semantics it keeps when no v9 ledger applies
  * (the unit stubs report every consumer as unmigrated).
  */
 final class WpLedgeredDeliveryTest extends TestCase {
@@ -45,7 +45,7 @@ final class WpLedgeredDeliveryTest extends TestCase {
     self::assertSame('listener:Acme\\Listener', WpLedgeredDelivery::subscriber_id($hook, 'listener', $closure, 'Acme\\Listener'));
   }
 
-  public function test_without_a_v8_ledger_the_callback_keeps_the_0_6_semantics(): void {
+  public function test_without_a_v9_ledger_the_callback_keeps_the_0_6_semantics(): void {
     $seen = [];
     $callback = WpLedgeredDelivery::bind('test_integration_x', FakeIntegrationEvent::class, 'action:a', 10, static function (mixed ...$params) use (&$seen): void {
       $seen[] = $params;

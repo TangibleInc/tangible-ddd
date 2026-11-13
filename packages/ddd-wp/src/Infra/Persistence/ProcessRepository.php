@@ -50,7 +50,7 @@ class ProcessRepository implements IProcessRepository {
 
   /**
    * The 0.6 column values for $process (every column save() writes except
-   * created_at), for the schema v8 store (WpdbProcessStore), which adds
+   * created_at), for the schema v9 store (WpdbProcessStore), which adds
    * version / ignition_key and writes them in its own fenced statements.
    *
    * @return array<string, mixed>
@@ -87,7 +87,7 @@ class ProcessRepository implements IProcessRepository {
 
   /**
    * Rebuild a process from one `long_processes` row (the 0.6 hydration),
-   * for the schema v8 store. Throws when the row cannot be decoded (the
+   * for the schema v9 store. Throws when the row cannot be decoded (the
    * class no longer exists, a constructor parameter is missing, …).
    */
   public function hydrate_row(object $row): LongProcess {
@@ -260,7 +260,7 @@ class ProcessRepository implements IProcessRepository {
    * D6: a constructor parameter typed LargeString (nullable or not) is
    * revived from its wire form. A corrupt one (bad base64, length or sha256
    * mismatch, over its cap) throws, naming the field and
-   * UndecodableLargeString::$reason, so the v8 store quarantines
+   * UndecodableLargeString::$reason, so the v9 store quarantines
    * the row with that reason (status `failed`, R5).
    */
   private static function revive(string $class, \ReflectionParameter $param, mixed $value): mixed {

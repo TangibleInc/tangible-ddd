@@ -53,7 +53,7 @@ use function TangibleDDD\WordPress\register_process_hooks;
 
 /**
  * Base of the register 7.3 cases: the rollback consumer `ddd_rb` composed
- * on N's schema v8 wp adapters in THIS process (what N's winner runs), and
+ * on N's schema v9 wp adapters in THIS process (what N's winner runs), and
  * the legacy winners as children (Legacy) on the same database.
  *
  * Time is the wall clock on both sides (a 0.6 copy has no IClock). "Later"
@@ -132,13 +132,13 @@ abstract class RollbackTestCase extends TestCase {
     $this->idBase();
   }
 
-  /** The upgrade: N's migration over whatever schema a legacy winner installed (v8+ explicit migrations, backfills). */
+  /** The upgrade: N's migration over whatever schema a legacy winner installed (v9+ explicit migrations, backfills). */
   protected function nUpgrade(): void {
     ddd_maybe_migrate($this->config);
     self::assertSame(\TangibleDDD\WordPress\DDD_SCHEMA_VERSION, (int) get_option(ddd_schema_version_key($this->config)), 'N migrated the consumer to its current schema: ' . (string) get_option($this->config->option('ddd_migration_error')));
   }
 
-  /** N boots as the winner: its v8 ports, its process runner and hooks, the fixtures' listener. */
+  /** N boots as the winner: its v9 ports, its process runner and hooks, the fixtures' listener. */
   protected function nBoot(): void {
     $clock = new SystemClock();
     $this->outbox = new WpdbOutboxStore(new OutboxRepository($this->config, $this->outboxConfig), $this->config, $clock);
@@ -164,7 +164,7 @@ abstract class RollbackTestCase extends TestCase {
     register_process_hooks($this->config, static fn () => $container);
     register_delivery_hooks($this->config);
     // The recurring `{prefix}_outbox_process` action: one relay tick, as N's
-    // register_outbox_hooks() runs it on a v8 consumer (WpRelayTick).
+    // register_outbox_hooks() runs it on a v9 consumer (WpRelayTick).
     add_action($this->config->hook('outbox_process'), fn () => $this->nTick());
     RbConsumer::listen(static fn (string $class, callable $fn) => integration_action($class, $fn));
   }

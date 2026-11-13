@@ -342,7 +342,7 @@
                 }
             ]
         },
-        "TangibleDDD\\WordPress\\ddd_migrate_v8": {
+        "TangibleDDD\\WordPress\\ddd_migrate_v9": {
             "file": "migrations.php",
             "byRef": false,
             "returnType": "array",
@@ -1385,7 +1385,7 @@
         }
     },
     "constants": {
-        "TangibleDDD\\WordPress\\DDD_SCHEMA_VERSION": "9",
+        "TangibleDDD\\WordPress\\DDD_SCHEMA_VERSION": "10",
         "TangibleDDD\\WordPress\\TABLES_INSTALLED_ACTION": "'tangible_ddd_tables_installed'"
     }
 }

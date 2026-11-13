@@ -80,9 +80,9 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * column wp; section 8 waves 2 and 3): WordPress 7.1.2 on MySQL 8.0, inside
  * the WP integration bootstrap, with the real Action Scheduler.
  *
- * Every port is the FINAL schema v9 wp adapter, composed by
+ * Every port is the FINAL schema v10 wp adapter, composed by
  * Support\WpConformanceRuntime (see there for the list): fenced outbox,
- * v8 pause rows, the shipped ActionSchedulerTransport, the delivery ledger
+ * v9 pause rows, the shipped ActionSchedulerTransport, the delivery ledger
  * behind WpLedgeredDelivery's per-callback gate, WpdbProcessStore,
  * WpdbParkingScheduler and GetLockProcessLock. There are no fixture
  * stand-ins for ports and no clock shims: every adapter takes the host
@@ -95,7 +95,7 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * Delivery: do_action on the fact's integration hook (an Action Scheduler
  * action for relayed facts), each DDD callback gated by the ledger.
  *
- * Processes (ProcessHost): the core ProcessRunner on the v8 ports, started
+ * Processes (ProcessHost): the core ProcessRunner on the v9 ports, started
  * in-band. Worker 1 is the WordPress connection; worker n > 1 is a second
  * MySQL session (its own transactions and GET_LOCK session) with its own
  * runner, lock and subscription registry over the same tables; its
@@ -114,11 +114,11 @@ use TangibleDDD\WordPress\Adapter\WpLedgeredDelivery;
  * gate derives from it, carry that prefix. set_up() and tear_down() therefore
  * wipe everything under it (tables, options, Action Scheduler actions and
  * groups, hooks) instead of using ScenarioContext::unique_name(); set_up()
- * then installs the v9 schema fresh. Nothing is wrapped in a per-test
+ * then installs the v10 schema fresh. Nothing is wrapped in a per-test
  * transaction. tear_down() restores ddd-wp's HostDefaults.
  *
- * Wave 5 (CR-W5C5-1, CR-W5C5-3): wakeups are WpdbParkingScheduler (v9
- * `fact` column, ICarriesFacts), what WpHostPortFactory serves at v9, so a
+ * Wave 5 (CR-W5C5-1, CR-W5C5-3): wakeups are WpdbParkingScheduler (v10
+ * `fact` column, ICarriesFacts), what WpHostPortFactory serves at v10, so a
  * contended fact resume is parked and `lock.acquire-error` takes its parked
  * branch. WorkItemHost is the wp BehaviourWorkflowRepository and
  * WorkItemRepository on the consumer's tables (W4); behaviour configs decode

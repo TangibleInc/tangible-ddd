@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use TangibleDDD\Conformance\HostFixture;
 use TangibleDDD\Conformance\Scenarios\ProcessScenarios;
 
-/** ProcessScenarios on wp: the process.* scenarios on the v8 wp ports. */
+/** ProcessScenarios on wp: the process.* scenarios on the v9 wp ports. */
 #[Group('wp')]
 final class WpProcessConformance extends ProcessScenarios {
 

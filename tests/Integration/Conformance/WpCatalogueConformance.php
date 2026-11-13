@@ -68,7 +68,7 @@ final class WpCatalogueConformance extends TestCase {
     self::assertSame([], array_values(array_diff(ScenarioCatalogue::cases_for('wp', 5), $extended)));
   }
 
-  /** lock.acquire-error takes its parked branch: the wp fixture schedules on the v9 WpdbParkingScheduler. */
+  /** lock.acquire-error takes its parked branch: the wp fixture schedules on the v10 WpdbParkingScheduler. */
   public function test_the_fixture_wakeups_carry_facts(): void {
     self::assertTrue(is_subclass_of(WpdbParkingScheduler::class, ICarriesFacts::class));
     $type = (new \ReflectionProperty(WpConformanceRuntime::class, 'wakeups'))->getType();

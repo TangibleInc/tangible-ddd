@@ -35,7 +35,7 @@ final class WpRelayTickV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     WpLedgeredDelivery::reset_for_tests();
   }
 

@@ -41,7 +41,7 @@ final class WpDeliveryBudgetV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     WpLedgeredDelivery::reset_for_tests();
     $this->hook = V8Fact::integration_action();
     $this->runs = 0;

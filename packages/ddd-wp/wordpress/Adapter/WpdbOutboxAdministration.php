@@ -19,7 +19,7 @@ use TangibleDDD\Runtime\SystemClock;
 
 /**
  * The wp IOutboxAdministration (register 3.4, 1.4 "4 repair handlers"),
- * on the 0.6 schema and on v8 (a reset also clears `claim_token`; time is
+ * on the 0.6 schema and on v9 (a reset also clears `claim_token`; time is
  * the host IClock, WPC-3), for one consumer prefix
  * (`{wp_prefix}{prefix}_integration_outbox` / `_integration_dlq`, the
  * tables ConsumerTables names; the consumer need not be registered).
@@ -177,8 +177,8 @@ final class WpdbOutboxAdministration implements IOutboxAdministration, IOutboxRo
       'locked_by' => null,
       'last_error' => null,
     ];
-    if (WpSchema::is_v8($this->prefix)) {
-      $reset['claim_token'] = null; // schema v8: a stale token must fence nothing
+    if (WpSchema::is_v9($this->prefix)) {
+      $reset['claim_token'] = null; // schema v9: a stale token must fence nothing
     }
     $this->checked($db->update($this->outbox(), $reset, ['event_id' => $event_id]), "reset outbox row $event_id");
   }
