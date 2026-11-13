@@ -35,7 +35,13 @@ class TestableWorkflowHandler extends WorkflowHandler {
 
   public bool $no_workflows_called = false;
 
+  /** When set, get_workflows() hands it to the sender via set_result(). */
+  public mixed $result_to_set = null;
+
   protected function get_workflows(ICommand $command): array {
+    if (null !== $this->result_to_set) {
+      $this->set_result($this->result_to_set);
+    }
     return $this->workflows_to_return;
   }
 
@@ -273,5 +279,43 @@ class WorkflowHandlerTest extends TestCase {
 
     $this->assertTrue($wf->is_complete());
     $this->assertSame(2, $wf->get_current_idx());
+  }
+
+  public function test_handle_returns_null_when_nothing_was_set(): void {
+    $wf = new BehaviourWorkflow(null, 1, 'request', [new FakeStopConfig()]);
+    $this->handler->workflows_to_return = [$wf];
+
+    $this->assertNull($this->handler->handle($this->make_command()));
+  }
+
+  public function test_handle_returns_what_the_subclass_set(): void {
+    $wf = new BehaviourWorkflow(null, 1, 'request', [new FakeStopConfig()]);
+    $this->handler->workflows_to_return = [$wf];
+    $this->handler->result_to_set = 57;
+
+    $this->assertSame(57, $this->handler->handle($this->make_command()));
+  }
+
+  public function test_handle_returns_the_result_when_there_are_no_workflows(): void {
+    $this->handler->workflows_to_return = [];
+    $this->handler->result_to_set = ['started' => false];
+
+    $this->assertSame(['started' => false], $this->handler->handle($this->make_command()));
+    $this->assertTrue($this->handler->no_workflows_called);
+  }
+
+  public function test_a_shared_handler_does_not_return_a_previous_dispatch_result(): void {
+    $this->handler->workflows_to_return = [];
+    $this->handler->result_to_set = 57;
+    $this->handler->handle($this->make_command());
+
+    $this->handler->result_to_set = null;
+
+    $this->assertNull($this->handler->handle($this->make_command()));
+  }
+
+  public function test_workflow_handler_is_a_returning_command_handler(): void {
+    $this->assertInstanceOf(\TangibleDDD\Application\CommandHandlers\IReturningCommandHandler::class, $this->handler);
+    $this->assertNotInstanceOf(\TangibleDDD\Application\CommandHandlers\ICommandHandler::class, $this->handler);
   }
 }

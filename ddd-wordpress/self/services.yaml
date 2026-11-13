@@ -22,6 +22,8 @@ services:
   # Auto-register operational command handlers (interfaces/abstracts are skipped).
   TangibleDDD\Application\CommandHandlers\:
     resource: '../../ddd-src/Application/CommandHandlers/'
-    exclude: '../../ddd-src/Application/CommandHandlers/ICommandHandler.php'
+    exclude:
+      - '../../ddd-src/Application/CommandHandlers/ICommandHandler.php'
+      - '../../ddd-src/Application/CommandHandlers/IReturningCommandHandler.php'
     public: true
     shared: false

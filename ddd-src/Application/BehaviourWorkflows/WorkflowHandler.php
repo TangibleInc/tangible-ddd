@@ -2,7 +2,7 @@
 
 namespace TangibleDDD\Application\BehaviourWorkflows;
 
-use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\CommandHandlers\IReturningCommandHandler;
 use TangibleDDD\Application\Commands\ICommand;
 use TangibleDDD\Application\Correlation\Correlation;
 use TangibleDDD\Application\Infrastructure\WorkflowFailed;
@@ -26,8 +26,10 @@ use TangibleDDD\Domain\ValueObjects\Behaviours\WorkItemStatus;
  * - Abstract: apps implement scheduling + execute_one() behaviour logic.
  * - Uses work item ledger (behaviour_workflow_items) for per-item progress tracking.
  * - Supports forking: failed items can be spun off into a child workflow.
+ * - Returns a receipt: handle() returns whatever the subclass passed to
+ *   set_result() during the dispatch (IReturningCommandHandler, D11).
  */
-abstract class WorkflowHandler implements ICommandHandler {
+abstract class WorkflowHandler implements IReturningCommandHandler {
   use RescheduleAware;
   use \TangibleDDD\Application\Events\RaisesEvents;
 
@@ -56,13 +58,25 @@ abstract class WorkflowHandler implements ICommandHandler {
     return $this->events_uow;
   }
 
-  public function handle(ICommand $command): void {
+  /**
+   * What handle() returns to the sender, set by the subclass during this
+   * dispatch. Reset at the start of every handle(), so a shared handler never
+   * returns a previous dispatch's value.
+   */
+  private mixed $result = null;
+
+  /**
+   * Returns whatever the subclass passed to set_result() during this dispatch,
+   * or null. The value reaches the caller unchanged through send().
+   */
+  public function handle(ICommand $command): mixed {
     $this->started_at = time();
+    $this->result = null;
 
     $workflows = $this->get_workflows($command);
     if (empty($workflows)) {
       $this->no_workflows();
-      return;
+      return $this->result;
     }
 
     $first = array_shift($workflows);
@@ -71,6 +85,19 @@ abstract class WorkflowHandler implements ICommandHandler {
     foreach ($workflows as $wf) {
       $this->reschedule($wf, 0);
     }
+
+    return $this->result;
+  }
+
+  /**
+   * Hand the sender a value: typically the id of something this dispatch
+   * created, so the adapter that sent the command can redirect to it. A
+   * scalar or a DTO; never a domain object, and never something later domain
+   * behaviour depends on (consumer-design-interview: return values steer
+   * adapters only).
+   */
+  protected function set_result(mixed $value): void {
+    $this->result = $value;
   }
 
   /**

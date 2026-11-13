@@ -199,12 +199,25 @@ class SelfExecutingCommandMiddlewareTest extends TestCase {
 
   public function test_handle_param_typed_as_a_handler_subinterface_also_throws(): void {
     // is_a semantics: anything that IMPLEMENTS ICommandHandler (directly or
-    // transitively — e.g. a WorkflowHandler subclass) is caught, not only
-    // params typed as the interface itself.
+    // transitively) is caught, not only params typed as the interface itself.
     $middleware = new SelfExecutingCommandMiddleware($this->make_container());
 
     $command = new class extends SelfHandlingCommand {
       protected function handle(ICommandHandler $handler): void {}
+    };
+
+    $this->expectException(SelfHandlingCommandWrapsHandler::class);
+
+    $middleware->execute($command, $this->fail_next());
+  }
+
+  public function test_handle_param_typed_as_a_workflow_handler_also_throws(): void {
+    // WorkflowHandler implements the returning sibling (IReturningCommandHandler),
+    // not ICommandHandler; wrapping it in a self-handling command is the same chimera.
+    $middleware = new SelfExecutingCommandMiddleware($this->make_container());
+
+    $command = new class extends SelfHandlingCommand {
+      protected function handle(\TangibleDDD\Application\BehaviourWorkflows\WorkflowHandler $handler): void {}
     };
 
     $this->expectException(SelfHandlingCommandWrapsHandler::class);
