@@ -42,7 +42,7 @@ use TangibleDDD\Application\Intents\Intents;
 
 $captured = Intents::capture(fn() => $foreign->do_something($id));
 
-$captured->of(SomeCommand::class)->reject('done in-band by this act');
+$captured->of(SomeCommand::class)->fulfil();   // this act does SomeCommand's work itself, in-band
 ```
 
 - `Intents::capture($call)` opens a **window** for the current act, runs
@@ -123,8 +123,10 @@ Completing makes LearnDash fire `learndash_course_completed` synchronously, and
 Cred's own completion hook (`tgbl_cred_hook_ld_course_completed_fn`), an entry
 point that normally runs as its own act, is re-entered and sends
 `IssueCompletionEarningsCommand`. Inside the bulk run that send is a
-nested command and throws `CommandDispatchedInsideCommand`, but the bulk run is already issuing that
-earning itself, with its own origin and date. Unhooking the listener around the
+nested command and throws `CommandDispatchedInsideCommand`. Yet it asks for
+exactly the work the item is there to do: issue the earning for that completion.
+So the item does that work itself, in-band, with its own origin and date, and
+the captured command is **fulfilled** by it. Unhooking the listener around the
 call would be invisible in the audit and would drop anything else the hook
 sends. Instead:
 
@@ -133,16 +135,24 @@ $captured = Intents::capture(
   fn() => $content_repo->complete_content($user_id, $course_id, $date)
 );
 
-$captured->of(IssueCompletionEarningsCommand::class)
-  ->reject('issued by bulk issuance #' . $issuance_id);
+// the work the hook's command asked for, done in-band
+$issuance_service->issue_for_completion($user_id, $course_id, $date, origin: EarningOrigin::bulk_issue);
+$captured->of(IssueCompletionEarningsCommand::class)->fulfil();
 // anything else captured and left undecided fails the act at its end
 ```
 
-If a later LearnDash or Cred version starts sending a second command from the
-same hook, the act (every item it ran, not only this one) fails with
-`UndecidedIntents` naming it, instead of dropping it silently. Cred's real
-handler rejects whatever else it captured with a reason and records it on the
-item, so one item's surprise never fails its batch.
+Fulfilling is the right decision whenever the act does what the command asked,
+even if it does it differently (here, with a different origin). Rejecting is for
+work the act decides should not happen.
+
+Cred's real handler narrows further: it fulfils only the command for the item's
+own user and course. A completion the item triggered for someone else (a plugin
+that completes a second course when the first is done) is fulfilled too, and
+issued as the ordinary completion it is. Anything else it captured is rejected
+with a reason and recorded on the item. If a later LearnDash or Cred version
+started sending a second command from the same hook and nothing decided it, the
+act (every item it ran, not only this one) would fail with `UndecidedIntents`
+naming it, instead of dropping it silently.
 
 Every command sent inside the window is captured, whoever sends it, not only
 the one the act is thinking of. Other plugins listen on the same hook:
@@ -188,7 +198,10 @@ The act's `command_audit` row records its decisions in the `intents` column
 ```json
 { "command": "Tangible\\Cred\\Application\\Commands\\IssueCompletionEarningsCommand",
   "origin": "wp-content/plugins/tangible-cred/includes/hooks/completion.php:42",
-  "decision": "rejected", "reason": "issued by bulk issuance #12" }
+  "decision": "fulfilled" },
+{ "command": "Tangible\\Datastream\\Application\\Commands\\RecordCapturedEventCommand",
+  "origin": "wp-content/plugins/tangible-datastream/src/Application/EventSources/LearnDashEventSource.php:161",
+  "decision": "rejected", "reason": "captured during bulk issuance #12; not handled" }
 ```
 
 `decision` is `fulfilled`, `rejected` or `undecided`; only a rejection has a
