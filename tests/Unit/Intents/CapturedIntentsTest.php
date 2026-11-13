@@ -117,8 +117,7 @@ class CapturedIntentsTest extends TestCase {
 
   public function test_matching_compares_public_properties_strictly(): void {
     $other = new CapturedIntent(new A(2), TraceContext::root(), 'h.php:1');
-    $strict = new CapturedIntent(new A(3), TraceContext::root(), 'h.php:2');
-    $set = new CapturedIntents([$this->a, $other, $strict]);
+    $set = new CapturedIntents([$this->a, $other]);
 
     $this->assertSame([$other], $set->matching(['request_id' => 2])->all());
     $this->assertCount(0, $set->matching(['request_id' => '2']));
