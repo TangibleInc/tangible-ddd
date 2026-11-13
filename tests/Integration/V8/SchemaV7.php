@@ -16,8 +16,9 @@ use function TangibleDDD\WordPress\install_touches_table;
 /**
  * The schema a 0.6.5/0.6.6 winner leaves (DDD_SCHEMA_VERSION 7): the
  * outbox, DLQ and long_processes DDL verbatim from v0.6.6
- * `ddd-wordpress/tables.php`, the other tables unchanged since v7, and the
- * installed-version option at 7. No v8 table exists.
+ * `ddd-wordpress/tables.php`, the other tables as v7 left them (current DDL,
+ * minus v8's command_audit.intents), and the installed-version option at 7.
+ * No v8, v9 or v10 table or column exists.
  */
 final class SchemaV7 {
 
@@ -111,6 +112,9 @@ final class SchemaV7 {
   ) $charset");
 
     install_command_audit_table($config);
+    // command_audit is unchanged since v7 except v8's intents (0.6.13), which
+    // a 0.6.6 table does not have.
+    $wpdb->query("ALTER TABLE `{$config->table('command_audit')}` DROP COLUMN `intents`");
     install_touches_table($config);
     install_behaviour_workflow_tables($config);
     install_behaviour_workflow_meta_table($config);

@@ -37,7 +37,7 @@ final class WpLargeEnvelopeV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     WpLedgeredDelivery::reset_for_tests();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     $this->store = new WpdbOutboxStore(

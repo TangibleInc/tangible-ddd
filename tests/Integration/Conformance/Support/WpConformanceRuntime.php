@@ -69,22 +69,22 @@ use function TangibleDDD\WordPress\register_delivery_hooks;
 use function TangibleDDD\WordPress\register_process_hooks;
 
 /**
- * The conformance consumer composed on the FINAL (schema v9) wp adapters,
+ * The conformance consumer composed on the FINAL (schema v10) wp adapters,
  * shared by WpHostFixture (the test process) and bin/fresh.php (every
  * fresh php process), so both boot the same way production does.
  *
  *   boundary              WpdbTransactionBoundary (checked, NestedPolicy::Reject)
  *   outbox                WpdbOutboxStore (claim_token fencing, requested lease, host clock)
  *   outbox_admin          WpdbOutboxAdministration (host clock)
- *   pauses                WpRelayPauseStore (v8 pause rows + the 0.6 option)
+ *   pauses                WpRelayPauseStore (v9 pause rows + the 0.6 option)
  *   transport             ActionSchedulerTransport (+ the two fault seams, FaultingTransport)
  *   ledger                WpDeliveryLedger, the one WpLedgeredDelivery gates every
  *                         DDD-registered callback through
  *   subscriptions         WpHookSubscriptionRegistry (one add_action per subscriber)
  *   process_store         WpdbProcessStore (ignition_key, version fencing, stranded scan)
  *   wakeups               WpdbParkingScheduler (intent rows + AS projection at schedule time;
- *                         ICarriesFacts, the v9 `fact` column: what WpHostPortFactory
- *                         serves at v9, so a contended fact resume is parked, AW2)
+ *                         ICarriesFacts, the v10 `fact` column: what WpHostPortFactory
+ *                         serves at v10, so a contended fact resume is parked, AW2)
  *   lock                  ReentrantProcessLock over GetLockProcessLock (both names)
  *   runner                the core ProcessRunner on those ports, StartMode::InBand
  *   wake path             the ddd-wp Action Scheduler hooks (register_process_hooks:
@@ -155,7 +155,7 @@ final class WpConformanceRuntime {
   }
 
   /**
-   * The schema v9 tables of the consumer and its schema version option, as
+   * The schema v10 tables of the consumer and its schema version option, as
    * a migrated install has them; process ids start at $firstProcessId.
    *
    * The legacy lock name `ddd_process_<id>` that GetLockProcessLock also
@@ -167,7 +167,7 @@ final class WpConformanceRuntime {
   public function installSchema(int $firstProcessId): void {
     global $wpdb;
     install_tables($this->config);
-    update_option(ddd_schema_version_key($this->config), WpSchema::V9, false);
+    update_option(ddd_schema_version_key($this->config), WpSchema::V10, false);
     $this->rows->create();
     if ($wpdb->query(sprintf('ALTER TABLE `%s` AUTO_INCREMENT = %d', $this->config->table('long_processes'), $firstProcessId)) === false) {
       throw new \RuntimeException("conformance-wp: could not set the process id base: {$wpdb->last_error}");
@@ -235,7 +235,7 @@ final class WpConformanceRuntime {
     );
   }
 
-  /** The core relay step in its port form (what WpRelayTick runs on a v8 consumer). */
+  /** The core relay step in its port form (what WpRelayTick runs on a v9 consumer). */
   public function relayProcessor(IOutboxStore $store): OutboxProcessor {
     return new OutboxProcessor(
       $this->config, null, $this->outboxConfig, null,

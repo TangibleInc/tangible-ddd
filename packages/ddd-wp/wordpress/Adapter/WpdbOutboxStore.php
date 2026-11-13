@@ -19,7 +19,7 @@ use TangibleDDD\Runtime\Outbox\OutboxWriteFailed;
 use TangibleDDD\Runtime\SystemClock;
 
 /**
- * The wp IOutboxStore on schema v8 (register 3.4; rulings on statuses;
+ * The wp IOutboxStore on schema v9 (register 3.4; rulings on statuses;
  * WPC-3), fenced by `claim_token`, over `{prefix}_integration_outbox` and
  * `{prefix}_integration_dlq` on the global `$wpdb`.
  *
@@ -61,7 +61,7 @@ use TangibleDDD\Runtime\SystemClock;
  * other IRelayPauseStore filters the selected rows before they are leased.
  *
  * The OutboxRepository argument is kept for the wave-2 constructor shape
- * (the conformance host and HostDefaults pass it); the v8 store does not
+ * (the conformance host and HostDefaults pass it); the v9 store does not
  * delegate to it.
  */
 final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
@@ -90,9 +90,9 @@ final class WpdbOutboxStore implements IOutboxStore, IReportsClaimDeadLetters {
 
     if ($r->is_unique) {
       $signature = json_encode($r->payload_signature ?? $r->payload, JSON_UNESCAPED_SLASHES);
-      // Before the v8 migration ran there is no claim_token column; the
+      // Before the v9 migration ran there is no claim_token column; the
       // 0.6 lock column alone marks a leased row then.
-      $unclaimed = WpSchema::is_v8($this->config) ? 'claim_token IS NULL AND ' : '';
+      $unclaimed = WpSchema::is_v9($this->config) ? 'claim_token IS NULL AND ' : '';
       $cancelled = $db->query($db->prepare(
         "UPDATE `{$this->outbox()}` SET status = 'cancelled'
          WHERE event_type = %s AND status = 'pending' AND is_unique = 1

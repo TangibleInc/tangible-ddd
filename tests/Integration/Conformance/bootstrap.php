@@ -12,7 +12,7 @@
  * 3. The ddd-conformance package classes (TangibleDDD\Conformance\), which
  *    the root manifest does not autoload.
  *
- * No clock shims: since schema v8 every wp adapter on the scenario paths
+ * No clock shims: since schema v9 every wp adapter on the scenario paths
  * takes the host IClock (WPC-3). bin/fresh.php boots through this file too.
  */
 

@@ -33,7 +33,7 @@ use TangibleDDD\Tests\Compat\Rollback\Support\RollbackTestCase;
  * rest by dying (`running`, `compensating`) are its own rows with the
  * status a crash leaves.
  *
- * N then upgrades (its v8 migration over that schema) and drains.
+ * N then upgrades (its v9 migration over that schema) and drains.
  */
 #[Group('compat')]
 #[Group('rollback')]
@@ -92,7 +92,7 @@ final class LegacyRowsDrainedByNRollback extends RollbackTestCase {
     $this->nUpgrade();
     $this->nBoot();
 
-    // Sequence 3: the v8 migration backfilled intent rows for the 0.6-queued wakes.
+    // Sequence 3: the v9 migration backfilled intent rows for the 0.6-queued wakes.
     $intents = $this->rows("SELECT kind, process_id, step_index, status FROM `{$this->table('ddd_wakeups')}` ORDER BY id");
     self::assertEqualsCanonicalizing([
       ['kind' => 'timeout', 'process_id' => (string) $gather, 'step_index' => '0', 'status' => 'pending'],

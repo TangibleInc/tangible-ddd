@@ -10,8 +10,8 @@ use TangibleDDD\Conformance\Scenarios\RelayScenarios;
 use TangibleDDD\Runtime\Outbox\Claim;
 
 /**
- * The process-free relay scenarios on wp, on the schema v8 outbox
- * (claim_token fencing, the requested lease, v8 pause rows): every id of
+ * The process-free relay scenarios on wp, on the schema v9 outbox
+ * (claim_token fencing, the requested lease, v9 pause rows): every id of
  * RelayScenarios runs. The wp host adds one check while a lease is live:
  * a 0.6 copy's fetch_pending() skips the claimed row (`locked_until` set).
  */

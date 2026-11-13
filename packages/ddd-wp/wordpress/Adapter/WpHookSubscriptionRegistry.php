@@ -23,9 +23,9 @@ use TangibleDDD\WordPress\Retries;
  * Correlation::within(for_fact(event_id)) when the envelope carries a
  * correlation id and an event id, hydrate with from_payload(), call the
  * subscriber's handle($event, $eventId)), bound through WpLedgeredDelivery:
- * on a schema v8 consumer each subscriber is isolated and ledgered per
+ * on a schema v9 consumer each subscriber is isolated and ledgered per
  * (subscriber id, event_id), retried through `{prefix}_ddd_redeliver` and
- * budgeted, with its on_exhausted compensation at the budget. Before v8 a
+ * budgeted, with its on_exhausted compensation at the budget. Before v9 a
  * throwing callback aborts the rest of do_action, as in 0.6. The budget is
  * WpLedgeredDelivery::budget(): one attempt for a listener unless its
  * consumer opts in or its class declares #[Retries]; process ignition and

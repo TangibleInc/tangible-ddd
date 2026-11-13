@@ -26,7 +26,7 @@ use TangibleDDD\Runtime\SystemClock;
  *             repairs `resume-stranded`, `fail-stranded`) and quarantined
  *             rows.
  *
- * Schema v8 only for the delivery, wakeup and process layers; the relay
+ * Schema v9 only for the delivery, wakeup and process layers; the relay
  * layer works on the 0.6 schema too. Rows are plain arrays with the
  * OperatorItem fields (layer, consumer, key, attempts, budget, last_error,
  * first_seen, repair_actions) until core's IOperatorView lands
@@ -78,7 +78,7 @@ final class WpOperatorView {
   }
 
   private function delivery(int $limit): array {
-    if (!WpSchema::is_v8($this->config)) {
+    if (!WpSchema::is_v9($this->config)) {
       return [];
     }
     return array_map(fn (array $r) => $this->item(
@@ -97,7 +97,7 @@ final class WpOperatorView {
   }
 
   private function wakeup(int $limit): array {
-    if (!WpSchema::is_v8($this->config)) {
+    if (!WpSchema::is_v9($this->config)) {
       return [];
     }
     $db = self::db();
@@ -120,7 +120,7 @@ final class WpOperatorView {
   }
 
   private function process(int $limit): array {
-    if (!WpSchema::is_v8($this->config)) {
+    if (!WpSchema::is_v9($this->config)) {
       return [];
     }
     $out = [];

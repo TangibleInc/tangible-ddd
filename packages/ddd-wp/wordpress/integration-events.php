@@ -34,7 +34,7 @@ function integration_action(
     return;
   }
 
-  // Schema v8: the callback is a ledgered DDD subscriber (isolated,
+  // Schema v9: the callback is a ledgered DDD subscriber (isolated,
   // budgeted); see WpLedgeredDelivery. One attempt, as in 0.6, unless the
   // consumer opts in ({prefix}_ddd_delivery_attempts) or the callback
   // declares #[Retries(n)]; retries go through {prefix}_ddd_redeliver.

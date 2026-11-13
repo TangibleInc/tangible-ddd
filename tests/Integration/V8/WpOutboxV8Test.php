@@ -22,7 +22,7 @@ use TangibleDDD\WordPress\Adapter\WpdbTransactionBoundary;
 use TangibleDDD\WordPress\Adapter\WpRelayPauseStore;
 
 /**
- * The final wp outbox adapters on schema v8 (register 3.4, rulings on
+ * The final wp outbox adapters on schema v9 (register 3.4, rulings on
  * statuses; WPC-1, WPC-3): fenced claim_token claims that also set
  * locked_until / locked_by, the host clock and the requested lease honoured,
  * `completed` written for `accepted`, pause rows beside the 0.6 option, and
@@ -38,7 +38,7 @@ final class WpOutboxV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     $this->pauses = new WpRelayPauseStore($this->config, $this->clock);
     $this->store = new WpdbOutboxStore($this->repository(), $this->config, $this->clock, $this->pauses);

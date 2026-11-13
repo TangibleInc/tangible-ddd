@@ -14,7 +14,7 @@ use TangibleDDD\WordPress\Retries;
  * The wp delivery budget of a DDD subscriber (wave 5 coordinator decision):
  * a listener gets ONE attempt unless its consumer or the listener opts in;
  * process ignition and resume subscribers keep the core budget. The option
- * path needs real get_option and is covered by the v8 integration suite
+ * path needs real get_option and is covered by the v9 integration suite
  * (WpDeliveryBudgetV8Test).
  */
 final class WpDeliveryBudgetTest extends TestCase {

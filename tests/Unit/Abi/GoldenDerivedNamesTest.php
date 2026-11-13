@@ -239,7 +239,7 @@ final class GoldenDerivedNamesTest extends TestCase {
       'wp_tgbl_cred_integration_outbox',
       'wp_tgbl_cred_long_processes',
       'wp_tgbl_cred_touches',
-    ], $tables, 'install_tables(IDDDConfig): the 0.6.6 table set plus the three schema v8 tables (wave 3), every 0.6.6 name unchanged');
+    ], $tables, 'install_tables(IDDDConfig): the 0.6.6 table set plus the three schema v9 tables (wave 3), every 0.6.6 name unchanged');
   }
 
   public function test_the_lock_option_key(): void {

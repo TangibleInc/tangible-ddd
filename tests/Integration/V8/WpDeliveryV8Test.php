@@ -38,7 +38,7 @@ final class WpDeliveryV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     WpLedgeredDelivery::reset_for_tests();
     $this->hook = V8Fact::integration_action();
     $this->runs = [];
@@ -315,7 +315,7 @@ final class WpDeliveryV8Test extends V8TestCase {
     self::assertSame([], $this->pendingActions('ddd8it_ddd_redeliver'));
   }
 
-  public function test_before_the_v8_migration_a_throw_still_aborts_do_action(): void {
+  public function test_before_the_v9_migration_a_throw_still_aborts_do_action(): void {
     update_option($this->config->option('ddd_schema_version'), 7, false);
     $fail = 1;
     $none = 0;
@@ -324,7 +324,7 @@ final class WpDeliveryV8Test extends V8TestCase {
 
     try {
       do_action($this->hook, $this->wrapped());
-      self::fail('0.6 semantics before v8');
+      self::fail('0.6 semantics before v9');
     } catch (\RuntimeException) {
     }
     self::assertSame(['a' => 1], $this->runs);

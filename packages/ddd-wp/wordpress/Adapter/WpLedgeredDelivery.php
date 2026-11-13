@@ -52,7 +52,7 @@ use TangibleDDD\Runtime\SystemClock;
  *
  * The ledger is `{prefix}_ddd_delivery_ledger` of the fact's consumer (the
  * prefix that owns the hook), and the gate is active only once that
- * consumer is at schema v8. Before that, and for payloads WITHOUT
+ * consumer is at schema v9. Before that, and for payloads WITHOUT
  * `__event_id` (a hook fired by hand, a hand-built payload), callbacks run
  * directly with the 0.6 semantics (a throw propagates and aborts do_action),
  * and an id-less payload is noted once per hook per request. Raw
@@ -121,7 +121,7 @@ final class WpLedgeredDelivery {
    * @return int redeliveries scheduled
    */
   public static function restore_redeliveries(IDDDConfig $config, ?\DateTimeImmutable $now = null, int $limit = 100): int {
-    if (!WpSchema::is_v8($config) || !function_exists('as_schedule_single_action')) {
+    if (!WpSchema::is_v9($config) || !function_exists('as_schedule_single_action')) {
       return 0;
     }
     $now ??= self::clock()->now();
@@ -145,7 +145,7 @@ final class WpLedgeredDelivery {
    * (WpRollbackDrain counts them as remaining).
    */
   public static function orphan_count(IDDDConfig $config, int $limit = 1000): int {
-    return WpSchema::is_v8($config) ? count(self::orphans($config, $limit)) : 0;
+    return WpSchema::is_v9($config) ? count(self::orphans($config, $limit)) : 0;
   }
 
   /** @return list<array{event_id: string, attempts: int, updated_at: string, redelivery: array<string, mixed>}> */
@@ -514,7 +514,7 @@ final class WpLedgeredDelivery {
 
   private static function ledgerFor(string $hook, string $eventClass): ?IDeliveryLedger {
     $prefix = self::prefix_of($hook, $eventClass);
-    return $prefix !== null && WpSchema::is_v8($prefix) ? new WpDeliveryLedger($prefix) : null;
+    return $prefix !== null && WpSchema::is_v9($prefix) ? new WpDeliveryLedger($prefix) : null;
   }
 
   /** The consumer prefix owning $hook: `{prefix}_integration_{name}`. */

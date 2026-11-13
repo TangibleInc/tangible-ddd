@@ -2,7 +2,7 @@
 /**
  * One fresh php process of the wp conformance host (FreshProcesses,
  * CR-W3CP-4): boots WordPress through the conformance bootstrap, composes
- * the conformance consumer on the v8 adapters exactly as the test process
+ * the conformance consumer on the v9 adapters exactly as the test process
  * does (Support\WpConformanceRuntime), registers what a production boot
  * registers (the wake and redelivery hooks) plus
  * Support\FreshProcessBoot::boot(), runs ONE operation and exits.

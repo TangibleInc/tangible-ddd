@@ -22,7 +22,7 @@ use TangibleDDD\Runtime\SystemClock;
  * The stranded-process repairs on wp (WP8-10; register 3.10, 5.3 step 5):
  * `wp ddd ops --resume-stranded=<id>` / `--fail-stranded=<id>` dispatch
  * core's ResumeStrandedProcess / FailStrandedProcess to their core handlers
- * on the consumer's v8 ports:
+ * on the consumer's v9 ports:
  *
  *   IProcessStore     WpdbProcessStore (find_stranded: running rows only while
  *                     both lock names are free)
@@ -35,7 +35,7 @@ use TangibleDDD\Runtime\SystemClock;
  *                     writes in one transaction under the lock
  *
  * A refusal (the lock is held, the row is not stranded, the version moved)
- * is core's ProcessNotStranded. The repairs only exist on schema v8.
+ * is core's ProcessNotStranded. The repairs only exist on schema v9.
  */
 final class WpStrandedRepairs {
 
@@ -53,8 +53,8 @@ final class WpStrandedRepairs {
   }
 
   public function dispatch(ICommand $command): void {
-    if (!WpSchema::is_v8($this->config)) {
-      throw new \LogicException("Consumer '{$this->config->prefix()}' has no stranded repairs (schema v8 not installed).");
+    if (!WpSchema::is_v9($this->config)) {
+      throw new \LogicException("Consumer '{$this->config->prefix()}' has no stranded repairs (schema v9 not installed).");
     }
     $clock = $this->clock ?? HostDefaults::get(IClock::class) ?? new SystemClock();
     $ports = [

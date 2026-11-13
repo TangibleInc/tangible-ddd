@@ -33,7 +33,7 @@ final class WpWakeupsV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     $this->wakeups = new WpdbWakeupScheduler($this->config, $this->clock);
   }

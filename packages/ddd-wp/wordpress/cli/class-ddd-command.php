@@ -249,8 +249,8 @@ class DDD_Command {
         \WP_CLI::error( '--abandon needs --consumer=<prefix>.' );
       }
       [ $handle ] = $this->selected_consumers( $assoc_args );
-      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::is_v8( $handle->config() ) ) {
-        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no delivery ledger (schema v8 not installed)." );
+      if ( ! \TangibleDDD\WordPress\Adapter\WpSchema::is_v9( $handle->config() ) ) {
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no delivery ledger (schema v9 not installed)." );
       }
       $key = (string) $assoc_args['abandon'];
       $at = strrpos( $key, '@' ); // subscriber ids may contain '@', event ids never do
@@ -272,7 +272,7 @@ class DDD_Command {
       [ $handle ] = $this->selected_consumers( $assoc_args );
       $scheduler = \TangibleDDD\Runtime\HostDefaults::for( \TangibleDDD\Runtime\Scheduling\IWakeupScheduler::class, $handle->config() );
       if ( ! $scheduler instanceof \TangibleDDD\WordPress\Adapter\WpdbWakeupScheduler ) {
-        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no wakeup intents (schema v8 not installed)." );
+        \WP_CLI::error( "Consumer '{$handle->prefix()}' has no wakeup intents (schema v9 not installed)." );
       }
       $scheduler->rearm( (string) $assoc_args['rearm'] )
         ? \WP_CLI::success( "Re-armed wakeup {$assoc_args['rearm']}." )

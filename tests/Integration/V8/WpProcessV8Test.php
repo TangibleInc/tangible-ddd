@@ -25,7 +25,7 @@ use TangibleDDD\WordPress\Adapter\WpdbProcessStore;
 use TangibleDDD\WordPress\Adapter\WpRepositoryProcessStore;
 
 /**
- * The final wp process store and lock on schema v8 (register 3.7, 3.8, X7,
+ * The final wp process store and lock on schema v9 (register 3.7, 3.8, X7,
  * ruling on #76): ignition gated by UNIQUE (process_class, ignition_key)
  * AND the ignited_by_event_id check inside the ignition lock, version
  * fencing, quarantine, the stranded scan, and GET_LOCK on the new and the
@@ -41,7 +41,7 @@ final class WpProcessV8Test extends V8TestCase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installV8();
+    $this->installV9();
     $this->clock = new FrozenClock(new \DateTimeImmutable('@' . time()));
     $this->store = new WpdbProcessStore(new ProcessRepository($this->config), $this->config, $this->clock);
     V8IgnitedProcess::$runs = 0;
@@ -60,7 +60,7 @@ final class WpProcessV8Test extends V8TestCase {
     return $this->rows("SELECT * FROM `{$this->table('long_processes')}` WHERE id = $id")[0];
   }
 
-  public function test_the_factory_serves_the_v8_store_only_for_a_migrated_framework_repository(): void {
+  public function test_the_factory_serves_the_v9_store_only_for_a_migrated_framework_repository(): void {
     self::assertInstanceOf(WpdbProcessStore::class, HostDefaults::for(IProcessStore::class, $this->config, new ProcessRepository($this->config)));
 
     update_option($this->config->option('ddd_schema_version'), 7, false);

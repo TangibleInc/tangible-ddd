@@ -24,7 +24,7 @@ use TangibleDDD\Runtime\SystemClock;
  * One wp relay tick (register 5.3, 3.6; WPC-1): what the recurring
  * `{prefix}_outbox_process` action and `wp ddd relay --once` run.
  *
- * 1. The relay batch. On a schema v8 consumer whose container uses the
+ * 1. The relay batch. On a schema v9 consumer whose container uses the
  *    framework's own OutboxRepository and ActionSchedulerOutboxPublisher,
  *    the port-form core OutboxProcessor over WpdbOutboxStore (fenced
  *    claim_token claims, the host clock) and ActionSchedulerTransport
@@ -34,10 +34,10 @@ use TangibleDDD\Runtime\SystemClock;
  * 2. Re-projection of due wakeup intents whose Action Scheduler action is
  *    gone (WpdbWakeupScheduler::reproject()).
  * 3. Re-scheduling of handler redeliveries Action Scheduler lost
- *    (WpLedgeredDelivery::restore_redeliveries()), on any schema v8 consumer.
+ *    (WpLedgeredDelivery::restore_redeliveries()), on any schema v9 consumer.
  * 4. The stranded scan (WpStrandedScan) over the framework process table.
  *
- * Steps 2 and 4 run only on a schema v8 consumer with the framework
+ * Steps 2 and 4 run only on a schema v9 consumer with the framework
  * ProcessRepository. Each step's failure is caught and reported; one
  * step never blocks the next.
  */
@@ -55,11 +55,11 @@ final class WpRelayTick {
 
   /** @param object $container the consumer's container (get()/has()) */
   public static function for(IDDDConfig $config, object $container, ?IClock $clock = null): self {
-    $v8 = WpSchema::is_v8($config);
+    $v9 = WpSchema::is_v9($config);
     $repository = self::service($container, IOutboxRepository::class);
     $publisher = self::service($container, IOutboxPublisher::class);
 
-    $portForm = $v8
+    $portForm = $v9
       && $repository instanceof OutboxRepository && get_class($repository) === OutboxRepository::class
       && ($publisher === null || get_class($publisher) === ActionSchedulerOutboxPublisher::class);
 
@@ -81,7 +81,7 @@ final class WpRelayTick {
 
     $wakeups = $stranded = null;
     $processes = self::service($container, IProcessRepository::class);
-    if ($v8 && $processes instanceof ProcessRepository && get_class($processes) === ProcessRepository::class) {
+    if ($v9 && $processes instanceof ProcessRepository && get_class($processes) === ProcessRepository::class) {
       $scheduler = HostDefaults::for(IWakeupScheduler::class, $config);
       if ($scheduler instanceof WpdbWakeupScheduler) {
         $wakeups = $scheduler;
@@ -89,7 +89,7 @@ final class WpRelayTick {
       }
     }
 
-    return new self($config, $relay, $portForm, $wakeups, $stranded, $clock, $v8);
+    return new self($config, $relay, $portForm, $wakeups, $stranded, $clock, $v9);
   }
 
   public function run(): WpRelayTickReport {

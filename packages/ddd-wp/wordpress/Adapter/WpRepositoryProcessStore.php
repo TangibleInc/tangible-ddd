@@ -14,9 +14,9 @@ use TangibleDDD\Runtime\Process\ProcessStoreFailed;
 /**
  * IProcessStore over a 0.6 IProcessRepository, on the 0.6 schema (the
  * wave-2 transitional store, kept in wave 3 as the wp bridge for what the
- * schema v8 WpdbProcessStore cannot serve): a consumer-authored repository
+ * schema v9 WpdbProcessStore cannot serve): a consumer-authored repository
  * (e.g. cred's, whose table the framework does not own) and the framework
- * ProcessRepository of a consumer whose v8 migration has not run yet.
+ * ProcessRepository of a consumer whose v9 migration has not run yet.
  * WpHostPortFactory picks between the two. (Core's LegacyProcessStore is
  * the portable equivalent; this one keeps the wave-1 ignition lock name a
  * 0.6.7 copy also takes.)
@@ -24,10 +24,10 @@ use TangibleDDD\Runtime\Process\ProcessStoreFailed;
  * - insert_ignited(): the wave-1 schema-free ignition fix. Under the named
  *   lock `ddd_ign_` + md5(prefix|class|event_id) it re-checks
  *   has_ignition(class, event_id) and inserts; a second delivery returns
- *   AlreadyIgnited. No ignition_key column yet (schema v8, wave 3).
+ *   AlreadyIgnited. No ignition_key column yet (schema v9, wave 3).
  *   A contended or failed ignition lock throws LockNotAcquired and nothing is
  *   persisted.
- * - NO version fencing: there is no version column before schema v8.
+ * - NO version fencing: there is no version column before schema v9.
  *   save()/touch() return expectedVersion + 1 without checking, version_of()
  *   is tracked per instance (1 for a row it has not saved).
  * - find_waiting_for() returns ids (E F14); the runner then find()s each

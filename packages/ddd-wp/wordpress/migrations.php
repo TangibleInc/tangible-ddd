@@ -35,15 +35,20 @@ use TangibleDDD\Infra\IDDDConfig;
  *  - 4: long_processes gains await_mechanism
  *  - 7: behaviour_workflows_meta side table; JSON meta column write-dead,
  *       existing values pivoted into rows
- *  - 8: durable contracts (register section 8 wave 3, additive only, R5):
+ *  - 8: command_audit gains intents (as released in 0.6.13, captured intents)
+ *  - 9: durable contracts (register section 8 wave 3, additive only, R5):
  *       ddd_wakeups, ddd_delivery_ledger, ddd_relay_pauses; outbox
  *       claim_token; long_processes version, ignition_key (UNIQUE with
  *       process_class) and quarantine_reason; ignition keys and wakeup
- *       intents backfilled (ddd_migrate_v8)
- *  - 9: wave 5 (additive only, R5): ddd_wakeups.fact, the fact a parked
+ *       intents backfilled (ddd_migrate_v9)
+ *  - 10: wave 5 (additive only, R5): ddd_wakeups.fact, the fact a parked
  *       resume carries (AW2, ICarriesFacts)
+ *
+ * Durable contracts were developed as v8/v9 and renumbered to v9/v10 because
+ * 0.6.13 shipped its own v8: a 0.6.13 site stores 8 and skips every entry
+ * up to 8, so the durable-contracts backfills must sit above it.
  */
-const DDD_SCHEMA_VERSION = 9;
+const DDD_SCHEMA_VERSION = 10;
 
 /**
  * Fired by ddd_maybe_migrate() right after it installed (or healed) a
@@ -62,7 +67,7 @@ function ddd_schema_installed(IDDDConfig $config): int {
 }
 
 /**
- * Whether this consumer's tables are at least at $version. The v8 adapters
+ * Whether this consumer's tables are at least at $version. The v9 adapters
  * (fenced outbox claim, intent table, ledger, version-fenced process store)
  * are wired only for consumers whose migration has run; until then the
  * 0.6-schema paths stay in use.
@@ -180,24 +185,33 @@ function ddd_explicit_migrations(): array {
       }
     },
 
-    // v8 — durable contracts (wave 3). Additive only (R5); see ddd_migrate_v8().
+    // v8 — intents on command_audit, exactly as 0.6.13 ships it (the
+    // decisions an act made about the commands it captured). Additive;
+    // dbDelta covers fresh installs, the explicit entry guarantees the column
+    // for consumers already at v7. A 0.6.13 site arrives here at v8 already.
     8 => static function (IDDDConfig $config): void {
-      ddd_migrate_v8($config);
+      ddd_add_column_if_missing($config->table('command_audit'), 'intents', 'JSON NULL', 'environment');
     },
 
-    // v9 — the parked-fact column on ddd_wakeups (wave 5, AW2). Additive and
-    // nullable: a 0.6 winner never reads the table, a v8 build ignores it.
+    // v9 — durable contracts (wave 3). Additive only (R5); see ddd_migrate_v9().
     9 => static function (IDDDConfig $config): void {
+      ddd_migrate_v9($config);
+    },
+
+    // v10 — the parked-fact column on ddd_wakeups (wave 5, AW2). Additive and
+    // nullable: a 0.6 winner never reads the table, a v9 build ignores it.
+    10 => static function (IDDDConfig $config): void {
       ddd_add_column_if_missing($config->table('ddd_wakeups'), 'fact', 'LONGTEXT NULL', 'args');
     },
   ];
 }
 
 /**
- * Schema v8 (register section 8 wave 3, 3.4-3.8, 5.3; rulings on statuses
- * and rollback). Additive only: new tables, nullable or defaulted columns,
+ * Schema v9, durable contracts (register section 8 wave 3, 3.4-3.8, 5.3;
+ * rulings on statuses and rollback; called "v8" in the wave 3 records, before
+ * the renumbering above). Additive only: new tables, nullable or defaulted columns,
  * one UNIQUE key over a column that starts NULL. Nothing is renamed,
- * narrowed or deleted, so a 0.6 winner keeps running on the v8 tables after
+ * narrowed or deleted, so a 0.6 winner keeps running on the v9 tables after
  * a rollback (it tolerates installed > DDD_SCHEMA_VERSION, B18).
  *
  * 1. Tables ddd_wakeups, ddd_delivery_ledger, ddd_relay_pauses (dbDelta).
@@ -211,12 +225,12 @@ function ddd_explicit_migrations(): array {
  *    legacy hooks (ddd_backfill_wakeup_intents), so a `scheduled` row left
  *    by 0.6 is not stranded and its queued action is the intent's projection.
  *
- * The report is stored in the `{prefix}_ddd_v8_migration_report` option and
+ * The report is stored in the `{prefix}_ddd_v9_migration_report` option and
  * duplicates are logged. Idempotent: safe to run again.
  *
  * @return array{ignition_backfilled: int, ignition_skipped: int, ignition_duplicates: list<array{process_class: string, event_id: string, kept: int, duplicate: int}>, wakeups_backfilled: int}
  */
-function ddd_migrate_v8(IDDDConfig $config): array {
+function ddd_migrate_v9(IDDDConfig $config): array {
   if (!function_exists('dbDelta')) {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
   }
@@ -224,8 +238,8 @@ function ddd_migrate_v8(IDDDConfig $config): array {
   install_wakeups_table($config);
   install_delivery_ledger_table($config);
   install_relay_pauses_table($config);
-  // The ledger is new in v8; the explicit add heals a ledger created by an
-  // earlier v8 build before the column existed.
+  // The ledger is new in v9; the explicit add heals a ledger created by an
+  // earlier v9 build before the column existed.
   ddd_add_column_if_missing($config->table('ddd_delivery_ledger'), 'redelivery', 'LONGTEXT NULL', 'last_error');
 
   $outbox = $config->table('integration_outbox');
@@ -248,11 +262,11 @@ function ddd_migrate_v8(IDDDConfig $config): array {
 
   foreach ($report['ignition_duplicates'] as $dup) {
     error_log(sprintf(
-      '[%s-ddd] schema v8: process #%d is a duplicate ignition of %s by event %s (kept #%d); left without ignition_key, not deleted',
+      '[%s-ddd] schema v9: process #%d is a duplicate ignition of %s by event %s (kept #%d); left without ignition_key, not deleted',
       $config->prefix(), $dup['duplicate'], $dup['process_class'], $dup['event_id'], $dup['kept']
     ));
   }
-  update_option($config->option('ddd_v8_migration_report'), $report, false);
+  update_option($config->option('ddd_v9_migration_report'), $report, false);
 
   return $report;
 }
@@ -336,7 +350,7 @@ function ddd_backfill_ignition_keys(IDDDConfig $config): array {
 
       if ($updated === false) {
         if (!\TangibleDDD\WordPress\Adapter\WpSchema::is_duplicate_key($wpdb)) {
-          throw new \RuntimeException(sprintf('Schema v8 ignition_key backfill of process #%d failed: %s', $last, (string) $wpdb->last_error));
+          throw new \RuntimeException(sprintf('Schema v9 ignition_key backfill of process #%d failed: %s', $last, (string) $wpdb->last_error));
         }
         // A new ignition took the key between the check and the update.
         $winner = (int) $wpdb->get_var($wpdb->prepare(
@@ -455,7 +469,7 @@ function ddd_add_unique_index_if_missing(string $table, string $index, string $c
   $wpdb->query("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$index}` ({$columns})");
   $error = (string) $wpdb->last_error;
 
-  // A UNIQUE key is a correctness gate (the v8 ignition dedup), not an
+  // A UNIQUE key is a correctness gate (the v9 ignition dedup), not an
   // optimisation: verify it, and fail the migration (the schema version is
   // not bumped) when it is missing.
   $created = (int) $wpdb->get_var($wpdb->prepare(
@@ -546,7 +560,7 @@ function ddd_maybe_migrate(IDDDConfig $config): void {
   do_action(TABLES_INSTALLED_ACTION, $config);
 
   // 2. explicit migrations for the hard cases, in version order. A failed
-  // one leaves the installed version where it was (the v8 adapters stay
+  // one leaves the installed version where it was (the v9 adapters stay
   // off, the 0.6 paths keep working) and is retried on the next trigger;
   // it is logged and recorded, never fatal to the request.
   $migrations = ddd_explicit_migrations();
