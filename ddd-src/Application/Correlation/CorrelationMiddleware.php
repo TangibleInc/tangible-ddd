@@ -40,9 +40,10 @@ final class CorrelationMiddleware implements Middleware {
     $enclosing = $this->enclosing_context();
 
     // No command inside a command — acts are the atomic moments and never nest.
-    // The one exception: inside a window the act declared with
-    // Intents::capture(), a command is captured as an intent, not run. The
-    // sender gets null; no act, no audit row, no transaction.
+    // The one valve: inside a window the act declared with Intents::capture(),
+    // a command sent by one of our entry points, re-entered through foreign
+    // code, is captured as an intent, not run. A handler that sends is still
+    // a violation. The sender gets null; no act, no audit row, no transaction.
     if ($enclosing->cause?->kind === Kind::Act) {
       if( IntentWindows::try_capture($enclosing->cause->id, $command) ) {
         return null;

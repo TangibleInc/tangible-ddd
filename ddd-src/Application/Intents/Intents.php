@@ -7,7 +7,8 @@ use TangibleDDD\Application\Correlation\Kind;
 
 /**
  * The public entry point: a handler wraps a call into foreign code in
- * capture(); commands that code sends are captured instead of throwing.
+ * capture(); commands our entry points send when that code re-enters them are
+ * captured instead of throwing.
  */
 final class Intents {
 

@@ -18,8 +18,9 @@ use TangibleDDD\IncorrectUsage;
  *  - the outer handler wants follow-on work → record an integration event
  *    and let a listener dispatch the command at drain time;
  *  - a saga wants the command → emit it via Result->commands;
- *  - the outer handler calls foreign code that sends → wrap the call in
- *    Intents::capture() and decide what it sent.
+ *  - the outer handler calls foreign code that re-enters one of our entry
+ *    points, which sends → wrap the call in Intents::capture() and decide
+ *    what it sent.
  */
 final class CommandDispatchedInsideCommand extends IncorrectUsage {
 

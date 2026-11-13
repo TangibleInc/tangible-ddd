@@ -7,7 +7,7 @@ use TangibleDDD\Application\Correlation\TraceContext;
 
 /**
  * An intent captured instead of thrown, waiting for the act to decide it.
- * `origin` is where the foreign code sent it (file:line).
+ * `origin` is where the entry point sent it (file:line).
  */
 final class CapturedIntent extends Intent {
 

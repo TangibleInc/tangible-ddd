@@ -1,20 +1,22 @@
 # Captured intents
 
-> **Status: CURRENT FOR 0.6.13.** How a handler calls foreign code that sends
-> a command, without breaking DDD-M1. The decision and its rejected
-> alternatives are in [ADR 0019](adr/0019-captured-intents.md).
+> **Status: CURRENT FOR 0.6.13.** How an act contains one of our own entry
+> points being re-entered through foreign code, without breaking DDD-M1. The
+> decision and its rejected alternatives are in
+> [ADR 0019](adr/0019-captured-intents.md).
 
 An act never nests ([DDD-M1](modeling-rules.md#ddd-m1-one-command-one-intent)).
 A command sent while an act is open throws `CommandDispatchedInsideCommand`, an
 `IncorrectUsage` that `catch (\Exception)` cannot swallow. Captured intents
-don't change that. A window is not a way to dispatch from a handler: commands
-still can't be sent inside commands. It is a valve for when it happens anyway,
-because a handler has to call code it doesn't own that sends a command,
-usually from a WordPress hook.
+don't change that. A window is a containment valve, not a licence: a handler
+that sends a command itself is still a violation, fixed by restructuring it.
 
-Never open a window around your own code. Reach for one only when foreign code
-sends through a hook you can't change, and when you own the sending code,
-remove the send at its source instead.
+The valve is for our own entry points: hook listeners that run as their own
+act when the outside world fires them, and that get re-entered synchronously
+through foreign code our act calls. The sender is our code; only the path back
+in is foreign. Such a listener is not nested by design, so "restructure your
+nested send" does not apply to it. The window contains the send and forces a
+recorded decision about it.
 
 ## When to use a window
 
@@ -22,16 +24,16 @@ Use `Intents::capture()` when all of these are true:
 
 - the handler must make the foreign call (there is no lower-level API that
   does the work without firing the hook);
-- the foreign code sends a command through a hook or callback you don't own,
-  or don't want to change for this one caller; and
+- that call fires a hook or callback that re-enters one of our entry points,
+  and the entry point sends a command; and
 - the handler knows what should happen to that command: it does the same work
   itself, or the work must not happen in this act.
 
-Don't use a window for your own code. If your handler wants a side effect
-now, call a domain service in-band; if it wants follow-on work, record an
-integration event and let a listener send the command. A window is not a way
-around DDD-M1: it contains a send DDD-M1 couldn't prevent, and makes the act
-record what it decided about it.
+Don't use a window for a send the handler makes itself. If your handler wants
+a side effect now, call a domain service in-band; if it wants follow-on work,
+record an integration event and let a listener send the command. A window is
+not a way around DDD-M1: it contains a send DDD-M1 couldn't prevent, and makes
+the act record what it decided about it.
 
 ## How it works
 
@@ -94,14 +96,16 @@ by `UndecidedIntents`.
 If `$call` throws, the window still closes, and whatever it captured stays
 registered with the act, undecided: nothing returned a `CapturedIntents` to
 decide them. A handler that catches the throw and carries on still fails at the
-end of the act. Catching a foreign failure doesn't make the commands it sent
+end of the act. Catching the call's failure doesn't make the commands it sent
 disappear.
 
 ## Example: Cred's bulk issue
 
 Cred's bulk issue completes a LearnDash course for each item of a workflow.
-Completing fires `learndash_course_completed`, and Cred's own completion hook
-sends `IssueCompletionEarningsCommand`. Inside the bulk run that send is a
+Completing makes LearnDash fire `learndash_course_completed` synchronously, and
+Cred's own completion hook (`tgbl_cred_hook_ld_course_completed_fn`), an entry
+point that normally runs as its own act, is re-entered and sends
+`IssueCompletionEarningsCommand`. Inside the bulk run that send is a
 nested command and fails the item, but the bulk run is already issuing that
 earning itself, with its own origin and date. Unhooking the listener around the
 call would be invisible in the audit and would drop anything else the hook
@@ -147,7 +151,8 @@ All are `IncorrectUsage` (`\Error`), in `TangibleDDD\Application\Intents`.
 
 ## Wiring
 
-`IntentsMiddleware` sits on every command bus, immediately after
+`IntentsMiddleware` sits on every command bus (required on any bus whose
+handlers call `Intents::capture()`), immediately after
 `TransactionMiddleware` and before `DomainEventsPublishMiddleware`. It is never
 on the query bus: queries are not acts. The framework's own buses and the
 `wp ddd init` scaffold carry it; a consumer that defines its own command bus

@@ -98,7 +98,7 @@ The per-version list of what each release demands of consumers: [docs/migration-
 
 ## Intents
 
-How an act handles a command that foreign code sends inside it ([ADR 0019](docs/adr/0019-captured-intents.md), [docs/intents.md](docs/intents.md)).
+How an act handles a command that one of our own entry points sends when foreign code re-enters it inside the act ([ADR 0019](docs/adr/0019-captured-intents.md), [docs/intents.md](docs/intents.md)).
 
 **Intent**:
 A command held as a value instead of being run, together with the trace context it was sent under.
@@ -108,7 +108,7 @@ _Avoid_: receipt, proposal, held command
 An intent captured inside a window, which also carries its origin: the `file:line` it was sent from.
 
 **Window**:
-The span an act declares with `Intents::capture()` around a call into foreign code. A command sent inside it is captured as an intent instead of throwing `CommandDispatchedInsideCommand`. A valve for sends from foreign code, not an exception that permits nesting.
+The span an act declares with `Intents::capture()` around a call into foreign code. A command sent inside it is captured as an intent instead of throwing `CommandDispatchedInsideCommand`. A containment valve for our own entry points re-entered through foreign code, not a licence to send from a handler.
 
 **Decision**:
 What the act does with a captured intent; every intent needs one before the act ends. **Fulfil**: the act does the work in-band, itself. **Reject**: the act decides against it, with a reason. **Defer** (it becomes its own act later) is planned, not built.

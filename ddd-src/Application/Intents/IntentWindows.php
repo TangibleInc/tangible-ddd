@@ -97,7 +97,7 @@ final class IntentWindows {
   }
 
   /**
-   * file:line where the foreign code sent the command, anchored on the
+   * file:line where the entry point sent the command, anchored on the
    * dispatch: the innermost CommandBus::handle frame. A frame's file/line is
    * where that frame's function was CALLED. If handle() was called by a
    * send() on an ICommand (the CommandBusAware trait), the send frame's

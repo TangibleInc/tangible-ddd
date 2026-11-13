@@ -761,8 +761,8 @@ assertions cover its own handlers' validation and are unaffected.
 
 - **`Intents::capture(callable $call): CapturedIntents`**
   ([ADR 0019](adr/0019-captured-intents.md), [captured intents](intents.md)).
-  A handler wraps a call into foreign code in it; a command that code sends
-  inside the window is captured as an intent instead of throwing
+  A handler wraps a call into foreign code in it; a command one of our entry
+  points sends when that code re-enters it inside the window is captured as an intent instead of throwing
   `CommandDispatchedInsideCommand`. The handler decides each one with
   `fulfil()` or `reject($reason)` (narrow with `of($class)`), and an act that
   ends with one undecided throws `UndecidedIntents`. Outside a window nothing
