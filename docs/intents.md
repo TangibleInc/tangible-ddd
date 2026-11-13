@@ -1,6 +1,6 @@
 # Captured intents
 
-> **Status: CURRENT FOR 0.6.13.** How an act contains one of our own entry
+> **Status: CURRENT FOR 0.6.15.** How an act contains one of our own entry
 > points being re-entered through foreign code, without breaking DDD-M1. The
 > decision and its rejected alternatives are in
 > [ADR 0019](adr/0019-captured-intents.md).

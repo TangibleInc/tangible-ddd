@@ -9,6 +9,7 @@ use Psr\Container\ContainerInterface;
 use ReflectionMethod;
 use ReflectionNamedType;
 use TangibleDDD\Application\CommandHandlers\ICommandHandler;
+use TangibleDDD\Application\CommandHandlers\IReturningCommandHandler;
 use TangibleDDD\Application\Commands\SelfHandlingCommand;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandHasNoHandler;
 use TangibleDDD\Application\Exceptions\SelfHandlingCommandWrapsHandler;
@@ -104,10 +105,11 @@ final class SelfExecutingCommandMiddleware implements Middleware {
 
       if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
         // Conformance guard: a self-handling command method-injecting an
-        // ICommandHandler is wrapping the two-class shape inside the
-        // self-handling one. Fires before the container is consulted — a
-        // resolvable handler is no less a chimera.
-        if (is_a($type->getName(), ICommandHandler::class, true)) {
+        // ICommandHandler (or its returning sibling) is wrapping the
+        // two-class shape inside the self-handling one. Fires before the
+        // container is consulted — a resolvable handler is no less a chimera.
+        if (is_a($type->getName(), ICommandHandler::class, true)
+          || is_a($type->getName(), IReturningCommandHandler::class, true)) {
           throw new SelfHandlingCommandWrapsHandler($command::class, $type->getName());
         }
 

@@ -757,6 +757,38 @@ hook callback needs no change: it now lets programming errors through, which
 is the intent. Cred: its `expectException(ApplicationException::class)`
 assertions cover its own handlers' validation and are unaffected.
 
+## 0.6.15 (workflow handlers return a receipt)
+
+- **`IReturningCommandHandler`**, backported from the 0.7 line: a two-class
+  command handler whose `handle(ICommand $command): mixed` returns a value
+  through `send()` (D11). It is the sibling of `ICommandHandler`, not a
+  subtype, so existing `handle(): void` handlers are untouched. The receipt
+  rule holds: scalars or a DTO, never a domain object, and nothing downstream
+  depends on it. A receipt is built before domain events drain, so it can't
+  carry anything a reaction creates.
+- **`WorkflowHandler` implements `IReturningCommandHandler`** (it implemented
+  `ICommandHandler`). `handle()` now returns `mixed`: whatever the subclass
+  passed to the new `protected set_result(mixed $value)` during the dispatch,
+  or `null`. The value is reset at the start of every `handle()`, so a shared
+  handler never returns an earlier dispatch's value. Typical use: return the id
+  of the record `get_workflows()` created, so the adapter that sent the command
+  can redirect to it.
+- The self-handling guard (`SelfHandlingCommandWrapsHandler`) also catches a
+  `handle()` parameter typed as an `IReturningCommandHandler`.
+
+**Mandatory for existing consumers:** a `WorkflowHandler` subclass that
+overrides `handle()` with `: void` fatals on load ("must be compatible with
+WorkflowHandler::handle(): mixed"). Change its signature to `: mixed` and
+return `parent::handle($command)` (or the value the override computes).
+Code that type-checks a workflow handler with `instanceof ICommandHandler`
+must also accept `IReturningCommandHandler`. Cred: its
+`ProcessEndpointResponseBehaviourHandler::handle()` is such an override.
+Datastream and LMS have none.
+
+**Deploy note:** because the loader runs the newest installed copy, a box must
+not get 0.6.15 from any plugin until every co-hosted consumer with such an
+override has migrated.
+
 ## 0.6.14 (captured intents filters)
 
 - **`CapturedIntents::undecided()`, `where(callable $predicate)` and

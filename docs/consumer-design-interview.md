@@ -174,7 +174,10 @@ must commit atomically with the raising command.
 
 Command handlers normally return `void`. A scalar or DTO verdict can steer an
 adapter, but it must not expose a domain object or become a hidden dependency
-between domain operations. A query returns read data and never mutates state.
+between domain operations. A two-class handler that returns one implements
+`IReturningCommandHandler` instead of `ICommandHandler`; a `WorkflowHandler`
+hands it over with `set_result()`. A query returns read data and never mutates
+state.
 
 **Why this changes the design:** nested commands manufacture a second apparent
 unit of work inside the first and make audit, transaction, and causation
