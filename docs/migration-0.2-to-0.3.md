@@ -1,4 +1,4 @@
-# Consumer release and migration ledger — through 0.6.13
+# Consumer release and migration ledger — through 0.6.14
 
 > **Status: CURRENT RELEASE LEDGER.** The filename is retained for inbound
 > links. Read the entry for every version between the consumer's installed
@@ -756,6 +756,16 @@ asserting `expectException(ApplicationException::class)` or
 hook callback needs no change: it now lets programming errors through, which
 is the intent. Cred: its `expectException(ApplicationException::class)`
 assertions cover its own handlers' validation and are unaffected.
+
+## 0.6.14 (captured intents filters)
+
+- **`CapturedIntents::undecided()`, `where(callable $predicate)` and
+  `matching(array $properties)`** ([captured intents](intents.md)). Three
+  filters that narrow a set like `of()` does: the same intents, not copies,
+  chainable. `matching()` compares the command's public properties strictly
+  (`===`); a command without the property is excluded. Consumers no longer
+  need to rebuild sets with `array_filter`.
+- Additive API; no consumer action.
 
 ## 0.6.13 (captured intents)
 

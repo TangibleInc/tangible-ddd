@@ -81,6 +81,14 @@ Every captured intent must be **decided** before the act ends:
 an instance of `$class`. They are the same intents, not copies, so deciding the
 subset decides them. A `CapturedIntents` is also `Countable` and iterable.
 
+Three more filters narrow the same way (same intents, not copies, and chainable):
+`undecided()` keeps the intents not yet decided; `where(callable $predicate)`
+keeps those for which `$predicate(CapturedIntent $intent)` returns true;
+`matching(array $properties)` keeps those whose command has every given public
+property `===` its value (a strict comparison; a command without the property is
+excluded, not an error). An empty result is an empty set, and rejecting it does
+nothing. In a catch: `$captured->undecided()->reject('failed: ' . $e->getMessage());`
+
 Decisions are all-or-none: `fulfil()` or `reject()` on a set that contains an
 already decided intent throws `IntentAlreadyDecided` and decides none of them.
 
