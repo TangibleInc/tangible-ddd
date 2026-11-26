@@ -69,11 +69,23 @@ persistence dependencies of its own (a rule evaluator or a validation
 library, for example). The consumer lists the ones its domain uses in its
 overlay and its layer configuration, so each one is a visible decision.
 
+One exception: a **DTO factory**. A domain class may build itself from an
+Application DTO in a static factory, `from_dto()` (with `from_dto_list()` or
+`from_dto_collection()` for a list), as declared by `IDTOConstructible`. The
+factory reads the DTO's fields and calls the class's own constructors or other
+DTO factories; it calls no service, repository, handler, or WordPress
+function. Application types appear in the domain only in these factories and
+their `use` statements ([ADR 0020](adr/0020-domain-classes-build-themselves-from-dtos.md)).
+
 - **Why:** domain rules must be testable without WordPress or a database, and
   every other layer depends on the domain. A domain that reaches outward
   couples the most stable code to the least stable. A pure library keeps
-  both properties, so using one does not break the rule.
-- **Enforced by:** Phan (planned).
+  both properties, so using one does not break the rule. A DTO factory keeps
+  the first property, since a DTO does no I/O, and costs a little of the
+  second: a change to the DTO's fields changes the factory that reads them.
+  Keeping the mapping next to the invariants it feeds is worth that.
+- **Enforced by:** Phan (planned): an Application reference outside a DTO
+  factory.
 
 ### DDD-L2: Only domain services use repositories
 

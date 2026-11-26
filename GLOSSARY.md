@@ -96,6 +96,10 @@ _Avoid_: child consumer, sidecar consumer
 **Ledger**:
 The per-version list of what each release demands of consumers: [docs/migration-0.2-to-0.3.md](docs/migration-0.2-to-0.3.md).
 
+**DTO factory**:
+A domain class's static `from_dto()` (or its list forms) that builds the class from an Application DTO by reading fields and calling constructors, the one Application reference DDD-L1 allows.
+_Avoid_: mapper, hydrator (hydration is a repository rebuilding an aggregate from storage)
+
 ## Intents
 
 How an act handles a command that one of our own entry points sends when foreign code re-enters it inside the act ([ADR 0019](docs/adr/0019-captured-intents.md), [docs/intents.md](docs/intents.md)).
